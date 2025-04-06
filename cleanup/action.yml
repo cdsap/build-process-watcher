@@ -1,0 +1,6 @@
+name: "Build Process Watcher Cleanup"
+description: "Performs final cleanup and chart generation for Build Process Watcher"
+
+runs:
+  using: "node20"
+  main: "../dist/cleanup.js"

@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "es2019",
+    "module": "commonjs",
+    "outDir": "./dist",
+    "rootDir": "./",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "declaration": true
+  },
+  "include": [
+    "*.ts"
+, "src/index.ts", "src/cleanup.ts"  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+} 

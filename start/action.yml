@@ -1,0 +1,12 @@
+name: "Build Process Watcher"
+description: "Starts tracking memory usage of build processes"
+
+inputs:
+  interval:
+    description: "Polling interval in seconds"
+    required: false
+    default: "5"
+
+runs:
+  using: "node20"
+  main: "../dist/index.js"
