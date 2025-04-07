@@ -16,7 +16,7 @@ Use this if you want a clean setup:
 ```yaml
 - uses: cdsap/build-process-watcher@v0.1
 ```
-✅ Automatically starts memory monitoring and runs cleanup at the end
+✅ Automatically starts memory monitoring and runs cleanup at the end  
 ⚠️ Cleanup won't run if the job is killed by OOM or cancellation before the action step starts
 
 ## 🛠️ Manual Mode (Debug / Safe Cleanup)
@@ -33,7 +33,7 @@ steps:
   - uses: cdsap/build-process-watcher/cleanup@v0.1
     if: always()
 ```
-✅ More verbose
+✅ More verbose  
 ✅ Ensures cleanup runs at the end of the job (unless the entire runner crashes)
 
 ## 📥 Inputs
