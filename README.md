@@ -21,8 +21,9 @@ Use this if you want a clean setup:
 
 ## 🛠️ Manual Mode (Debug / Safe Cleanup)
 Use this if you want guaranteed cleanup, even if the build fails:
+
+```yaml
 steps:
-```
   - uses: cdsap/build-process-watcher/start@v0.1
     with:
       interval: 5
