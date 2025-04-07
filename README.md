@@ -1,7 +1,6 @@
 # 🧠 Build Process Watcher
 
 [![GitHub Marketplace](https://img.shields.io/badge/action-marketplace-blue?logo=github)](https://github.com/marketplace/actions/build-process-watcher)
-[![ci](https://github.com/cdsap/build-process-watcher/actions/workflows/build.yml/badge.svg)](https://github.com/cdsap/build-process-watcher/actions/workflows/build.yml)
 
 **Build Process Watcher** is a GitHub Action to monitor the memory usage of Java/Kotlin daemons (`GradleDaemon`, `GradleWorkerMain`, and `KotlinCompileDaemon`) during your CI builds.
 
