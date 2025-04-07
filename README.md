@@ -27,9 +27,9 @@ steps:
   - uses: cdsap/build-process-watcher/start@v0.1
     with:
       interval: 5
-  
+
   - run: ./gradlew build
-  
+
   - uses: cdsap/build-process-watcher/cleanup@v0.1
     if: always()
 ```
