@@ -35,16 +35,64 @@ jobs:
 
     - name: Create staging config
       run: |
+        # Use FRONTEND_URL_STAGING if set, otherwise use a placeholder based on project ID
+        FRONTEND_URL="${{ secrets.FRONTEND_URL_STAGING }}"
+        if [ -z "$FRONTEND_URL" ]; then
+          # Generate URL based on Firebase project ID (will be updated after first deployment)
+          PROJECT_ID="${{ secrets.FIREBASE_PROJECT_ID_STAGING }}"
+          FRONTEND_URL="https://${PROJECT_ID}.web.app"
+          echo "⚠️  FRONTEND_URL_STAGING not set, using placeholder: $FRONTEND_URL"
+          echo "   After deployment, update the secret with the actual URL"
+        fi
         cat > frontend/public/config.js << EOF
         window.BUILD_PROCESS_WATCHER_CONFIG = {
           backendUrl: '${{ secrets.BACKEND_URL_STAGING }}',
-          frontendUrl: '${{ secrets.FRONTEND_URL_STAGING }}',
+          frontendUrl: '${FRONTEND_URL}',
           environment: 'staging'
         };
         EOF
 
     - name: Install Firebase CLI
       run: npm install -g firebase-tools
+
+    - name: Setup Firebase config for staging
+      working-directory: ./frontend
+      run: |
+        # Create firebase.json for staging (without target since we're using separate project)
+        cat > firebase.json << EOF
+        {
+          "hosting": {
+            "public": "public",
+            "ignore": [
+              "firebase.json",
+              "**/.*",
+              "**/node_modules/**"
+            ],
+            "rewrites": [
+              {
+                "source": "/runs/**",
+                "destination": "/runs/[runId].html"
+              },
+              {
+                "source": "**",
+                "destination": "/index.html"
+              }
+            ],
+            "headers": [
+              {
+                "source": "**/*.@(js|css)",
+                "headers": [
+                  {
+                    "key": "Cache-Control",
+                    "value": "max-age=31536000"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+        EOF
+        echo "✅ Created firebase.json for staging deployment"
 
     - name: Deploy to Firebase Staging
       working-directory: ./frontend
@@ -55,13 +103,53 @@ jobs:
         echo "$FIREBASE_SERVICE_ACCOUNT" > service-account.json
         export GOOGLE_APPLICATION_CREDENTIALS=service-account.json
         firebase use $FIREBASE_PROJECT_ID
-        firebase deploy --only hosting:staging
+        
+        # Deploy to hosting (staging target is configured in firebase.json)
+        firebase deploy --only hosting
+
+    - name: Get Firebase Hosting URL
+      id: get-url
+      working-directory: ./frontend
+      env:
+        FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STAGING }}
+        FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID_STAGING }}
+      run: |
+        # Authenticate Firebase CLI
+        echo "$FIREBASE_SERVICE_ACCOUNT" > service-account.json
+        export GOOGLE_APPLICATION_CREDENTIALS=service-account.json
+        firebase use $FIREBASE_PROJECT_ID
+        
+        # Get the actual hosting URL from Firebase
+        # Firebase Hosting URLs are typically: https://PROJECT_ID.web.app
+        HOSTING_URL="https://${FIREBASE_PROJECT_ID}.web.app"
+        
+        # Try to get the actual URL from Firebase (if available)
+        if command -v jq &> /dev/null; then
+          ACTUAL_URL=$(firebase hosting:sites:list --project=$FIREBASE_PROJECT_ID --json 2>/dev/null | jq -r '.[0].url' 2>/dev/null || echo "")
+          if [ -n "$ACTUAL_URL" ] && [ "$ACTUAL_URL" != "null" ]; then
+            HOSTING_URL="$ACTUAL_URL"
+          fi
+        fi
+        
+        echo "url=$HOSTING_URL" >> $GITHUB_OUTPUT
+        echo "🌐 Firebase Hosting URL: $HOSTING_URL"
 
     - name: Output deployment info
       run: |
+        echo ""
+        echo "=========================================="
         echo "🎨 Staging Frontend deployed successfully!"
-        echo "🌐 Staging URL: ${{ secrets.FRONTEND_URL_STAGING }}"
+        echo "=========================================="
+        echo ""
+        echo "🌐 FRONTEND_URL_STAGING:"
+        echo "${{ steps.get-url.outputs.url }}"
+        echo ""
+        echo "📋 Copy the URL above and add it to GitHub Secrets as:"
+        echo "   Secret name: FRONTEND_URL_STAGING"
+        echo "   Secret value: ${{ steps.get-url.outputs.url }}"
+        echo ""
         echo "🔗 Backend API: ${{ secrets.BACKEND_URL_STAGING }}"
+        echo ""
 
 
 
