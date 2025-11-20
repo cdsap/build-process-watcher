@@ -58,41 +58,48 @@ jobs:
     - name: Setup Firebase config for staging
       working-directory: ./frontend
       run: |
-        # Create firebase.json for staging (without target since we're using separate project)
-        cat > firebase.json << EOF
+        # Remove any existing firebase.json and .firebaserc to avoid conflicts
+        rm -f firebase.json .firebaserc
+        
+        # Create a clean firebase.json for staging (no target, no site - uses default)
+        cat > firebase.json << 'EOF'
         {
-          "hosting": {
-            "public": "public",
-            "ignore": [
-              "firebase.json",
-              "**/.*",
-              "**/node_modules/**"
-            ],
-            "rewrites": [
-              {
-                "source": "/runs/**",
-                "destination": "/runs/[runId].html"
-              },
-              {
-                "source": "**",
-                "destination": "/index.html"
-              }
-            ],
-            "headers": [
-              {
-                "source": "**/*.@(js|css)",
-                "headers": [
-                  {
-                    "key": "Cache-Control",
-                    "value": "max-age=31536000"
-                  }
-                ]
-              }
-            ]
-          }
+          "hosting": [
+            {
+              "public": "public",
+              "ignore": [
+                "firebase.json",
+                "**/.*",
+                "**/node_modules/**"
+              ],
+              "rewrites": [
+                {
+                  "source": "/runs/**",
+                  "destination": "/runs/[runId].html"
+                },
+                {
+                  "source": "**",
+                  "destination": "/index.html"
+                }
+              ],
+              "headers": [
+                {
+                  "source": "**/*.@(js|css)",
+                  "headers": [
+                    {
+                      "key": "Cache-Control",
+                      "value": "max-age=31536000"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
         }
         EOF
         echo "✅ Created firebase.json for staging deployment"
+        echo "📄 firebase.json contents:"
+        cat firebase.json
 
     - name: Deploy to Firebase Staging
       working-directory: ./frontend
@@ -102,10 +109,26 @@ jobs:
       run: |
         echo "$FIREBASE_SERVICE_ACCOUNT" > service-account.json
         export GOOGLE_APPLICATION_CREDENTIALS=service-account.json
-        firebase use $FIREBASE_PROJECT_ID
         
-        # Deploy to hosting (staging target is configured in firebase.json)
-        firebase deploy --only hosting
+        # Set the Firebase project
+        firebase use $FIREBASE_PROJECT_ID --non-interactive
+        
+        # Verify we're using the correct project
+        echo "🔍 Current Firebase project:"
+        firebase projects:list | grep $FIREBASE_PROJECT_ID || echo "Project not found in list"
+        
+        # Check available hosting sites
+        echo "🌐 Checking hosting sites..."
+        firebase hosting:sites:list --project=$FIREBASE_PROJECT_ID || echo "No sites found or hosting not initialized"
+        
+        # Verify firebase.json exists and is valid
+        echo "📄 firebase.json contents:"
+        cat firebase.json
+        
+        # Deploy to hosting (using default site for staging project)
+        # Note: Do NOT use --only hosting:staging, just --only hosting
+        echo "🚀 Deploying to Firebase Hosting (default site)..."
+        firebase deploy --only hosting --project $FIREBASE_PROJECT_ID --non-interactive
 
     - name: Get Firebase Hosting URL
       id: get-url
