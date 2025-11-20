@@ -52,8 +52,34 @@ jobs:
         };
         EOF
 
-    - name: Install Firebase CLI
-      run: npm install -g firebase-tools
+    - name: Install Firebase CLI and tools
+      run: |
+        npm install -g firebase-tools
+        # Install jq for JSON parsing (if not available)
+        sudo apt-get update && sudo apt-get install -y jq || echo "jq installation skipped"
+
+    - name: Get Firebase Hosting Site ID
+      id: get-site-id
+      working-directory: ./frontend
+      env:
+        FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STAGING }}
+        FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID_STAGING }}
+      run: |
+        echo "$FIREBASE_SERVICE_ACCOUNT" > service-account.json
+        export GOOGLE_APPLICATION_CREDENTIALS=service-account.json
+        firebase use $FIREBASE_PROJECT_ID --non-interactive
+        
+        # Get the first site ID from the list
+        # The default site ID is usually the same as the project ID
+        SITE_ID=$(firebase hosting:sites:list --project=$FIREBASE_PROJECT_ID 2>/dev/null | grep -E '^\|' | tail -n +3 | head -1 | awk -F'│' '{print $2}' | xargs || echo "$FIREBASE_PROJECT_ID")
+        
+        # If empty, use project ID as fallback (default site)
+        if [ -z "$SITE_ID" ]; then
+          SITE_ID="$FIREBASE_PROJECT_ID"
+        fi
+        
+        echo "site-id=$SITE_ID" >> $GITHUB_OUTPUT
+        echo "🌐 Detected site ID: $SITE_ID"
 
     - name: Setup Firebase config for staging
       working-directory: ./frontend
@@ -61,43 +87,45 @@ jobs:
         # Remove any existing firebase.json and .firebaserc to avoid conflicts
         rm -f firebase.json .firebaserc
         
-        # Create a clean firebase.json for staging (no target, no site - uses default)
-        cat > firebase.json << 'EOF'
+        # Get the site ID from previous step
+        SITE_ID="${{ steps.get-site-id.outputs.site-id }}"
+        
+        # Create firebase.json with the site ID specified
+        cat > firebase.json << EOF
         {
-          "hosting": [
-            {
-              "public": "public",
-              "ignore": [
-                "firebase.json",
-                "**/.*",
-                "**/node_modules/**"
-              ],
-              "rewrites": [
-                {
-                  "source": "/runs/**",
-                  "destination": "/runs/[runId].html"
-                },
-                {
-                  "source": "**",
-                  "destination": "/index.html"
-                }
-              ],
-              "headers": [
-                {
-                  "source": "**/*.@(js|css)",
-                  "headers": [
-                    {
-                      "key": "Cache-Control",
-                      "value": "max-age=31536000"
-                    }
-                  ]
-                }
-              ]
-            }
-          ]
+          "hosting": {
+            "site": "${SITE_ID}",
+            "public": "public",
+            "ignore": [
+              "firebase.json",
+              "**/.*",
+              "**/node_modules/**"
+            ],
+            "rewrites": [
+              {
+                "source": "/runs/**",
+                "destination": "/runs/[runId].html"
+              },
+              {
+                "source": "**",
+                "destination": "/index.html"
+              }
+            ],
+            "headers": [
+              {
+                "source": "**/*.@(js|css)",
+                "headers": [
+                  {
+                    "key": "Cache-Control",
+                    "value": "max-age=31536000"
+                  }
+                ]
+              }
+            ]
+          }
         }
         EOF
-        echo "✅ Created firebase.json for staging deployment"
+        echo "✅ Created firebase.json for staging deployment with site: ${SITE_ID}"
         echo "📄 firebase.json contents:"
         cat firebase.json
 
