@@ -31,20 +31,60 @@ async function run() {
       core.info(`🐛 Debug Mode: ${debugMode}`);
     }
 
+    // Build frontend URL if backend is enabled (do this before exporting)
+    let frontendUrl = '';
+    if (enableBackend && backendUrl) {
+      // Check for frontend URL from environment variables first, then input
+      // This allows workflows to set FRONTEND_URL or FRONTEND_URL_STAGING as env vars
+      const isStaging = backendUrl.includes('-staging');
+      const envFrontendUrl = isStaging 
+        ? process.env.FRONTEND_URL_STAGING || process.env.FRONTEND_URL
+        : process.env.FRONTEND_URL;
+      
+      const explicitFrontendUrl = envFrontendUrl || core.getInput('frontend_url');
+      
+      if (explicitFrontendUrl) {
+        // Use explicitly provided frontend URL (from env var or input)
+        if (explicitFrontendUrl.endsWith('/runs') || explicitFrontendUrl.endsWith('/runs/')) {
+          frontendUrl = `${explicitFrontendUrl}/${runId}`;
+        } else {
+          frontendUrl = `${explicitFrontendUrl}/runs/${runId}`;
+        }
+        
+        if (debugMode && envFrontendUrl) {
+          core.info(`🌐 Using frontend URL from environment variable: ${envFrontendUrl}`);
+        }
+      } else {
+        // Derive frontend URL from backend URL pattern
+        // For staging, frontend_url should be provided explicitly since we can't derive it
+        if (isStaging) {
+          // For staging, we can't auto-detect the frontend URL reliably
+          // Use production as fallback but warn the user
+          core.warning('⚠️  Staging backend detected but no frontend_url provided.');
+          core.warning('💡 Set FRONTEND_URL_STAGING or FRONTEND_URL environment variable, or provide frontend_url input');
+          core.warning('💡 Example: https://process-watcher-staging-c5bd6.web.app');
+          core.warning('⚠️  Dashboard URL will point to production. Provide frontend_url for correct staging links.');
+        }
+        
+        // Use production frontend as fallback (user should provide frontend_url for staging)
+        const baseFrontendUrl = 'https://process-watcher.web.app';
+        frontendUrl = `${baseFrontendUrl}/runs/${runId}`;
+      }
+      
+      if (debugMode) {
+        core.info(`🌐 Frontend URL: ${frontendUrl}`);
+      }
+    }
+
     // Export variables for the cleanup step
     core.exportVariable('ENABLE_BACKEND', enableBackend.toString());
     core.exportVariable('BACKEND_URL', backendUrl || '');
     core.exportVariable('RUN_ID', runId);
     core.exportVariable('LOG_FILE', logFile);
-    
-    // Build frontend URL if backend is enabled
-    let frontendUrl = '';
-    if (enableBackend && backendUrl) {
-      // Use the Firebase hosting URL for the frontend
-      frontendUrl = `https://process-watcher.web.app/runs/${runId}`;
-      if (debugMode) {
-        core.info(`🌐 Frontend URL: ${frontendUrl}`);
-      }
+    if (frontendUrl) {
+      // Export base frontend URL (without /runs/runId) for cleanup step
+      const baseFrontendUrl = frontendUrl.replace(/\/runs\/.*$/, '');
+      core.exportVariable('FRONTEND_URL', baseFrontendUrl);
     }
 
     // Set output for use in other steps

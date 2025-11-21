@@ -377,7 +377,11 @@ async function run() {
         if (!fs.existsSync(logFile)) {
             if (backendMode) {
                 // Always show the dashboard URL for remote monitoring
-                const frontendUrl = `https://process-watcher.web.app/runs/${runId}`;
+                // Use FRONTEND_URL from environment if set, otherwise use production as fallback
+                const explicitFrontendUrl = process.env.FRONTEND_URL || '';
+                const frontendUrl = explicitFrontendUrl
+                    ? `${explicitFrontendUrl}/runs/${runId}`
+                    : `https://process-watcher.web.app/runs/${runId}`;
                 console.log(`🌐 Dashboard URL: ${frontendUrl}`);
                 
                 if (debugMode) {

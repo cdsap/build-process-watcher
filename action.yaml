@@ -6,6 +6,9 @@ inputs:
   backend_url:
     description: 'Backend URL for data ingestion (optional - defaults to Cloud Run URL when remote_monitoring is enabled)'
     required: false
+  frontend_url:
+    description: 'Frontend dashboard URL (optional - can also be set via FRONTEND_URL or FRONTEND_URL_STAGING environment variables)'
+    required: false
   remote_monitoring:
     description: 'Enable remote monitoring with cloud dashboard (will use default Cloud Run URL if backend_url not provided)'
     required: false
