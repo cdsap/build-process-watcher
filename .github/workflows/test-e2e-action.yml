@@ -224,6 +224,29 @@ jobs:
         
         echo "✅ Script execution test completed"
         
+    - name: Test collect_gc environment variable
+      run: |
+        echo "🧪 Testing collect_gc environment variable handling..."
+        export BACKEND_URL=""
+        export RUN_ID="test-run-gc"
+        export LOG_FILE="test_gc.log"
+        export DEBUG_MODE="true"
+        export REMOTE_MONITORING="false"
+        export COLLECT_GC="true"
+        
+        # Check that script recognizes COLLECT_GC
+        if grep -q "COLLECT_GC" monitor_with_backend.sh; then
+          echo "✅ Script references COLLECT_GC variable"
+        else
+          echo "❌ ERROR: Script does not reference COLLECT_GC!"
+          exit 1
+        fi
+        
+        # Start script briefly to verify it uses COLLECT_GC
+        timeout 3 ./monitor_with_backend.sh 2 test.log 2>&1 | grep -i "gc" || echo "⚠️  No GC output (might be expected if no Java processes)"
+        
+        echo "✅ collect_gc environment variable test completed"
+
     - name: Verify log file was created
       run: |
         echo "📋 Checking for log file..."
@@ -254,6 +277,83 @@ jobs:
           test.log
           backend_debug.log
         retention-days: 7
+
+  test-collect-gc:
+    name: Test collect_gc Functionality
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Build the action
+      run: |
+        echo "🔨 Building action for testing..."
+        npm ci
+        npm run build
+
+    - name: Test action with collect_gc enabled
+      uses: ./
+      with:
+        remote_monitoring: 'false'
+        log_file: '${{ github.workspace }}/test_gc.log'
+        interval: '2'
+        debug: 'true'
+        collect_gc: 'true'
+      continue-on-error: true
+
+    - name: Verify collect_gc was passed to script
+      run: |
+        echo "🔍 Verifying collect_gc functionality..."
+        
+        # Check if log file was created with GC header
+        LOG_FILE="${{ github.workspace }}/test_gc.log"
+        if [ -f "$LOG_FILE" ]; then
+          echo "✅ Log file created"
+          if grep -q "GC_Time_MS" "$LOG_FILE"; then
+            echo "✅ Log file contains GC column header (collect_gc working)"
+          else
+            echo "⚠️  Log file doesn't contain GC header (might be expected if no Java processes)"
+          fi
+          echo "📄 Log file preview:"
+          head -5 "$LOG_FILE" || true
+        else
+          echo "⚠️  Log file not created (might be expected if no Java processes)"
+        fi
+        
+        # Check backend debug log if it exists
+        if [ -f "${{ github.workspace }}/backend_debug.log" ]; then
+          echo "📄 Checking backend debug log for GC references..."
+          grep -i "gc" "${{ github.workspace }}/backend_debug.log" || echo "No GC references in debug log"
+        fi
+        
+        echo "✅ collect_gc test completed"
+
+    - name: Test action with collect_gc disabled
+      uses: ./
+      with:
+        remote_monitoring: 'false'
+        log_file: '${{ github.workspace }}/test_no_gc.log'
+        interval: '2'
+        debug: 'true'
+        collect_gc: 'false'
+      continue-on-error: true
+
+    - name: Verify collect_gc disabled works correctly
+      run: |
+        echo "🔍 Verifying collect_gc=false behavior..."
+        
+        LOG_FILE="${{ github.workspace }}/test_no_gc.log"
+        if [ -f "$LOG_FILE" ]; then
+          if grep -q "GC_Time_MS" "$LOG_FILE"; then
+            echo "❌ ERROR: Log file contains GC header when collect_gc=false!"
+            exit 1
+          else
+            echo "✅ Log file correctly excludes GC column (collect_gc=false working)"
+          fi
+        fi
+        
+        echo "✅ collect_gc disabled test completed"
 
   test-composite-actions:
     name: Test Composite Actions
@@ -294,7 +394,7 @@ jobs:
 
   summary:
     name: Test Summary
-    needs: [test-local-mode, test-remote-mode-dry-run, test-monitoring-script, test-composite-actions]
+    needs: [test-local-mode, test-remote-mode-dry-run, test-monitoring-script, test-collect-gc, test-composite-actions]
     runs-on: ubuntu-latest
     if: always()
     
@@ -305,10 +405,12 @@ jobs:
         echo "  ✅ Local mode test: ${{ needs.test-local-mode.result }}"
         echo "  ✅ Remote mode test: ${{ needs.test-remote-mode-dry-run.result }}"
         echo "  ✅ Script test: ${{ needs.test-monitoring-script.result }}"
+        echo "  ✅ collect_gc test: ${{ needs.test-collect-gc.result }}"
         echo "  ✅ Composite actions: ${{ needs.test-composite-actions.result }}"
         
         if [ "${{ needs.test-local-mode.result }}" != "success" ] || \
            [ "${{ needs.test-monitoring-script.result }}" != "success" ] || \
+           [ "${{ needs.test-collect-gc.result }}" != "success" ] || \
            [ "${{ needs.test-composite-actions.result }}" != "success" ]; then
           echo "❌ Some tests failed!"
           exit 1

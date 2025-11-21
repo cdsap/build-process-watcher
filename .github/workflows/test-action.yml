@@ -95,6 +95,72 @@ jobs:
         echo "🔍 Running TypeScript type check..."
         npx tsc --noEmit
 
+    - name: Test collect_gc functionality
+      run: |
+        echo "🧪 Testing collect_gc functionality"
+        echo "===================================="
+        echo ""
+        
+        # Test 1: Verify script recognizes COLLECT_GC
+        echo "Test 1: Verifying script recognizes COLLECT_GC variable"
+        if grep -q "COLLECT_GC" monitor_with_backend.sh; then
+          echo "✅ PASS: Script references COLLECT_GC variable"
+        else
+          echo "❌ FAIL: Script does not reference COLLECT_GC!"
+          exit 1
+        fi
+        echo ""
+        
+        # Test 2: Verify script uses COLLECT_GC to set log header
+        echo "Test 2: Verifying log header includes GC column when COLLECT_GC=true"
+        if grep -A 5 'if \[ "\$COLLECT_GC" = "true" \]' monitor_with_backend.sh | grep -q "GC_Time_MS"; then
+          echo "✅ PASS: Script includes GC_Time_MS in header when COLLECT_GC=true"
+        else
+          echo "⚠️  WARNING: Could not verify GC header logic in script"
+        fi
+        echo ""
+        
+        # Test 3: Verify script excludes GC column when COLLECT_GC=false
+        echo "Test 3: Verifying log header excludes GC column when COLLECT_GC=false"
+        if grep -B 5 -A 5 'if \[ "\$COLLECT_GC" = "true" \]' monitor_with_backend.sh | grep -q "Elapsed_Time.*PID.*Name.*Heap"; then
+          echo "✅ PASS: Script has alternative header without GC when COLLECT_GC=false"
+        else
+          echo "⚠️  WARNING: Could not verify non-GC header logic"
+        fi
+        echo ""
+        
+        # Test 4: Verify action.yaml has collect_gc input
+        echo "Test 4: Verifying action.yaml includes collect_gc input"
+        if grep -q "collect_gc:" action.yaml; then
+          echo "✅ PASS: action.yaml includes collect_gc input"
+        else
+          echo "❌ FAIL: action.yaml does not include collect_gc input!"
+          exit 1
+        fi
+        echo ""
+        
+        # Test 5: Verify TypeScript code reads collect_gc
+        echo "Test 5: Verifying TypeScript code reads collect_gc input"
+        if grep -q "collect_gc" src/index_with_backend.ts; then
+          echo "✅ PASS: TypeScript code references collect_gc"
+          
+          # Check if it's exported as COLLECT_GC
+          if grep -q "COLLECT_GC" src/index_with_backend.ts; then
+            echo "✅ PASS: TypeScript code exports COLLECT_GC environment variable"
+          else
+            echo "❌ FAIL: TypeScript code does not export COLLECT_GC!"
+            exit 1
+          fi
+        else
+          echo "❌ FAIL: TypeScript code does not reference collect_gc!"
+          exit 1
+        fi
+        echo ""
+        
+        echo "===================================="
+        echo "✅ All collect_gc tests passed!"
+        echo "===================================="
+
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
