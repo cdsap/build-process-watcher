@@ -213995,8 +213995,15 @@ async function markProcessAsFinishedDirect(runId) {
         // Don't throw error - this is not critical for the cleanup process
     }
 }
+// Global flag to prevent multiple cleanup runs
+let cleanupExecuted = false;
 async function run() {
     try {
+        // Prevent multiple cleanup executions
+        if (cleanupExecuted) {
+            return;
+        }
+        cleanupExecuted = true;
         // Check debug mode from environment variable
         const debugMode = process.env.DEBUG_MODE === 'true';
         // Kill the monitor process if it's still running

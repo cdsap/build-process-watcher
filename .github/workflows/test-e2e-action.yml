@@ -198,6 +198,7 @@ jobs:
         fi
 
     - name: Test script with minimal execution
+      timeout-minutes: 2
       run: |
         echo "🧪 Testing script execution..."
         # Set required environment variables
@@ -207,24 +208,23 @@ jobs:
         export DEBUG_MODE="false"
         export REMOTE_MONITORING="false"
         
-        # Start script in background
-        ./monitor_with_backend.sh 2 &
+        # Start script in background with timeout
+        timeout 5 ./monitor_with_backend.sh 2 &
         SCRIPT_PID=$!
         echo "Started script with PID: $SCRIPT_PID"
         
-        # Let it run for a few seconds
-        sleep 6
+        # Wait for script to finish or timeout
+        wait $SCRIPT_PID 2>/dev/null || true
         
-        # Kill it gracefully
+        # Ensure it's killed if still running
         kill $SCRIPT_PID 2>/dev/null || true
         sleep 1
-        
-        # Force kill if still running
         kill -9 $SCRIPT_PID 2>/dev/null || true
         
         echo "✅ Script execution test completed"
         
     - name: Test collect_gc environment variable
+      timeout-minutes: 1
       run: |
         echo "🧪 Testing collect_gc environment variable handling..."
         export BACKEND_URL=""
@@ -242,8 +242,14 @@ jobs:
           exit 1
         fi
         
-        # Start script briefly to verify it uses COLLECT_GC
-        timeout 3 ./monitor_with_backend.sh 2 test.log 2>&1 | grep -i "gc" || echo "⚠️  No GC output (might be expected if no Java processes)"
+        # Verify log header would include GC when COLLECT_GC=true (without running script)
+        # This is a deterministic test that doesn't require running the script
+        if grep -A 2 'if \[ "\$COLLECT_GC" = "true" \]' monitor_with_backend.sh | grep -q "GC_Time_MS"; then
+          echo "✅ Script includes GC_Time_MS in header when COLLECT_GC=true"
+        else
+          echo "❌ ERROR: Script does not include GC logic!"
+          exit 1
+        fi
         
         echo "✅ collect_gc environment variable test completed"
 
