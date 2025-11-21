@@ -234,8 +234,8 @@ func ParseData(data string, startTime time.Time) ([]models.Sample, error) {
 
 		parts := strings.Split(line, "|")
 		log.Printf("Split into %d parts: %v", len(parts), parts)
-		if len(parts) != 6 {
-			log.Printf("Skipping line %d: expected 6 parts, got %d", i, len(parts))
+		if len(parts) != 6 && len(parts) != 7 {
+			log.Printf("Skipping line %d: expected 6 or 7 parts, got %d", i, len(parts))
 			continue
 		}
 
@@ -288,6 +288,21 @@ func ParseData(data string, startTime time.Time) ([]models.Sample, error) {
 		}
 		rss := int(rssFloat)
 
+		// Parse GC time if present (7th part)
+		var gcTime int
+		if len(parts) == 7 {
+			gcTimeStr := strings.TrimSuffix(strings.TrimSuffix(parts[6], "ms"), "ms")
+			if gcTimeStr != "N/A" && gcTimeStr != "" {
+				gcTimeFloat, err := strconv.ParseFloat(gcTimeStr, 64)
+				if err != nil {
+					log.Printf("Warning: GC time parsing failed: %v, using 0", err)
+					gcTime = 0
+				} else {
+					gcTime = int(gcTimeFloat)
+				}
+			}
+		}
+
 		// Calculate consistent timestamp using startTime + elapsedTime
 		// This ensures all samples in the same monitoring cycle have the same timestamp
 		timestamp := startTime.Add(time.Duration(elapsedTime) * time.Second)
@@ -300,6 +315,7 @@ func ParseData(data string, startTime time.Time) ([]models.Sample, error) {
 			HeapUsed:    heapUsed,
 			HeapCap:     heapCap,
 			RSS:         rss,
+			GCTime:      gcTime,
 		}
 
 		log.Printf("Created sample: %+v", sample)

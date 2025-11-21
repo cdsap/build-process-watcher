@@ -7,6 +7,29 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
     <script src="/config.js"></script>
+    <script>
+        // Set all links dynamically based on config
+        (function() {
+            const frontendUrl = window.BUILD_PROCESS_WATCHER_CONFIG?.frontendUrl || 'https://process-watcher.web.app';
+            document.addEventListener('DOMContentLoaded', function() {
+                // Set all "back home" links
+                document.querySelectorAll('.back-home-link, a[href="https://process-watcher.web.app"]').forEach(link => {
+                    link.href = frontendUrl;
+                });
+            });
+            // Also set immediately for elements that might exist before DOMContentLoaded
+            const setLinks = function() {
+                document.querySelectorAll('a[href="https://process-watcher.web.app"]').forEach(link => {
+                    link.href = frontendUrl;
+                });
+            };
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', setLinks);
+            } else {
+                setLinks();
+            }
+        })();
+    </script>
     <style>
         * {
             box-sizing: border-box;
@@ -256,7 +279,7 @@
                 <div class="error">
                     <h2>Invalid Run ID</h2>
                     <p>No run ID provided in the URL.</p>
-                    <a href="https://process-watcher.web.app" style="color: #2563eb;">Back to Home</a>
+                    <a href="#" class="back-home-link" style="color: #2563eb;">Back to Home</a>
                 </div>
             `;
         } else {
@@ -380,10 +403,26 @@
                         <div id="chart" style="width: 100%; height: 500px;"></div>
                     </div>
                 </div>
+
+                ${hasGCData(samples) ? `
+                <div class="chart-container">
+                    <div class="downloads-toolbar">
+                        <button class="btn" id="btn-download-gc-png">Download GC PNG</button>
+                        <button class="btn" id="btn-download-gc-svg">Download GC SVG</button>
+                    </div>
+                    <h3>Garbage Collection Time Over Time</h3>
+                    <div class="chart-wrapper">
+                        <div id="gc-chart" style="width: 100%; height: 500px;"></div>
+                    </div>
+                </div>
+                ` : ''}
             `;
 
             if (samples.length > 0) {
                 renderChart(samples);
+                if (hasGCData(samples)) {
+                    renderGCChart(samples);
+                }
             }
 
             // Wire download buttons
@@ -391,11 +430,105 @@
             const btnSvg = document.getElementById('btn-download-svg');
             const btnJson = document.getElementById('btn-download-json');
             const btnCsv = document.getElementById('btn-download-csv');
+            const btnGcPng = document.getElementById('btn-download-gc-png');
+            const btnGcSvg = document.getElementById('btn-download-gc-svg');
 
             if (btnPng) btnPng.onclick = () => downloadChart('png');
             if (btnSvg) btnSvg.onclick = () => downloadChart('svg');
             if (btnJson) btnJson.onclick = () => downloadJson(runId);
             if (btnCsv) btnCsv.onclick = () => downloadCsv(runId);
+            if (btnGcPng) btnGcPng.onclick = () => downloadGCChart('png');
+            if (btnGcSvg) btnGcSvg.onclick = () => downloadGCChart('svg');
+        }
+
+        function hasGCData(samples) {
+            return samples.some(sample => sample.GCTime !== undefined && sample.GCTime !== null && sample.GCTime > 0);
+        }
+
+        function renderGCChart(samples) {
+            // Process data for GC chart
+            const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
+            const processNames = [...new Set(samples.map(s => s.Name))];
+            
+            const traces = [];
+            const colors = ['#e74c3c', '#f39c12', '#9b59b6', '#2ecc71', '#3498db', '#e67e22'];
+            
+            // Create traces for each process
+            processNames.forEach((processName, index) => {
+                const color = colors[index % colors.length];
+                // Get the PID for this process
+                const processSamples = samples.filter(s => s.Name === processName);
+                const pid = processSamples.length > 0 ? processSamples[0].PID : 'unknown';
+                
+                // GC time data - use null for timestamps where process doesn't exist yet
+                const gcData = timestamps.map(timestamp => {
+                    const sample = samples
+                        .filter(s => s.Name === processName && s.Timestamp === timestamp)
+                        [0];
+                    return sample && sample.GCTime !== undefined && sample.GCTime !== null && sample.GCTime > 0 ? sample.GCTime : null;
+                });
+                
+                traces.push({
+                    x: timestamps.map(t => new Date(t)),
+                    y: gcData,
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    name: `${processName} PID:${pid}`,
+                    line: { color: color, width: 3 },
+                    marker: { size: 6, color: color },
+                    connectgaps: false
+                });
+            });
+
+            // Detect if mobile
+            const isMobile = window.innerWidth < 768;
+            
+            const layout = {
+                title: isMobile ? '' : 'Garbage Collection Time Over Time',
+                xaxis: { 
+                    title: 'Time',
+                    tickformat: isMobile ? '%H:%M' : '%H:%M:%S',
+                    tickangle: isMobile ? -45 : 0
+                },
+                yaxis: { title: 'GC Time (ms)' },
+                showlegend: true,
+                legend: { 
+                    x: isMobile ? 0.5 : 1.02, 
+                    y: isMobile ? -0.2 : 1,
+                    xanchor: isMobile ? 'center' : 'left',
+                    orientation: isMobile ? 'h' : 'v'
+                },
+                margin: { 
+                    l: isMobile ? 50 : 60, 
+                    r: isMobile ? 20 : 100, 
+                    t: isMobile ? 20 : 40, 
+                    b: isMobile ? 80 : 60 
+                },
+                font: {
+                    size: isMobile ? 10 : 12
+                }
+            };
+
+            const config = {
+                responsive: true,
+                displayModeBar: true,
+                displaylogo: false,
+                modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d', 'autoScale2d'],
+                toImageButtonOptions: {
+                    format: 'png',
+                    filename: `build-monitor-gc-${runId}`,
+                    height: isMobile ? 400 : 500,
+                    width: isMobile ? 800 : 1000,
+                    scale: 2
+                }
+            };
+
+            Plotly.newPlot('gc-chart', traces, layout, config);
+            
+            // Handle window resize
+            window.addEventListener('resize', function() {
+                Plotly.Plots.resize('gc-chart');
+            });
         }
 
         function renderChart(samples) {
@@ -548,6 +681,30 @@
             }
         }
 
+        async function downloadGCChart(format) {
+            try {
+                const chart = document.getElementById('gc-chart');
+                const isMobile = window.innerWidth < 768;
+                const filename = `build-monitor-gc-${runId}`;
+                const opts = {
+                    format: format,
+                    filename: filename,
+                    height: isMobile ? 400 : 500,
+                    width: isMobile ? 800 : 1000,
+                    scale: 2
+                };
+                const url = await Plotly.toImage(chart, opts);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${filename}.${format}`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            } catch (e) {
+                console.error('Failed to export GC chart:', e);
+            }
+        }
+
         function downloadJson(runId) {
             try {
                 const data = window.currentRunData || {};
@@ -569,16 +726,25 @@
             try {
                 const samples = window.currentSamples || [];
                 if (!samples.length) return;
-                const header = ['timestamp','elapsed_time','pid','name','rss_mb','heap_used_mb','heap_capacity_mb'];
-                const rows = samples.map(s => [
-                    s.Timestamp,
-                    s.ElapsedTime,
-                    s.PID,
-                    s.Name,
-                    s.RSS,
-                    s.HeapUsed,
-                    s.HeapCap
-                ]);
+                const hasGC = hasGCData(samples);
+                const header = hasGC ? 
+                    ['timestamp','elapsed_time','pid','name','rss_mb','heap_used_mb','heap_capacity_mb','gc_time_ms'] :
+                    ['timestamp','elapsed_time','pid','name','rss_mb','heap_used_mb','heap_capacity_mb'];
+                const rows = samples.map(s => {
+                    const baseRow = [
+                        s.Timestamp,
+                        s.ElapsedTime,
+                        s.PID,
+                        s.Name,
+                        s.RSS,
+                        s.HeapUsed,
+                        s.HeapCap
+                    ];
+                    if (hasGC) {
+                        baseRow.push(s.GCTime || 0);
+                    }
+                    return baseRow;
+                });
                 const csv = [header.join(','), ...rows.map(r => r.map(escapeCsv).join(','))].join('\n');
                 const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
                 const url = URL.createObjectURL(blob);

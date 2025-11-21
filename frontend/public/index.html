@@ -434,7 +434,7 @@
             <h3>Live Example Dashboard:</h3>
             <p>View a real Gradle build monitoring dashboard with live data:</p>
             <p style="margin: 1rem 0;">
-                <a href="https://process-watcher.web.app/runs/demo.html" class="btn" style="display: inline-block;">🔗 Open Live Example Dashboard</a>
+                <a href="#" id="demo-link" class="btn" style="display: inline-block;">🔗 Open Live Example Dashboard</a>
             </p>
             <p style="font-size: 0.9rem; opacity: 0.8; margin-top: 0.5rem;">Real data from run 18236843825 - 311 samples from GradleDaemon & KotlinCompileDaemon</p>
             <p style="font-size: 0.9rem; opacity: 0.8; margin-top: 0.5rem; color: #f59e0b;"><strong>Note:</strong> This example demonstrates the Remote Mode dashboard with 3-hour data retention</p>
@@ -480,7 +480,7 @@
 
 
         <div class="cta">
-            <a href="https://process-watcher.web.app/runs/demo.html" class="btn">View Example Dashboard with remote monitoring</a>
+            <a href="#" id="demo-link-2" class="btn">View Example Dashboard with remote monitoring</a>
             <a href="https://github.com/cdsap/build-process-watcher" class="btn btn-secondary">View on GitHub</a>
         </div>
 
@@ -492,20 +492,30 @@
 
     <script src="/config.js"></script>
     <script>
+        // Set demo links dynamically based on config
+        document.addEventListener('DOMContentLoaded', function() {
+            const frontendUrl = window.BUILD_PROCESS_WATCHER_CONFIG?.frontendUrl || 'https://process-watcher.web.app';
+            const demoLinks = document.querySelectorAll('#demo-link, #demo-link-2');
+            demoLinks.forEach(link => {
+                link.href = `${frontendUrl}/runs/demo.html`;
+            });
+        });
+
         // Simple client-side routing for dynamic run pages
         if (window.location.pathname.startsWith('/runs/')) {
             const runId = window.location.pathname.split('/runs/')[1];
             if (runId && runId !== 'demo') {
-                // Redirect to the actual dashboard - use the backend URL to construct the frontend URL
+                // Redirect to the actual dashboard - use config URLs
                 const backendUrl = window.BUILD_PROCESS_WATCHER_CONFIG?.backendUrl || 'https://build-process-watcher-backend-685615422311.us-central1.run.app';
-                const frontendUrl = `https://process-watcher.web.app/runs/${runId}`;
+                const frontendUrl = window.BUILD_PROCESS_WATCHER_CONFIG?.frontendUrl || 'https://process-watcher.web.app';
+                const redirectUrl = `${frontendUrl}/runs/${runId}`;
                 
                 // Check if the run exists by trying to fetch data
                 fetch(`${backendUrl}/runs/${runId}`)
                     .then(response => {
                         if (response.ok) {
                             // Run exists, redirect to the dashboard
-                            window.location.href = frontendUrl;
+                            window.location.href = redirectUrl;
                         } else {
                             // Run doesn't exist, show 404 message
                             document.body.innerHTML = `

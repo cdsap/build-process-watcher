@@ -377,7 +377,27 @@ async function run() {
         if (!fs.existsSync(logFile)) {
             if (backendMode) {
                 // Always show the dashboard URL for remote monitoring
-                const frontendUrl = `https://process-watcher.web.app/runs/${runId}`;
+                // Check if frontend URL is explicitly set, otherwise derive from backend URL or environment
+                let frontendUrl = '';
+                const explicitFrontendUrl = process.env.FRONTEND_URL || '';
+                
+                if (explicitFrontendUrl) {
+                    // Use explicit frontend URL
+                    frontendUrl = `${explicitFrontendUrl}/runs/${runId}`;
+                } else {
+                    // Derive frontend URL from backend URL pattern or environment
+                    const backendUrl = process.env.BACKEND_URL || '';
+                    const environment = process.env.ENVIRONMENT || 'production';
+                    let baseFrontendUrl = 'https://process-watcher.web.app';
+                    
+                    // Check environment first, then backend URL pattern as fallback
+                    if (environment === 'staging' || backendUrl.includes('-staging')) {
+                        baseFrontendUrl = 'https://build-process-watcher-staging.web.app';
+                    }
+                    
+                    frontendUrl = `${baseFrontendUrl}/runs/${runId}`;
+                }
+                
                 console.log(`🌐 Dashboard URL: ${frontendUrl}`);
                 
                 if (debugMode) {

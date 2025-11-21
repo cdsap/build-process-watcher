@@ -69,17 +69,18 @@ jobs:
         export GOOGLE_APPLICATION_CREDENTIALS=service-account.json
         firebase use $FIREBASE_PROJECT_ID --non-interactive
         
-        # Get the first site ID from the list
-        # The default site ID is usually the same as the project ID
-        SITE_ID=$(firebase hosting:sites:list --project=$FIREBASE_PROJECT_ID 2>/dev/null | grep -E '^\|' | tail -n +3 | head -1 | awk -F'│' '{print $2}' | xargs || echo "$FIREBASE_PROJECT_ID")
+        # Get the site ID from the hosting sites list
+        # Parse the table output: get the site ID from the first data row
+        SITE_OUTPUT=$(firebase hosting:sites:list --project=$FIREBASE_PROJECT_ID 2>/dev/null)
+        SITE_ID=$(echo "$SITE_OUTPUT" | grep -E '^\|' | tail -n +3 | head -1 | sed 's/|//g' | awk '{print $1}' | xargs)
         
-        # If empty, use project ID as fallback (default site)
-        if [ -z "$SITE_ID" ]; then
+        # Fallback to project ID if parsing fails
+        if [ -z "$SITE_ID" ] || [ "$SITE_ID" == "" ]; then
           SITE_ID="$FIREBASE_PROJECT_ID"
         fi
         
         echo "site-id=$SITE_ID" >> $GITHUB_OUTPUT
-        echo "🌐 Detected site ID: $SITE_ID"
+        echo "🌐 Using site ID: $SITE_ID"
 
     - name: Setup Firebase config for staging
       working-directory: ./frontend

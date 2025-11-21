@@ -11,6 +11,7 @@ type Sample struct {
 	HeapUsed    int    `firestore:"heap_used"`
 	HeapCap     int    `firestore:"heap_cap"`
 	RSS         int    `firestore:"rss"`
+	GCTime      int    `firestore:"gc_time,omitempty"` // GC time in milliseconds, optional
 	RunID       string `firestore:"run_id"`
 }
 

@@ -29,14 +29,22 @@ DEBUG_MODE="${DEBUG_MODE:-false}"
 # Check if remote monitoring is enabled
 REMOTE_MONITORING="${REMOTE_MONITORING:-false}"
 
+# Check if GC collection is enabled
+COLLECT_GC="${COLLECT_GC:-false}"
+
 # Log current working directory (debug only)
 if [ "$DEBUG_MODE" = "true" ]; then
     echo "📂 Current working directory: $(pwd)" >&2
     echo "🔧 Remote monitoring: $REMOTE_MONITORING" >&2
+    echo "🗑️  GC collection: $COLLECT_GC" >&2
 fi
 
 # Initialize log file with header
-echo "Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB" > "$LOG_FILE"
+if [ "$COLLECT_GC" = "true" ]; then
+    echo "Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB | GC_Time_MS" > "$LOG_FILE"
+else
+    echo "Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB" > "$LOG_FILE"
+fi
 if [ "$DEBUG_MODE" = "true" ]; then
     echo "✅ Log file created: $LOG_FILE" >&2
     echo "📁 Full log file path: $(pwd)/$LOG_FILE" >&2
@@ -105,9 +113,14 @@ send_to_backend() {
     local heap_used="$4"
     local heap_cap="$5"
     local rss="$6"
+    local gc_time="${7:-}"
     
     # Prepare data in the format expected by our backend
-    local data_line="$timestamp | $pid | $name | $heap_used | $heap_cap | $rss"
+    if [ -n "$gc_time" ]; then
+        local data_line="$timestamp | $pid | $name | $heap_used | $heap_cap | $rss | $gc_time"
+    else
+        local data_line="$timestamp | $pid | $name | $heap_used | $heap_cap | $rss"
+    fi
     
     # Prepare JSON payload in the format our backend expects
     local json_payload=$(cat <<EOF
@@ -286,7 +299,11 @@ if [ "$BACKEND_AVAILABLE" = "false" ]; then
                         RSS=$(ps -p "$PID" -o rss= 2>/dev/null | awk '{print int($1/1024)}' || echo "0")
                         
                         # Store data for this timestamp
-                        process_data+=("$ELAPSED_TIME | $PID | $NAME | $HEAP_USED | $HEAP_CAP | $RSS")
+                        if [ "$COLLECT_GC" = "true" ]; then
+                          process_data+=("$ELAPSED_TIME | $PID | $NAME | $HEAP_USED | $HEAP_CAP | $RSS | N/A")
+                        else
+                          process_data+=("$ELAPSED_TIME | $PID | $NAME | $HEAP_USED | $HEAP_CAP | $RSS")
+                        fi
                     fi
                     break
                 fi
@@ -344,9 +361,15 @@ while true; do
           RSS_MB=$(awk "BEGIN { printf \"%.1f\", $RSS_KB / 1024 }")
 
           if [[ -z "$GC_LINE" ]]; then
-            echo "$TIMESTAMP | $PID | $NAME | N/A | N/A | ${RSS_MB}MB" >> "$LOG_FILE"
-            # Store process data for batch sending
-            process_data+=("$TIMESTAMP|$PID|$NAME|0|0|${RSS_MB}MB")
+            if [ "$COLLECT_GC" = "true" ]; then
+              echo "$TIMESTAMP | $PID | $NAME | N/A | N/A | ${RSS_MB}MB | N/A" >> "$LOG_FILE"
+              # Store process data for batch sending
+              process_data+=("$TIMESTAMP|$PID|$NAME|0|0|${RSS_MB}MB|N/A")
+            else
+              echo "$TIMESTAMP | $PID | $NAME | N/A | N/A | ${RSS_MB}MB" >> "$LOG_FILE"
+              # Store process data for batch sending
+              process_data+=("$TIMESTAMP|$PID|$NAME|0|0|${RSS_MB}MB")
+            fi
           else
             EC=$(echo "$GC_LINE" | awk '{print $5}')
             EU=$(echo "$GC_LINE" | awk '{print $6}')
@@ -356,9 +379,17 @@ while true; do
             HEAP_USED_MB=$(awk "BEGIN { printf \"%.1f\", ($EU + $OU) / 1024 }")
             HEAP_CAP_MB=$(awk "BEGIN { printf \"%.1f\", ($EC + $OC) / 1024 }")
 
-            echo "$TIMESTAMP | $PID | $NAME | ${HEAP_USED_MB}MB | ${HEAP_CAP_MB}MB | ${RSS_MB}MB" >> "$LOG_FILE"
-            # Store process data for batch sending
-            process_data+=("$TIMESTAMP|$PID|$NAME|${HEAP_USED_MB}MB|${HEAP_CAP_MB}MB|${RSS_MB}MB")
+            if [ "$COLLECT_GC" = "true" ]; then
+              # Extract GC time from jstat output (column 10 is usually GC time in milliseconds)
+              GC_TIME_MS=$(echo "$GC_LINE" | awk '{print $10}' 2>/dev/null || echo "N/A")
+              echo "$TIMESTAMP | $PID | $NAME | ${HEAP_USED_MB}MB | ${HEAP_CAP_MB}MB | ${RSS_MB}MB | ${GC_TIME_MS}ms" >> "$LOG_FILE"
+              # Store process data for batch sending
+              process_data+=("$TIMESTAMP|$PID|$NAME|${HEAP_USED_MB}MB|${HEAP_CAP_MB}MB|${RSS_MB}MB|${GC_TIME_MS}ms")
+            else
+              echo "$TIMESTAMP | $PID | $NAME | ${HEAP_USED_MB}MB | ${HEAP_CAP_MB}MB | ${RSS_MB}MB" >> "$LOG_FILE"
+              # Store process data for batch sending
+              process_data+=("$TIMESTAMP|$PID|$NAME|${HEAP_USED_MB}MB|${HEAP_CAP_MB}MB|${RSS_MB}MB")
+            fi
           fi
         } || { echo "[monitor.sh] Skipped process $PID ($NAME) at $TIMESTAMP due to error" >&2; continue; }
       fi
@@ -371,8 +402,13 @@ while true; do
         echo "📤 [${TIMESTAMP}] Sending ${#process_data[@]} processes to backend..." >&2
     fi
     for data_line in "${process_data[@]}"; do
-      IFS='|' read -r ts pid name heap_used heap_cap rss <<< "$data_line"
-      send_to_backend "$ts" "$pid" "$name" "${heap_used}MB" "${heap_cap}MB" "${rss}MB"
+      if [ "$COLLECT_GC" = "true" ]; then
+        IFS='|' read -r ts pid name heap_used heap_cap rss gc_time <<< "$data_line"
+        send_to_backend "$ts" "$pid" "$name" "${heap_used}MB" "${heap_cap}MB" "${rss}MB" "$gc_time"
+      else
+        IFS='|' read -r ts pid name heap_used heap_cap rss <<< "$data_line"
+        send_to_backend "$ts" "$pid" "$name" "${heap_used}MB" "${heap_cap}MB" "${rss}MB"
+      fi
     done
   fi
 

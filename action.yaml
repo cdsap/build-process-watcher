@@ -25,6 +25,13 @@ inputs:
     description: 'Enable debug mode for detailed logging'
     required: false
     default: 'false'
+  collect_gc:
+    description: 'Enable garbage collection monitoring (requires Java processes)'
+    required: false
+    default: 'false'
+  frontend_url:
+    description: 'Frontend URL for dashboard (optional - will be auto-detected from backend_url if not provided)'
+    required: false
 
 outputs:
   run_id:
