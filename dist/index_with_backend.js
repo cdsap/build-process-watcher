@@ -25721,15 +25721,25 @@ async function run() {
         // Build frontend URL if backend is enabled (do this before exporting)
         let frontendUrl = '';
         if (enableBackend && backendUrl) {
-            // Check if frontend URL is explicitly provided
-            const explicitFrontendUrl = core.getInput('frontend_url');
+            // Determine if we're in staging mode
+            const isStaging = environment === 'staging' || backendUrl.includes('-staging');
+            // Check for frontend URL from environment variables first, then input
+            // This allows workflows to set FRONTEND_URL_STAGING or FRONTEND_URL as env vars
+            const envFrontendUrl = isStaging
+                ? process.env.FRONTEND_URL_STAGING || process.env.FRONTEND_URL
+                : process.env.FRONTEND_URL;
+            // Check explicit frontend URL: env vars first, then input parameter
+            const explicitFrontendUrl = envFrontendUrl || core.getInput('frontend_url');
             if (explicitFrontendUrl) {
-                // Use explicitly provided frontend URL (with or without /runs/)
+                // Use explicitly provided frontend URL (from env var or input)
                 if (explicitFrontendUrl.endsWith('/runs') || explicitFrontendUrl.endsWith('/runs/')) {
                     frontendUrl = `${explicitFrontendUrl}/${runId}`;
                 }
                 else {
                     frontendUrl = `${explicitFrontendUrl}/runs/${runId}`;
+                }
+                if (debugMode && envFrontendUrl) {
+                    core.info(`🌐 Using frontend URL from environment variable: ${envFrontendUrl}`);
                 }
             }
             else {
@@ -25737,10 +25747,14 @@ async function run() {
                 // Production: build-process-watcher-backend -> process-watcher.web.app
                 // Staging: build-process-watcher-backend-staging -> build-process-watcher-staging.web.app
                 let baseFrontendUrl = 'https://process-watcher.web.app';
-                // Check environment first, then backend URL pattern as fallback
-                if (environment === 'staging' || backendUrl.includes('-staging')) {
-                    // Staging backend - use staging frontend URL
+                if (isStaging) {
+                    // Staging backend - use default staging frontend URL
+                    // User should provide frontend_url or FRONTEND_URL_STAGING for custom URLs
                     baseFrontendUrl = 'https://build-process-watcher-staging.web.app';
+                    if (debugMode) {
+                        core.info(`🔧 Staging mode detected - using default staging frontend URL`);
+                        core.info(`💡 Tip: Set FRONTEND_URL_STAGING env var or provide frontend_url input for custom staging URL`);
+                    }
                 }
                 frontendUrl = `${baseFrontendUrl}/runs/${runId}`;
             }
