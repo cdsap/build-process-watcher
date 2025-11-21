@@ -437,36 +437,59 @@ async function run() {
         fs.writeFileSync('memory_usage.svg', svgContent);
 
         // Upload artifacts (only if files exist)
-        const artifactClient = new DefaultArtifactClient();
-        // Create unique artifact name using job ID and run attempt to avoid conflicts
-        const jobId = process.env.GITHUB_JOB || 'default';
-        const runAttempt = process.env.GITHUB_RUN_ATTEMPT || '1';
-        const timestamp = Date.now();
-        const artifactName = `build_process_watcher-${jobId}-${runAttempt}-${timestamp}`;
-        const files = [];
+        // Only upload artifacts if we're in a GitHub Actions context and have runtime token
+        // When called from script trap, we might not have the token, so skip upload
+        const isGitHubActions = process.env.GITHUB_ACTIONS === 'true';
+        const hasRuntimeToken = process.env.ACTIONS_RUNTIME_TOKEN !== undefined || 
+                               process.env.GITHUB_TOKEN !== undefined;
         
-        // Only include files that exist
-        if (fs.existsSync('build_process_watcher.log')) {
-            files.push('build_process_watcher.log');
-        }
-        if (fs.existsSync('memory_usage.svg')) {
-            files.push('memory_usage.svg');
-        }
-        if (fs.existsSync('backend_debug.log')) {
-            files.push('backend_debug.log');
-        }
-        
-        if (files.length > 0) {
-            if (debugMode) {
-                console.log('Uploading artifacts...');
-            }
-            await artifactClient.uploadArtifact(artifactName, files, '.');
-            if (debugMode) {
-                console.log('Successfully uploaded artifacts');
+        if (isGitHubActions && hasRuntimeToken) {
+            try {
+                const artifactClient = new DefaultArtifactClient();
+                // Create unique artifact name using job ID and run attempt to avoid conflicts
+                const jobId = process.env.GITHUB_JOB || 'default';
+                const runAttempt = process.env.GITHUB_RUN_ATTEMPT || '1';
+                const timestamp = Date.now();
+                const artifactName = `build_process_watcher-${jobId}-${runAttempt}-${timestamp}`;
+                const files = [];
+                
+                // Only include files that exist
+                if (fs.existsSync('build_process_watcher.log')) {
+                    files.push('build_process_watcher.log');
+                }
+                if (fs.existsSync('memory_usage.svg')) {
+                    files.push('memory_usage.svg');
+                }
+                if (fs.existsSync('backend_debug.log')) {
+                    files.push('backend_debug.log');
+                }
+                
+                if (files.length > 0) {
+                    if (debugMode) {
+                        console.log('Uploading artifacts...');
+                    }
+                    await artifactClient.uploadArtifact(artifactName, files, '.');
+                    if (debugMode) {
+                        console.log('Successfully uploaded artifacts');
+                    }
+                } else {
+                    if (debugMode) {
+                        console.log('No artifacts to upload');
+                    }
+                }
+            } catch (error) {
+                // Silently skip artifact upload if it fails (e.g., missing runtime token)
+                if (debugMode) {
+                    console.log(`⚠️  Skipping artifact upload: ${error instanceof Error ? error.message : 'unknown error'}`);
+                }
             }
         } else {
             if (debugMode) {
-                console.log('No artifacts to upload');
+                if (!isGitHubActions) {
+                    console.log('⚠️  Not in GitHub Actions context, skipping artifact upload');
+                } else if (!hasRuntimeToken) {
+                    console.log('⚠️  No runtime token available, skipping artifact upload');
+                }
             }
         }
 

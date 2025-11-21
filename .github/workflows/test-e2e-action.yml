@@ -198,7 +198,7 @@ jobs:
         fi
 
     - name: Test script with minimal execution
-      timeout-minutes: 2
+      timeout-minutes: 1
       run: |
         echo "🧪 Testing script execution..."
         # Set required environment variables
@@ -207,16 +207,18 @@ jobs:
         export LOG_FILE="test.log"
         export DEBUG_MODE="false"
         export REMOTE_MONITORING="false"
+        export GITHUB_ACTIONS="false"  # Prevent cleanup from trying to upload artifacts
         
         # Start script in background with timeout
-        timeout 5 ./monitor_with_backend.sh 2 &
+        timeout 3 bash -c './monitor_with_backend.sh 2' &
         SCRIPT_PID=$!
         echo "Started script with PID: $SCRIPT_PID"
         
-        # Wait for script to finish or timeout
-        wait $SCRIPT_PID 2>/dev/null || true
+        # Wait a short time then kill it
+        sleep 4
         
-        # Ensure it's killed if still running
+        # Kill the script and all its children
+        pkill -P $SCRIPT_PID 2>/dev/null || true
         kill $SCRIPT_PID 2>/dev/null || true
         sleep 1
         kill -9 $SCRIPT_PID 2>/dev/null || true
