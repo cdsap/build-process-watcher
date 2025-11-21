@@ -7,9 +7,7 @@ on:
         description: 'Branch to deploy from'
         required: true
         default: 'main'
-        type: choice
-        options:
-        - main
+        type: string
 
 jobs:
   deploy-backend-staging:
@@ -55,6 +53,30 @@ jobs:
         JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY_STAGING }}
         ADMIN_SECRET: ${{ secrets.ADMIN_SECRET_STAGING }}
       run: make deploy
+
+    - name: Verify Cloud Run Environment Variables
+      run: |
+        echo "🔍 Verifying Cloud Run service configuration..."
+        SERVICE_NAME="build-process-watcher-backend-staging"
+        REGION="us-central1"
+        PROJECT_ID="${{ secrets.GOOGLE_CLOUD_PROJECT_STAGING }}"
+        
+        echo "📋 Checking environment variables..."
+        gcloud run services describe $SERVICE_NAME \
+          --region=$REGION \
+          --project=$PROJECT_ID \
+          --format="value(spec.template.spec.containers[0].env)" | grep GOOGLE_CLOUD_PROJECT || echo "⚠️  GOOGLE_CLOUD_PROJECT not found in service"
+        
+        echo ""
+        echo "📊 Current environment variables:"
+        gcloud run services describe $SERVICE_NAME \
+          --region=$REGION \
+          --project=$PROJECT_ID \
+          --format="table(spec.template.spec.containers[0].env.name,spec.template.spec.containers[0].env.value)"
+        
+        echo ""
+        echo "✅ Expected GOOGLE_CLOUD_PROJECT: $PROJECT_ID"
+        echo "💡 If the value is different, the backend will connect to the wrong Firestore project"
 
     - name: Get service URL
       id: get-url

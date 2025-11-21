@@ -7,9 +7,7 @@ on:
         description: 'Branch to deploy from'
         required: true
         default: 'main'
-        type: choice
-        options:
-        - main
+        type: string
 
 jobs:
   deploy-frontend-staging:
