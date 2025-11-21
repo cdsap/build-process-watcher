@@ -25694,6 +25694,7 @@ async function run() {
         const runId = core.getInput('run_id') || `run-${Date.now()}`;
         const logFile = core.getInput('log_file') || 'build_process_watcher.log';
         const debugMode = core.getInput('debug') === 'true';
+        const collectGc = core.getInput('collect_gc') === 'true';
         const environment = core.getInput('environment') || 'production'; // Default to production
         // If backend is enabled but no URL provided, use the default Cloud Run URL based on environment
         if (enableBackend && !backendUrl) {
@@ -25844,7 +25845,8 @@ async function run() {
             RUN_ID: runId,
             LOG_FILE: logFile,
             DEBUG_MODE: debugMode.toString(),
-            REMOTE_MONITORING: (enableBackend && backendUrl) ? 'true' : 'false'
+            REMOTE_MONITORING: (enableBackend && backendUrl) ? 'true' : 'false',
+            COLLECT_GC: collectGc.toString()
         };
         const child = (0, child_process_1.spawn)(scriptPath, args, {
             cwd: path.join(actionDir, '..'), // Run in the repository root, not dist/
