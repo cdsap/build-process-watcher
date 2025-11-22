@@ -113,8 +113,8 @@ jobs:
         
         # Test 2: Verify script uses COLLECT_GC to set log header
         echo "Test 2: Verifying log header includes GC column when COLLECT_GC=true"
-        if grep -A 5 'if \[ "\$COLLECT_GC" = "true" \]' monitor_with_backend.sh | grep -q "GC_Time_MS"; then
-          echo "✅ PASS: Script includes GC_Time_MS in header when COLLECT_GC=true"
+        if grep -A 5 'if \[ "\$COLLECT_GC" = "true" \]' monitor_with_backend.sh | grep -q "GC_Time_S"; then
+          echo "✅ PASS: Script includes GC_Time_S in header when COLLECT_GC=true"
         else
           echo "⚠️  WARNING: Could not verify GC header logic in script"
         fi

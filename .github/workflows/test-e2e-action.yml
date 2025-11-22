@@ -246,8 +246,8 @@ jobs:
         
         # Verify log header would include GC when COLLECT_GC=true (without running script)
         # This is a deterministic test that doesn't require running the script
-        if grep -A 2 'if \[ "\$COLLECT_GC" = "true" \]' monitor_with_backend.sh | grep -q "GC_Time_MS"; then
-          echo "✅ Script includes GC_Time_MS in header when COLLECT_GC=true"
+        if grep -A 2 'if \[ "\$COLLECT_GC" = "true" \]' monitor_with_backend.sh | grep -q "GC_Time_S"; then
+          echo "✅ Script includes GC_Time_S in header when COLLECT_GC=true"
         else
           echo "❌ ERROR: Script does not include GC logic!"
           exit 1
@@ -305,13 +305,13 @@ jobs:
         # Initialize the script to create log file header
         # Simulate what the script does at startup
         if [ "$COLLECT_GC" = "true" ]; then
-          echo "Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB | GC_Time_MS" > "$LOG_FILE"
+          echo "Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB | GC_Time_S" > "$LOG_FILE"
         else
           echo "Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB" > "$LOG_FILE"
         fi
         
         # Verify the log file has GC header
-        if grep -q "GC_Time_MS" "$LOG_FILE"; then
+        if grep -q "GC_Time_S" "$LOG_FILE"; then
           echo "✅ PASS: Log file contains GC column header when COLLECT_GC=true"
         else
           echo "❌ FAIL: Log file does not contain GC header when COLLECT_GC=true"
@@ -331,13 +331,13 @@ jobs:
         
         # Initialize the script to create log file header
         if [ "$COLLECT_GC" = "true" ]; then
-          echo "Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB | GC_Time_MS" > "$LOG_FILE"
+          echo "Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB | GC_Time_S" > "$LOG_FILE"
         else
           echo "Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB" > "$LOG_FILE"
         fi
         
         # Verify the log file does NOT have GC header
-        if grep -q "GC_Time_MS" "$LOG_FILE"; then
+        if grep -q "GC_Time_S" "$LOG_FILE"; then
           echo "❌ FAIL: Log file contains GC header when COLLECT_GC=false"
           exit 1
         else
@@ -352,10 +352,10 @@ jobs:
         echo "🧪 Verifying script logic for COLLECT_GC..."
         
         # Check that script has the conditional logic
-        if grep -A 2 'if \[ "\$COLLECT_GC" = "true" \]' monitor_with_backend.sh | grep -q "GC_Time_MS"; then
-          echo "✅ PASS: Script includes GC_Time_MS in header when COLLECT_GC=true"
+        if grep -A 2 'if \[ "\$COLLECT_GC" = "true" \]' monitor_with_backend.sh | grep -q "GC_Time_S"; then
+          echo "✅ PASS: Script includes GC_Time_S in header when COLLECT_GC=true"
         else
-          echo "❌ FAIL: Script does not include GC_Time_MS logic"
+          echo "❌ FAIL: Script does not include GC_Time_S logic"
           exit 1
         fi
         
