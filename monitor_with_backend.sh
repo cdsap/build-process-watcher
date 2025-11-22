@@ -41,7 +41,7 @@ fi
 
 # Initialize log file with header
 if [ "$COLLECT_GC" = "true" ]; then
-    echo "Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB | GC_Time_MS" > "$LOG_FILE"
+    echo "Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB | GC_Time_S" > "$LOG_FILE"
 else
     echo "Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB" > "$LOG_FILE"
 fi
@@ -380,11 +380,22 @@ while true; do
             HEAP_CAP_MB=$(awk "BEGIN { printf \"%.1f\", ($EC + $OC) / 1024 }")
 
             if [ "$COLLECT_GC" = "true" ]; then
-              # Extract GC time from jstat output (column 10 is usually GC time in milliseconds)
-              GC_TIME_MS=$(echo "$GC_LINE" | awk '{print $10}' 2>/dev/null || echo "N/A")
-              echo "$TIMESTAMP | $PID | $NAME | ${HEAP_USED_MB}MB | ${HEAP_CAP_MB}MB | ${RSS_MB}MB | ${GC_TIME_MS}ms" >> "$LOG_FILE"
+              # Extract GC time from jstat output
+              # YGCT (column 14) = Young generation GC time in seconds
+              # FGCT (column 16) = Full GC time in seconds
+              # Total GC time = YGCT + FGCT (keep in seconds)
+              # This works consistently across all GC collectors (Parallel, G1, Serial, CMS, etc.)
+              YGCT=$(echo "$GC_LINE" | awk '{print $14}' 2>/dev/null || echo "0")
+              FGCT=$(echo "$GC_LINE" | awk '{print $16}' 2>/dev/null || echo "0")
+              # Calculate total GC time (keep in seconds, as reported by jstat)
+              if [ "$YGCT" != "N/A" ] && [ "$FGCT" != "N/A" ] && [ -n "$YGCT" ] && [ -n "$FGCT" ]; then
+                GC_TIME_S=$(awk "BEGIN { printf \"%.3f\", $YGCT + $FGCT }" 2>/dev/null || echo "N/A")
+              else
+                GC_TIME_S="N/A"
+              fi
+              echo "$TIMESTAMP | $PID | $NAME | ${HEAP_USED_MB}MB | ${HEAP_CAP_MB}MB | ${RSS_MB}MB | ${GC_TIME_S}s" >> "$LOG_FILE"
               # Store process data for batch sending
-              process_data+=("$TIMESTAMP|$PID|$NAME|${HEAP_USED_MB}MB|${HEAP_CAP_MB}MB|${RSS_MB}MB|${GC_TIME_MS}ms")
+              process_data+=("$TIMESTAMP|$PID|$NAME|${HEAP_USED_MB}MB|${HEAP_CAP_MB}MB|${RSS_MB}MB|${GC_TIME_S}s")
             else
               echo "$TIMESTAMP | $PID | $NAME | ${HEAP_USED_MB}MB | ${HEAP_CAP_MB}MB | ${RSS_MB}MB" >> "$LOG_FILE"
               # Store process data for batch sending

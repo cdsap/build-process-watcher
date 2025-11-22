@@ -289,16 +289,33 @@ func ParseData(data string, startTime time.Time) ([]models.Sample, error) {
 		rss := int(rssFloat)
 
 		// Parse GC time if present (7th part)
+		// Format can be either "0.234s" (seconds) or legacy "234ms" (milliseconds)
 		var gcTime int
 		if len(parts) == 7 {
-			gcTimeStr := strings.TrimSuffix(strings.TrimSuffix(parts[6], "ms"), "ms")
+			gcTimeStr := parts[6]
+			isSeconds := strings.HasSuffix(gcTimeStr, "s")
+			isMilliseconds := strings.HasSuffix(gcTimeStr, "ms")
+			
+			// Remove suffix (either "s" or "ms")
+			if isSeconds {
+				gcTimeStr = strings.TrimSuffix(gcTimeStr, "s")
+			} else if isMilliseconds {
+				gcTimeStr = strings.TrimSuffix(gcTimeStr, "ms")
+			}
+			
 			if gcTimeStr != "N/A" && gcTimeStr != "" {
 				gcTimeFloat, err := strconv.ParseFloat(gcTimeStr, 64)
 				if err != nil {
 					log.Printf("Warning: GC time parsing failed: %v, using 0", err)
 					gcTime = 0
 				} else {
-					gcTime = int(gcTimeFloat)
+					// If original format had "s" suffix, convert seconds to milliseconds
+					// If original format had "ms" suffix, it's already in milliseconds
+					if isSeconds {
+						gcTime = int(gcTimeFloat * 1000) // Convert seconds to milliseconds
+					} else {
+						gcTime = int(gcTimeFloat) // Already in milliseconds
+					}
 				}
 			}
 		}
