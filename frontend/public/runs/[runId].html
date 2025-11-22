@@ -461,11 +461,12 @@
                 const pid = processSamples.length > 0 ? processSamples[0].PID : 'unknown';
                 
                 // GC time data - use null for timestamps where process doesn't exist yet
+                // Convert from milliseconds (stored in DB) to seconds (for display)
                 const gcData = timestamps.map(timestamp => {
                     const sample = samples
                         .filter(s => s.Name === processName && s.Timestamp === timestamp)
                         [0];
-                    return sample && sample.GCTime !== undefined && sample.GCTime !== null && sample.GCTime > 0 ? sample.GCTime : null;
+                    return sample && sample.GCTime !== undefined && sample.GCTime !== null && sample.GCTime > 0 ? sample.GCTime / 1000 : null;
                 });
                 
                 traces.push({
@@ -490,7 +491,7 @@
                     tickformat: isMobile ? '%H:%M' : '%H:%M:%S',
                     tickangle: isMobile ? -45 : 0
                 },
-                yaxis: { title: 'GC Time (ms)' },
+                yaxis: { title: 'GC Time (s)' },
                 showlegend: true,
                 legend: { 
                     x: isMobile ? 0.5 : 1.02, 
@@ -728,7 +729,7 @@
                 if (!samples.length) return;
                 const hasGC = hasGCData(samples);
                 const header = hasGC ? 
-                    ['timestamp','elapsed_time','pid','name','rss_mb','heap_used_mb','heap_capacity_mb','gc_time_ms'] :
+                    ['timestamp','elapsed_time','pid','name','rss_mb','heap_used_mb','heap_capacity_mb','gc_time_s'] :
                     ['timestamp','elapsed_time','pid','name','rss_mb','heap_used_mb','heap_capacity_mb'];
                 const rows = samples.map(s => {
                     const baseRow = [
@@ -741,7 +742,8 @@
                         s.HeapCap
                     ];
                     if (hasGC) {
-                        baseRow.push(s.GCTime || 0);
+                        // Convert from milliseconds (stored in DB) to seconds (for display)
+                        baseRow.push(s.GCTime ? (s.GCTime / 1000).toFixed(3) : 0);
                     }
                     return baseRow;
                 });
