@@ -376,7 +376,7 @@
                 <h3>Default Mode Setup</h3>
                 <p>Generate Mermaid diagrams and SVG charts locally, at the end of the build:</p>
                 <pre><code>- name: Build Process Monitoring
-  uses: cdsap/build-process-watcher@0.3.0
+  uses: cdsap/build-process-watcher@0.4.0
  
 - name: Build project
   run: ./gradlew clean build
@@ -390,7 +390,7 @@
                 <h3>Remote Mode Setup</h3>
                 <p>Enable live dashboard with real-time monitoring:</p>
                 <pre><code>- name: Build Process Monitoring
-  uses: cdsap/build-process-watcher@0.3.0
+  uses: cdsap/build-process-watcher@0.4.0
   with:
     remote_monitoring: 'true'
     
