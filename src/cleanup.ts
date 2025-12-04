@@ -14,36 +14,55 @@ interface ProcessData {
     rss: number[];
     heapUsed: number[];
     heapCap: number[];
+    gcTime?: number[]; // GC time in seconds, optional
 }
 
-function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, timestamps: string[] } {
+function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, timestamps: string[], hasGcData: boolean } {
     const processes = new Map<string, ProcessData>();
     const timestamps = new Set<string>();
+    let hasGcData = false;
 
     const lines = fs.readFileSync(logFile, 'utf8').split('\n');
     // Skip header lines
     lines.slice(2).forEach(line => {
-        const parts = line.trim().split('|');
-        if (parts.length !== 6) return;
+        const parts = line.trim().split('|').map(p => p.trim());
+        // Support both 6 columns (without GC) and 7 columns (with GC)
+        if (parts.length !== 6 && parts.length !== 7) return;
 
-        const [timestamp, pid, name, heapUsed, heapCap, rss] = parts.map(p => p.trim());
+        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime] = parts;
         const rssValue = parseFloat(rss.replace('MB', ''));
         const heapUsedValue = parseFloat(heapUsed.replace('MB', ''));
         const heapCapValue = parseFloat(heapCap.replace('MB', ''));
         const processKey = `${pid}-${name}`;
 
         if (!processes.has(processKey)) {
-            processes.set(processKey, { timestamps: [], rss: [], heapUsed: [], heapCap: [] });
+            processes.set(processKey, { timestamps: [], rss: [], heapUsed: [], heapCap: [], gcTime: [] });
         }
 
-        processes.get(processKey)!.timestamps.push(timestamp);
-        processes.get(processKey)!.rss.push(rssValue);
+        const processData = processes.get(processKey)!;
+        processData.timestamps.push(timestamp);
+        processData.rss.push(rssValue);
         timestamps.add(timestamp);
-        processes.get(processKey)!.heapUsed.push(heapUsedValue);
-        processes.get(processKey)!.heapCap.push(heapCapValue);
+        processData.heapUsed.push(heapUsedValue);
+        processData.heapCap.push(heapCapValue);
+        
+        // Parse GC time if available (7th column)
+        if (parts.length === 7 && gcTime) {
+            hasGcData = true;
+            // Remove 's' suffix if present and parse as float
+            const gcTimeValue = parseFloat(gcTime.replace('s', ''));
+            if (!isNaN(gcTimeValue)) {
+                processData.gcTime!.push(gcTimeValue);
+            } else {
+                processData.gcTime!.push(0);
+            }
+        } else if (processData.gcTime) {
+            // If GC data was expected but missing, push 0
+            processData.gcTime.push(0);
+        }
         });
 
-    return { processes, timestamps: Array.from(timestamps).sort() };
+    return { processes, timestamps: Array.from(timestamps).sort(), hasGcData };
 }
 
 function generateMermaidChart(processes: Map<string, ProcessData>, timestamps: string[]): string {
@@ -220,6 +239,123 @@ function generateSvg(processes: Map<string, ProcessData>, timestamps: string[]):
     // Add axis labels
     svg += `<text x="${width/2}" y="${height - 10}" text-anchor="middle" font-size="16" fill="#333">Time</text>\n`;
     svg += `<text x="${margin.left - 60}" y="${height/2}" text-anchor="middle" transform="rotate(-90 ${margin.left - 60},${height/2})" font-size="16" fill="#333">Memory Usage (MB)</text>\n`;
+
+    svg += '</svg>';
+    return svg;
+}
+
+function generateGcSvg(processes: Map<string, ProcessData>, timestamps: string[]): string {
+    const width = 1400;
+    const height = 800;
+    const margin = {
+        top: 60,
+        right: 300,
+        bottom: 100,
+        left: 100
+    };
+
+    // Calculate aggregated GC time
+    const aggregatedGcTime = timestamps.map(timestamp => {
+        return Array.from(processes.values())
+            .filter(p => p.timestamps.includes(timestamp) && p.gcTime)
+            .reduce((sum, p) => {
+                const idx = p.timestamps.indexOf(timestamp);
+                return sum + (p.gcTime?.[idx] || 0);
+            }, 0);
+    });
+
+    // Calculate max GC time for scaling
+    const maxIndividualGc = Math.max(...Array.from(processes.values())
+        .filter(p => p.gcTime)
+        .flatMap(p => p.gcTime || []));
+    const maxAggregatedGc = Math.max(...aggregatedGcTime);
+    const maxGc = Math.max(maxIndividualGc, maxAggregatedGc);
+    
+    // Round up maxGc to nearest 0.5 for better y-axis scale
+    const yAxisMax = Math.ceil(maxGc * 2) / 2 || 1;
+    const xScale = (width - margin.left - margin.right) / (timestamps.length - 1) || 1;
+    const yScale = (height - margin.top - margin.bottom) / yAxisMax;
+
+    // Color palette for GC charts
+    const processColors = [
+        '#E4572E', // Red-Orange
+        '#29335C', // Navy
+        '#A8C686', // Green
+        '#669BBC', // Blue
+        '#F3A712', // Yellow
+        '#6A4C93', // Purple
+        '#43AA8B', // Teal
+        '#B370B0', // Magenta
+    ];
+    const aggGcColor = '#DC2626'; // Red for Aggregated GC Time
+
+    // Generate SVG content
+    let svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">\n`;
+    svg += `<rect width="100%" height="100%" fill="#fff"/>\n`;
+    // Add title
+    svg += `<text x="${width/2}" y="40" text-anchor="middle" font-size="24" font-weight="bold">Build Process GC Time Over Time</text>\n`;
+
+    // Add grid lines (every 0.1s)
+    const gridInterval = 0.1; // seconds
+    for (let i = 0; i <= yAxisMax; i += gridInterval) {
+        const y = height - margin.bottom - (i * yScale);
+        svg += `<line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" stroke="#e0e0e0" stroke-width="1" stroke-dasharray="5,5"/>\n`;
+    }
+
+    // Draw axes
+    svg += `<line x1="${margin.left}" y1="${height - margin.bottom}" x2="${width - margin.right}" y2="${height - margin.bottom}" stroke="#333" stroke-width="2"/>\n`;
+    svg += `<line x1="${margin.left}" y1="${height - margin.bottom}" x2="${margin.left}" y2="${margin.top}" stroke="#333" stroke-width="2"/>\n`;
+
+    // Draw Y axis labels (every 0.1s)
+    for (let i = 0; i <= yAxisMax; i += gridInterval) {
+        const y = height - margin.bottom - (i * yScale);
+        if (i % 0.5 === 0 || i === 0) { // Show labels every 0.5s
+            svg += `<text x="${margin.left - 10}" y="${y + 5}" text-anchor="end" font-size="12" fill="#333">${i.toFixed(1)}s</text>\n`;
+        }
+    }
+
+    // Draw X axis labels (dynamic interval based on timestamp count)
+    const labelInterval = Math.ceil(timestamps.length / 15); // Show ~15 labels
+    for (let i = 0; i < timestamps.length; i += labelInterval) {
+        const x = margin.left + (i * xScale);
+        svg += `<text x="${x}" y="${height - margin.bottom + 20}" transform="rotate(45 ${x},${height - margin.bottom + 20})" text-anchor="start" font-size="12" fill="#333">${timestamps[i]}</text>\n`;
+    }
+
+    // Draw process GC time lines and legend
+    let legendY = margin.top + 30;
+    Array.from(processes.entries()).forEach(([key, data], idx) => {
+        if (!data.gcTime || data.gcTime.length === 0) return;
+        
+        const color = processColors[idx % processColors.length];
+        // GC time line (solid)
+        const gcPoints = data.timestamps.map((timestamp, i) => {
+            const x = margin.left + (timestamps.indexOf(timestamp) * xScale);
+            const y = height - margin.bottom - ((data.gcTime?.[i] || 0) * yScale);
+            return `${x},${y}`;
+        }).join(' ');
+        svg += `<polyline points="${gcPoints}" stroke="${color}" stroke-width="2.5" fill="none" opacity="0.95"/>\n`;
+
+        // Legend for this process
+        svg += `<rect x="${width - margin.right + 40}" y="${legendY - 10}" width="20" height="6" fill="${color}" opacity="0.95"/>\n`;
+        svg += `<text x="${width - margin.right + 70}" y="${legendY - 2}" font-size="14" fill="#333">${key} (GC Time)</text>\n`;
+        legendY += 30;
+    });
+
+    // Draw aggregated GC time line (red, solid)
+    const aggregatedPoints = timestamps.map((timestamp, i) => {
+        const x = margin.left + (i * xScale);
+        const y = height - margin.bottom - (aggregatedGcTime[i] * yScale);
+        return `${x},${y}`;
+    }).join(' ');
+    svg += `<polyline points="${aggregatedPoints}" stroke="${aggGcColor}" stroke-width="3.5" fill="none" opacity="0.9"/>\n`;
+
+    // Aggregated legend
+    svg += `<rect x="${width - margin.right + 40}" y="${legendY - 10}" width="20" height="20" fill="${aggGcColor}" opacity="0.9"/>\n`;
+    svg += `<text x="${width - margin.right + 70}" y="${legendY + 5}" font-size="14" fill="#333">Aggregated GC Time</text>\n`;
+
+    // Add axis labels
+    svg += `<text x="${width/2}" y="${height - 10}" text-anchor="middle" font-size="16" fill="#333">Time</text>\n`;
+    svg += `<text x="${margin.left - 60}" y="${height/2}" text-anchor="middle" transform="rotate(-90 ${margin.left - 60},${height/2})" font-size="16" fill="#333">GC Time (seconds)</text>\n`;
 
     svg += '</svg>';
     return svg;
@@ -427,7 +563,7 @@ async function run() {
         if (debugMode) {
             console.log('Generating memory usage graph...');
         }
-        const { processes, timestamps } = parseLogFile(logFile);
+        const { processes, timestamps, hasGcData } = parseLogFile(logFile);
         
         // Generate both charts
         const mermaidChart = generateMermaidChart(processes, timestamps);
@@ -435,6 +571,15 @@ async function run() {
 
         // Save SVG file
         fs.writeFileSync('memory_usage.svg', svgContent);
+
+        // Generate GC SVG if GC data is available
+        if (hasGcData) {
+            if (debugMode) {
+                console.log('Generating GC time graph...');
+            }
+            const gcSvgContent = generateGcSvg(processes, timestamps);
+            fs.writeFileSync('gc_time.svg', gcSvgContent);
+        }
 
         // Upload artifacts (only if files exist)
         // Only upload artifacts if we're in a GitHub Actions context and have runtime token
@@ -459,6 +604,9 @@ async function run() {
                 }
                 if (fs.existsSync('memory_usage.svg')) {
                     files.push('memory_usage.svg');
+                }
+                if (fs.existsSync('gc_time.svg')) {
+                    files.push('gc_time.svg');
                 }
                 if (fs.existsSync('backend_debug.log')) {
                     files.push('backend_debug.log');
