@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Build Process Watcher</title>
+    <title>Build Process Watcher - Monitor Gradle Build Performance</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <style>
         * {
@@ -12,13 +12,28 @@
             margin: 0;
         }
 
+        :root {
+            --primary: #3b82f6;
+            --primary-dark: #2563eb;
+            --secondary: #8b5cf6;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --dark: #1e293b;
+            --gray: #64748b;
+            --light-gray: #f1f5f9;
+            --white: #ffffff;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
-            background: #f8fafc;
-            color: #334155;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background-attachment: fixed;
+            color: var(--dark);
             line-height: 1.6;
             min-height: 100vh;
             position: relative;
+            overflow-x: hidden;
         }
 
         body::before {
@@ -29,471 +44,601 @@
             width: 100%;
             height: 100%;
             background: 
-                radial-gradient(circle at 25% 25%, rgba(59, 130, 246, 0.05) 0%, transparent 50%),
-                radial-gradient(circle at 75% 75%, rgba(139, 92, 246, 0.05) 0%, transparent 50%);
+                radial-gradient(circle at 20% 30%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 80% 70%, rgba(255, 255, 255, 0.1) 0%, transparent 50%);
             pointer-events: none;
-            z-index: -1;
+            z-index: 0;
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
-            padding: 20px;
+            padding: 2rem;
+            position: relative;
+            z-index: 1;
         }
 
-        header {
-            padding: 1rem 0;
-            margin-bottom: 2rem;
-        }
-
-        h1 {
-            font-size: 2.5rem;
-            font-weight: 700;
-            color: #1e293b;
-            text-align: center;
-            margin-bottom: 1rem;
-        }
-
+        /* Hero Section */
         .hero {
             text-align: center;
             margin-bottom: 4rem;
-            padding: 3rem 0;
+            padding: 4rem 2rem;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            border-radius: 2rem;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            animation: fadeInUp 0.8s ease-out;
         }
 
-        .hero h2 {
-            font-size: 3rem;
-            font-weight: 700;
-            color: #1e293b;
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .hero h1 {
+            font-size: 3.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
             margin-bottom: 1.5rem;
+            letter-spacing: -0.02em;
         }
 
         .hero p {
-            font-size: 1.25rem;
-            color: #64748b;
-            max-width: 40rem;
+            font-size: 1.5rem;
+            color: var(--gray);
+            max-width: 50rem;
             margin: 0 auto 2rem;
+            font-weight: 300;
         }
 
-        .free-service-banner {
-            background: linear-gradient(45deg, #f59e0b, #f97316);
-            color: white;
-            padding: 1rem 2rem;
-            border-radius: 1rem;
-            margin: 2rem auto;
-            max-width: 600px;
-            text-align: center;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            border: 2px solid rgba(255,255,255,0.2);
+        .hero-badges {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+            margin-top: 2rem;
         }
 
-        .free-service-banner h3 {
-            font-size: 1.25rem;
-            font-weight: 600;
-            margin-bottom: 0.5rem;
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            border-radius: 2rem;
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--primary-dark);
         }
 
-        .free-service-banner p {
-            font-size: 1rem;
-            opacity: 0.95;
-            margin: 0;
-        }
-
+        /* Cards */
         .card {
-            background: white;
-            border: 1px solid #e2e8f0;
-            border-radius: 1rem;
-            padding: 2rem;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 1.5rem;
+            padding: 2.5rem;
             margin-bottom: 2rem;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-            transition: all 0.2s ease;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            animation: fadeInUp 0.8s ease-out;
+            animation-fill-mode: both;
         }
+
+        .card:nth-child(1) { animation-delay: 0.1s; }
+        .card:nth-child(2) { animation-delay: 0.2s; }
+        .card:nth-child(3) { animation-delay: 0.3s; }
+        .card:nth-child(4) { animation-delay: 0.4s; }
 
         .card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
-            border-color: #cbd5e1;
+            transform: translateY(-8px);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+            border-color: rgba(255, 255, 255, 0.5);
+        }
+
+        .card h2, .card h3 {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--dark);
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
         }
 
         .card h3 {
             font-size: 1.5rem;
-            font-weight: 600;
-            color: #1e293b;
-            margin-bottom: 1rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
         }
 
-        .card h3::before {
-            content: "📊";
-            font-size: 1.25rem;
-        }
-
-        .steps {
-            list-style: none;
-            padding: 0;
-        }
-
-        .steps li {
-            display: flex;
-            align-items: flex-start;
-            margin-bottom: 1.5rem;
-            padding: 1rem;
-            background: rgba(59, 130, 246, 0.1);
-            border-radius: 0.75rem;
-            border-left: 4px solid #3b82f6;
-        }
-
-        .step-number {
-            flex-shrink: 0;
-            width: 2rem;
-            height: 2rem;
-            background: #3b82f6;
-            color: white;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.875rem;
-            font-weight: 600;
-            margin-right: 1rem;
-            box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
-        }
-
-
-        .example {
-            background: white;
-            border: 1px solid #e2e8f0;
-            border-radius: 1rem;
-            padding: 2rem;
-            margin-bottom: 2rem;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-        }
-
-        .example h3 {
-            font-size: 1.25rem;
-            font-weight: 600;
-            color: #1f2937;
-            margin-bottom: 1rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .example h3::before {
-            content: "💡";
-            font-size: 1.125rem;
-        }
-
-        .code {
-            background: linear-gradient(45deg, #1f2937, #374151);
-            color: #f9fafb;
-            padding: 0.5rem 1rem;
-            border-radius: 0.5rem;
-            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 'Source Code Pro', monospace;
-            font-size: 0.875rem;
-            border: 1px solid rgba(255,255,255,0.1);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-
-        .features {
+        /* Feature Grid */
+        .features-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
             gap: 2rem;
             margin-bottom: 3rem;
         }
 
         .feature-card {
-            background: rgba(255,255,255,0.1);
-            backdrop-filter: blur(15px);
-            border: 1px solid rgba(255,255,255,0.2);
-            border-radius: 1.2rem;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.9) 100%);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 1.5rem;
             padding: 2rem;
-            box-shadow: 
-                0 8px 32px rgba(0,0,0,0.1),
-                inset 0 1px 0 rgba(255,255,255,0.1);
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             position: relative;
             overflow: hidden;
         }
 
-        .feature-card::after {
+        .feature-card::before {
             content: '';
             position: absolute;
             top: 0;
             left: 0;
             right: 0;
-            bottom: 0;
-            background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 50%, rgba(255,255,255,0.05) 100%);
-            opacity: 0;
-            transition: opacity 0.3s ease;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary) 0%, var(--secondary) 100%);
+            transform: scaleX(0);
+            transition: transform 0.3s ease;
         }
 
-        .feature-card:hover::after {
-            opacity: 1;
+        .feature-card:hover::before {
+            transform: scaleX(1);
         }
 
         .feature-card:hover {
             transform: translateY(-8px) scale(1.02);
-            box-shadow: 
-                0 20px 60px rgba(0,0,0,0.2),
-                inset 0 1px 0 rgba(255,255,255,0.2);
-            border-color: rgba(255,255,255,0.3);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
         }
 
         .feature-card h3 {
-            font-size: 1.25rem;
+            font-size: 1.5rem;
             font-weight: 700;
-            color: #1f2937;
+            color: var(--dark);
             margin-bottom: 1rem;
             display: flex;
             align-items: center;
-            gap: 0.5rem;
+            gap: 0.75rem;
         }
 
-        .feature-card h3::before {
-            content: "✨";
-            font-size: 1.125rem;
+        .feature-icon {
+            font-size: 2rem;
         }
 
-        .feature-list {
-            list-style: none;
-            padding: 0;
-        }
-
-        .feature-list li {
-            color: #4b5563;
-            margin-bottom: 0.75rem;
-            padding-left: 1.5rem;
+        /* Code Blocks */
+        pre {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            color: #e2e8f0;
+            padding: 1.5rem;
+            border-radius: 1rem;
+            overflow-x: auto;
+            margin: 1.5rem 0;
+            font-size: 0.9rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.3);
             position: relative;
         }
 
-        .feature-list li::before {
-            content: "✓";
-            position: absolute;
-            left: 0;
-            color: #10b981;
-            font-weight: bold;
+        pre code {
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 'Source Code Pro', monospace;
         }
 
-        .cta {
-            text-align: center;
-            margin-top: 3rem;
-        }
-
+        /* Buttons */
         .btn {
             display: inline-flex;
             align-items: center;
-            padding: 0.75rem 1.5rem;
-            background: #3b82f6;
+            gap: 0.5rem;
+            padding: 1rem 2rem;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
             color: white;
             text-decoration: none;
-            border-radius: 0.5rem;
-            font-weight: 500;
+            border-radius: 0.75rem;
+            font-weight: 600;
             font-size: 1rem;
-            transition: all 0.2s ease;
-            box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
             border: none;
             cursor: pointer;
         }
 
         .btn:hover {
-            background: #2563eb;
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(59, 130, 246, 0.5);
         }
 
-
         .btn-secondary {
-            background: #6b7280;
-            margin-left: 1rem;
-            box-shadow: 0 2px 4px rgba(107, 114, 128, 0.2);
+            background: linear-gradient(135deg, var(--gray) 0%, #475569 100%);
+            box-shadow: 0 4px 15px rgba(100, 116, 139, 0.4);
         }
 
         .btn-secondary:hover {
-            background: #4b5563;
+            box-shadow: 0 8px 25px rgba(100, 116, 139, 0.5);
         }
 
+        /* Example Images */
+        .example-image {
+            background: var(--light-gray);
+            border: 2px solid rgba(0, 0, 0, 0.05);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            text-align: center;
+            margin: 1.5rem 0;
+            transition: all 0.3s ease;
+        }
 
+        .example-image:hover {
+            border-color: var(--primary);
+            box-shadow: 0 10px 30px rgba(59, 130, 246, 0.2);
+        }
+
+        .example-image img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .example-image p {
+            margin-top: 1rem;
+            font-size: 0.875rem;
+            color: var(--gray);
+        }
+
+        /* Info Boxes */
+        .info-box {
+            padding: 1.25rem;
+            border-radius: 1rem;
+            margin: 1rem 0;
+            font-size: 0.95rem;
+            border-left: 4px solid;
+        }
+
+        .info-box-primary {
+            background: rgba(59, 130, 246, 0.1);
+            border-color: var(--primary);
+            color: var(--primary-dark);
+        }
+
+        .info-box-success {
+            background: rgba(16, 185, 129, 0.1);
+            border-color: var(--success);
+            color: #047857;
+        }
+
+        .info-box-warning {
+            background: rgba(245, 158, 11, 0.1);
+            border-color: var(--warning);
+            color: #b45309;
+        }
+
+        /* Section Headers */
+        .section-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .section-icon {
+            font-size: 2.5rem;
+        }
+
+        /* CTA Section */
+        .cta {
+            text-align: center;
+            margin: 4rem 0;
+            padding: 3rem;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            border-radius: 2rem;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
+        }
+
+        .cta h2 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 2rem;
+        }
+
+        /* Footer */
         .footer {
             text-align: center;
             margin-top: 4rem;
-            padding: 2rem 0;
-            border-top: 1px solid #e2e8f0;
-            color: #64748b;
-            font-size: 0.875rem;
-            background: #f8fafc;
+            padding: 3rem 2rem;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            border-radius: 2rem;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            color: var(--gray);
         }
 
-        pre {
-            background: #1f2937;
-            color: #f9fafb;
-            padding: 1.5rem;
-            border-radius: 0.5rem;
-            overflow-x: auto;
-            margin-top: 1rem;
-            font-size: 0.875rem;
-            border: 1px solid #374151;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        .footer p {
+            font-size: 1rem;
+            margin: 0.5rem 0;
         }
 
+        /* Responsive */
         @media (max-width: 768px) {
-            .features {
-                grid-template-columns: 1fr;
-            }
-            
-            .hero h2 {
+            .hero h1 {
                 font-size: 2.5rem;
             }
-            
-            .btn-secondary {
-                margin-left: 0;
-                margin-top: 1rem;
-                display: block;
+
+            .hero p {
+                font-size: 1.25rem;
+            }
+
+            .features-grid {
+                grid-template-columns: 1fr;
             }
 
             .card {
                 padding: 1.5rem;
             }
 
-            .hero {
-                padding: 2rem 0;
+            .btn-group {
+                flex-direction: column;
             }
+
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+
+        /* Animations */
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.7;
+            }
+        }
+
+        .pulse {
+            animation: pulse 2s ease-in-out infinite;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <header>
-            <h1>Build Process Watcher</h1>
-        </header>
-
+        <!-- Hero Section -->
         <div class="hero">
-            <p>Monitor memory usage and performance of your Gradle build processes in real-time with our GitHub Action.</p>
+            <h1>🚀 Build Process Watcher</h1>
+            <p>Monitor memory usage and performance of your Gradle build processes in real-time with our powerful GitHub Action.</p>
         </div>
-        <div class="features">
+
+        <!-- Quick Start -->
+        <div class="features-grid">
             <div class="feature-card">
-                <h3>Default Mode Setup</h3>
-                <p>Generate Mermaid diagrams and SVG charts locally, at the end of the build:</p>
+                <h3><span class="feature-icon">📦</span>Default Mode</h3>
+                <p style="margin-bottom: 1rem; color: var(--gray);">Generate Mermaid diagrams and SVG charts locally, uploaded as GitHub Actions artifacts:</p>
                 <pre><code>- name: Build Process Monitoring
   uses: cdsap/build-process-watcher@0.4.0
  
 - name: Build project
-  run: ./gradlew clean build
-</code></pre>
-                <p style="margin-top: 1rem; font-size: 0.875rem; color: #6b7280;">
-                    <strong>Output:</strong> Check GitHub Actions artifacts for Mermaid diagrams, SVG charts, and log files
-                </p>
+  run: ./gradlew clean build</code></pre>
+                <div class="info-box info-box-primary">
+                    <strong>📤 Output:</strong> Check GitHub Actions artifacts for Mermaid diagrams, SVG charts, and log files
+                </div>
             </div>
             
             <div class="feature-card">
-                <h3>Remote Mode Setup</h3>
-                <p>Enable live dashboard with real-time monitoring:</p>
+                <h3><span class="feature-icon">🌐</span>Remote Mode</h3>
+                <p style="margin-bottom: 1rem; color: var(--gray);">Enable live dashboard with real-time monitoring and GC metrics:</p>
                 <pre><code>- name: Build Process Monitoring
   uses: cdsap/build-process-watcher@0.4.0
   with:
     remote_monitoring: 'true'
-    collect_gc: 'true' 
+    collect_gc: 'true'
     
 - name: Build project
-  run: ./gradlew clean build
-
-</code></pre>
-                <p style="margin-top: 1rem; font-size: 0.875rem; color: #6b7280;">
-                    <strong>Output:</strong> Dashboard URL will be displayed in the action output (data available for 3 hours)
-                </p>
-                <p style="margin-top: 0.75rem; font-size: 0.875rem; color: #059669; padding: 0.75rem; background: rgba(5, 150, 105, 0.1); border-radius: 0.5rem; border-left: 3px solid #059669;">
-                    <strong>💡 GC Collection:</strong> Set <code>collect_gc: 'true'</code> to monitor garbage collection time in seconds. This adds a GC time chart to your dashboard showing GC performance over time.
-                </p>
-            </div>
-            </div>
-
-
-
-        <div class="card">
-            <h3>Two Monitoring Modes</h3>
-            
-            <div style="margin-bottom: 2rem;">
-                <h4 style="color: #1f2937; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
-                    📊 <span>Default Mode - Local Analysis</span>
-                </h4>
-                <p style="margin-bottom: 1rem; color: #4b5563;">Generates Mermaid diagrams and SVG charts with build process information. Data is stored locally and uploaded as GitHub Actions artifacts.</p>
-                <div style="background: rgba(59, 130, 246, 0.1); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #3b82f6;">
-                    <strong>Output:</strong> Mermaid diagrams, SVG charts, and log files in GitHub Actions artifacts
+  run: ./gradlew clean build</code></pre>
+                <div class="info-box info-box-success">
+                    <strong>🌐 Output:</strong> Dashboard URL displayed in action output (data available for 3 hours)
                 </div>
-            </div>
-
-            <div>
-                <h4 style="color: #1f2937; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
-                    🌐 <span>Remote Mode - Live Dashboard</span>
-                </h4>
-                <p style="margin-bottom: 1rem; color: #4b5563;">Check the current state of processes in real-time through our web dashboard. Data is stored in the cloud with 3-hour retention.</p>
-                <div style="background: rgba(16, 185, 129, 0.1); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #10b981; margin-bottom: 1rem;">
-                    <strong>Output:</strong> Live dashboard URL with real-time monitoring data (available for 3 hours)
-                </div>
-                <div style="background: rgba(5, 150, 105, 0.1); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #059669;">
-                    <strong>🔄 GC Time Monitoring:</strong> Enable <code>collect_gc: 'true'</code> to track garbage collection performance. The dashboard will display GC time in seconds, helping you identify GC-related performance issues.
+                <div class="info-box info-box-warning" style="margin-top: 1rem;">
+                    <strong>💡 GC Collection:</strong> Set <code>collect_gc: 'true'</code> to monitor garbage collection time in seconds. This adds a GC time chart to your dashboard.
                 </div>
             </div>
         </div>
 
-        <div class="example">
-            <h3>Live Example Dashboard:</h3>
-            <p>View a real Gradle build monitoring dashboard with live data:</p>
-            <p style="margin: 1rem 0;">
-                <a href="#" id="demo-link" class="btn" style="display: inline-block;">🔗 Open Live Example Dashboard</a>
+        <!-- How Remote Mode Works -->
+        <div class="card">
+            <div class="section-header">
+                <span class="section-icon">🔗</span>
+                <h2>How Remote Mode URL is Generated</h2>
+            </div>
+            <p style="font-size: 1.1rem; color: var(--gray); margin-bottom: 1.5rem;">
+                When you enable Remote Mode, the action automatically generates a unique dashboard URL for your build run. 
+                This URL is displayed in the GitHub Actions output and allows you to monitor your build in real-time.
             </p>
-            <p style="font-size: 0.9rem; opacity: 0.8; margin-top: 0.5rem;">Real data from run 18236843825 - 311 samples from GradleDaemon & KotlinCompileDaemon</p>
-            <p style="font-size: 0.9rem; opacity: 0.8; margin-top: 0.5rem; color: #f59e0b;"><strong>Note:</strong> This example demonstrates the Remote Mode dashboard with 3-hour data retention</p>
+            
+            <div class="example-image">
+                <img src="/gha_log.png" alt="GitHub Actions Log showing URL generation">
+                <p>Example: The dashboard URL is automatically generated and displayed in the GitHub Actions log</p>
+            </div>
+
+            <div class="info-box info-box-success" style="margin-top: 1.5rem;">
+                <strong>📋 How it works:</strong>
+                <ul style="margin: 0.75rem 0 0 1.5rem; padding: 0;">
+                    <li>The action creates a unique run ID for each build</li>
+                    <li>A dashboard URL is automatically generated using this run ID</li>
+                    <li>The URL is displayed in the GitHub Actions output for easy access</li>
+                    <li>Data is available for 3 hours after the build completes</li>
+                </ul>
+            </div>
         </div>
 
+        <!-- Live Example -->
         <div class="card">
-            <h3>Default Mode Output Examples</h3>
-            <p style="margin-bottom: 1.5rem; color: #4b5563;">When using Default Mode, you'll get these outputs in your GitHub Actions artifacts:</p>
+            <div class="section-header">
+                <span class="section-icon">🎯</span>
+                <h2>Live Example Dashboard</h2>
+            </div>
+            <p style="font-size: 1.1rem; color: var(--gray); margin-bottom: 1.5rem;">
+                View a real Gradle build monitoring dashboard with live data from an actual build run.
+            </p>
+            <div style="text-align: center; margin: 2rem 0;">
+                <a href="#" id="demo-link" class="btn">🔗 Open Live Example Dashboard</a>
+            </div>
+            <div class="info-box info-box-primary" style="text-align: center;">
+                <p style="margin: 0;"><strong>Real data from run 18236843825</strong> - 311 samples from GradleDaemon & KotlinCompileDaemon</p>
+                <p style="margin: 0.5rem 0 0 0; font-size: 0.9rem; opacity: 0.9;">This example demonstrates the Remote Mode dashboard with 3-hour data retention</p>
+            </div>
+        </div>
+
+        <!-- Output Examples -->
+        <div class="card">
+            <div class="section-header">
+                <span class="section-icon">📊</span>
+                <h2>Default Mode Output Examples</h2>
+            </div>
+            <p style="font-size: 1.1rem; color: var(--gray); margin-bottom: 2rem;">
+                When using Default Mode, you'll get these outputs in your GitHub Actions artifacts:
+            </p>
             
-            <div style="margin-bottom: 2rem;">
-                <h4 style="color: #1f2937; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
-                    📊 <span>Mermaid Diagram</span>
-                </h4>
-                <p style="margin-bottom: 1rem; color: #4b5563; font-size: 0.9rem;">Interactive flowchart showing memory usage over time with process details</p>
+            <div style="margin-bottom: 3rem;">
+                <h3 style="margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <span>📊</span> Mermaid Diagram
+                </h3>
+                <p style="margin-bottom: 1rem; color: var(--gray);">Interactive flowchart showing memory usage over time with process details</p>
                 
-                <div style="background: rgba(59, 130, 246, 0.1); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #3b82f6; font-size: 0.875rem; margin-bottom: 1rem;">
-                    <strong>File:</strong> <code>memory_usage.mermaid</code> - Can be rendered in GitHub, GitLab, or any Mermaid-compatible viewer
+                <div class="info-box info-box-primary">
+                    <strong>📄 File:</strong> <code>memory_usage.mermaid</code> - Can be rendered in GitHub, GitLab, or any Mermaid-compatible viewer
                 </div>
 
-                <div style="background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 0.5rem; padding: 1rem; text-align: center;">
-                    <img src="/mermaid-diagram-example.png" alt="Mermaid Diagram Example" style="max-width: 100%; height: auto; border-radius: 0.25rem;">
-                    <p style="margin-top: 0.5rem; font-size: 0.75rem; color: #666;">Example: Memory usage flowchart with process details</p>
+                <div class="example-image">
+                    <img src="/mermaid-diagram-example.png" alt="Mermaid Diagram Example">
+                    <p>Example: Memory usage flowchart with process details</p>
                 </div>
             </div>
 
             <div>
-                <h4 style="color: #1f2937; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
-                    📈 <span>SVG Chart</span>
-                </h4>
-                <p style="margin-bottom: 1rem; color: #4b5563; font-size: 0.9rem;">High-quality vector chart showing RSS and Heap usage with process-specific colors</p>
+                <h3 style="margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <span>📈</span> SVG Chart
+                </h3>
+                <p style="margin-bottom: 1rem; color: var(--gray);">High-quality vector chart showing RSS and Heap usage with process-specific colors</p>
                 
-                <div style="background: rgba(16, 185, 129, 0.1); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #10b981; font-size: 0.875rem; margin-bottom: 1rem;">
-                    <strong>File:</strong> <code>memory_usage.svg</code> - Scalable vector graphics perfect for documentation and reports
+                <div class="info-box info-box-success">
+                    <strong>📄 File:</strong> <code>memory_usage.svg</code> - Scalable vector graphics perfect for documentation and reports
                 </div>
 
-                <div style="background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 0.5rem; padding: 1rem; text-align: center;">
-                    <img src="/svg-chart-example.png" alt="SVG Chart Example" style="max-width: 100%; height: auto; border-radius: 0.25rem;">
-                    <p style="margin-top: 0.5rem; font-size: 0.75rem; color: #666;">Example: RSS and Heap usage chart with process-specific colors</p>
+                <div class="example-image">
+                    <img src="/svg-chart-example.png" alt="SVG Chart Example">
+                    <p>Example: RSS and Heap usage chart with process-specific colors</p>
                 </div>
             </div>
         </div>
 
+        <!-- GC Metrics Feature -->
+        <div class="card">
+            <div class="section-header">
+                <span class="section-icon">🆕</span>
+                <h2>GC Metrics Collection</h2>
+            </div>
+            <p style="font-size: 1.1rem; color: var(--gray); margin-bottom: 2rem;">
+                When using Remote Mode with <code>collect_gc: 'true'</code>, you'll get a comprehensive GC time chart in your dashboard:
+            </p>
+            
+            <div>
+                <h3 style="margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <span>🔄</span> GC Time Chart
+                </h3>
+                <p style="margin-bottom: 1rem; color: var(--gray);">
+                    Track garbage collection performance over time to identify GC-related performance bottlenecks. 
+                    GC time is displayed in seconds and works across all JVM GC collectors (Parallel, G1, Serial, CMS).
+                </p>
+                
+                <div class="info-box info-box-success">
+                    <strong>✨ Feature:</strong> Enable <code>collect_gc: 'true'</code> in your workflow to monitor GC time alongside memory usage
+                </div>
 
-
-        <div class="cta">
-            <a href="#" id="demo-link-2" class="btn">View Example Dashboard with remote monitoring</a>
-            <a href="https://github.com/cdsap/build-process-watcher" class="btn btn-secondary">View on GitHub</a>
+                <div class="example-image">
+                    <img src="/gc_diagram.png" alt="GC Time Chart Example">
+                    <p>Example: GC time chart showing garbage collection performance over time</p>
+                </div>
+            </div>
         </div>
 
+        <!-- Features Overview -->
+        <div class="card">
+            <div class="section-header">
+                <span class="section-icon">✨</span>
+                <h2>Key Features</h2>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin-top: 2rem;">
+                <div>
+                    <h4 style="color: var(--primary); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                        <span>📊</span> Default Mode
+                    </h4>
+                    <p style="color: var(--gray); font-size: 0.95rem;">
+                        Generate Mermaid diagrams and SVG charts locally. Data is stored locally and uploaded as GitHub Actions artifacts.
+                    </p>
+                </div>
+
+                <div>
+                    <h4 style="color: var(--success); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                        <span>🌐</span> Remote Mode
+                    </h4>
+                    <p style="color: var(--gray); font-size: 0.95rem;">
+                        Check the current state of processes in real-time through our web dashboard. Data is stored in the cloud with 3-hour retention.
+                    </p>
+                </div>
+
+                <div>
+                    <h4 style="color: var(--warning); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                        <span>🔄</span> GC Monitoring
+                    </h4>
+                    <p style="color: var(--gray); font-size: 0.95rem;">
+                        Track garbage collection performance with GC time charts. Enable <code>collect_gc: 'true'</code> to monitor GC-related performance issues.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- CTA Section -->
+        <div class="cta">
+            <h2>Ready to Get Started?</h2>
+            <p style="font-size: 1.2rem; color: var(--gray); margin-bottom: 2rem;">
+                Start monitoring your build processes today with just a few lines of code.
+            </p>
+            <div class="btn-group">
+                <a href="#" id="demo-link-2" class="btn">View Example Dashboard</a>
+                <a href="https://github.com/cdsap/build-process-watcher" class="btn btn-secondary">View on GitHub</a>
+            </div>
+        </div>
+
+        <!-- Footer -->
         <div class="footer">
-            <p>🚀 Build Process Watcher - Free service with 3-hour memory report availability</p>
-            <p style="margin-top: 0.5rem; font-size: 0.8rem; opacity: 0.8;">Keep this service free by accessing your data within 3 hours</p>
+            <p style="font-size: 1.1rem; font-weight: 600; color: var(--dark);">🚀 Build Process Watcher</p>
+            <p>Free service with 3-hour memory report availability</p>
+            <p style="font-size: 0.9rem; opacity: 0.8; margin-top: 0.5rem;">
+                Keep this service free by accessing your data within 3 hours
+            </p>
         </div>
     </div>
 
