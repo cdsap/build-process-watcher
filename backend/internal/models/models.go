@@ -27,6 +27,7 @@ type RunDoc struct {
 	Samples            []Sample  `firestore:"samples"`
 	Finished           bool      `firestore:"finished,omitempty"`
 	FinishedAt         time.Time `firestore:"finished_at,omitempty"`
+	ExpireAt           time.Time `firestore:"expire_at,omitempty"` // TTL field - set manually in Firestore, used by TTL policy
 }
 
 // RunResponse is the API response for a run
@@ -60,4 +61,3 @@ type IngestRequest struct {
 	RunID string `json:"run_id"`
 	Data  string `json:"data"`
 }
-

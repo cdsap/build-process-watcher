@@ -80,10 +80,6 @@ func cleanupStaleHandler(w http.ResponseWriter, r *http.Request) {
 	testCleanupService.HandleManualStaleCleanup(w, r)
 }
 
-func cleanupOldDataHandler(w http.ResponseWriter, r *http.Request) {
-	testCleanupService.HandleManualDataRetentionCleanup(w, r)
-}
-
 // GetMockData returns mock sample data for testing
 func getMockData(runID string) []Sample {
 	now := time.Now()
@@ -140,4 +136,3 @@ func getMockData(runID string) []Sample {
 		},
 	}
 }
-

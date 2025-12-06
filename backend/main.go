@@ -37,10 +37,6 @@ func main() {
 	// Initialize cleanup service
 	cleanupService := cleanup.NewService(storageClient)
 
-	// Start background cleanup routines
-	go cleanupService.StartStaleRunCleanup()
-	go cleanupService.StartDataRetentionCleanup()
-
 	// Set up HTTP routes
 	http.HandleFunc("/healthz", h.Health)
 	http.HandleFunc("/auth/run/", h.Auth)
@@ -48,8 +44,7 @@ func main() {
 	http.HandleFunc("/runs/", h.GetRun)
 	http.HandleFunc("/finish/", h.FinishRun)
 	http.HandleFunc("/cleanup/stale", cleanupService.HandleManualStaleCleanup)
-	http.HandleFunc("/cleanup/old", cleanupService.HandleManualDataRetentionCleanup)
-	
+
 	// Add a simple test endpoint
 	http.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Test endpoint working"))
@@ -68,10 +63,8 @@ func main() {
 	log.Printf("   - GET  /runs/{runId}")
 	log.Printf("   - POST /finish/{runId} (JWT required)")
 	log.Printf("   - POST /cleanup/stale (Admin required)")
-	log.Printf("   - POST /cleanup/old (Admin required)")
 
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}
 }
-
