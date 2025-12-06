@@ -41,6 +41,7 @@ Dashboard URL shown in job output.
 | `log_file` | Local log filename | `build_process_watcher.log` | No |
 | `interval` | Polling interval (seconds) | `5` | No |
 | `debug` | Enable debug logging | `false` | No |
+| `collect_gc` | Enable garbage collection monitoring (requires Java processes) | `false` | No |
 
 ---
 
