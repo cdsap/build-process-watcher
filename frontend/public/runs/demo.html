@@ -1938,7 +1938,7 @@
                     </div>
                     <div class="status-card">
                         <h3>Processes</h3>
-                        <p>${new Set(samples.map(s => s.Name)).size}</p>
+                        <p>${new Set(samples.map(s => `${s.Name}|${s.PID}`)).size}</p>
                     </div>
                     <div class="status-card">
                         <h3>Auto-refresh</h3>
@@ -1960,25 +1960,23 @@
         }
 
         function renderChart(runId, samples) {
-            // Process data for chart
+            // Process data for chart - group by both Name and PID to handle multiple processes with same name
             const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
-            const processes = [...new Set(samples.map(s => `${s.Name} (PID: ${s.PID})`))];
-            const processNames = [...new Set(samples.map(s => s.Name))];
+            // Create unique process keys (Name + PID combination)
+            const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
             
             const traces = [];
             const colors = ['#3498db', '#e74c3c', '#9b59b6', '#2ecc71', '#f39c12', '#e67e22'];
             
-            // Create traces for each process
-            processNames.forEach((processName, index) => {
+            // Create traces for each unique process (Name + PID combination)
+            processKeys.forEach((processKey, index) => {
                 const color = colors[index % colors.length];
-                // Get the PID for this process (assuming all samples for same process have same PID)
-                const processSamples = samples.filter(s => s.Name === processName);
-                const pid = processSamples.length > 0 ? processSamples[0].PID : 'unknown';
+                const [processName, pid] = processKey.split('|');
                 
                 // RSS data
                 const rssData = timestamps.map(timestamp => {
                     const sample = samples
-                        .filter(s => s.Name === processName && s.Timestamp <= timestamp)
+                        .filter(s => s.Name === processName && s.PID === pid && s.Timestamp <= timestamp)
                         .sort((a, b) => b.Timestamp - a.Timestamp)[0];
                     return sample ? sample.RSS : 0;
                 });
@@ -1995,7 +1993,7 @@
                 // Heap data
                 const heapData = timestamps.map(timestamp => {
                     const sample = samples
-                        .filter(s => s.Name === processName && s.Timestamp <= timestamp)
+                        .filter(s => s.Name === processName && s.PID === pid && s.Timestamp <= timestamp)
                         .sort((a, b) => b.Timestamp - a.Timestamp)[0];
                     return sample ? sample.HeapUsed : 0;
                 });
@@ -2013,9 +2011,10 @@
             // Add total memory trace
             const totalData = timestamps.map(timestamp => {
                 let total = 0;
-                processNames.forEach(processName => {
+                processKeys.forEach(processKey => {
+                    const [processName, pid] = processKey.split('|');
                     const sample = samples
-                        .filter(s => s.Name === processName && s.Timestamp <= timestamp)
+                        .filter(s => s.Name === processName && s.PID === pid && s.Timestamp <= timestamp)
                         .sort((a, b) => b.Timestamp - a.Timestamp)[0];
                     if (sample) total += sample.RSS;
                 });

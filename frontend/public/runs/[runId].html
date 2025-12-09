@@ -383,7 +383,7 @@
                     </div>
                     <div class="status-card">
                         <h3>Processes</h3>
-                        <p>${new Set(samples.map(s => s.Name)).size}</p>
+                        <p>${new Set(samples.map(s => `${s.Name}|${s.PID}`)).size}</p>
                     </div>
                     <div class="status-card">
                         <h3>Auto-refresh</h3>
@@ -446,25 +446,24 @@
         }
 
         function renderGCChart(samples) {
-            // Process data for GC chart
+            // Process data for GC chart - group by both Name and PID to handle multiple processes with same name
             const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
-            const processNames = [...new Set(samples.map(s => s.Name))];
+            // Create unique process keys (Name + PID combination)
+            const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
             
             const traces = [];
             const colors = ['#e74c3c', '#f39c12', '#9b59b6', '#2ecc71', '#3498db', '#e67e22'];
             
-            // Create traces for each process
-            processNames.forEach((processName, index) => {
+            // Create traces for each unique process (Name + PID combination)
+            processKeys.forEach((processKey, index) => {
                 const color = colors[index % colors.length];
-                // Get the PID for this process
-                const processSamples = samples.filter(s => s.Name === processName);
-                const pid = processSamples.length > 0 ? processSamples[0].PID : 'unknown';
+                const [processName, pid] = processKey.split('|');
                 
                 // GC time data - use null for timestamps where process doesn't exist yet
                 // Convert from milliseconds (stored in DB) to seconds (for display)
                 const gcData = timestamps.map(timestamp => {
                     const sample = samples
-                        .filter(s => s.Name === processName && s.Timestamp === timestamp)
+                        .filter(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp)
                         [0];
                     return sample && sample.GCTime !== undefined && sample.GCTime !== null && sample.GCTime > 0 ? sample.GCTime / 1000 : null;
                 });
@@ -533,25 +532,23 @@
         }
 
         function renderChart(samples) {
-            // Process data for chart
+            // Process data for chart - group by both Name and PID to handle multiple processes with same name
             const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
-            const processes = [...new Set(samples.map(s => `${s.Name} (PID: ${s.PID})`))];
-            const processNames = [...new Set(samples.map(s => s.Name))];
+            // Create unique process keys (Name + PID combination)
+            const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
             
             const traces = [];
             const colors = ['#3498db', '#e74c3c', '#9b59b6', '#2ecc71', '#f39c12', '#e67e22'];
             
-            // Create traces for each process
-            processNames.forEach((processName, index) => {
+            // Create traces for each unique process (Name + PID combination)
+            processKeys.forEach((processKey, index) => {
                 const color = colors[index % colors.length];
-                // Get the PID for this process (assuming all samples for same process have same PID)
-                const processSamples = samples.filter(s => s.Name === processName);
-                const pid = processSamples.length > 0 ? processSamples[0].PID : 'unknown';
+                const [processName, pid] = processKey.split('|');
                 
                 // RSS data - use null for timestamps where process doesn't exist yet
                 const rssData = timestamps.map(timestamp => {
                     const sample = samples
-                        .filter(s => s.Name === processName && s.Timestamp === timestamp)
+                        .filter(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp)
                         [0];
                     return sample ? sample.RSS : null;  // null means "no data" - line won't appear
                 });
@@ -569,7 +566,7 @@
                 // Heap data - use null for timestamps where process doesn't exist yet
                 const heapData = timestamps.map(timestamp => {
                     const sample = samples
-                        .filter(s => s.Name === processName && s.Timestamp === timestamp)
+                        .filter(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp)
                         [0];
                     return sample ? sample.HeapUsed : null;  // null means "no data" - line won't appear
                 });
@@ -588,9 +585,10 @@
             // Add total memory trace - only sum processes that exist at this exact timestamp
             const totalData = timestamps.map(timestamp => {
                 let total = 0;
-                processNames.forEach(processName => {
+                processKeys.forEach(processKey => {
+                    const [processName, pid] = processKey.split('|');
                     const sample = samples
-                        .filter(s => s.Name === processName && s.Timestamp === timestamp)
+                        .filter(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp)
                         [0];
                     if (sample) total += sample.RSS;
                 });
