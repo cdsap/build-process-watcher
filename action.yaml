@@ -28,6 +28,10 @@ inputs:
   collect_gc:
     description: 'Enable garbage collection monitoring (requires Java processes)'
     required: false
+    default: 'true'
+  disable_summary_output:
+    description: 'Disable GitHub Actions summary output when remote monitoring is enabled (only applies when remote_monitoring is true)'
+    required: false
     default: 'false'
   environment:
     description: 'Environment name (production or staging) - used for auto-detecting default URLs'

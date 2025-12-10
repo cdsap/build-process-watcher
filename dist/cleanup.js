@@ -214296,8 +214296,10 @@ async function run() {
                 }
             }
         }
-        // Add to GitHub Actions summary (always generated)
-        if (process.env.GITHUB_STEP_SUMMARY) {
+        // Add to GitHub Actions summary (only if not disabled for remote mode)
+        const disableSummaryOutput = process.env.DISABLE_SUMMARY_OUTPUT === 'true';
+        const shouldGenerateSummary = !(backendMode && disableSummaryOutput);
+        if (process.env.GITHUB_STEP_SUMMARY && shouldGenerateSummary) {
             const summary = fs.readFileSync(process.env.GITHUB_STEP_SUMMARY, 'utf8');
             if (backendMode && runId) {
                 // Remote monitoring mode - show dashboard info + Mermaid diagram if data available

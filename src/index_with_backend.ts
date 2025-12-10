@@ -11,7 +11,10 @@ async function run() {
     const runId = core.getInput('run_id') || `run-${Date.now()}`;
     const logFile = core.getInput('log_file') || 'build_process_watcher.log';
     const debugMode = core.getInput('debug') === 'true';
-    const collectGc = core.getInput('collect_gc') === 'true';
+    // collect_gc defaults to 'true' - only disable if explicitly set to 'false'
+    const collectGcInput = core.getInput('collect_gc');
+    const collectGc = collectGcInput === '' || collectGcInput === 'true';
+    const disableSummaryOutput = core.getInput('disable_summary_output') === 'true';
     const environment = core.getInput('environment') || 'production'; // Default to production
 
     // If backend is enabled but no URL provided, use the default Cloud Run URL based on environment
@@ -96,6 +99,7 @@ async function run() {
     core.exportVariable('RUN_ID', runId);
     core.exportVariable('LOG_FILE', logFile);
     core.exportVariable('ENVIRONMENT', environment);
+    core.exportVariable('DISABLE_SUMMARY_OUTPUT', disableSummaryOutput.toString());
     if (frontendUrl) {
       // Extract base URL (without /runs/runId) for cleanup step
       const baseFrontendUrl = frontendUrl.replace(/\/runs\/.*$/, '');
