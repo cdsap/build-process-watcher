@@ -24,10 +24,14 @@ Generates log files and charts as workflow artifacts.
 - uses: cdsap/build-process-watcher@0.3
   with:
     remote_monitoring: 'true'
+    collect_gc: 'true'  # Enabled by default, can be set to 'false' to disable
+    disable_summary_output: 'false'  # Set to 'true' to disable GitHub Actions summary when remote
 ```
 
 Data sent to cloud backend with live dashboard (3-hour retention).  
 Dashboard URL shown in job output.
+
+**Note:** By default, GC collection is enabled. Set `collect_gc: 'false'` to disable it. When using remote monitoring, you can disable the GitHub Actions summary output by setting `disable_summary_output: 'true'`.
 
 ---
 
@@ -41,7 +45,10 @@ Dashboard URL shown in job output.
 | `log_file` | Local log filename | `build_process_watcher.log` | No |
 | `interval` | Polling interval (seconds) | `5` | No |
 | `debug` | Enable debug logging | `false` | No |
-| `collect_gc` | Enable garbage collection monitoring (requires Java processes) | `false` | No |
+| `collect_gc` | Enable garbage collection monitoring (requires Java processes) | `true` | No |
+| `disable_summary_output` | Disable GitHub Actions summary output when remote monitoring is enabled (only applies when `remote_monitoring` is `true`) | `false` | No |
+| `environment` | Environment name (production or staging) - used for auto-detecting default URLs | `production` | No |
+| `frontend_url` | Frontend URL for dashboard (optional - can also be set via FRONTEND_URL or FRONTEND_URL_STAGING env vars, will be auto-detected from backend_url/environment if not provided) | Auto-detected | No |
 
 ---
 
@@ -50,12 +57,15 @@ Dashboard URL shown in job output.
 ### Local Mode
 - `build_process_watcher.log` - Raw memory data
 - `memory_usage.svg` - SVG chart
+- `gc_time.svg` - GC time chart (if `collect_gc` is enabled)
 - GitHub Actions job summary with Mermaid chart
 
 ### Remote Mode
 - Live dashboard URL (in job output)
 - Data retention: 3 hours
 - Real-time process monitoring
+- GC time metrics (if `collect_gc` is enabled)
+- GitHub Actions job summary (unless `disable_summary_output: 'true'` is set)
 
 ---
 
