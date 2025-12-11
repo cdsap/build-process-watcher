@@ -419,10 +419,10 @@
                 ${shouldShowRssHeapRatioChart(samples) ? `
                 <div class="chart-container">
                     <div class="downloads-toolbar">
-                        <button class="btn" id="btn-download-rss-heap-png">Download RSS/Heap PNG</button>
-                        <button class="btn" id="btn-download-rss-heap-svg">Download RSS/Heap SVG</button>
+                        <button class="btn" id="btn-download-rss-heap-png">Download Heap/RSS PNG</button>
+                        <button class="btn" id="btn-download-rss-heap-svg">Download Heap/RSS SVG</button>
                     </div>
-                    <h3>RSS/Heap Ratio Over Time</h3>
+                    <h3>Heap/RSS Ratio Over Time</h3>
                     <div class="chart-wrapper">
                         <div id="rss-heap-chart" style="width: 100%; height: 500px;"></div>
                     </div>
@@ -556,7 +556,7 @@
         }
 
         function renderRssHeapRatioChart(samples) {
-            // Process data for RSS/Heap ratio chart - group by both Name and PID to handle multiple processes with same name
+            // Process data for Heap/RSS ratio chart - group by both Name and PID to handle multiple processes with same name
             const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
             // Create unique process keys (Name + PID combination)
             const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
@@ -569,13 +569,13 @@
                 const color = colors[index % colors.length];
                 const [processName, pid] = processKey.split('|');
                 
-                // RSS/Heap ratio data - use null for timestamps where process doesn't exist yet or heap is 0
+                // Heap/RSS ratio data - use null for timestamps where process doesn't exist yet or RSS is 0
                 const ratioData = timestamps.map(timestamp => {
                     const sample = samples
                         .filter(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp)
                         [0];
-                    if (sample && sample.HeapUsed && sample.HeapUsed > 0) {
-                        return sample.RSS / sample.HeapUsed;
+                    if (sample && sample.RSS && sample.RSS > 0) {
+                        return sample.HeapUsed / sample.RSS;
                     }
                     return null;
                 });
@@ -596,13 +596,13 @@
             const isMobile = window.innerWidth < 768;
             
             const layout = {
-                title: isMobile ? '' : 'RSS/Heap Ratio Over Time',
+                title: isMobile ? '' : 'Heap/RSS Ratio Over Time',
                 xaxis: { 
                     title: 'Time',
                     tickformat: isMobile ? '%H:%M' : '%H:%M:%S',
                     tickangle: isMobile ? -45 : 0
                 },
-                yaxis: { title: 'RSS/Heap Ratio' },
+                yaxis: { title: 'Heap/RSS Ratio' },
                 showlegend: true,
                 legend: { 
                     x: isMobile ? 0.5 : 1.02, 
@@ -836,7 +836,7 @@
                 a.click();
                 a.remove();
             } catch (e) {
-                console.error('Failed to export RSS/Heap ratio chart:', e);
+                console.error('Failed to export Heap/RSS ratio chart:', e);
             }
         }
 
