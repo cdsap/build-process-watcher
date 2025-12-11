@@ -531,6 +531,94 @@
             });
         }
 
+        function renderRssHeapRatioChart(samples) {
+            // Process data for RSS/Heap ratio chart - group by both Name and PID to handle multiple processes with same name
+            const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
+            // Create unique process keys (Name + PID combination)
+            const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
+            
+            const traces = [];
+            const colors = ['#e74c3c', '#f39c12', '#9b59b6', '#2ecc71', '#3498db', '#e67e22', '#1abc9c', '#e91e63'];
+            
+            // Create traces for each unique process (Name + PID combination)
+            processKeys.forEach((processKey, index) => {
+                const color = colors[index % colors.length];
+                const [processName, pid] = processKey.split('|');
+                
+                // RSS/Heap ratio data - use null for timestamps where process doesn't exist yet or heap is 0
+                const ratioData = timestamps.map(timestamp => {
+                    const sample = samples
+                        .filter(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp)
+                        [0];
+                    if (sample && sample.HeapUsed && sample.HeapUsed > 0) {
+                        return sample.RSS / sample.HeapUsed;
+                    }
+                    return null;
+                });
+                
+                traces.push({
+                    x: timestamps.map(t => new Date(t)),
+                    y: ratioData,
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    name: `${processName} PID:${pid}`,
+                    line: { color: color, width: 3 },
+                    marker: { size: 6, color: color },
+                    connectgaps: false
+                });
+            });
+
+            // Detect if mobile
+            const isMobile = window.innerWidth < 768;
+            
+            const layout = {
+                title: isMobile ? '' : 'RSS/Heap Ratio Over Time',
+                xaxis: { 
+                    title: 'Time',
+                    tickformat: isMobile ? '%H:%M' : '%H:%M:%S',
+                    tickangle: isMobile ? -45 : 0
+                },
+                yaxis: { title: 'RSS/Heap Ratio' },
+                showlegend: true,
+                legend: { 
+                    x: isMobile ? 0.5 : 1.02, 
+                    y: isMobile ? -0.2 : 1,
+                    xanchor: isMobile ? 'center' : 'left',
+                    orientation: isMobile ? 'h' : 'v'
+                },
+                margin: { 
+                    l: isMobile ? 50 : 60, 
+                    r: isMobile ? 20 : 100, 
+                    t: isMobile ? 20 : 40, 
+                    b: isMobile ? 80 : 60 
+                },
+                font: {
+                    size: isMobile ? 10 : 12
+                }
+            };
+
+            const config = {
+                responsive: true,
+                displayModeBar: true,
+                displaylogo: false,
+                modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d', 'autoScale2d'],
+                toImageButtonOptions: {
+                    format: 'png',
+                    filename: `build-monitor-rss-heap-${runId}`,
+                    height: isMobile ? 400 : 500,
+                    width: isMobile ? 800 : 1000,
+                    scale: 2
+                }
+            };
+
+            Plotly.newPlot('rss-heap-chart', traces, layout, config);
+            
+            // Handle window resize
+            window.addEventListener('resize', function() {
+                Plotly.Plots.resize('rss-heap-chart');
+            });
+        }
+
         function renderChart(samples) {
             // Process data for chart - group by both Name and PID to handle multiple processes with same name
             const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
