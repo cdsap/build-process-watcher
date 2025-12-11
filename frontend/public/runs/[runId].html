@@ -416,12 +416,27 @@
                     </div>
                 </div>
                 ` : ''}
+                ${shouldShowRssHeapRatioChart(samples) ? `
+                <div class="chart-container">
+                    <div class="downloads-toolbar">
+                        <button class="btn" id="btn-download-rss-heap-png">Download RSS/Heap PNG</button>
+                        <button class="btn" id="btn-download-rss-heap-svg">Download RSS/Heap SVG</button>
+                    </div>
+                    <h3>RSS/Heap Ratio Over Time</h3>
+                    <div class="chart-wrapper">
+                        <div id="rss-heap-chart" style="width: 100%; height: 500px;"></div>
+                    </div>
+                </div>
+                ` : ''}
             `;
 
             if (samples.length > 0) {
                 renderChart(samples);
                 if (hasGCData(samples)) {
                     renderGCChart(samples);
+                }
+                if (shouldShowRssHeapRatioChart(samples)) {
+                    renderRssHeapRatioChart(samples);
                 }
             }
 
@@ -432,6 +447,8 @@
             const btnCsv = document.getElementById('btn-download-csv');
             const btnGcPng = document.getElementById('btn-download-gc-png');
             const btnGcSvg = document.getElementById('btn-download-gc-svg');
+            const btnRssHeapPng = document.getElementById('btn-download-rss-heap-png');
+            const btnRssHeapSvg = document.getElementById('btn-download-rss-heap-svg');
 
             if (btnPng) btnPng.onclick = () => downloadChart('png');
             if (btnSvg) btnSvg.onclick = () => downloadChart('svg');
@@ -439,10 +456,17 @@
             if (btnCsv) btnCsv.onclick = () => downloadCsv(runId);
             if (btnGcPng) btnGcPng.onclick = () => downloadGCChart('png');
             if (btnGcSvg) btnGcSvg.onclick = () => downloadGCChart('svg');
+            if (btnRssHeapPng) btnRssHeapPng.onclick = () => downloadRssHeapRatioChart('png');
+            if (btnRssHeapSvg) btnRssHeapSvg.onclick = () => downloadRssHeapRatioChart('svg');
         }
 
         function hasGCData(samples) {
             return samples.some(sample => sample.GCTime !== undefined && sample.GCTime !== null && sample.GCTime > 0);
+        }
+
+        function shouldShowRssHeapRatioChart(samples) {
+            const uniqueTimestamps = new Set(samples.map(s => s.Timestamp));
+            return uniqueTimestamps.size > 10;
         }
 
         function renderGCChart(samples) {
@@ -789,6 +813,30 @@
                 a.remove();
             } catch (e) {
                 console.error('Failed to export GC chart:', e);
+            }
+        }
+
+        async function downloadRssHeapRatioChart(format) {
+            try {
+                const chart = document.getElementById('rss-heap-chart');
+                const isMobile = window.innerWidth < 768;
+                const filename = `build-monitor-rss-heap-${runId}`;
+                const opts = {
+                    format: format,
+                    filename: filename,
+                    height: isMobile ? 400 : 500,
+                    width: isMobile ? 800 : 1000,
+                    scale: 2
+                };
+                const url = await Plotly.toImage(chart, opts);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${filename}.${format}`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            } catch (e) {
+                console.error('Failed to export RSS/Heap ratio chart:', e);
             }
         }
 
