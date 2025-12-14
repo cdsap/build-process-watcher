@@ -86,9 +86,15 @@ func (c *Client) StoreSamples(runID string, samples []models.Sample) error {
 			StartTime:          now,
 			CreatedAt:          now,
 			UpdatedAt:          now,
-			UpdatedAtTimestamp: ToMillis(now), // Set timestamp on creation
+			UpdatedAtTimestamp: ToMillis(now),                       // Set timestamp on creation
+			ProcessInfo:        make(map[string]models.ProcessInfo), // Initialize ProcessInfo map
 		}
 		log.Printf("📄 Creating new document for run ID: %s", runID)
+	}
+
+	// Initialize ProcessInfo map if nil
+	if runDoc.ProcessInfo == nil {
+		runDoc.ProcessInfo = make(map[string]models.ProcessInfo)
 	}
 
 	// Append new samples
@@ -106,6 +112,49 @@ func (c *Client) StoreSamples(runID string, samples []models.Sample) error {
 	}
 
 	log.Printf("✅ Successfully stored %d samples for run ID: %s", len(samples), runID)
+	return nil
+}
+
+// StoreProcessInfo stores or updates process information (VM flags) for a process
+func (c *Client) StoreProcessInfo(runID string, processInfo models.ProcessInfo) error {
+	log.Printf("🔄 Storing process info for PID: %s (Name: %s) in run ID: %s", processInfo.PID, processInfo.Name, runID)
+
+	doc := c.firestore.Collection("runs").Doc(runID)
+
+	// Get existing document
+	snapshot, err := doc.Get(c.ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get run document: %w", err)
+	}
+
+	if !snapshot.Exists() {
+		return fmt.Errorf("run %s not found", runID)
+	}
+
+	var runDoc models.RunDoc
+	if err := snapshot.DataTo(&runDoc); err != nil {
+		return fmt.Errorf("failed to parse document data: %w", err)
+	}
+
+	// Initialize ProcessInfo map if nil
+	if runDoc.ProcessInfo == nil {
+		runDoc.ProcessInfo = make(map[string]models.ProcessInfo)
+	}
+
+	// Store or update process info
+	runDoc.ProcessInfo[processInfo.PID] = processInfo
+	now := time.Now()
+	runDoc.UpdatedAt = now
+	runDoc.UpdatedAtTimestamp = ToMillis(now)
+
+	// Save back to Firestore
+	_, err = doc.Set(c.ctx, runDoc)
+	if err != nil {
+		log.Printf("❌ Error saving process info to Firestore: %v", err)
+		return err
+	}
+
+	log.Printf("✅ Successfully stored process info for PID: %s in run ID: %s", processInfo.PID, runID)
 	return nil
 }
 

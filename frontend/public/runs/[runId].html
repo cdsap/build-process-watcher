@@ -98,6 +98,58 @@
             color: #111827;
         }
 
+        .process-info-section {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .process-info-section h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #111827;
+            margin-bottom: 1.5rem;
+        }
+
+        .process-info-card {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .process-info-card h3 {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: #111827;
+            margin-bottom: 0.5rem;
+        }
+
+        .process-info-card .process-meta {
+            font-size: 0.875rem;
+            color: #6b7280;
+            margin-bottom: 1rem;
+        }
+
+        .vm-flags-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+
+        .vm-flag {
+            background: #e5e7eb;
+            color: #374151;
+            padding: 0.25rem 0.75rem;
+            border-radius: 0.375rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+        }
+
         .status-in-progress {
             color: #2563eb;
         }
@@ -342,10 +394,36 @@
         function renderDashboard(runId, data) {
             const isFinished = data.finished;
             const samples = data.samples || [];
+            const processInfo = data.process_info || {};
             window.currentSamples = samples;
             
             const refreshStatus = isFinished ? 'Stopped' : `Active (${refreshInterval}s)`;
             const lastRefreshText = lastRefreshTime ? lastRefreshTime.toLocaleTimeString() : 'Never';
+            
+            // Render process info section
+            let processInfoHtml = '';
+            if (Object.keys(processInfo).length > 0) {
+                processInfoHtml = '<div class="process-info-section">';
+                processInfoHtml += '<h2>Process Information</h2>';
+                for (const [pid, info] of Object.entries(processInfo)) {
+                    const vmFlags = info.vm_flags || [];
+                    processInfoHtml += '<div class="process-info-card">';
+                    processInfoHtml += `<h3>${info.name || 'Unknown'}</h3>`;
+                    processInfoHtml += `<div class="process-meta">PID: ${pid}</div>`;
+                    if (vmFlags.length > 0) {
+                        processInfoHtml += '<div><strong>VM Flags:</strong></div>';
+                        processInfoHtml += '<div class="vm-flags-list">';
+                        vmFlags.forEach(flag => {
+                            processInfoHtml += `<span class="vm-flag">${escapeHtml(flag)}</span>`;
+                        });
+                        processInfoHtml += '</div>';
+                    } else {
+                        processInfoHtml += '<div class="process-meta">No VM flags available</div>';
+                    }
+                    processInfoHtml += '</div>';
+                }
+                processInfoHtml += '</div>';
+            }
             
             document.getElementById('content').innerHTML = `
                 <div class="run-info">
@@ -390,6 +468,8 @@
                         <p>${refreshStatus}</p>
                     </div>
                 </div>
+
+                ${processInfoHtml}
 
                 <div class="chart-container">
                     <div class="downloads-toolbar">
@@ -894,6 +974,13 @@
             } catch (e) {
                 console.error('Failed to download CSV:', e);
             }
+        }
+
+        function escapeHtml(str) {
+            if (str === undefined || str === null) return '';
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
         }
 
         function escapeCsv(value) {

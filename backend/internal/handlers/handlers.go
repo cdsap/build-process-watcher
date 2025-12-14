@@ -163,6 +163,16 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Store process info if provided (VM flags for a new process)
+	if req.ProcessInfo != nil {
+		if err := h.storage.StoreProcessInfo(req.RunID, *req.ProcessInfo); err != nil {
+			log.Printf("Failed to store process info: %v", err)
+			// Don't fail the request if process info storage fails, just log it
+		} else {
+			log.Printf("✅ Stored process info for PID: %s", req.ProcessInfo.PID)
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "success", "samples": fmt.Sprintf("%d", len(samples))})
@@ -206,6 +216,7 @@ func (h *Handlers) GetRun(w http.ResponseWriter, r *http.Request) {
 
 	var response models.RunResponse
 	response.Samples = runDoc.Samples
+	response.ProcessInfo = runDoc.ProcessInfo
 	response.Finished = runDoc.Finished
 	response.UpdatedAt = runDoc.UpdatedAt
 	if !runDoc.FinishedAt.IsZero() {

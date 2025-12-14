@@ -105,6 +105,116 @@ get_auth_token() {
     fi
 }
 
+# Function to get VM flags from a Java process using jinfo
+get_vm_flags() {
+    local pid="$1"
+    if [ -z "$pid" ]; then
+        return 1
+    fi
+
+    # Try to get VM flags using jinfo -flags
+    local jinfo_output
+    jinfo_output=$(jinfo -flags "$pid" 2>/dev/null)
+    if [ $? -ne 0 ] || [ -z "$jinfo_output" ]; then
+        return 1
+    fi
+
+    # Extract VM flags (everything after "VM Flags:")
+    # The output format is: "VM Flags: -XX:flag1 -XX:flag2 ..."
+    local vm_flags_line
+    vm_flags_line=$(echo "$jinfo_output" | grep "VM Flags:" | sed 's/VM Flags://' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
+    
+    if [ -z "$vm_flags_line" ]; then
+        return 1
+    fi
+
+    # Parse flags into an array (split by spaces)
+    local flags=()
+    for flag in $vm_flags_line; do
+        # Only include flags that start with -XX:
+        if [[ "$flag" == -XX:* ]]; then
+            flags+=("$flag")
+        fi
+    done
+
+    # Return flags as JSON array
+    if [ ${#flags[@]} -gt 0 ]; then
+        local json_flags="["
+        for i in "${!flags[@]}"; do
+            if [ $i -gt 0 ]; then
+                json_flags+=","
+            fi
+            json_flags+="\"${flags[$i]}\""
+        done
+        json_flags+="]"
+        echo "$json_flags"
+        return 0
+    fi
+    
+    return 1
+}
+
+# Function to send process info (VM flags) to backend
+send_process_info_to_backend() {
+    local pid="$1"
+    local name="$2"
+    local vm_flags_json="$3"
+
+    # Ensure we have a valid auth token
+    if [ -z "$AUTH_TOKEN" ]; then
+        if [ "$DEBUG_MODE" = "true" ]; then
+            echo "   ⚠️  No auth token available, requesting one..." >&2
+        fi
+        if ! get_auth_token; then
+            if [ "$DEBUG_MODE" = "true" ]; then
+                echo "   ❌ Failed to get auth token, skipping process info send" >&2
+            fi
+            return 1
+        fi
+    fi
+
+    # Prepare JSON payload for process info
+    local json_payload=$(cat <<EOF
+{
+    "run_id": "$RUN_ID",
+    "data": "",
+    "process_info": {
+        "pid": "$pid",
+        "name": "$name",
+        "vm_flags": $vm_flags_json
+    }
+}
+EOF
+)
+
+    if [ "$DEBUG_MODE" = "true" ]; then
+        echo "📤 [$(date '+%H:%M:%S')] Sending process info for PID: $pid ($name)" >&2
+    fi
+
+    # Send to backend
+    local curl_output
+    local curl_exit_code
+    curl_output=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "$BACKEND_URL/ingest" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $AUTH_TOKEN" \
+        -d "$json_payload" 2>&1)
+    
+    curl_exit_code=$?
+    local http_code=$(echo "$curl_output" | grep -o "HTTP_CODE:[0-9]*" | cut -d: -f2 || echo "000")
+    
+    if [ "$curl_exit_code" -eq 0 ] && [ "$http_code" = "200" ]; then
+        if [ "$DEBUG_MODE" = "true" ]; then
+            echo "✅ [$(date '+%H:%M:%S')] Process info sent successfully for PID: $pid" >&2
+        fi
+        return 0
+    else
+        if [ "$DEBUG_MODE" = "true" ]; then
+            echo "⚠️  [$(date '+%H:%M:%S')] Failed to send process info for PID: $pid (HTTP $http_code)" >&2
+        fi
+        return 1
+    fi
+}
+
 # Function to send data to backend
 send_to_backend() {
     local timestamp="$1"
@@ -331,6 +441,9 @@ if [ "$DEBUG_MODE" = "true" ]; then
     echo "🔍 Looking for Java processes matching patterns: ${PATTERNS[*]}" >&2
 fi
 
+# Track which PIDs we've already sent VM flags for
+declare -A seen_pids=()
+
 while true; do
   CURRENT_TIME=$(date +%s)
   ELAPSED_TIME=$((CURRENT_TIME - START_TIME))
@@ -351,6 +464,27 @@ while true; do
 
     for PATTERN in "${PATTERNS[@]}"; do
       if [[ "$NAME" == "$PATTERN" ]]; then
+        # Check if this is a new process we haven't seen before and get VM flags
+        if [ -z "${seen_pids[$PID]:-}" ]; then
+          seen_pids[$PID]=1
+          if [ "$DEBUG_MODE" = "true" ]; then
+            echo "🆕 New process detected: PID $PID ($NAME), getting VM flags..." >&2
+          fi
+          
+          # Get VM flags for this process
+          VM_FLAGS_JSON=$(get_vm_flags "$PID")
+          if [ $? -eq 0 ] && [ -n "$VM_FLAGS_JSON" ]; then
+            if [ "$DEBUG_MODE" = "true" ]; then
+              echo "✅ Got VM flags for PID $PID" >&2
+            fi
+            # Send process info to backend
+            send_process_info_to_backend "$PID" "$NAME" "$VM_FLAGS_JSON"
+          else
+            if [ "$DEBUG_MODE" = "true" ]; then
+              echo "⚠️  Could not get VM flags for PID $PID" >&2
+            fi
+          fi
+        fi
         if [ "$DEBUG_MODE" = "true" ]; then
             echo "✅ Found matching process: $PID ($NAME)" >&2
         fi
