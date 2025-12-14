@@ -125,8 +125,32 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("✅ Token validated successfully for run_id: %s", req.RunID)
 
-	if req.RunID == "" || req.Data == "" {
-		http.Error(w, "Missing run_id or data", http.StatusBadRequest)
+	if req.RunID == "" {
+		http.Error(w, "Missing run_id", http.StatusBadRequest)
+		return
+	}
+
+	// Allow empty data if ProcessInfo is provided (for VM flags-only requests)
+	if req.Data == "" && req.ProcessInfo == nil {
+		http.Error(w, "Missing data or process_info", http.StatusBadRequest)
+		return
+	}
+
+	// Handle process info first (if provided) - this can work independently
+	if req.ProcessInfo != nil {
+		if err := h.storage.StoreProcessInfo(req.RunID, *req.ProcessInfo); err != nil {
+			log.Printf("Failed to store process info: %v", err)
+			// Don't fail the request if process info storage fails, just log it
+		} else {
+			log.Printf("✅ Stored process info for PID: %s", req.ProcessInfo.PID)
+		}
+	}
+
+	// If no data provided, we're done (process info was handled above)
+	if req.Data == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"status": "success", "process_info": "stored"})
 		return
 	}
 
@@ -161,16 +185,6 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Failed to store samples: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
-	}
-
-	// Store process info if provided (VM flags for a new process)
-	if req.ProcessInfo != nil {
-		if err := h.storage.StoreProcessInfo(req.RunID, *req.ProcessInfo); err != nil {
-			log.Printf("Failed to store process info: %v", err)
-			// Don't fail the request if process info storage fails, just log it
-		} else {
-			log.Printf("✅ Stored process info for PID: %s", req.ProcessInfo.PID)
-		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
