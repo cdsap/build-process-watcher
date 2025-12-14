@@ -86,15 +86,9 @@ func (c *Client) StoreSamples(runID string, samples []models.Sample) error {
 			StartTime:          now,
 			CreatedAt:          now,
 			UpdatedAt:          now,
-			UpdatedAtTimestamp: ToMillis(now),                       // Set timestamp on creation
-			ProcessInfo:        make(map[string]models.ProcessInfo), // Initialize ProcessInfo map
+			UpdatedAtTimestamp: ToMillis(now), // Set timestamp on creation
 		}
 		log.Printf("📄 Creating new document for run ID: %s", runID)
-	}
-
-	// Initialize ProcessInfo map if nil
-	if runDoc.ProcessInfo == nil {
-		runDoc.ProcessInfo = make(map[string]models.ProcessInfo)
 	}
 
 	// Append new samples
@@ -115,40 +109,58 @@ func (c *Client) StoreSamples(runID string, samples []models.Sample) error {
 	return nil
 }
 
-// StoreProcessInfo stores or updates process information (VM flags) for a process
+// StoreProcessInfo stores or updates process information (VM flags) for a process in the processes collection
 func (c *Client) StoreProcessInfo(runID string, processInfo models.ProcessInfo) error {
 	log.Printf("🔄 Storing process info for PID: %s (Name: %s) in run ID: %s", processInfo.PID, processInfo.Name, runID)
 
-	doc := c.firestore.Collection("runs").Doc(runID)
+	doc := c.firestore.Collection("processes").Doc(runID)
 
-	// Get existing document
+	// Get existing document or create new one
 	snapshot, err := doc.Get(c.ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get run document: %w", err)
+	if err != nil && !strings.Contains(err.Error(), "not found") {
+		return fmt.Errorf("failed to get process document: %w", err)
 	}
 
-	if !snapshot.Exists() {
-		return fmt.Errorf("run %s not found", runID)
-	}
-
-	var runDoc models.RunDoc
-	if err := snapshot.DataTo(&runDoc); err != nil {
-		return fmt.Errorf("failed to parse document data: %w", err)
+	var processDoc models.ProcessDoc
+	if snapshot != nil && snapshot.Exists() {
+		if err := snapshot.DataTo(&processDoc); err != nil {
+			log.Printf("❌ Error parsing process document data: %v", err)
+			return fmt.Errorf("failed to parse document data: %w", err)
+		}
+		log.Printf("📄 Found existing process document for run ID: %s", runID)
+	} else {
+		now := time.Now()
+		processDoc = models.ProcessDoc{
+			RunID:              runID,
+			ProcessInfo:        make(map[string]models.ProcessInfo),
+			CreatedAt:          now,
+			UpdatedAt:          now,
+			UpdatedAtTimestamp: ToMillis(now),
+		}
+		log.Printf("📄 Creating new process document for run ID: %s", runID)
 	}
 
 	// Initialize ProcessInfo map if nil
-	if runDoc.ProcessInfo == nil {
-		runDoc.ProcessInfo = make(map[string]models.ProcessInfo)
+	if processDoc.ProcessInfo == nil {
+		processDoc.ProcessInfo = make(map[string]models.ProcessInfo)
 	}
 
-	// Store or update process info
-	runDoc.ProcessInfo[processInfo.PID] = processInfo
+	// Store or update process info (only if not already exists, or update if exists)
+	if _, exists := processDoc.ProcessInfo[processInfo.PID]; exists {
+		log.Printf("📝 Updating existing process info for PID: %s", processInfo.PID)
+		// Replace with new process info
+		processDoc.ProcessInfo[processInfo.PID] = processInfo
+	} else {
+		log.Printf("➕ Adding new process info for PID: %s", processInfo.PID)
+		processDoc.ProcessInfo[processInfo.PID] = processInfo
+	}
+
 	now := time.Now()
-	runDoc.UpdatedAt = now
-	runDoc.UpdatedAtTimestamp = ToMillis(now)
+	processDoc.UpdatedAt = now
+	processDoc.UpdatedAtTimestamp = ToMillis(now)
 
 	// Save back to Firestore
-	_, err = doc.Set(c.ctx, runDoc)
+	_, err = doc.Set(c.ctx, processDoc)
 	if err != nil {
 		log.Printf("❌ Error saving process info to Firestore: %v", err)
 		return err
@@ -156,6 +168,30 @@ func (c *Client) StoreProcessInfo(runID string, processInfo models.ProcessInfo) 
 
 	log.Printf("✅ Successfully stored process info for PID: %s in run ID: %s", processInfo.PID, runID)
 	return nil
+}
+
+// GetProcesses retrieves process information for a run from the processes collection
+func (c *Client) GetProcesses(runID string) (*models.ProcessDoc, error) {
+	doc := c.firestore.Collection("processes").Doc(runID)
+	snapshot, err := doc.Get(c.ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if !snapshot.Exists() {
+		// Return empty ProcessDoc if not found (not an error)
+		return &models.ProcessDoc{
+			RunID:       runID,
+			ProcessInfo: make(map[string]models.ProcessInfo),
+		}, nil
+	}
+
+	var processDoc models.ProcessDoc
+	if err := snapshot.DataTo(&processDoc); err != nil {
+		return nil, err
+	}
+
+	return &processDoc, nil
 }
 
 // MarkRunAsFinished marks a run as finished

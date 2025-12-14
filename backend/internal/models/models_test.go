@@ -87,20 +87,11 @@ func TestProcessInfo_NilVMFlags(t *testing.T) {
 	}
 }
 
-func TestRunDoc_ProcessInfo(t *testing.T) {
-	runDoc := RunDoc{
-		ID:      "test-run",
-		RunID:   "test-run",
-		Samples: []Sample{},
+func TestProcessDoc_ProcessInfo(t *testing.T) {
+	processDoc := ProcessDoc{
+		RunID:       "test-run",
+		ProcessInfo: make(map[string]ProcessInfo),
 	}
-
-	// Test that ProcessInfo can be nil initially
-	if runDoc.ProcessInfo != nil {
-		t.Error("ProcessInfo should be nil initially")
-	}
-
-	// Initialize ProcessInfo map
-	runDoc.ProcessInfo = make(map[string]ProcessInfo)
 
 	// Add process info
 	processInfo := ProcessInfo{
@@ -108,15 +99,58 @@ func TestRunDoc_ProcessInfo(t *testing.T) {
 		Name:    "GradleDaemon",
 		VMFlags: []string{"-XX:+UseG1GC"},
 	}
-	runDoc.ProcessInfo["12345"] = processInfo
+	processDoc.ProcessInfo["12345"] = processInfo
 
-	if len(runDoc.ProcessInfo) != 1 {
-		t.Errorf("Expected 1 process info entry, got %d", len(runDoc.ProcessInfo))
+	if len(processDoc.ProcessInfo) != 1 {
+		t.Errorf("Expected 1 process info entry, got %d", len(processDoc.ProcessInfo))
 	}
 
-	stored, ok := runDoc.ProcessInfo["12345"]
+	stored, ok := processDoc.ProcessInfo["12345"]
 	if !ok {
 		t.Fatal("Process info for PID 12345 not found")
+	}
+
+	if stored.PID != processInfo.PID {
+		t.Errorf("Stored PID mismatch: expected %s, got %s", processInfo.PID, stored.PID)
+	}
+}
+
+func TestProcessDoc_MarshalJSON(t *testing.T) {
+	processDoc := ProcessDoc{
+		RunID:       "test-run",
+		ProcessInfo: make(map[string]ProcessInfo),
+	}
+
+	// Add process info
+	processInfo := ProcessInfo{
+		PID:     "12345",
+		Name:    "GradleDaemon",
+		VMFlags: []string{"-XX:+UseG1GC", "-XX:MaxHeapSize=2g"},
+	}
+	processDoc.ProcessInfo["12345"] = processInfo
+
+	// Marshal to JSON to verify it works
+	jsonData, err := json.Marshal(processDoc)
+	if err != nil {
+		t.Fatalf("Failed to marshal ProcessDoc: %v", err)
+	}
+
+	var unmarshaled ProcessDoc
+	if err := json.Unmarshal(jsonData, &unmarshaled); err != nil {
+		t.Fatalf("Failed to unmarshal ProcessDoc: %v", err)
+	}
+
+	if unmarshaled.RunID != processDoc.RunID {
+		t.Errorf("RunID mismatch: expected %s, got %s", processDoc.RunID, unmarshaled.RunID)
+	}
+
+	if len(unmarshaled.ProcessInfo) != 1 {
+		t.Errorf("Expected 1 process info entry, got %d", len(unmarshaled.ProcessInfo))
+	}
+
+	stored, ok := unmarshaled.ProcessInfo["12345"]
+	if !ok {
+		t.Fatal("Process info for PID 12345 not found after unmarshal")
 	}
 
 	if stored.PID != processInfo.PID {

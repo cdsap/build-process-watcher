@@ -68,7 +68,7 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 	log.Printf("=== INGEST HANDLER CALLED ===")
 	log.Printf("Method: %s", r.Method)
 	log.Printf("Headers: %v", r.Header)
-	
+
 	// Handle CORS preflight
 	if r.Method == http.MethodOptions {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -77,7 +77,7 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	
+
 	if r.Method != http.MethodPost {
 		log.Printf("Wrong method: %s", r.Method)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -86,7 +86,7 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 
 	// Parse request body to get run_id
 	var req models.IngestRequest
-	
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("Failed to parse request body: %v", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -195,7 +195,7 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 // GetRun retrieves run data
 func (h *Handlers) GetRun(w http.ResponseWriter, r *http.Request) {
 	log.Printf("runsHandler called with path: %s, method: %s", r.URL.Path, r.Method)
-	
+
 	// Handle CORS preflight
 	if r.Method == http.MethodOptions {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -204,7 +204,7 @@ func (h *Handlers) GetRun(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	
+
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -228,9 +228,20 @@ func (h *Handlers) GetRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get process info from processes collection
+	processDoc, err := h.storage.GetProcesses(runID)
+	if err != nil {
+		log.Printf("Warning: Failed to get process info for run %s: %v", runID, err)
+		// Continue without process info rather than failing
+		processDoc = &models.ProcessDoc{
+			RunID:       runID,
+			ProcessInfo: make(map[string]models.ProcessInfo),
+		}
+	}
+
 	var response models.RunResponse
 	response.Samples = runDoc.Samples
-	response.ProcessInfo = runDoc.ProcessInfo
+	response.ProcessInfo = processDoc.ProcessInfo
 	response.Finished = runDoc.Finished
 	response.UpdatedAt = runDoc.UpdatedAt
 	if !runDoc.FinishedAt.IsZero() {
@@ -254,7 +265,7 @@ func (h *Handlers) GetRun(w http.ResponseWriter, r *http.Request) {
 // FinishRun marks a run as finished (requires JWT)
 func (h *Handlers) FinishRun(w http.ResponseWriter, r *http.Request) {
 	log.Printf("finishHandler called with path: %s, method: %s", r.URL.Path, r.Method)
-	
+
 	// Handle CORS preflight
 	if r.Method == http.MethodOptions {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -263,7 +274,7 @@ func (h *Handlers) FinishRun(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	
+
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -327,4 +338,3 @@ func (h *Handlers) FinishRun(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("✅ Successfully marked run %s as finished", runID)
 }
-

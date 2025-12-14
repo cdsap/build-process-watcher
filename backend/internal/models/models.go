@@ -22,20 +22,29 @@ type ProcessInfo struct {
 	VMFlags []string `firestore:"vm_flags"`
 }
 
-// RunDoc represents a monitoring run document in Firestore
-type RunDoc struct {
-	ID                 string                 `firestore:"id"`
+// ProcessDoc represents a processes document in Firestore (one per run)
+type ProcessDoc struct {
 	RunID              string                 `firestore:"run_id"`
-	StartTime          time.Time              `firestore:"start_time"`
-	EndTime            time.Time              `firestore:"end_time,omitempty"`
+	ProcessInfo        map[string]ProcessInfo `firestore:"process_info"` // PID -> ProcessInfo map
 	CreatedAt          time.Time              `firestore:"created_at"`
 	UpdatedAt          time.Time              `firestore:"updated_at"`
 	UpdatedAtTimestamp int64                  `firestore:"updated_at_timestamp"` // Unix millis for timezone-independent queries
-	Samples            []Sample               `firestore:"samples"`
-	ProcessInfo        map[string]ProcessInfo `firestore:"process_info,omitempty"` // PID -> ProcessInfo map
-	Finished           bool                   `firestore:"finished,omitempty"`
-	FinishedAt         time.Time              `firestore:"finished_at,omitempty"`
 	ExpireAt           time.Time              `firestore:"expire_at,omitempty"` // TTL field - set manually in Firestore, used by TTL policy
+}
+
+// RunDoc represents a monitoring run document in Firestore
+type RunDoc struct {
+	ID                 string    `firestore:"id"`
+	RunID              string    `firestore:"run_id"`
+	StartTime          time.Time `firestore:"start_time"`
+	EndTime            time.Time `firestore:"end_time,omitempty"`
+	CreatedAt          time.Time `firestore:"created_at"`
+	UpdatedAt          time.Time `firestore:"updated_at"`
+	UpdatedAtTimestamp int64     `firestore:"updated_at_timestamp"` // Unix millis for timezone-independent queries
+	Samples            []Sample  `firestore:"samples"`
+	Finished           bool      `firestore:"finished,omitempty"`
+	FinishedAt         time.Time `firestore:"finished_at,omitempty"`
+	ExpireAt           time.Time `firestore:"expire_at,omitempty"` // TTL field - set manually in Firestore, used by TTL policy
 }
 
 // RunResponse is the API response for a run
