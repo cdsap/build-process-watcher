@@ -11,7 +11,7 @@ Monitor memory usage of Java/Kotlin build processes (`GradleDaemon`, `GradleWork
 ### Local Mode (Artifacts Only)
 
 ```yaml
-- uses: cdsap/build-process-watcher@0.3
+- uses: cdsap/build-process-watcher@v0.4.1
   with:
     remote_monitoring: 'false'
 ```
@@ -21,7 +21,7 @@ Generates log files and charts as workflow artifacts.
 ### Remote Mode (Live Dashboard)
 
 ```yaml
-- uses: cdsap/build-process-watcher@0.3
+- uses: cdsap/build-process-watcher@v0.4.1
   with:
     remote_monitoring: 'true'
     collect_gc: 'true'  # Enabled by default, can be set to 'false' to disable

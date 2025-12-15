@@ -436,7 +436,7 @@
                 <h3><span class="feature-icon">📦</span>Default Mode</h3>
                 <p style="margin-bottom: 1rem; color: var(--gray);">Generate Mermaid diagrams and SVG charts locally, uploaded as GitHub Actions artifacts:</p>
                 <pre><code>- name: Build Process Monitoring
-  uses: cdsap/build-process-watcher@0.4.0
+  uses: cdsap/build-process-watcher@v0.4.1
  
 - name: Build project
   run: ./gradlew clean build</code></pre>
@@ -449,7 +449,7 @@
                 <h3><span class="feature-icon">🌐</span>Remote Mode</h3>
                 <p style="margin-bottom: 1rem; color: var(--gray);">Enable live dashboard with real-time monitoring and GC metrics:</p>
                 <pre><code>- name: Build Process Monitoring
-  uses: cdsap/build-process-watcher@0.4.0
+  uses: cdsap/build-process-watcher@v0.4.1
   with:
     remote_monitoring: 'true'
     collect_gc: 'true'
