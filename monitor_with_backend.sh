@@ -122,7 +122,12 @@ get_vm_flags() {
     # Extract VM flags (everything after "VM Flags:")
     # The output format is: "VM Flags: -XX:flag1 -XX:flag2 ..."
     local vm_flags_line
-    vm_flags_line=$(echo "$jinfo_output" | grep "VM Flags:" | sed 's/VM Flags://' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
+    # Use grep with || echo to prevent pipefail from exiting script when grep finds no match
+    if echo "$jinfo_output" | grep -q "VM Flags:"; then
+        vm_flags_line=$(echo "$jinfo_output" | grep "VM Flags:" | sed 's/VM Flags://' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
+    else
+        vm_flags_line=""
+    fi
     
     if [ -z "$vm_flags_line" ]; then
         return 1
