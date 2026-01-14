@@ -214054,7 +214054,10 @@ async function markProcessAsFinished(runId) {
                 },
             });
             if (!authResponse.ok) {
+                const errorText = await authResponse.text().catch(() => 'Unknown error');
                 console.error(`❌ Failed to get JWT token: ${authResponse.status} ${authResponse.statusText}`);
+                console.error(`   Error details: ${errorText}`);
+                console.log(`🔄 Falling back to direct Firestore update...`);
                 await markProcessAsFinishedDirect(runId);
                 return;
             }
@@ -214071,21 +214074,33 @@ async function markProcessAsFinished(runId) {
             });
             if (response.ok) {
                 const result = await response.json();
-                console.log(`✅ Successfully marked run ${runId} as finished via backend:`, result.message);
+                console.log(`✅ Successfully marked run ${runId} as finished via backend: ${result.message || 'OK'}`);
             }
             else {
+                const errorText = await response.text().catch(() => 'Unknown error');
                 console.error(`❌ Backend API failed to mark run as finished: ${response.status} ${response.statusText}`);
+                console.error(`   Error details: ${errorText}`);
+                console.log(`🔄 Falling back to direct Firestore update...`);
                 // Fall back to direct Firestore update
                 await markProcessAsFinishedDirect(runId);
             }
         }
         else {
+            console.log(`🏁 Backend URL not available, using direct Firestore update for run ${runId}...`);
             // Fall back to direct Firestore update
             await markProcessAsFinishedDirect(runId);
         }
     }
     catch (error) {
-        console.error('❌ Error marking process as finished:', error);
+        console.error(`❌ Error marking process as finished for run ${runId}:`, error);
+        // Try direct Firestore update as last resort
+        try {
+            console.log(`🔄 Attempting direct Firestore update as last resort...`);
+            await markProcessAsFinishedDirect(runId);
+        }
+        catch (directError) {
+            console.error(`❌ Direct Firestore update also failed:`, directError);
+        }
         // Don't throw error - this is not critical for the cleanup process
     }
 }
@@ -214095,9 +214110,11 @@ async function markProcessAsFinishedDirect(runId) {
         const serviceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || './test-key-new.json';
         const projectId = process.env.GOOGLE_CLOUD_PROJECT || 'process-watcher-68e14';
         if (!fs.existsSync(serviceAccountPath)) {
-            console.log('⚠️  Service account key not found, skipping direct Firestore update');
+            console.log(`⚠️  Service account key not found at ${serviceAccountPath}, skipping direct Firestore update`);
+            console.log(`   This is expected in GitHub Actions - backend API should be used instead`);
             return;
         }
+        console.log(`🔧 Initializing Firebase Admin SDK for direct Firestore update...`);
         (0, app_1.initializeApp)({
             credential: (0, app_1.cert)(serviceAccountPath),
             projectId: projectId
@@ -214105,15 +214122,16 @@ async function markProcessAsFinishedDirect(runId) {
         const db = (0, firestore_1.getFirestore)();
         const docRef = db.collection('runs').doc(runId);
         // Update the document to mark it as finished
+        const now = new Date();
         await docRef.update({
             finished: true,
-            finished_at: new Date(),
-            updated_at: new Date()
+            finished_at: now,
+            updated_at: now
         });
-        console.log(`✅ Marked run ${runId} as finished in Firestore directly`);
+        console.log(`✅ Marked run ${runId} as finished in Firestore directly at ${now.toISOString()}`);
     }
     catch (error) {
-        console.error('❌ Error marking process as finished directly:', error);
+        console.error(`❌ Error marking process as finished directly for run ${runId}:`, error);
         // Don't throw error - this is not critical for the cleanup process
     }
 }
@@ -214167,17 +214185,69 @@ async function run() {
             }
         }
         // Mark the process as finished in Firestore if we have a run ID
-        const runId = process.env.RUN_ID || process.env.GITHUB_RUN_ID;
-        if (runId) {
-            if (debugMode) {
-                console.log(`🏁 Marking run ${runId} as finished...`);
+        // Try multiple ways to get the RUN_ID (in order of preference):
+        // 1. From environment variable (exported by main step)
+        // 2. From .build-process-watcher-run-id file (backup written by main step)
+        // 3. From backend debug log (if it exists and contains run_id)
+        // 4. From GitHub run ID (last resort fallback)
+        let runId = process.env.RUN_ID;
+        // Try to read from file if not in env var
+        if (!runId) {
+            try {
+                const runIdFile = path.join(process.cwd(), '.build-process-watcher-run-id');
+                if (fs.existsSync(runIdFile)) {
+                    runId = fs.readFileSync(runIdFile, 'utf8').trim();
+                    console.log(`📋 Read RUN_ID from file: ${runId}`);
+                }
             }
-            await markProcessAsFinished(runId);
+            catch (error) {
+                // Ignore errors when reading file
+            }
+        }
+        // Try to extract RUN_ID from backend debug log if still not found
+        if (!runId) {
+            const actionDir = process.env.GITHUB_ACTION_PATH || __dirname;
+            const backendDebugLog = path.join(actionDir, '..', 'backend_debug.log');
+            if (fs.existsSync(backendDebugLog)) {
+                try {
+                    const logContent = fs.readFileSync(backendDebugLog, 'utf8');
+                    // Look for "Run ID: run-xxxxx" pattern in the log
+                    const runIdMatch = logContent.match(/Run ID:\s*(run-\d+)/i) ||
+                        logContent.match(/run_id[":\s]+(run-\d+)/i) ||
+                        logContent.match(/Run ID:\s*(build-\d+)/i);
+                    if (runIdMatch && runIdMatch[1]) {
+                        runId = runIdMatch[1];
+                        console.log(`📋 Extracted RUN_ID from log file: ${runId}`);
+                    }
+                }
+                catch (error) {
+                    // Ignore errors when reading log file
+                }
+            }
+        }
+        // Last resort: use GitHub run ID (but only if it looks like our format)
+        if (!runId && process.env.GITHUB_RUN_ID) {
+            // Only use GITHUB_RUN_ID if it matches our pattern (run-xxx or build-xxx)
+            const githubRunId = process.env.GITHUB_RUN_ID;
+            if (githubRunId.match(/^(run-|build-)\d+$/)) {
+                runId = githubRunId;
+                console.log(`📋 Using GITHUB_RUN_ID as fallback: ${runId}`);
+            }
+        }
+        // Always try to mark as finished if we have a run ID
+        if (runId) {
+            console.log(`🏁 Marking run ${runId} as finished...`);
+            try {
+                await markProcessAsFinished(runId);
+            }
+            catch (error) {
+                console.error(`❌ Failed to mark run ${runId} as finished:`, error);
+                // Don't throw - we want cleanup to continue even if marking fails
+            }
         }
         else {
-            if (debugMode) {
-                console.log('⚠️  No run ID found, skipping Firestore update');
-            }
+            console.log('⚠️  No run ID found, skipping Firestore update');
+            console.log('   Available env vars:', Object.keys(process.env).filter(k => k.includes('RUN') || k.includes('GITHUB')).join(', ') || 'none');
         }
         // Print backend debug log if it exists (only in debug mode)
         const actionDir = process.env.GITHUB_ACTION_PATH || __dirname;

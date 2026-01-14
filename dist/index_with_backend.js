@@ -25773,6 +25773,21 @@ async function run() {
         core.exportVariable('LOG_FILE', logFile);
         core.exportVariable('ENVIRONMENT', environment);
         core.exportVariable('DISABLE_SUMMARY_OUTPUT', disableSummaryOutput.toString());
+        // Also write RUN_ID to a file as a backup for the post step
+        // This ensures the post step can always find the RUN_ID even if env vars aren't available
+        try {
+            const runIdFile = path.join(process.cwd(), '.build-process-watcher-run-id');
+            fs.writeFileSync(runIdFile, runId, 'utf8');
+            if (debugMode) {
+                core.info(`💾 Saved RUN_ID to file: ${runIdFile}`);
+            }
+        }
+        catch (error) {
+            // Non-critical - env var export should be sufficient
+            if (debugMode) {
+                core.warning(`⚠️  Failed to write RUN_ID to file: ${error}`);
+            }
+        }
         if (frontendUrl) {
             // Extract base URL (without /runs/runId) for cleanup step
             const baseFrontendUrl = frontendUrl.replace(/\/runs\/.*$/, '');
