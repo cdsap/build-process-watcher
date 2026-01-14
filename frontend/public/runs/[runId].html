@@ -430,10 +430,41 @@
                     totalGCTime: totalGCTime
                 };
                 
-                if (maxRss > maxRssAllProcesses) {
-                    maxRssAllProcesses = maxRss;
-                }
             }
+
+            // Calculate overall max RSS by summing per-timestamp totals
+            // Use forward-filling to avoid drops when a process skips a sample
+            const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
+            const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
+            const lastKnownRSS = {};
+            processKeys.forEach(processKey => {
+                lastKnownRSS[processKey] = 0;
+            });
+
+            timestamps.forEach(timestamp => {
+                let total = 0;
+                let hasAnyProcess = false;
+
+                processKeys.forEach(processKey => {
+                    const [processName, pid] = processKey.split('|');
+                    const sample = samples
+                        .filter(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp)
+                        [0];
+
+                    if (sample) {
+                        lastKnownRSS[processKey] = sample.RSS;
+                        total += sample.RSS;
+                        hasAnyProcess = true;
+                    } else if (lastKnownRSS[processKey] > 0) {
+                        total += lastKnownRSS[processKey];
+                        hasAnyProcess = true;
+                    }
+                });
+
+                if (hasAnyProcess && total > maxRssAllProcesses) {
+                    maxRssAllProcesses = total;
+                }
+            });
             
             // Render process info section
             let processInfoHtml = '';
