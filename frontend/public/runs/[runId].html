@@ -429,7 +429,7 @@
         }
 
         function renderDashboard(runId, data) {
-            const isFinished = data.finished;
+            const isFinished = data.finished === true;
             const samples = data.samples || [];
             const processInfo = data.process_info || {};
             window.currentSamples = samples;
@@ -571,7 +571,7 @@
                     </div>
                 ` : ''}
 
-                ${isFinished && samples.length ? `
+                ${isFinished === true && samples.length ? `
                     <div class="replay-controls" id="replay-controls">
                         <div class="buttons">
                             <button class="btn" id="btn-replay-play">Play</button>
@@ -665,7 +665,7 @@
                 if (shouldShowRssHeapRatioChart(samples)) {
                     renderRssHeapRatioChart(samples);
                 }
-                if (isFinished) {
+                if (isFinished === true) {
                     initReplay(samples);
                 }
             }
