@@ -571,7 +571,7 @@
                     </div>
                 ` : ''}
 
-                ${samples.length ? `
+                ${isFinished && samples.length ? `
                     <div class="replay-controls" id="replay-controls">
                         <div class="buttons">
                             <button class="btn" id="btn-replay-play">Play</button>
@@ -665,7 +665,9 @@
                 if (shouldShowRssHeapRatioChart(samples)) {
                     renderRssHeapRatioChart(samples);
                 }
-                initReplay(samples);
+                if (isFinished) {
+                    initReplay(samples);
+                }
             }
 
             // Wire download buttons
