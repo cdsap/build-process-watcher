@@ -264,6 +264,39 @@
             margin-bottom: 1rem;
         }
 
+        .replay-controls {
+            background: #f0f9ff;
+            border: 1px solid #bae6fd;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 2rem;
+            display: grid;
+            grid-template-columns: auto auto 1fr;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .replay-controls .buttons {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .replay-controls .meta {
+            font-size: 0.875rem;
+            color: #0369a1;
+        }
+
+        .replay-controls .timeline {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .replay-controls input[type="range"] {
+            width: 100%;
+        }
+
         @media (max-width: 768px) {
             .status-grid {
                 grid-template-columns: repeat(2, 1fr);
@@ -277,6 +310,10 @@
             
             .chart-wrapper {
                 min-width: 500px;
+            }
+
+            .replay-controls {
+                grid-template-columns: 1fr;
             }
             
             .container {
@@ -534,6 +571,30 @@
                     </div>
                 ` : ''}
 
+                ${samples.length ? `
+                    <div class="replay-controls" id="replay-controls">
+                        <div class="buttons">
+                            <button class="btn" id="btn-replay-play">Play</button>
+                            <button class="btn secondary" id="btn-replay-pause">Pause</button>
+                            <button class="btn secondary" id="btn-replay-reset">Reset</button>
+                        </div>
+                        <div class="meta" id="replay-meta">Frame 0 / 0</div>
+                        <div class="timeline">
+                            <input type="range" id="replay-timeline" min="0" max="0" value="0">
+                            <div class="meta" id="replay-time-label">Elapsed: 0s</div>
+                            <div class="meta">
+                                Speed:
+                                <select id="replay-speed">
+                                    <option value="5">5x</option>
+                                    <option value="10">10x</option>
+                                    <option value="15" selected>15x</option>
+                                    <option value="20">20x</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                ` : ''}
+
                 <div class="status-grid">
                     <div class="status-card">
                         <h3>Status</h3>
@@ -604,6 +665,7 @@
                 if (shouldShowRssHeapRatioChart(samples)) {
                     renderRssHeapRatioChart(samples);
                 }
+                initReplay(samples);
             }
 
             // Wire download buttons
@@ -809,6 +871,348 @@
             });
         }
 
+        function initReplay(samples) {
+            const controls = document.getElementById('replay-controls');
+            if (!controls) return;
+
+            if (window.replayStop) {
+                window.replayStop();
+            }
+
+            const timeline = document.getElementById('replay-timeline');
+            const meta = document.getElementById('replay-meta');
+            const timeLabel = document.getElementById('replay-time-label');
+            const playBtn = document.getElementById('btn-replay-play');
+            const pauseBtn = document.getElementById('btn-replay-pause');
+            const resetBtn = document.getElementById('btn-replay-reset');
+            const speedSelect = document.getElementById('replay-speed');
+
+            const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
+            const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
+            const elapsedByTimestamp = new Map();
+            samples.forEach(sample => {
+                if (!elapsedByTimestamp.has(sample.Timestamp)) {
+                    elapsedByTimestamp.set(sample.Timestamp, sample.ElapsedTime);
+                }
+            });
+
+            const colors = ['#3498db', '#e74c3c', '#9b59b6', '#2ecc71', '#f39c12', '#e67e22', '#1abc9c', '#e91e63'];
+            const series = {};
+
+            processKeys.forEach((processKey, index) => {
+                const [processName, pid] = processKey.split('|');
+                const rss = timestamps.map(timestamp => {
+                    const sample = samples.find(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp);
+                    return sample ? sample.RSS : null;
+                });
+                const heap = timestamps.map(timestamp => {
+                    const sample = samples.find(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp);
+                    return sample ? sample.HeapUsed : null;
+                });
+                const gc = timestamps.map(timestamp => {
+                    const sample = samples.find(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp);
+                    if (!sample) return null;
+                    return sample.GCTime && sample.GCTime > 0 ? sample.GCTime / 1000 : null;
+                });
+                const ratio = timestamps.map(timestamp => {
+                    const sample = samples.find(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp);
+                    if (!sample || !sample.RSS) return null;
+                    return sample.HeapUsed / sample.RSS;
+                });
+
+                series[processKey] = {
+                    processName,
+                    pid,
+                    color: colors[index % colors.length],
+                    rss,
+                    heap,
+                    gc,
+                    ratio,
+                    firstRss: rss.findIndex(value => value !== null),
+                    firstGc: gc.findIndex(value => value !== null),
+                    firstRatio: ratio.findIndex(value => value !== null)
+                };
+            });
+
+            const totalRss = (() => {
+                const lastKnown = {};
+                processKeys.forEach(key => {
+                    lastKnown[key] = 0;
+                });
+                return timestamps.map(timestamp => {
+                    let total = 0;
+                    let hasAny = false;
+                    processKeys.forEach(processKey => {
+                        const [processName, pid] = processKey.split('|');
+                        const sample = samples.find(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp);
+                        if (sample) {
+                            lastKnown[processKey] = sample.RSS;
+                            total += sample.RSS;
+                            hasAny = true;
+                        } else if (lastKnown[processKey] > 0) {
+                            total += lastKnown[processKey];
+                            hasAny = true;
+                        }
+                    });
+                    return hasAny ? total : null;
+                });
+            })();
+            const firstTotalIndex = totalRss.findIndex(value => value !== null);
+
+            let isPlaying = false;
+            let playTimer = null;
+            let currentFrame = 0;
+            let speedMultiplier = Number(speedSelect.value) || 15;
+
+            timeline.max = String(Math.max(0, timestamps.length - 1));
+
+            function updateUi(frameIndex) {
+                timeline.value = String(frameIndex);
+                meta.textContent = `Frame ${frameIndex + 1} / ${timestamps.length}`;
+                const timestamp = timestamps[frameIndex];
+                const elapsed = elapsedByTimestamp.get(timestamp);
+                const timeText = new Date(timestamp).toLocaleTimeString();
+                timeLabel.textContent = `Elapsed: ${elapsed}s | ${timeText}`;
+            }
+
+            function buildMemoryTraces(frameIndex) {
+                const frameTimestamps = timestamps.slice(0, frameIndex + 1).map(t => new Date(t));
+                const traces = [];
+                processKeys.forEach(processKey => {
+                    const def = series[processKey];
+                    if (def.firstRss === -1 || frameIndex < def.firstRss) return;
+                    traces.push({
+                        x: frameTimestamps,
+                        y: def.rss.slice(0, frameIndex + 1),
+                        type: 'scatter',
+                        mode: 'lines',
+                        name: `${def.processName} PID:${def.pid} (RSS)`,
+                        line: { color: def.color, width: 3 },
+                        connectgaps: false
+                    });
+                    traces.push({
+                        x: frameTimestamps,
+                        y: def.heap.slice(0, frameIndex + 1),
+                        type: 'scatter',
+                        mode: 'lines',
+                        name: `${def.processName} PID:${def.pid} (Heap)`,
+                        line: { color: def.color, width: 2, dash: 'dash' },
+                        connectgaps: false
+                    });
+                });
+                if (firstTotalIndex !== -1 && frameIndex >= firstTotalIndex) {
+                    traces.push({
+                        x: frameTimestamps,
+                        y: totalRss.slice(0, frameIndex + 1),
+                        type: 'scatter',
+                        mode: 'lines',
+                        name: 'Total RSS Memory',
+                        line: { color: '#2c3e50', width: 4 },
+                        connectgaps: false
+                    });
+                }
+                return traces;
+            }
+
+            function buildGCTraces(frameIndex) {
+                const frameTimestamps = timestamps.slice(0, frameIndex + 1).map(t => new Date(t));
+                const traces = [];
+                processKeys.forEach(processKey => {
+                    const def = series[processKey];
+                    if (def.firstGc === -1 || frameIndex < def.firstGc) return;
+                    traces.push({
+                        x: frameTimestamps,
+                        y: def.gc.slice(0, frameIndex + 1),
+                        type: 'scatter',
+                        mode: 'lines+markers',
+                        name: `${def.processName} PID:${def.pid}`,
+                        line: { color: def.color, width: 3 },
+                        marker: { size: 6, color: def.color },
+                        connectgaps: false
+                    });
+                });
+                return traces;
+            }
+
+            function buildRatioTraces(frameIndex) {
+                const frameTimestamps = timestamps.slice(0, frameIndex + 1).map(t => new Date(t));
+                const traces = [];
+                processKeys.forEach(processKey => {
+                    const def = series[processKey];
+                    if (def.firstRatio === -1 || frameIndex < def.firstRatio) return;
+                    traces.push({
+                        x: frameTimestamps,
+                        y: def.ratio.slice(0, frameIndex + 1),
+                        type: 'scatter',
+                        mode: 'lines+markers',
+                        name: `${def.processName} PID:${def.pid}`,
+                        line: { color: def.color, width: 3 },
+                        marker: { size: 6, color: def.color },
+                        connectgaps: false
+                    });
+                });
+                return traces;
+            }
+
+            function renderReplayFrame(frameIndex) {
+                currentFrame = frameIndex;
+                updateUi(frameIndex);
+                const tasks = [];
+                if (document.getElementById('chart')) {
+                    tasks.push(Plotly.react('chart', buildMemoryTraces(frameIndex), getMemoryLayout(), getMemoryConfig()));
+                }
+                if (document.getElementById('gc-chart')) {
+                    tasks.push(Plotly.react('gc-chart', buildGCTraces(frameIndex), getGcLayout(), getGcConfig()));
+                }
+                if (document.getElementById('rss-heap-chart')) {
+                    tasks.push(Plotly.react('rss-heap-chart', buildRatioTraces(frameIndex), getRatioLayout(), getRatioConfig()));
+                }
+                return Promise.all(tasks);
+            }
+
+            function scheduleNext() {
+                if (!isPlaying) return;
+                if (currentFrame >= timestamps.length - 1) {
+                    isPlaying = false;
+                    return;
+                }
+                const nextDelay = Math.max(
+                    16,
+                    (timestamps[currentFrame + 1] - timestamps[currentFrame]) / speedMultiplier
+                );
+                playTimer = setTimeout(() => {
+                    renderReplayFrame(currentFrame + 1).then(scheduleNext);
+                }, nextDelay);
+            }
+
+            function play() {
+                if (isPlaying) return;
+                isPlaying = true;
+                scheduleNext();
+            }
+
+            function pause() {
+                isPlaying = false;
+                if (playTimer) {
+                    clearTimeout(playTimer);
+                    playTimer = null;
+                }
+            }
+
+            window.replayStop = pause;
+
+            playBtn.addEventListener('click', play);
+            pauseBtn.addEventListener('click', pause);
+            resetBtn.addEventListener('click', () => {
+                pause();
+                renderReplayFrame(0);
+            });
+            timeline.addEventListener('input', () => {
+                pause();
+                renderReplayFrame(Number(timeline.value));
+            });
+            speedSelect.addEventListener('change', () => {
+                const parsed = Number(speedSelect.value);
+                if (!Number.isNaN(parsed) && parsed > 0) {
+                    speedMultiplier = parsed;
+                }
+            });
+
+            renderReplayFrame(0);
+        }
+
+        function getGcLayout() {
+            const isMobile = window.innerWidth < 768;
+            return {
+                title: isMobile ? '' : 'Garbage Collection Time Over Time',
+                xaxis: {
+                    title: 'Time',
+                    tickformat: isMobile ? '%H:%M' : '%H:%M:%S',
+                    tickangle: isMobile ? -45 : 0
+                },
+                yaxis: { title: 'GC Time (s)' },
+                showlegend: true,
+                legend: {
+                    x: isMobile ? 0.5 : 1.02,
+                    y: isMobile ? -0.2 : 1,
+                    xanchor: isMobile ? 'center' : 'left',
+                    orientation: isMobile ? 'h' : 'v'
+                },
+                margin: {
+                    l: isMobile ? 50 : 60,
+                    r: isMobile ? 20 : 100,
+                    t: isMobile ? 20 : 40,
+                    b: isMobile ? 80 : 60
+                },
+                font: {
+                    size: isMobile ? 10 : 12
+                }
+            };
+        }
+
+        function getGcConfig() {
+            const isMobile = window.innerWidth < 768;
+            return {
+                responsive: true,
+                displayModeBar: true,
+                displaylogo: false,
+                modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d', 'autoScale2d'],
+                toImageButtonOptions: {
+                    format: 'png',
+                    filename: `build-monitor-gc-${runId}`,
+                    height: isMobile ? 400 : 500,
+                    width: isMobile ? 800 : 1000,
+                    scale: 2
+                }
+            };
+        }
+
+        function getRatioLayout() {
+            const isMobile = window.innerWidth < 768;
+            return {
+                title: isMobile ? '' : 'Heap/RSS Ratio Over Time',
+                xaxis: {
+                    title: 'Time',
+                    tickformat: isMobile ? '%H:%M' : '%H:%M:%S',
+                    tickangle: isMobile ? -45 : 0
+                },
+                yaxis: { title: 'Heap/RSS Ratio' },
+                showlegend: true,
+                legend: {
+                    x: isMobile ? 0.5 : 1.02,
+                    y: isMobile ? -0.2 : 1,
+                    xanchor: isMobile ? 'center' : 'left',
+                    orientation: isMobile ? 'h' : 'v'
+                },
+                margin: {
+                    l: isMobile ? 50 : 60,
+                    r: isMobile ? 20 : 100,
+                    t: isMobile ? 20 : 40,
+                    b: isMobile ? 80 : 60
+                },
+                font: {
+                    size: isMobile ? 10 : 12
+                }
+            };
+        }
+
+        function getRatioConfig() {
+            const isMobile = window.innerWidth < 768;
+            return {
+                responsive: true,
+                displayModeBar: true,
+                displaylogo: false,
+                modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d', 'autoScale2d'],
+                toImageButtonOptions: {
+                    format: 'png',
+                    filename: `build-monitor-rss-heap-${runId}`,
+                    height: isMobile ? 400 : 500,
+                    width: isMobile ? 800 : 1000,
+                    scale: 2
+                }
+            };
+        }
+
         function renderChart(samples) {
             // Process data for chart - group by both Name and PID to handle multiple processes with same name
             const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
@@ -907,45 +1311,8 @@
             // Detect if mobile
             const isMobile = window.innerWidth < 768;
             
-            const layout = {
-                title: isMobile ? '' : 'Memory Usage Over Time', // Hide title on mobile to save space
-                xaxis: { 
-                    title: 'Time',
-                    tickformat: isMobile ? '%H:%M' : '%H:%M:%S', // Shorter time format on mobile
-                    tickangle: isMobile ? -45 : 0
-                },
-                yaxis: { title: 'Memory (MB)' },
-                showlegend: true,
-                legend: { 
-                    x: isMobile ? 0.5 : 1.02, 
-                    y: isMobile ? -0.2 : 1,
-                    xanchor: isMobile ? 'center' : 'left',
-                    orientation: isMobile ? 'h' : 'v'
-                },
-                margin: { 
-                    l: isMobile ? 50 : 60, 
-                    r: isMobile ? 20 : 100, 
-                    t: isMobile ? 20 : 40, 
-                    b: isMobile ? 80 : 60 
-                },
-                font: {
-                    size: isMobile ? 10 : 12
-                }
-            };
-
-            const config = {
-                responsive: true,
-                displayModeBar: true,
-                displaylogo: false,
-                modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d', 'autoScale2d'],
-                toImageButtonOptions: {
-                    format: 'png',
-                    filename: `build-monitor-${runId}`,
-                    height: isMobile ? 400 : 500,
-                    width: isMobile ? 800 : 1000,
-                    scale: 2
-                }
-            };
+            const layout = getMemoryLayout();
+            const config = getMemoryConfig();
 
             Plotly.newPlot('chart', traces, layout, config);
             
@@ -1097,6 +1464,52 @@
                 return '"' + str.replace(/"/g, '""') + '"';
             }
             return str;
+        }
+
+        function getMemoryLayout() {
+            const isMobile = window.innerWidth < 768;
+            return {
+                title: isMobile ? '' : 'Memory Usage Over Time', // Hide title on mobile to save space
+                xaxis: {
+                    title: 'Time',
+                    tickformat: isMobile ? '%H:%M' : '%H:%M:%S', // Shorter time format on mobile
+                    tickangle: isMobile ? -45 : 0
+                },
+                yaxis: { title: 'Memory (MB)' },
+                showlegend: true,
+                legend: {
+                    x: isMobile ? 0.5 : 1.02,
+                    y: isMobile ? -0.2 : 1,
+                    xanchor: isMobile ? 'center' : 'left',
+                    orientation: isMobile ? 'h' : 'v'
+                },
+                margin: {
+                    l: isMobile ? 50 : 60,
+                    r: isMobile ? 20 : 100,
+                    t: isMobile ? 20 : 40,
+                    b: isMobile ? 80 : 60
+                },
+                font: {
+                    size: isMobile ? 10 : 12
+                }
+            };
+        }
+
+        function getMemoryConfig() {
+            const isMobile = window.innerWidth < 768;
+            return {
+                responsive: true,
+                displayModeBar: true,
+                displaylogo: false,
+                modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d', 'autoScale2d'],
+                toImageButtonOptions: {
+                    format: 'png',
+                    filename: `build-monitor-${runId}`,
+                    height: isMobile ? 400 : 500,
+                    width: isMobile ? 800 : 1000,
+                    scale: 2
+                }
+            };
         }
 
         function showNotFound(runId) {
