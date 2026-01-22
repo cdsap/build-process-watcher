@@ -264,6 +264,27 @@
             margin-bottom: 1rem;
         }
 
+        .compare-controls {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 2rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .compare-controls .meta {
+            font-size: 0.875rem;
+            color: #334155;
+        }
+
+        .compare-controls input[type="file"] {
+            font-size: 0.875rem;
+        }
+
         .replay-controls {
             background: #f0f9ff;
             border: 1px solid #bae6fd;
@@ -592,6 +613,15 @@
                     </div>
                 </div>
 
+                ${isFinished === true ? `
+                    <div class="compare-controls">
+                        <div class="meta"><strong>Compare builds:</strong> upload a CSV export to overlay in replay</div>
+                        <input type="file" id="compare-file-input" accept=".csv">
+                        <button class="btn secondary" id="compare-clear" style="display: none;">Clear comparison</button>
+                        <div class="meta" id="compare-file-name">No file selected</div>
+                    </div>
+                ` : ''}
+
                 <div class="chart-container">
                     <div class="downloads-toolbar">
                         <button class="btn" id="btn-download-png">Download PNG</button>
@@ -711,6 +741,7 @@
                     renderRssHeapRatioChart(samples);
                 }
                 if (isFinished === true) {
+                    setupCompareControls(samples);
                     initReplay(samples);
                 }
             }
@@ -1003,23 +1034,15 @@
 
             processKeys.forEach((processKey, index) => {
                 const [processName, pid] = processKey.split('|');
-                const rss = timestamps.map(timestamp => {
-                    const sample = samples.find(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp);
-                    return sample ? sample.RSS : null;
+                const rss = buildForwardFilledSeries(samples, timestamps, processName, pid, s => s.RSS);
+                const heap = buildForwardFilledSeries(samples, timestamps, processName, pid, s => s.HeapUsed);
+                const gc = buildExactSeries(samples, timestamps, processName, pid, s => {
+                    if (!s.GCTime || s.GCTime <= 0) return null;
+                    return s.GCTime / 1000;
                 });
-                const heap = timestamps.map(timestamp => {
-                    const sample = samples.find(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp);
-                    return sample ? sample.HeapUsed : null;
-                });
-                const gc = timestamps.map(timestamp => {
-                    const sample = samples.find(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp);
-                    if (!sample) return null;
-                    return sample.GCTime && sample.GCTime > 0 ? sample.GCTime / 1000 : null;
-                });
-                const ratio = timestamps.map(timestamp => {
-                    const sample = samples.find(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp);
-                    if (!sample || !sample.RSS) return null;
-                    return sample.HeapUsed / sample.RSS;
+                const ratio = buildExactSeries(samples, timestamps, processName, pid, s => {
+                    if (!s.RSS || s.RSS <= 0) return null;
+                    return s.HeapUsed / s.RSS;
                 });
 
                 series[processKey] = {
@@ -1094,6 +1117,10 @@
             const firstTotalRatioIndex = totalRatio.findIndex(value => value !== null);
             const firstTotalGcIndex = totalGc.findIndex(value => value !== null);
 
+            const compareSamplesRaw = Array.isArray(window.compareSamples) ? window.compareSamples : [];
+            const compareSamples = normalizeCompareSamples(compareSamplesRaw, timestamps[0]);
+            const compareData = compareSamples.length ? buildCompareData(compareSamples, timestamps, colors) : null;
+
             function buildMemoryTraces(frameIndex) {
                 const frameTimestamps = timestamps.slice(0, frameIndex + 1).map(t => new Date(t));
                 const traces = [];
@@ -1130,6 +1157,41 @@
                         connectgaps: false
                     });
                 }
+                if (compareData) {
+                    compareData.processKeys.forEach(processKey => {
+                        const def = compareData.series[processKey];
+                        if (def.firstRss === -1 || frameIndex < def.firstRss) return;
+                        traces.push({
+                            x: frameTimestamps,
+                            y: def.rss.slice(0, frameIndex + 1),
+                            type: 'scatter',
+                            mode: 'lines',
+                            name: `Compare ${def.processName} PID:${def.pid} (RSS)`,
+                            line: { color: def.color, width: 2, dash: 'dot' },
+                            connectgaps: false
+                        });
+                        traces.push({
+                            x: frameTimestamps,
+                            y: def.heap.slice(0, frameIndex + 1),
+                            type: 'scatter',
+                            mode: 'lines',
+                            name: `Compare ${def.processName} PID:${def.pid} (Heap)`,
+                            line: { color: def.color, width: 1, dash: 'dash' },
+                            connectgaps: false
+                        });
+                    });
+                    if (compareData.firstTotalRssIndex !== -1 && frameIndex >= compareData.firstTotalRssIndex) {
+                        traces.push({
+                            x: frameTimestamps,
+                            y: compareData.totalRss.slice(0, frameIndex + 1),
+                            type: 'scatter',
+                            mode: 'lines',
+                            name: 'Compare Total RSS Memory',
+                            line: { color: '#0f172a', width: 3, dash: 'dot' },
+                            connectgaps: false
+                        });
+                    }
+                }
                 return traces;
             }
 
@@ -1161,6 +1223,33 @@
                         connectgaps: false
                     });
                 }
+                if (compareData) {
+                    compareData.processKeys.forEach(processKey => {
+                        const def = compareData.series[processKey];
+                        if (def.firstGc === -1 || frameIndex < def.firstGc) return;
+                        traces.push({
+                            x: frameTimestamps,
+                            y: def.gc.slice(0, frameIndex + 1),
+                            type: 'scatter',
+                            mode: 'lines+markers',
+                            name: `Compare ${def.processName} PID:${def.pid}`,
+                            line: { color: def.color, width: 2, dash: 'dot' },
+                            marker: { size: 5, color: def.color },
+                            connectgaps: false
+                        });
+                    });
+                    if (compareData.firstTotalGcIndex !== -1 && frameIndex >= compareData.firstTotalGcIndex) {
+                        traces.push({
+                            x: frameTimestamps,
+                            y: compareData.totalGc.slice(0, frameIndex + 1),
+                            type: 'scatter',
+                            mode: 'lines',
+                            name: 'Compare Total GC Time',
+                            line: { color: '#0f172a', width: 3, dash: 'dot' },
+                            connectgaps: false
+                        });
+                    }
+                }
                 return traces;
             }
 
@@ -1191,6 +1280,33 @@
                         line: { color: '#2c3e50', width: 4 },
                         connectgaps: false
                     });
+                }
+                if (compareData) {
+                    compareData.processKeys.forEach(processKey => {
+                        const def = compareData.series[processKey];
+                        if (def.firstRatio === -1 || frameIndex < def.firstRatio) return;
+                        traces.push({
+                            x: frameTimestamps,
+                            y: def.ratio.slice(0, frameIndex + 1),
+                            type: 'scatter',
+                            mode: 'lines+markers',
+                            name: `Compare ${def.processName} PID:${def.pid}`,
+                            line: { color: def.color, width: 2, dash: 'dot' },
+                            marker: { size: 5, color: def.color },
+                            connectgaps: false
+                        });
+                    });
+                    if (compareData.firstTotalRatioIndex !== -1 && frameIndex >= compareData.firstTotalRatioIndex) {
+                        traces.push({
+                            x: frameTimestamps,
+                            y: compareData.totalRatio.slice(0, frameIndex + 1),
+                            type: 'scatter',
+                            mode: 'lines',
+                            name: 'Compare Total Heap/RSS Ratio',
+                            line: { color: '#0f172a', width: 3, dash: 'dot' },
+                            connectgaps: false
+                        });
+                    }
                 }
                 return traces;
             }
@@ -1313,6 +1429,216 @@
                 layoutGetter: getRatioLayout,
                 configGetter: getRatioConfig
             });
+        }
+
+        function setupCompareControls(samples) {
+            const input = document.getElementById('compare-file-input');
+            const clearBtn = document.getElementById('compare-clear');
+            const fileName = document.getElementById('compare-file-name');
+            if (!input || !clearBtn || !fileName) return;
+
+            input.addEventListener('change', () => {
+                const file = input.files && input.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = () => {
+                    try {
+                        const text = String(reader.result || '');
+                        const parsed = parseCsvText(text);
+                        window.compareSamples = parsed;
+                        fileName.textContent = file.name;
+                        clearBtn.style.display = 'inline-flex';
+                        initReplay(samples);
+                    } catch (err) {
+                        console.error('Failed to parse comparison CSV', err);
+                        window.compareSamples = [];
+                        fileName.textContent = 'Failed to parse CSV';
+                    }
+                };
+                reader.readAsText(file);
+            });
+
+            clearBtn.addEventListener('click', () => {
+                window.compareSamples = [];
+                fileName.textContent = 'No file selected';
+                clearBtn.style.display = 'none';
+                input.value = '';
+                initReplay(samples);
+            });
+        }
+
+        function parseCsvText(text) {
+            const lines = text.trim().split('\n');
+            if (lines.length < 2) return [];
+            const headers = lines[0].split(',').map(h => h.trim());
+            const headerIndex = {};
+            headers.forEach((header, index) => {
+                headerIndex[header] = index;
+            });
+
+            return lines.slice(1).map(line => {
+                const values = line.split(',');
+                const get = (key) => {
+                    const index = headerIndex[key];
+                    return index === undefined ? '' : values[index];
+                };
+                const timestamp = Number(get('timestamp'));
+                const elapsed = Number(get('elapsed_time'));
+                const gcRaw = get('gc_time_s');
+                const gcValue = gcRaw ? Number(gcRaw) : null;
+                return {
+                    Timestamp: Number.isNaN(timestamp) ? 0 : timestamp,
+                    ElapsedTime: Number.isNaN(elapsed) ? 0 : elapsed,
+                    PID: get('pid'),
+                    Name: get('name'),
+                    RSS: Number(get('rss_mb')) || 0,
+                    HeapUsed: Number(get('heap_used_mb')) || 0,
+                    HeapCap: Number(get('heap_capacity_mb')) || 0,
+                    GCTime: gcValue && !Number.isNaN(gcValue) ? gcValue * 1000 : 0
+                };
+            });
+        }
+
+        function normalizeCompareSamples(samples, baseTimestamp) {
+            if (!samples.length || !baseTimestamp) return [];
+            return samples.map(sample => {
+                const elapsedMs = (sample.ElapsedTime || 0) * 1000;
+                const timestamp = baseTimestamp + elapsedMs;
+                return {
+                    ...sample,
+                    Timestamp: timestamp
+                };
+            });
+        }
+
+        function buildForwardFilledSeries(samples, timestamps, processName, pid, valueSelector) {
+            const filtered = samples
+                .filter(s => s.Name === processName && s.PID === pid)
+                .sort((a, b) => a.Timestamp - b.Timestamp);
+            const values = [];
+            let idx = 0;
+            let lastValue = null;
+            for (const timestamp of timestamps) {
+                while (idx < filtered.length && filtered[idx].Timestamp <= timestamp) {
+                    const candidate = valueSelector(filtered[idx]);
+                    if (candidate !== null && candidate !== undefined) {
+                        lastValue = candidate;
+                    }
+                    idx += 1;
+                }
+                values.push(lastValue);
+            }
+            return values;
+        }
+
+        function buildExactSeries(samples, timestamps, processName, pid, valueSelector) {
+            const byTimestamp = new Map();
+            samples.forEach(sample => {
+                if (sample.Name === processName && sample.PID === pid) {
+                    byTimestamp.set(sample.Timestamp, valueSelector(sample));
+                }
+            });
+            return timestamps.map(timestamp => {
+                const value = byTimestamp.get(timestamp);
+                return value === undefined ? null : value;
+            });
+        }
+
+        function buildCompareData(samples, timestamps, colors) {
+            const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
+            const series = {};
+
+            processKeys.forEach((processKey, index) => {
+                const [processName, pid] = processKey.split('|');
+                const rss = buildForwardFilledSeries(samples, timestamps, processName, pid, s => s.RSS);
+                const heap = buildForwardFilledSeries(samples, timestamps, processName, pid, s => s.HeapUsed);
+                const gc = buildExactSeries(samples, timestamps, processName, pid, s => {
+                    if (!s.GCTime || s.GCTime <= 0) return null;
+                    return s.GCTime / 1000;
+                });
+                const ratio = buildExactSeries(samples, timestamps, processName, pid, s => {
+                    if (!s.RSS || s.RSS <= 0) return null;
+                    return s.HeapUsed / s.RSS;
+                });
+
+                series[processKey] = {
+                    processName,
+                    pid,
+                    color: colors[index % colors.length],
+                    rss,
+                    heap,
+                    gc,
+                    ratio,
+                    firstRss: rss.findIndex(value => value !== null),
+                    firstGc: gc.findIndex(value => value !== null),
+                    firstRatio: ratio.findIndex(value => value !== null)
+                };
+            });
+
+            const lastKnownRss = {};
+            const lastKnownHeap = {};
+            processKeys.forEach(key => {
+                lastKnownRss[key] = 0;
+                lastKnownHeap[key] = 0;
+            });
+
+            const totalRss = [];
+            const totalHeap = [];
+            timestamps.forEach(timestamp => {
+                let totalRssValue = 0;
+                let totalHeapValue = 0;
+                let hasAny = false;
+                processKeys.forEach(processKey => {
+                    const [processName, pid] = processKey.split('|');
+                    const sample = samples.find(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp);
+                    if (sample) {
+                        if (sample.RSS && sample.RSS > 0) {
+                            lastKnownRss[processKey] = sample.RSS;
+                        }
+                        if (sample.HeapUsed && sample.HeapUsed > 0) {
+                            lastKnownHeap[processKey] = sample.HeapUsed;
+                        }
+                    }
+                    if (lastKnownRss[processKey] > 0) {
+                        totalRssValue += lastKnownRss[processKey];
+                        totalHeapValue += lastKnownHeap[processKey];
+                        hasAny = true;
+                    }
+                });
+                totalRss.push(hasAny ? totalRssValue : null);
+                totalHeap.push(hasAny ? totalHeapValue : null);
+            });
+
+            const totalRatio = totalRss.map((rssValue, index) => {
+                const heapValue = totalHeap[index];
+                if (!rssValue || rssValue === 0 || heapValue === null) return null;
+                return heapValue / rssValue;
+            });
+
+            const totalGc = timestamps.map(timestamp => {
+                let total = 0;
+                let hasAny = false;
+                processKeys.forEach(processKey => {
+                    const [processName, pid] = processKey.split('|');
+                    const sample = samples.find(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp);
+                    if (sample && sample.GCTime && sample.GCTime > 0) {
+                        total += sample.GCTime / 1000;
+                        hasAny = true;
+                    }
+                });
+                return hasAny ? total : null;
+            });
+
+            return {
+                processKeys,
+                series,
+                totalRss,
+                totalRatio,
+                totalGc,
+                firstTotalRssIndex: totalRss.findIndex(value => value !== null),
+                firstTotalRatioIndex: totalRatio.findIndex(value => value !== null),
+                firstTotalGcIndex: totalGc.findIndex(value => value !== null)
+            };
         }
 
         function getGcLayout() {
