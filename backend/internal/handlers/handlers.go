@@ -228,6 +228,19 @@ func (h *Handlers) GetRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Auto-finish stale runs after 5 minutes without updates.
+	if !runDoc.Finished && time.Since(runDoc.UpdatedAt) > 5*time.Minute {
+		log.Printf("Run %s stale for >5m; auto-finishing", runID)
+		if err := h.storage.MarkRunAsFinished(runID); err != nil {
+			log.Printf("Failed to auto-finish run %s: %v", runID, err)
+		} else {
+			now := time.Now()
+			runDoc.Finished = true
+			runDoc.FinishedAt = now
+			runDoc.UpdatedAt = now
+		}
+	}
+
 	// Get process info from processes collection
 	processDoc, err := h.storage.GetProcesses(runID)
 	if err != nil {
