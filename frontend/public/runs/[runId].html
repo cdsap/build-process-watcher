@@ -810,31 +810,7 @@
                 });
             });
 
-            const totalGc = timestamps.map(timestamp => {
-                let total = 0;
-                let hasAny = false;
-                processKeys.forEach(processKey => {
-                    const [processName, pid] = processKey.split('|');
-                    const sample = samples
-                        .filter(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp)
-                        [0];
-                    if (sample && sample.GCTime !== undefined && sample.GCTime !== null && sample.GCTime > 0) {
-                        total += sample.GCTime / 1000;
-                        hasAny = true;
-                    }
-                });
-                return hasAny ? total : null;
-            });
-
-            traces.push({
-                x: timestamps.map(t => new Date(t)),
-                y: totalGc,
-                type: 'scatter',
-                mode: 'lines',
-                name: 'Total GC Time',
-                line: { color: '#2c3e50', width: 4 },
-                connectgaps: false
-            });
+            // Total GC line intentionally omitted.
 
             // Detect if mobile
             const isMobile = window.innerWidth < 768;
@@ -924,49 +900,7 @@
                 });
             });
 
-            const lastKnownRss = {};
-            const lastKnownHeap = {};
-            processKeys.forEach(processKey => {
-                lastKnownRss[processKey] = 0;
-                lastKnownHeap[processKey] = 0;
-            });
-
-            const totalRatio = timestamps.map(timestamp => {
-                let totalRss = 0;
-                let totalHeap = 0;
-                let hasAny = false;
-                processKeys.forEach(processKey => {
-                    const [processName, pid] = processKey.split('|');
-                    const sample = samples
-                        .filter(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp)
-                        [0];
-                    if (sample) {
-                        if (sample.RSS && sample.RSS > 0) {
-                            lastKnownRss[processKey] = sample.RSS;
-                        }
-                        if (sample.HeapUsed && sample.HeapUsed > 0) {
-                            lastKnownHeap[processKey] = sample.HeapUsed;
-                        }
-                    }
-                    if (lastKnownRss[processKey] > 0) {
-                        totalRss += lastKnownRss[processKey];
-                        totalHeap += lastKnownHeap[processKey];
-                        hasAny = true;
-                    }
-                });
-                if (!hasAny || totalRss === 0) return null;
-                return totalHeap / totalRss;
-            });
-
-            traces.push({
-                x: timestamps.map(t => new Date(t)),
-                y: totalRatio,
-                type: 'scatter',
-                mode: 'lines',
-                name: 'Total Heap/RSS Ratio',
-                line: { color: '#2c3e50', width: 4 },
-                connectgaps: false
-            });
+            // Total Heap/RSS ratio line intentionally omitted.
 
             // Detect if mobile
             const isMobile = window.innerWidth < 768;
@@ -1093,29 +1027,7 @@
                 totalHeap.push(hasAny ? totalHeapValue : null);
             });
 
-            const totalRatio = totalRss.map((rssValue, index) => {
-                const heapValue = totalHeap[index];
-                if (!rssValue || rssValue === 0 || heapValue === null) return null;
-                return heapValue / rssValue;
-            });
-
-            const totalGc = timestamps.map(timestamp => {
-                let total = 0;
-                let hasAny = false;
-                processKeys.forEach(processKey => {
-                    const [processName, pid] = processKey.split('|');
-                    const sample = samples.find(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp);
-                    if (sample && sample.GCTime !== undefined && sample.GCTime !== null && sample.GCTime > 0) {
-                        total += sample.GCTime / 1000;
-                        hasAny = true;
-                    }
-                });
-                return hasAny ? total : null;
-            });
-
             const firstTotalRssIndex = totalRss.findIndex(value => value !== null);
-            const firstTotalRatioIndex = totalRatio.findIndex(value => value !== null);
-            const firstTotalGcIndex = totalGc.findIndex(value => value !== null);
 
             const compareSamplesRaw = Array.isArray(window.compareSamples) ? window.compareSamples : [];
             const compareSamples = normalizeCompareSamples(compareSamplesRaw, timestamps[0]);
@@ -1212,17 +1124,6 @@
                         connectgaps: false
                     });
                 });
-                if (firstTotalGcIndex !== -1 && frameIndex >= firstTotalGcIndex) {
-                    traces.push({
-                        x: frameTimestamps,
-                        y: totalGc.slice(0, frameIndex + 1),
-                        type: 'scatter',
-                        mode: 'lines',
-                        name: 'Total GC Time',
-                        line: { color: '#2c3e50', width: 4 },
-                        connectgaps: false
-                    });
-                }
                 if (compareData) {
                     compareData.processKeys.forEach(processKey => {
                         const def = compareData.series[processKey];
@@ -1238,17 +1139,6 @@
                             connectgaps: false
                         });
                     });
-                    if (compareData.firstTotalGcIndex !== -1 && frameIndex >= compareData.firstTotalGcIndex) {
-                        traces.push({
-                            x: frameTimestamps,
-                            y: compareData.totalGc.slice(0, frameIndex + 1),
-                            type: 'scatter',
-                            mode: 'lines',
-                            name: 'Compare Total GC Time',
-                            line: { color: '#0f172a', width: 3, dash: 'dot' },
-                            connectgaps: false
-                        });
-                    }
                 }
                 return traces;
             }
@@ -1270,17 +1160,6 @@
                         connectgaps: false
                     });
                 });
-                if (firstTotalRatioIndex !== -1 && frameIndex >= firstTotalRatioIndex) {
-                    traces.push({
-                        x: frameTimestamps,
-                        y: totalRatio.slice(0, frameIndex + 1),
-                        type: 'scatter',
-                        mode: 'lines',
-                        name: 'Total Heap/RSS Ratio',
-                        line: { color: '#2c3e50', width: 4 },
-                        connectgaps: false
-                    });
-                }
                 if (compareData) {
                     compareData.processKeys.forEach(processKey => {
                         const def = compareData.series[processKey];
@@ -1296,17 +1175,6 @@
                             connectgaps: false
                         });
                     });
-                    if (compareData.firstTotalRatioIndex !== -1 && frameIndex >= compareData.firstTotalRatioIndex) {
-                        traces.push({
-                            x: frameTimestamps,
-                            y: compareData.totalRatio.slice(0, frameIndex + 1),
-                            type: 'scatter',
-                            mode: 'lines',
-                            name: 'Compare Total Heap/RSS Ratio',
-                            line: { color: '#0f172a', width: 3, dash: 'dot' },
-                            connectgaps: false
-                        });
-                    }
                 }
                 return traces;
             }
@@ -1609,35 +1477,11 @@
                 totalHeap.push(hasAny ? totalHeapValue : null);
             });
 
-            const totalRatio = totalRss.map((rssValue, index) => {
-                const heapValue = totalHeap[index];
-                if (!rssValue || rssValue === 0 || heapValue === null) return null;
-                return heapValue / rssValue;
-            });
-
-            const totalGc = timestamps.map(timestamp => {
-                let total = 0;
-                let hasAny = false;
-                processKeys.forEach(processKey => {
-                    const [processName, pid] = processKey.split('|');
-                    const sample = samples.find(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp);
-                    if (sample && sample.GCTime && sample.GCTime > 0) {
-                        total += sample.GCTime / 1000;
-                        hasAny = true;
-                    }
-                });
-                return hasAny ? total : null;
-            });
-
             return {
                 processKeys,
                 series,
                 totalRss,
-                totalRatio,
-                totalGc,
-                firstTotalRssIndex: totalRss.findIndex(value => value !== null),
-                firstTotalRatioIndex: totalRatio.findIndex(value => value !== null),
-                firstTotalGcIndex: totalGc.findIndex(value => value !== null)
+                firstTotalRssIndex: totalRss.findIndex(value => value !== null)
             };
         }
 
