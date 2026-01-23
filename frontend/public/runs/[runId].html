@@ -1270,7 +1270,8 @@
                     }
                 });
 
-                renderFrame(0);
+                const initialFrame = Math.max(0, timestamps.length - 1);
+                renderFrame(initialFrame);
             }
 
             setupReplayPanel({
