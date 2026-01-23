@@ -775,6 +775,25 @@
             return uniqueTimestamps.size > 10;
         }
 
+        const COLOR_PALETTE = [
+            '#3498db',
+            '#e74c3c',
+            '#9b59b6',
+            '#2ecc71',
+            '#f39c12',
+            '#e67e22',
+            '#1abc9c',
+            '#e91e63'
+        ];
+
+        function buildColorMap(processKeys) {
+            const colorMap = {};
+            processKeys.forEach((processKey, index) => {
+                colorMap[processKey] = COLOR_PALETTE[index % COLOR_PALETTE.length];
+            });
+            return colorMap;
+        }
+
         function renderGCChart(samples) {
             // Process data for GC chart - group by both Name and PID to handle multiple processes with same name
             const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
@@ -782,11 +801,11 @@
             const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
             
             const traces = [];
-            const colors = ['#e74c3c', '#f39c12', '#9b59b6', '#2ecc71', '#3498db', '#e67e22'];
+            const colorMap = buildColorMap(processKeys);
             
             // Create traces for each unique process (Name + PID combination)
             processKeys.forEach((processKey, index) => {
-                const color = colors[index % colors.length];
+                const color = colorMap[processKey];
                 const [processName, pid] = processKey.split('|');
                 
                 // GC time data - use null for timestamps where process doesn't exist yet
@@ -870,11 +889,11 @@
             const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
             
             const traces = [];
-            const colors = ['#e74c3c', '#f39c12', '#9b59b6', '#2ecc71', '#3498db', '#e67e22', '#1abc9c', '#e91e63'];
+            const colorMap = buildColorMap(processKeys);
             
             // Create traces for each unique process (Name + PID combination)
             processKeys.forEach((processKey, index) => {
-                const color = colors[index % colors.length];
+                const color = colorMap[processKey];
                 const [processName, pid] = processKey.split('|');
                 
                 // Heap/RSS ratio data - use null for timestamps where process doesn't exist yet or RSS is 0
@@ -963,8 +982,8 @@
                 }
             });
 
-            const colors = ['#3498db', '#e74c3c', '#9b59b6', '#2ecc71', '#f39c12', '#e67e22', '#1abc9c', '#e91e63'];
             const series = {};
+            const colorMap = buildColorMap(processKeys);
 
             processKeys.forEach((processKey, index) => {
                 const [processName, pid] = processKey.split('|');
@@ -982,7 +1001,7 @@
                 series[processKey] = {
                     processName,
                     pid,
-                    color: colors[index % colors.length],
+                    color: colorMap[processKey],
                     rss,
                     heap,
                     gc,
@@ -1031,7 +1050,7 @@
 
             const compareSamplesRaw = Array.isArray(window.compareSamples) ? window.compareSamples : [];
             const compareSamples = normalizeCompareSamples(compareSamplesRaw, timestamps[0]);
-            const compareData = compareSamples.length ? buildCompareData(compareSamples, timestamps, colors) : null;
+            const compareData = compareSamples.length ? buildCompareData(compareSamples, timestamps) : null;
 
             function buildMemoryTraces(frameIndex) {
                 const frameTimestamps = timestamps.slice(0, frameIndex + 1).map(t => new Date(t));
@@ -1413,8 +1432,9 @@
             });
         }
 
-        function buildCompareData(samples, timestamps, colors) {
+        function buildCompareData(samples, timestamps) {
             const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
+            const colorMap = buildColorMap(processKeys);
             const series = {};
 
             processKeys.forEach((processKey, index) => {
@@ -1433,7 +1453,7 @@
                 series[processKey] = {
                     processName,
                     pid,
-                    color: colors[index % colors.length],
+                    color: colorMap[processKey],
                     rss,
                     heap,
                     gc,
@@ -1585,11 +1605,11 @@
             const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
             
             const traces = [];
-            const colors = ['#3498db', '#e74c3c', '#9b59b6', '#2ecc71', '#f39c12', '#e67e22'];
+            const colorMap = buildColorMap(processKeys);
             
             // Create traces for each unique process (Name + PID combination)
             processKeys.forEach((processKey, index) => {
-                const color = colors[index % colors.length];
+                const color = colorMap[processKey];
                 const [processName, pid] = processKey.split('|');
                 
                 // RSS data - use null for timestamps where process doesn't exist yet
