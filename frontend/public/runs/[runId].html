@@ -497,7 +497,7 @@
                 const processSamples = samples.filter(s => s.PID === pid);
                 let maxRss = 0;
                 let maxHeap = 0;
-                let totalGCTime = 0;
+                let maxGCTimeSeconds = 0;
                 
                 processSamples.forEach(sample => {
                     if (sample.RSS && sample.RSS > maxRss) {
@@ -507,15 +507,18 @@
                         maxHeap = sample.HeapUsed;
                     }
                     if (sample.GCTime) {
-                        // GCTime is stored in milliseconds, convert to seconds for display
-                        totalGCTime += sample.GCTime / 1000;
+                        // GCTime is cumulative in samples; keep the max in seconds.
+                        const gcSeconds = sample.GCTime / 1000;
+                        if (gcSeconds > maxGCTimeSeconds) {
+                            maxGCTimeSeconds = gcSeconds;
+                        }
                     }
                 });
                 
                 processMetrics[pid] = {
                     maxRss: maxRss,
                     maxHeap: maxHeap,
-                    totalGCTime: totalGCTime
+                    totalGCTime: maxGCTimeSeconds
                 };
                 
             }
@@ -562,8 +565,9 @@
                 for (const [pid, info] of Object.entries(processInfo)) {
                     const vmFlags = info.vm_flags || [];
                     const metrics = processMetrics[pid] || { maxRss: 0, maxHeap: 0, totalGCTime: 0 };
+                    const maxHeapGiB = getMaxHeapGiB(vmFlags);
                     processInfoHtml += '<div class="process-info-card">';
-                    processInfoHtml += `<h3>${info.name || 'Unknown'}</h3>`;
+                    processInfoHtml += `<h3>${info.name || 'Unknown'}${maxHeapGiB ? ` <span style="font-weight: 500; color: #475569; font-size: 0.95rem;">(Heap Max: ${maxHeapGiB} GiB)</span>` : ''}</h3>`;
                     processInfoHtml += `<div class="process-meta">PID: ${pid}</div>`;
                     
                     // Add metrics
@@ -835,6 +839,16 @@
                 colorMap[processKey] = palette[index % palette.length];
             });
             return colorMap;
+        }
+
+        function getMaxHeapGiB(vmFlags) {
+            if (!Array.isArray(vmFlags)) return null;
+            const flag = vmFlags.find(entry => entry.startsWith('-XX:MaxHeapSize='));
+            if (!flag) return null;
+            const value = Number(flag.split('=')[1]);
+            if (!Number.isFinite(value) || value <= 0) return null;
+            const gib = value / (1024 * 1024 * 1024);
+            return gib.toFixed(2);
         }
 
         function buildTotalRssDistribution(samples, timestamps, processKeys) {
