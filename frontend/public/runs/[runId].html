@@ -837,6 +837,42 @@
             return colorMap;
         }
 
+        function buildTotalRssDistribution(samples, timestamps, processKeys) {
+            const lastKnown = {};
+            processKeys.forEach(processKey => {
+                lastKnown[processKey] = 0;
+            });
+
+            return timestamps.map(timestamp => {
+                let total = 0;
+                const lines = [];
+                processKeys.forEach(processKey => {
+                    const [processName, pid] = processKey.split('|');
+                    const sample = samples
+                        .filter(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp)
+                        [0];
+                    if (sample && sample.RSS && sample.RSS > 0) {
+                        lastKnown[processKey] = sample.RSS;
+                    }
+                    total += lastKnown[processKey];
+                });
+
+                if (total <= 0) {
+                    return 'No data';
+                }
+
+                processKeys.forEach(processKey => {
+                    const rss = lastKnown[processKey];
+                    if (!rss || rss <= 0) return;
+                    const [processName, pid] = processKey.split('|');
+                    const percent = ((rss / total) * 100).toFixed(1);
+                    lines.push(`${processName} PID:${pid}: ${percent}%`);
+                });
+
+                return lines.join('<br>');
+            });
+        }
+
         function renderGCChart(samples) {
             // Process data for GC chart - group by both Name and PID to handle multiple processes with same name
             const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
@@ -1090,6 +1126,7 @@
             });
 
             const firstTotalRssIndex = totalRss.findIndex(value => value !== null);
+            const totalRssDistribution = buildTotalRssDistribution(samples, timestamps, processKeys);
 
             function buildMemoryTraces(frameIndex) {
                 const frameTimestamps = timestamps.slice(0, frameIndex + 1).map(t => new Date(t));
@@ -1124,7 +1161,9 @@
                         mode: 'lines',
                         name: 'Total RSS Memory',
                         line: { color: '#2c3e50', width: 4 },
-                        connectgaps: false
+                        connectgaps: false,
+                        customdata: totalRssDistribution.slice(0, frameIndex + 1),
+                        hovertemplate: 'Total RSS: %{y} MB<br>%{customdata}<extra></extra>'
                     });
                 }
                 return traces;
@@ -1479,6 +1518,7 @@
                 processKeys,
                 series,
                 totalRss,
+                totalRssDistribution: buildTotalRssDistribution(samples, timestamps, processKeys),
                 firstTotalRssIndex: totalRss.findIndex(value => value !== null)
             };
         }
@@ -1541,7 +1581,9 @@
                         mode: 'lines',
                         name: totalLabel,
                         line: { color: totalColor, width: lineWidth + 1, dash: lineDash },
-                        connectgaps: false
+                        connectgaps: false,
+                        customdata: data.totalRssDistribution ? data.totalRssDistribution.slice(0, frameIndex + 1) : [],
+                        hovertemplate: 'Total RSS: %{y} MB<br>%{customdata}<extra></extra>'
                     });
                 }
             }
@@ -1952,6 +1994,8 @@
                 
                 return hasAnyProcess ? total : null;  // null if no processes exist yet
             });
+
+            const totalDistribution = buildTotalRssDistribution(samples, timestamps, processKeys);
             
             traces.push({
                 x: timestamps.map(t => new Date(t)),
@@ -1960,7 +2004,9 @@
                 mode: 'lines',
                 name: 'Total RSS Memory',
                 line: { color: '#2c3e50', width: 4 },
-                connectgaps: false  // Don't connect across null values
+                connectgaps: false,  // Don't connect across null values
+                customdata: totalDistribution,
+                hovertemplate: 'Total RSS: %{y} MB<br>%{customdata}<extra></extra>'
             });
 
             // Detect if mobile
