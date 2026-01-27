@@ -91,6 +91,21 @@ log_script() {
 
 log_script "Script started successfully"
 
+process_exists() {
+    local pid="$1"
+    if [ -z "$pid" ]; then
+        return 1
+    fi
+    if kill -0 "$pid" 2>/dev/null; then
+        return 0
+    fi
+    # Fallback to ps for environments where kill -0 isn't reliable
+    if ps -p "$pid" > /dev/null 2>&1; then
+        return 0
+    fi
+    return 1
+}
+
 # Log network environment (proxy, DNS, etc.) for diagnostics
 log_script "Network environment diagnostics:"
 if [ -n "${HTTP_PROXY:-}" ] || [ -n "${HTTPS_PROXY:-}" ] || [ -n "${http_proxy:-}" ] || [ -n "${https_proxy:-}" ]; then
@@ -680,6 +695,11 @@ while true; do
       log_script "Comparing NAME '$NAME' with PATTERN '$PATTERN'"
       if [[ "$NAME" == "$PATTERN" ]]; then
         log_script "MATCH FOUND! PID $PID ($NAME) matches pattern '$PATTERN'"
+
+        if ! process_exists "$PID"; then
+          log_script "Skipping PID $PID ($NAME) - process no longer exists"
+          continue
+        fi
         
         # Check if this is a new process we haven't seen before and get VM flags
         if [ -z "${seen_pids[$PID]:-}" ]; then

@@ -1436,14 +1436,24 @@
             const values = [];
             let idx = 0;
             let lastValue = null;
+            let lastSeen = 0;
+            const medianDelta = getMedianDelta(timestamps);
+            const maxGap = medianDelta ? medianDelta * 2 : 0;
+
             for (const timestamp of timestamps) {
                 while (idx < filtered.length && filtered[idx].Timestamp <= timestamp) {
                     const candidate = valueSelector(filtered[idx]);
                     if (candidate !== null && candidate !== undefined) {
                         lastValue = candidate;
                     }
+                    lastSeen = filtered[idx].Timestamp;
                     idx += 1;
                 }
+
+                if (maxGap > 0 && lastSeen > 0 && (timestamp - lastSeen) > maxGap) {
+                    lastValue = null;
+                }
+
                 values.push(lastValue);
             }
             return values;
