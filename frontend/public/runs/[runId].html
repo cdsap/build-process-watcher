@@ -851,40 +851,74 @@
             return gib.toFixed(2);
         }
 
-        function buildTotalRssDistribution(samples, timestamps, processKeys) {
+        function getMedianDelta(timestamps) {
+            if (!timestamps || timestamps.length < 2) return 0;
+            const deltas = [];
+            for (let i = 1; i < timestamps.length; i += 1) {
+                deltas.push(timestamps[i] - timestamps[i - 1]);
+            }
+            deltas.sort((a, b) => a - b);
+            const mid = Math.floor(deltas.length / 2);
+            return deltas.length % 2 === 0 ? (deltas[mid - 1] + deltas[mid]) / 2 : deltas[mid];
+        }
+
+        function buildTotalRssSeries(samples, timestamps, processKeys) {
             const lastKnown = {};
+            const lastSeen = {};
             processKeys.forEach(processKey => {
                 lastKnown[processKey] = 0;
+                lastSeen[processKey] = 0;
             });
 
-            return timestamps.map(timestamp => {
+            const medianDelta = getMedianDelta(timestamps);
+            const maxGap = medianDelta ? medianDelta * 2 : 0;
+            const totalRss = [];
+            const distribution = [];
+
+            timestamps.forEach(timestamp => {
                 let total = 0;
-                const lines = [];
+                const included = {};
+
                 processKeys.forEach(processKey => {
                     const [processName, pid] = processKey.split('|');
                     const sample = samples
                         .filter(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp)
                         [0];
-                    if (sample && sample.RSS && sample.RSS > 0) {
-                        lastKnown[processKey] = sample.RSS;
+
+                    if (sample) {
+                        if (sample.RSS && sample.RSS > 0) {
+                            lastKnown[processKey] = sample.RSS;
+                        } else {
+                            lastKnown[processKey] = 0;
+                        }
+                        lastSeen[processKey] = timestamp;
                     }
-                    total += lastKnown[processKey];
+
+                    const recentlySeen = maxGap > 0 && (timestamp - lastSeen[processKey]) <= maxGap;
+                    if (lastKnown[processKey] > 0 && (sample || recentlySeen)) {
+                        total += lastKnown[processKey];
+                        included[processKey] = lastKnown[processKey];
+                    }
                 });
+
+                totalRss.push(total > 0 ? total : null);
 
                 if (total <= 0) {
-                    return 'No data';
+                    distribution.push('No data');
+                } else {
+                    const lines = [];
+                    processKeys.forEach(processKey => {
+                        const rss = included[processKey];
+                        if (!rss) return;
+                        const [processName, pid] = processKey.split('|');
+                        const percent = ((rss / total) * 100).toFixed(1);
+                        lines.push(`${processName} PID:${pid}: ${percent}%`);
+                    });
+                    distribution.push(lines.join('<br>'));
                 }
-
-                processKeys.forEach(processKey => {
-                    const rss = lastKnown[processKey];
-                    if (!rss || rss <= 0) return;
-                    const [processName, pid] = processKey.split('|');
-                    const percent = ((rss / total) * 100).toFixed(1);
-                    lines.push(`${processName} PID:${pid}: ${percent}%`);
-                });
-
-                return lines.join('<br>');
             });
+
+            return { totalRss, distribution };
         }
 
         function renderGCChart(samples) {
@@ -1105,42 +1139,8 @@
                 };
             });
 
-            const lastKnownRss = {};
-            const lastKnownHeap = {};
-            processKeys.forEach(key => {
-                lastKnownRss[key] = 0;
-                lastKnownHeap[key] = 0;
-            });
-
-            const totalRss = [];
-            const totalHeap = [];
-            timestamps.forEach(timestamp => {
-                let totalRssValue = 0;
-                let totalHeapValue = 0;
-                let hasAny = false;
-                processKeys.forEach(processKey => {
-                    const [processName, pid] = processKey.split('|');
-                    const sample = samples.find(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp);
-                    if (sample) {
-                        if (sample.RSS && sample.RSS > 0) {
-                            lastKnownRss[processKey] = sample.RSS;
-                        }
-                        if (sample.HeapUsed && sample.HeapUsed > 0) {
-                            lastKnownHeap[processKey] = sample.HeapUsed;
-                        }
-                    }
-                    if (lastKnownRss[processKey] > 0) {
-                        totalRssValue += lastKnownRss[processKey];
-                        totalHeapValue += lastKnownHeap[processKey];
-                        hasAny = true;
-                    }
-                });
-                totalRss.push(hasAny ? totalRssValue : null);
-                totalHeap.push(hasAny ? totalHeapValue : null);
-            });
-
-            const firstTotalRssIndex = totalRss.findIndex(value => value !== null);
-            const totalRssDistribution = buildTotalRssDistribution(samples, timestamps, processKeys);
+            const totalSeries = buildTotalRssSeries(samples, timestamps, processKeys);
+            const firstTotalRssIndex = totalSeries.totalRss.findIndex(value => value !== null);
 
             function buildMemoryTraces(frameIndex) {
                 const frameTimestamps = timestamps.slice(0, frameIndex + 1).map(t => new Date(t));
@@ -1170,13 +1170,13 @@
                 if (firstTotalRssIndex !== -1 && frameIndex >= firstTotalRssIndex) {
                     traces.push({
                         x: frameTimestamps,
-                        y: totalRss.slice(0, frameIndex + 1),
+                        y: totalSeries.totalRss.slice(0, frameIndex + 1),
                         type: 'scatter',
                         mode: 'lines',
                         name: 'Total RSS Memory',
                         line: { color: '#2c3e50', width: 4 },
                         connectgaps: false,
-                        customdata: totalRssDistribution.slice(0, frameIndex + 1),
+                        customdata: totalSeries.distribution.slice(0, frameIndex + 1),
                         hovertemplate: 'Total RSS: %{y} MB<br>%{customdata}<extra></extra>'
                     });
                 }
@@ -1494,46 +1494,12 @@
                 };
             });
 
-            const totalRss = [];
-            const totalHeap = [];
-            const lastKnownRss = {};
-            const lastKnownHeap = {};
-
-            processKeys.forEach(key => {
-                lastKnownRss[key] = 0;
-                lastKnownHeap[key] = 0;
-            });
-
-            timestamps.forEach(timestamp => {
-                let totalRssValue = 0;
-                let totalHeapValue = 0;
-                let hasAny = false;
-                processKeys.forEach(processKey => {
-                    const sample = samples.find(s => s.Name === series[processKey].processName && s.PID === series[processKey].pid && s.Timestamp === timestamp);
-                    if (sample) {
-                        if (sample.RSS && sample.RSS > 0) {
-                            lastKnownRss[processKey] = sample.RSS;
-                        }
-                        if (sample.HeapUsed && sample.HeapUsed > 0) {
-                            lastKnownHeap[processKey] = sample.HeapUsed;
-                        }
-                    }
-                    if (lastKnownRss[processKey] > 0) {
-                        totalRssValue += lastKnownRss[processKey];
-                        totalHeapValue += lastKnownHeap[processKey];
-                        hasAny = true;
-                    }
-                });
-                totalRss.push(hasAny ? totalRssValue : null);
-                totalHeap.push(hasAny ? totalHeapValue : null);
-            });
-
             return {
                 processKeys,
                 series,
-                totalRss,
-                totalRssDistribution: buildTotalRssDistribution(samples, timestamps, processKeys),
-                firstTotalRssIndex: totalRss.findIndex(value => value !== null)
+                totalRss: totalSeries.totalRss,
+                totalRssDistribution: totalSeries.distribution,
+                firstTotalRssIndex: totalSeries.totalRss.findIndex(value => value !== null)
             };
         }
 
@@ -1975,51 +1941,17 @@
                 });
             });
             
-            // Add total memory trace - use forward-filling to handle missing process reports
-            // Build a map of last known RSS values per process (for forward-filling)
-            const lastKnownRSS = {};
-            processKeys.forEach(processKey => {
-                lastKnownRSS[processKey] = 0;
-            });
-            
-            const totalData = timestamps.map(timestamp => {
-                let total = 0;
-                let hasAnyProcess = false;
-                
-                processKeys.forEach(processKey => {
-                    const [processName, pid] = processKey.split('|');
-                    const sample = samples
-                        .filter(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp)
-                        [0];
-                    
-                    if (sample) {
-                        // Process reported at this timestamp - use actual value and update last known
-                        lastKnownRSS[processKey] = sample.RSS;
-                        total += sample.RSS;
-                        hasAnyProcess = true;
-                    } else if (lastKnownRSS[processKey] > 0) {
-                        // Process didn't report at this timestamp, but we've seen it before
-                        // Use forward-filled value (last known RSS) to avoid total dropping
-                        total += lastKnownRSS[processKey];
-                        hasAnyProcess = true;
-                    }
-                    // If lastKnownRSS[processKey] is 0, process hasn't started yet - don't include it
-                });
-                
-                return hasAnyProcess ? total : null;  // null if no processes exist yet
-            });
-
-            const totalDistribution = buildTotalRssDistribution(samples, timestamps, processKeys);
+            const totalSeries = buildTotalRssSeries(samples, timestamps, processKeys);
             
             traces.push({
                 x: timestamps.map(t => new Date(t)),
-                y: totalData,
+                y: totalSeries.totalRss,
                 type: 'scatter',
                 mode: 'lines',
                 name: 'Total RSS Memory',
                 line: { color: '#2c3e50', width: 4 },
                 connectgaps: false,  // Don't connect across null values
-                customdata: totalDistribution,
+                customdata: totalSeries.distribution,
                 hovertemplate: 'Total RSS: %{y} MB<br>%{customdata}<extra></extra>'
             });
 
