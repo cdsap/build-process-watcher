@@ -174,6 +174,22 @@
             margin: 0 0 1rem 0;
         }
 
+        .chart-filters {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            align-items: center;
+            margin: 0 0 1rem 0;
+            font-size: 0.875rem;
+            color: #475569;
+        }
+
+        .chart-filters label {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
         .btn {
             display: inline-flex;
             align-items: center;
@@ -663,6 +679,11 @@
                         <button class="btn secondary" id="btn-download-json">Download JSON</button>
                         <button class="btn secondary" id="btn-download-csv">Download CSV</button>
                     </div>
+                    <div class="chart-filters" id="main-chart-filters">
+                        <label><input type="checkbox" id="filter-total-rss" checked> Total RSS</label>
+                        <label><input type="checkbox" id="filter-rss" checked> RSS</label>
+                        <label><input type="checkbox" id="filter-heap" checked> Heap</label>
+                    </div>
                     ${isFinished === true && samples.length ? `
                         <div class="replay-controls" id="rss-replay-controls">
                             <div class="buttons">
@@ -681,6 +702,12 @@
                                         <option value="10">10x</option>
                                         <option value="15" selected>15x</option>
                                         <option value="20">20x</option>
+                                        <option value="25">25x</option>
+                                        <option value="30">30x</option>
+                                        <option value="35">35x</option>
+                                        <option value="40">40x</option>
+                                        <option value="45">45x</option>
+                                        <option value="50">50x</option>
                                     </select>
                                 </div>
                             </div>
@@ -716,6 +743,12 @@
                                         <option value="10">10x</option>
                                         <option value="15" selected>15x</option>
                                         <option value="20">20x</option>
+                                        <option value="25">25x</option>
+                                        <option value="30">30x</option>
+                                        <option value="35">35x</option>
+                                        <option value="40">40x</option>
+                                        <option value="45">45x</option>
+                                        <option value="50">50x</option>
                                     </select>
                                 </div>
                             </div>
@@ -751,6 +784,12 @@
                                         <option value="10">10x</option>
                                         <option value="15" selected>15x</option>
                                         <option value="20">20x</option>
+                                        <option value="25">25x</option>
+                                        <option value="30">30x</option>
+                                        <option value="35">35x</option>
+                                        <option value="40">40x</option>
+                                        <option value="45">45x</option>
+                                        <option value="50">50x</option>
                                     </select>
                                 </div>
                             </div>
@@ -770,6 +809,7 @@
 
             if (samples.length > 0) {
                 renderChart(samples);
+                setupMainChartFilters();
                 if (hasGCData(samples)) {
                     renderGCChart(samples);
                 }
@@ -868,8 +908,67 @@
                     if (!trace || !trace.name) return;
                     map[trace.name] = Array.isArray(vis) ? vis[idx] : vis;
                 });
+                if (chartId === 'chart') {
+                    updateMainChartFilterCheckboxes();
+                }
             });
             chart.__visibilityHandlersAttached = true;
+        }
+
+        function updateMainChartFilterCheckboxes() {
+            const total = document.getElementById('filter-total-rss');
+            const rss = document.getElementById('filter-rss');
+            const heap = document.getElementById('filter-heap');
+            const chart = document.getElementById('chart');
+            if (!total || !rss || !heap || !chart || !chart.data) return;
+            const map = traceVisibility['chart'] || {};
+
+            let rssVisible = false;
+            let heapVisible = false;
+            chart.data.forEach(trace => {
+                if (!trace.name) return;
+                const vis = map[trace.name];
+                const isVisible = vis !== 'legendonly' && vis !== false;
+                if (trace.name.includes('(RSS)')) rssVisible = rssVisible || isVisible;
+                if (trace.name.includes('(Heap)')) heapVisible = heapVisible || isVisible;
+            });
+            const totalVis = map['Total RSS Memory'];
+            total.checked = totalVis === undefined ? true : (totalVis !== 'legendonly' && totalVis !== false);
+            rss.checked = rssVisible;
+            heap.checked = heapVisible;
+        }
+
+        function setupMainChartFilters() {
+            const total = document.getElementById('filter-total-rss');
+            const rss = document.getElementById('filter-rss');
+            const heap = document.getElementById('filter-heap');
+            if (!total || !rss || !heap) return;
+
+            const applyFilters = () => {
+                const chart = document.getElementById('chart');
+                if (!chart || !chart.data) return;
+                const map = traceVisibility['chart'] || (traceVisibility['chart'] = {});
+
+                chart.data.forEach(trace => {
+                    if (!trace.name) return;
+                    if (trace.name === 'Total RSS Memory') {
+                        map[trace.name] = total.checked ? true : 'legendonly';
+                    } else if (trace.name.includes('(RSS)')) {
+                        map[trace.name] = rss.checked ? true : 'legendonly';
+                    } else if (trace.name.includes('(Heap)')) {
+                        map[trace.name] = heap.checked ? true : 'legendonly';
+                    }
+                });
+
+                const visArray = chart.data.map(trace => map[trace.name] !== undefined ? map[trace.name] : true);
+                Plotly.restyle(chart, 'visible', visArray);
+            };
+
+            total.addEventListener('change', applyFilters);
+            rss.addEventListener('change', applyFilters);
+            heap.addEventListener('change', applyFilters);
+
+            applyFilters();
         }
 
         function getMaxHeapGiB(vmFlags) {
@@ -1656,6 +1755,12 @@
                                 <option value="10">10x</option>
                                 <option value="15" selected>15x</option>
                                 <option value="20">20x</option>
+                                <option value="25">25x</option>
+                                <option value="30">30x</option>
+                                <option value="35">35x</option>
+                                <option value="40">40x</option>
+                                <option value="45">45x</option>
+                                <option value="50">50x</option>
                             </select>
                         </div>
                     </div>
