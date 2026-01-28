@@ -833,12 +833,43 @@
             '#6b21a8'
         ];
 
+        const traceVisibility = {};
+
         function buildColorMap(processKeys, palette = COLOR_PALETTE) {
             const colorMap = {};
             processKeys.forEach((processKey, index) => {
                 colorMap[processKey] = palette[index % palette.length];
             });
             return colorMap;
+        }
+
+        function applyVisibilityToTraces(chartId, traces) {
+            const map = traceVisibility[chartId];
+            if (!map) return traces;
+            traces.forEach(trace => {
+                if (trace && trace.name && map[trace.name] !== undefined) {
+                    trace.visible = map[trace.name];
+                }
+            });
+            return traces;
+        }
+
+        function attachLegendVisibilityHandlers(chartId) {
+            const chart = document.getElementById(chartId);
+            if (!chart || chart.__visibilityHandlersAttached) return;
+            chart.on('plotly_restyle', (eventData) => {
+                const update = eventData[0];
+                const indices = eventData[1];
+                if (!update || update.visible === undefined) return;
+                const vis = update.visible;
+                const map = traceVisibility[chartId] || (traceVisibility[chartId] = {});
+                indices.forEach((traceIndex, idx) => {
+                    const trace = chart.data && chart.data[traceIndex];
+                    if (!trace || !trace.name) return;
+                    map[trace.name] = Array.isArray(vis) ? vis[idx] : vis;
+                });
+            });
+            chart.__visibilityHandlersAttached = true;
         }
 
         function getMaxHeapGiB(vmFlags) {
@@ -1001,7 +1032,8 @@
                 }
             };
 
-            Plotly.newPlot('gc-chart', traces, layout, config);
+            Plotly.newPlot('gc-chart', applyVisibilityToTraces('gc-chart', traces), layout, config);
+            attachLegendVisibilityHandlers('gc-chart');
             
             // Handle window resize
             window.addEventListener('resize', function() {
@@ -1091,7 +1123,8 @@
                 }
             };
 
-            Plotly.newPlot('rss-heap-chart', traces, layout, config);
+            Plotly.newPlot('rss-heap-chart', applyVisibilityToTraces('rss-heap-chart', traces), layout, config);
+            attachLegendVisibilityHandlers('rss-heap-chart');
             
             // Handle window resize
             window.addEventListener('resize', function() {
@@ -1180,7 +1213,7 @@
                         hovertemplate: 'Total RSS: %{y} MB<br>%{customdata}<extra></extra>'
                     });
                 }
-                return traces;
+                return applyVisibilityToTraces('chart', traces);
             }
 
             function buildGCTraces(frameIndex) {
@@ -1200,7 +1233,7 @@
                         connectgaps: false
                     });
                 });
-                return traces;
+                return applyVisibilityToTraces('gc-chart', traces);
             }
 
             function buildRatioTraces(frameIndex) {
@@ -1220,7 +1253,7 @@
                         connectgaps: false
                     });
                 });
-                return traces;
+                return applyVisibilityToTraces('rss-heap-chart', traces);
             }
 
             function setupReplayPanel(options) {
@@ -1315,7 +1348,9 @@
                 });
 
                 const initialFrame = Math.max(0, timestamps.length - 1);
-                renderFrame(initialFrame);
+                renderFrame(initialFrame).then(() => {
+                    attachLegendVisibilityHandlers(chartId);
+                });
             }
 
             setupReplayPanel({
@@ -1740,15 +1775,15 @@
                 currentFrame = frameIndex;
                 updateUi(frameIndex);
                 const tasks = [];
-                tasks.push(Plotly.react('compare-current-rss', buildMetricTraces(baseData, timestamps, frameIndex, 'rss', baseStyle), getMemoryLayout(), getMemoryConfig()));
-                tasks.push(Plotly.react('compare-other-rss', buildMetricTraces(compareData, timestamps, frameIndex, 'rss', compareStyle), getMemoryLayout(), getMemoryConfig()));
+                tasks.push(Plotly.react('compare-current-rss', applyVisibilityToTraces('compare-current-rss', buildMetricTraces(baseData, timestamps, frameIndex, 'rss', baseStyle)), getMemoryLayout(), getMemoryConfig()));
+                tasks.push(Plotly.react('compare-other-rss', applyVisibilityToTraces('compare-other-rss', buildMetricTraces(compareData, timestamps, frameIndex, 'rss', compareStyle)), getMemoryLayout(), getMemoryConfig()));
                 if (showGC) {
-                    tasks.push(Plotly.react('compare-current-gc', buildMetricTraces(baseData, timestamps, frameIndex, 'gc', baseStyle), getGcLayout(), getGcConfig()));
-                    tasks.push(Plotly.react('compare-other-gc', buildMetricTraces(compareData, timestamps, frameIndex, 'gc', compareStyle), getGcLayout(), getGcConfig()));
+                    tasks.push(Plotly.react('compare-current-gc', applyVisibilityToTraces('compare-current-gc', buildMetricTraces(baseData, timestamps, frameIndex, 'gc', baseStyle)), getGcLayout(), getGcConfig()));
+                    tasks.push(Plotly.react('compare-other-gc', applyVisibilityToTraces('compare-other-gc', buildMetricTraces(compareData, timestamps, frameIndex, 'gc', compareStyle)), getGcLayout(), getGcConfig()));
                 }
                 if (showRatio) {
-                    tasks.push(Plotly.react('compare-current-ratio', buildMetricTraces(baseData, timestamps, frameIndex, 'ratio', baseStyle), getRatioLayout(), getRatioConfig()));
-                    tasks.push(Plotly.react('compare-other-ratio', buildMetricTraces(compareData, timestamps, frameIndex, 'ratio', compareStyle), getRatioLayout(), getRatioConfig()));
+                    tasks.push(Plotly.react('compare-current-ratio', applyVisibilityToTraces('compare-current-ratio', buildMetricTraces(baseData, timestamps, frameIndex, 'ratio', baseStyle)), getRatioLayout(), getRatioConfig()));
+                    tasks.push(Plotly.react('compare-other-ratio', applyVisibilityToTraces('compare-other-ratio', buildMetricTraces(compareData, timestamps, frameIndex, 'ratio', compareStyle)), getRatioLayout(), getRatioConfig()));
                 }
                 return Promise.all(tasks);
             }
@@ -1805,7 +1840,18 @@
             });
 
             const initialFrame = Math.max(0, timestamps.length - 1);
-            renderFrame(initialFrame);
+            renderFrame(initialFrame).then(() => {
+                attachLegendVisibilityHandlers('compare-current-rss');
+                attachLegendVisibilityHandlers('compare-other-rss');
+                if (showGC) {
+                    attachLegendVisibilityHandlers('compare-current-gc');
+                    attachLegendVisibilityHandlers('compare-other-gc');
+                }
+                if (showRatio) {
+                    attachLegendVisibilityHandlers('compare-current-ratio');
+                    attachLegendVisibilityHandlers('compare-other-ratio');
+                }
+            });
         }
 
         function getGcLayout() {
@@ -1971,7 +2017,8 @@
             const layout = getMemoryLayout();
             const config = getMemoryConfig();
 
-            Plotly.newPlot('chart', traces, layout, config);
+            Plotly.newPlot('chart', applyVisibilityToTraces('chart', traces), layout, config);
+            attachLegendVisibilityHandlers('chart');
             
             // Handle window resize
             window.addEventListener('resize', function() {
