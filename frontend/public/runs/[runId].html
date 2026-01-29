@@ -679,11 +679,6 @@
                         <button class="btn secondary" id="btn-download-json">Download JSON</button>
                         <button class="btn secondary" id="btn-download-csv">Download CSV</button>
                     </div>
-                    <div class="chart-filters" id="main-chart-filters">
-                        <label><input type="checkbox" id="filter-total-rss" checked> Total RSS</label>
-                        <label><input type="checkbox" id="filter-rss" checked> RSS</label>
-                        <label><input type="checkbox" id="filter-heap" checked> Heap</label>
-                    </div>
                     ${isFinished === true && samples.length ? `
                         <div class="replay-controls" id="rss-replay-controls">
                             <div class="buttons">
@@ -711,6 +706,11 @@
                                     </select>
                                 </div>
                             </div>
+                        </div>
+                        <div class="chart-filters" id="main-chart-filters">
+                            <label><input type="checkbox" id="filter-total-rss" checked> Total RSS</label>
+                            <label><input type="checkbox" id="filter-rss" checked> RSS</label>
+                            <label><input type="checkbox" id="filter-heap" checked> Heap</label>
                         </div>
                     ` : ''}
                     <h3>Memory Usage Over Time</h3>
