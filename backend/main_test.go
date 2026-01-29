@@ -443,7 +443,7 @@ func TestDataRetentionCutoff(t *testing.T) {
 
 	t.Logf("Old run timestamp:    %d (4 hours ago)", oldTimestamp)
 	t.Logf("Recent run timestamp: %d (2 hours ago)", recentTimestamp)
-	t.Logf("Cutoff timestamp:     %d (3 hours ago)", cutoffTimestamp)
+	t.Logf("Cutoff timestamp:     %d (24 hours ago)", cutoffTimestamp)
 
 	// Old run should be before cutoff (should be deleted)
 	if oldTimestamp >= cutoffTimestamp {

@@ -223,8 +223,8 @@ func (c *Client) MarkRunAsFinished(runID string) error {
 	runDoc.FinishedAt = now
 	runDoc.UpdatedAt = now
 	runDoc.UpdatedAtTimestamp = ToMillis(now) // Store Unix millis for timezone-independent queries
-	// Set expire_at to 3 hours from finish time for Firestore TTL
-	runDoc.ExpireAt = now.Add(3 * time.Hour)
+	// Set expire_at to 24 hours from finish time for Firestore TTL
+	runDoc.ExpireAt = now.Add(24 * time.Hour)
 
 	// Update in Firestore
 	_, err = doc.Set(c.ctx, runDoc)

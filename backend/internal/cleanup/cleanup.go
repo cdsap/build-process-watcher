@@ -14,8 +14,6 @@ import (
 const (
 	// BuildTimeout is the timeout for marking builds as finished (5 minutes)
 	BuildTimeout = 5 * time.Minute
-	// DataRetentionPeriod is the period for retaining data (3 hours)
-	DataRetentionPeriod = 3 * time.Hour
 )
 
 // Service handles cleanup operations

@@ -214471,7 +214471,7 @@ async function run() {
 ## Build Process Monitoring
 
 ### Remote Monitoring Mode
-- **Dashboard URL**: ${frontendUrl} (**Data Retention**: 3 hours)
+- **Dashboard URL**: ${frontendUrl} (**Data Retention**: 24 hours)
 `;
                 // Add Mermaid diagram if we have local data
                 if (fs.existsSync(logFile) && processes.size > 0) {

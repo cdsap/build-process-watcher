@@ -62,7 +62,7 @@ Dashboard URL shown in job output.
 
 ### Remote Mode
 - Live dashboard URL (in job output)
-- Data retention: 3 hours
+- Data retention: 24 hours
 - Real-time process monitoring
 - GC time metrics (if `collect_gc` is enabled)
 - GitHub Actions job summary (unless `disable_summary_output: 'true'` is set)

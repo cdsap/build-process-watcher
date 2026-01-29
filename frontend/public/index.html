@@ -457,7 +457,7 @@
 - name: Build project
   run: ./gradlew clean build</code></pre>
                 <div class="info-box info-box-success">
-                    <strong>🌐 Output:</strong> Dashboard URL displayed in action output (data available for 3 hours)
+                    <strong>🌐 Output:</strong> Dashboard URL displayed in action output (data available for 24 hours)
                 </div>
                 <div class="info-box info-box-warning" style="margin-top: 1rem;">
                     <strong>💡 GC Collection:</strong> Set <code>collect_gc: 'true'</code> to monitor garbage collection time in seconds. This adds a GC time chart to your dashboard.
@@ -487,7 +487,7 @@
                     <li>The action creates a unique run ID for each build</li>
                     <li>A dashboard URL is automatically generated using this run ID</li>
                     <li>The URL is displayed in the GitHub Actions output for easy access</li>
-                    <li>Data is available for 3 hours after the build completes</li>
+                    <li>Data is available for 24 hours after the build completes</li>
                 </ul>
             </div>
         </div>
@@ -637,7 +637,7 @@
             <p style="font-size: 1.1rem; font-weight: 600; color: var(--dark);">🚀 Build Process Watcher</p>
             <p>Free service with 3-hour memory report availability</p>
             <p style="font-size: 0.9rem; opacity: 0.8; margin-top: 0.5rem;">
-                Keep this service free by accessing your data within 3 hours
+                Keep this service free by accessing your data within 24 hours
             </p>
         </div>
     </div>
@@ -676,7 +676,7 @@
                                     <p>The build run with ID <code>${runId}</code> could not be found.</p>
                                     <p>This might be because:</p>
                                     <ul style="text-align: left; max-width: 400px; margin: 0 auto;">
-                                        <li>The memory report has expired (available for 3 hours)</li>
+                                        <li>The memory report has expired (available for 24 hours)</li>
                                         <li>The run ID is incorrect</li>
                                         <li>The build is still in progress</li>
                                     </ul>
