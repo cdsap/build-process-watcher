@@ -213773,6 +213773,33 @@ function parseLogFile(logFile) {
     });
     return { processes, timestamps: Array.from(timestamps).sort(), hasGcData };
 }
+function generateCsvReport(logFile, outputFile, hasGcData) {
+    const lines = fs.readFileSync(logFile, 'utf8').split('\n');
+    const dataLines = lines.slice(2).filter(line => line.trim().length > 0);
+    const header = hasGcData
+        ? ['elapsed_time', 'pid', 'name', 'heap_used_mb', 'heap_capacity_mb', 'rss_mb', 'gc_time_s']
+        : ['elapsed_time', 'pid', 'name', 'heap_used_mb', 'heap_capacity_mb', 'rss_mb'];
+    const rows = [header.join(',')];
+    dataLines.forEach(line => {
+        const parts = line.trim().split('|').map(p => p.trim());
+        if (parts.length !== 6 && parts.length !== 7)
+            return;
+        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime] = parts;
+        const baseRow = [
+            timestamp,
+            pid,
+            name,
+            heapUsed.replace('MB', ''),
+            heapCap.replace('MB', ''),
+            rss.replace('MB', '')
+        ];
+        if (parts.length === 7 && hasGcData) {
+            baseRow.push(gcTime.replace('s', '').replace('N/A', '0'));
+        }
+        rows.push(baseRow.join(','));
+    });
+    fs.writeFileSync(outputFile, rows.join('\n'));
+}
 function generateMermaidChart(processes, timestamps) {
     // Sample points based on data length:
     // - For short logs (< 30 points): show all points
@@ -213853,8 +213880,8 @@ function generateSvg(processes, timestamps) {
     const maxIndividualRss = Math.max(...Array.from(processes.values()).flatMap(p => p.rss));
     const maxAggregatedRss = Math.max(...aggregatedRss);
     const maxRss = Math.max(maxIndividualRss, maxAggregatedRss);
-    // Round up maxRss to nearest 1000 for better y-axis scale
-    const yAxisMax = Math.ceil(maxRss / 1000) * 1000;
+    // Scale based on observed max to improve visibility
+    const yAxisMax = Math.max(50, Math.ceil(maxRss * 1.1));
     const xScale = (width - margin.left - margin.right) / (timestamps.length - 1) || 1;
     const yScale = (height - margin.top - margin.bottom) / yAxisMax;
     // Improved color palette for clarity
@@ -213875,8 +213902,17 @@ function generateSvg(processes, timestamps) {
     svg += `<rect width="100%" height="100%" fill="#fff"/>\n`;
     // Add title
     svg += `<text x="${width / 2}" y="40" text-anchor="middle" font-size="24" font-weight="bold">Build Process Memory Usage Over Time</text>\n`;
-    // Add grid lines (every 500MB)
-    const gridInterval = 500; // MB
+    // Add grid lines (dynamic interval)
+    let gridInterval = 1000;
+    if (yAxisMax <= 200) {
+        gridInterval = 20;
+    }
+    else if (yAxisMax <= 1000) {
+        gridInterval = 100;
+    }
+    else if (yAxisMax <= 5000) {
+        gridInterval = 500;
+    }
     for (let i = 0; i <= yAxisMax; i += gridInterval) {
         const y = height - margin.bottom - (i * yScale);
         svg += `<line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" stroke="#e0e0e0" stroke-width="1" stroke-dasharray="5,5"/>\n`;
@@ -213955,14 +213991,13 @@ function generateGcSvg(processes, timestamps) {
             return sum + (((_a = p.gcTime) === null || _a === void 0 ? void 0 : _a[idx]) || 0);
         }, 0);
     });
-    // Calculate max GC time for scaling
-    const maxIndividualGc = Math.max(...Array.from(processes.values())
-        .filter(p => p.gcTime)
-        .flatMap(p => p.gcTime || []));
+    const gcValues = Array.from(processes.values())
+        .filter(p => p.gcTime && p.gcTime.length > 0)
+        .flatMap(p => p.gcTime || []);
+    const maxIndividualGc = gcValues.length > 0 ? Math.max(...gcValues) : 0;
     const maxAggregatedGc = Math.max(...aggregatedGcTime);
     const maxGc = Math.max(maxIndividualGc, maxAggregatedGc);
-    // Round up maxGc to nearest 0.5 for better y-axis scale
-    const yAxisMax = Math.ceil(maxGc * 2) / 2 || 1;
+    const yAxisMax = Math.max(0.1, maxGc * 1.1);
     const xScale = (width - margin.left - margin.right) / (timestamps.length - 1) || 1;
     const yScale = (height - margin.top - margin.bottom) / yAxisMax;
     // Color palette for GC charts
@@ -213982,8 +214017,17 @@ function generateGcSvg(processes, timestamps) {
     svg += `<rect width="100%" height="100%" fill="#fff"/>\n`;
     // Add title
     svg += `<text x="${width / 2}" y="40" text-anchor="middle" font-size="24" font-weight="bold">Build Process GC Time Over Time</text>\n`;
-    // Add grid lines (every 0.1s)
-    const gridInterval = 0.1; // seconds
+    // Add grid lines (dynamic interval)
+    let gridInterval = 0.1;
+    if (yAxisMax > 1 && yAxisMax <= 5) {
+        gridInterval = 0.5;
+    }
+    else if (yAxisMax > 5 && yAxisMax <= 20) {
+        gridInterval = 1;
+    }
+    else if (yAxisMax > 20) {
+        gridInterval = 5;
+    }
     for (let i = 0; i <= yAxisMax; i += gridInterval) {
         const y = height - margin.bottom - (i * yScale);
         svg += `<line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" stroke="#e0e0e0" stroke-width="1" stroke-dasharray="5,5"/>\n`;
@@ -214003,6 +214047,11 @@ function generateGcSvg(processes, timestamps) {
     for (let i = 0; i < timestamps.length; i += labelInterval) {
         const x = margin.left + (i * xScale);
         svg += `<text x="${x}" y="${height - margin.bottom + 20}" transform="rotate(45 ${x},${height - margin.bottom + 20})" text-anchor="start" font-size="12" fill="#333">${timestamps[i]}</text>\n`;
+    }
+    if (maxGc <= 0) {
+        svg += `<text x="${width / 2}" y="${height / 2}" text-anchor="middle" font-size="18" fill="#64748b">No GC data available</text>\n`;
+        svg += '</svg>';
+        return svg;
     }
     // Draw process GC time lines and legend
     let legendY = margin.top + 30;
@@ -214387,14 +214436,14 @@ async function run() {
         const svgContent = generateSvg(processes, timestamps);
         // Save SVG file
         fs.writeFileSync('memory_usage.svg', svgContent);
-        // Generate GC SVG if GC data is available
-        if (hasGcData) {
-            if (debugMode) {
-                console.log('Generating GC time graph...');
-            }
-            const gcSvgContent = generateGcSvg(processes, timestamps);
-            fs.writeFileSync('gc_time.svg', gcSvgContent);
+        // Generate GC SVG (includes a fallback message if no GC data)
+        if (debugMode) {
+            console.log('Generating GC time graph...');
         }
+        const gcSvgContent = generateGcSvg(processes, timestamps);
+        fs.writeFileSync('gc_time.svg', gcSvgContent);
+        const csvFile = 'build_process_watcher.csv';
+        generateCsvReport(logFile, csvFile, hasGcData);
         // Upload artifacts (only if files exist)
         // Only upload artifacts if we're in a GitHub Actions context and have runtime token
         // When called from script trap, we might not have the token, so skip upload
@@ -214428,6 +214477,9 @@ async function run() {
                 }
                 if (fs.existsSync('gc_time.svg')) {
                     files.push('gc_time.svg');
+                }
+                if (fs.existsSync(csvFile)) {
+                    files.push(csvFile);
                 }
                 if (fs.existsSync('backend_debug.log')) {
                     files.push('backend_debug.log');
@@ -214543,14 +214595,22 @@ ${Array.from(processes.entries()).map(([key, data]) => {
                     const maxProcessRss = Math.max(...data.rss);
                     const avgProcessRss = data.rss.reduce((a, b) => a + b, 0) / data.rss.length;
                     const lastRss = data.rss[data.rss.length - 1];
+                    const gcStats = hasGcData && data.gcTime && data.gcTime.length > 0
+                        ? (() => {
+                            const maxGc = Math.max(...data.gcTime);
+                            const lastGc = data.gcTime[data.gcTime.length - 1];
+                            return `\n- Max GC time: ${maxGc.toFixed(3)} s\n- Last GC time: ${lastGc.toFixed(3)} s`;
+                        })()
+                        : '';
                     return `#### ${key}
 - Maximum RSS: ${maxProcessRss.toFixed(2)} MB
 - Average RSS: ${avgProcessRss.toFixed(2)} MB
 - Number of measurements: ${data.rss.length}
-- Last measurement: ${lastRss.toFixed(2)} MB`;
+- Last measurement: ${lastRss.toFixed(2)} MB${gcStats}`;
                 }).join('\n\n')}
 
-> Note: A detailed SVG graph and log file are available in the artifacts of this workflow run.`;
+${hasGcData ? '\n> GC chart is available in the artifacts as `gc_time.svg`.' : ''}
+> Note: A detailed SVG graph, CSV report, and log file are available in the artifacts of this workflow run.`;
                 fs.writeFileSync(process.env.GITHUB_STEP_SUMMARY, newSummary);
             }
         }
