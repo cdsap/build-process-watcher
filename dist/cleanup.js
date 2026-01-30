@@ -213932,6 +213932,16 @@ function buildPathFromSeries(series, xScale, yScale, height, margin) {
     }
     return path;
 }
+function lightenHexColor(hex, amount) {
+    const normalized = hex.replace('#', '');
+    if (normalized.length !== 6)
+        return hex;
+    const num = parseInt(normalized, 16);
+    const r = Math.min(255, ((num >> 16) & 0xff) + amount);
+    const g = Math.min(255, ((num >> 8) & 0xff) + amount);
+    const b = Math.min(255, (num & 0xff) + amount);
+    return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+}
 function generateSvg(processes, timestamps) {
     const width = 1400;
     const height = 800;
@@ -214057,6 +214067,7 @@ function generateSvg(processes, timestamps) {
     let legendY = margin.top + 30;
     Array.from(processes.entries()).forEach(([key], idx) => {
         const color = processColors[idx % processColors.length];
+        const heapColor = lightenHexColor(color, 80);
         const rssSeries = perProcessRss[idx];
         const heapSeries = perProcessHeap[idx];
         // RSS line (solid)
@@ -214067,12 +214078,12 @@ function generateSvg(processes, timestamps) {
         // Heap Used line (dashed)
         const heapPath = buildPathFromSeries(heapSeries, xScale, yScale, height, { left: margin.left, bottom: margin.bottom });
         if (heapPath) {
-            svg += `<path d="${heapPath}" stroke="${color}" stroke-width="2.5" fill="none" opacity="0.95" stroke-dasharray="8,5"/>\n`;
+            svg += `<path d="${heapPath}" stroke="${heapColor}" stroke-width="3" fill="none" opacity="0.9" stroke-dasharray="12,6"/>\n`;
         }
         // Legend for this process
         svg += `<rect x="${width - margin.right + 40}" y="${legendY - 10}" width="20" height="6" fill="${color}" opacity="0.95"/>\n`;
         svg += `<text x="${width - margin.right + 70}" y="${legendY - 2}" font-size="14" fill="#333">${key} (RSS)</text>\n`;
-        svg += `<line x1="${width - margin.right + 40}" y1="${legendY + 13}" x2="${width - margin.right + 60}" y2="${legendY + 13}" stroke="${color}" stroke-width="2.5" stroke-dasharray="8,5"/>\n`;
+        svg += `<line x1="${width - margin.right + 40}" y1="${legendY + 13}" x2="${width - margin.right + 60}" y2="${legendY + 13}" stroke="${heapColor}" stroke-width="3" stroke-dasharray="12,6"/>\n`;
         svg += `<text x="${width - margin.right + 70}" y="${legendY + 18}" font-size="14" fill="#333">${key} (Heap Used)</text>\n`;
         legendY += 40;
     });

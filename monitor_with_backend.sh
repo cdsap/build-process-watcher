@@ -592,13 +592,33 @@ if [ "$BACKEND_AVAILABLE" = "false" ]; then
                 if [[ "$NAME" == *"$pattern"* ]]; then
                     # Get memory info for this process
                     if [ -f "/proc/$PID/status" ]; then
-                        HEAP_USED=$(ps -p "$PID" -o rss= 2>/dev/null | awk '{print int($1/1024)}' || echo "0")
-                        HEAP_CAP=$(ps -p "$PID" -o vsz= 2>/dev/null | awk '{print int($1/1024)}' || echo "0")
-                        RSS=$(ps -p "$PID" -o rss= 2>/dev/null | awk '{print int($1/1024)}' || echo "0")
-                        
-                        # Store data for this timestamp
+                        GC_LINE=$(jstat -gc "$PID" 2>/dev/null | tail -n 1)
+                        RSS_KB=$(ps -o rss= -p "$PID" 2>/dev/null | tr -d ' ')
+                        [[ -z "$RSS_KB" ]] && continue
+                        RSS=$(awk "BEGIN { printf \"%.1f\", $RSS_KB / 1024 }")
+
+                        if [[ -n "$GC_LINE" ]]; then
+                          EC=$(echo "$GC_LINE" | awk '{print $5}')
+                          EU=$(echo "$GC_LINE" | awk '{print $6}')
+                          OC=$(echo "$GC_LINE" | awk '{print $7}')
+                          OU=$(echo "$GC_LINE" | awk '{print $8}')
+                          HEAP_USED=$(awk "BEGIN { printf \"%.1f\", ($EU + $OU) / 1024 }")
+                          HEAP_CAP=$(awk "BEGIN { printf \"%.1f\", ($EC + $OC) / 1024 }")
+                        else
+                          HEAP_USED=$RSS
+                          HEAP_CAP=$(ps -p "$PID" -o vsz= 2>/dev/null | awk '{print int($1/1024)}' || echo "0")
+                        fi
+
                         if [ "$COLLECT_GC" = "true" ]; then
-                          process_data+=("$ELAPSED_TIME | $PID | $NAME | $HEAP_USED | $HEAP_CAP | $RSS | N/A")
+                          GC_TIME_S="N/A"
+                          if [[ -n "$GC_LINE" ]]; then
+                            YGCT=$(echo "$GC_LINE" | awk '{print $14}' 2>/dev/null || echo "0")
+                            FGCT=$(echo "$GC_LINE" | awk '{print $16}' 2>/dev/null || echo "0")
+                            if [ "$YGCT" != "N/A" ] && [ "$FGCT" != "N/A" ] && [ -n "$YGCT" ] && [ -n "$FGCT" ]; then
+                              GC_TIME_S=$(awk "BEGIN { printf \"%.3f\", $YGCT + $FGCT }" 2>/dev/null || echo "N/A")
+                            fi
+                          fi
+                          process_data+=("$ELAPSED_TIME | $PID | $NAME | $HEAP_USED | $HEAP_CAP | $RSS | ${GC_TIME_S}")
                         else
                           process_data+=("$ELAPSED_TIME | $PID | $NAME | $HEAP_USED | $HEAP_CAP | $RSS")
                         fi
