@@ -213771,7 +213771,9 @@ function parseLogFile(logFile) {
             processData.gcTime.push(0);
         }
     });
-    return { processes, timestamps: Array.from(timestamps).sort(), hasGcData };
+    const orderedTimestamps = Array.from(timestamps)
+        .sort((a, b) => parseTimestampSeconds(a) - parseTimestampSeconds(b));
+    return { processes, timestamps: orderedTimestamps, hasGcData };
 }
 function generateCsvReport(logFile, outputFile, hasGcData) {
     const lines = fs.readFileSync(logFile, 'utf8').split('\n');
@@ -213861,6 +213863,75 @@ flowchart LR
     }).join('\n    ')}
     ${sampledTimestamps.map((_, i) => `class Agg_${i} aggregated`).join('\n    ')}`;
 }
+function parseTimestampSeconds(timestamp) {
+    if (timestamp.includes(':')) {
+        const parts = timestamp.split(':').map(part => parseInt(part, 10));
+        if (parts.length === 3 && parts.every(Number.isFinite)) {
+            return (parts[0] * 3600) + (parts[1] * 60) + parts[2];
+        }
+    }
+    const numeric = parseFloat(timestamp);
+    return Number.isFinite(numeric) ? numeric : 0;
+}
+function median(values) {
+    if (values.length === 0)
+        return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    if (sorted.length % 2 === 0) {
+        return (sorted[mid - 1] + sorted[mid]) / 2;
+    }
+    return sorted[mid];
+}
+function buildForwardFilledSeries(timestamps, timestampSeconds, valuesByTimestamp, maxGapSeconds) {
+    const series = [];
+    let lastValue = null;
+    let lastSeenTime = null;
+    for (let i = 0; i < timestamps.length; i += 1) {
+        const timestamp = timestamps[i];
+        const timeSeconds = timestampSeconds[i];
+        const value = valuesByTimestamp.get(timestamp);
+        if (value !== undefined && Number.isFinite(value)) {
+            lastValue = value;
+            lastSeenTime = timeSeconds;
+            series.push(value);
+            continue;
+        }
+        if (lastValue === null || lastSeenTime === null) {
+            series.push(null);
+            continue;
+        }
+        if (timeSeconds - lastSeenTime > maxGapSeconds) {
+            lastValue = null;
+            lastSeenTime = null;
+            series.push(null);
+            continue;
+        }
+        series.push(lastValue);
+    }
+    return series;
+}
+function buildPathFromSeries(series, xScale, yScale, height, margin) {
+    let path = '';
+    let started = false;
+    for (let i = 0; i < series.length; i += 1) {
+        const value = series[i];
+        if (value === null || !Number.isFinite(value)) {
+            started = false;
+            continue;
+        }
+        const x = margin.left + (i * xScale);
+        const y = height - margin.bottom - (value * yScale);
+        if (!started) {
+            path += `M ${x} ${y}`;
+            started = true;
+        }
+        else {
+            path += ` L ${x} ${y}`;
+        }
+    }
+    return path;
+}
 function generateSvg(processes, timestamps) {
     const width = 1400;
     const height = 800;
@@ -213870,16 +213941,67 @@ function generateSvg(processes, timestamps) {
         bottom: 100,
         left: 100
     };
-    // Calculate aggregated RSS first to determine true max value
-    const aggregatedRss = timestamps.map(timestamp => {
-        return Array.from(processes.values())
-            .filter(p => p.timestamps.includes(timestamp))
-            .reduce((sum, p) => sum + p.rss[p.timestamps.indexOf(timestamp)], 0);
+    const timestampSeconds = timestamps.map(parseTimestampSeconds);
+    const deltas = timestampSeconds.slice(1).map((value, index) => value - timestampSeconds[index]).filter(delta => delta > 0);
+    const medianDelta = median(deltas) || 1;
+    const maxGapSeconds = medianDelta * 2;
+    const perProcessRss = [];
+    const perProcessHeap = [];
+    Array.from(processes.values()).forEach(process => {
+        const rssMap = new Map();
+        const heapMap = new Map();
+        process.timestamps.forEach((timestamp, index) => {
+            const rssValue = process.rss[index];
+            const heapValue = process.heapUsed[index];
+            if (Number.isFinite(rssValue)) {
+                rssMap.set(timestamp, rssValue);
+            }
+            if (Number.isFinite(heapValue)) {
+                heapMap.set(timestamp, heapValue);
+            }
+        });
+        perProcessRss.push(buildForwardFilledSeries(timestamps, timestampSeconds, rssMap, maxGapSeconds));
+        perProcessHeap.push(buildForwardFilledSeries(timestamps, timestampSeconds, heapMap, maxGapSeconds));
+    });
+    const activeCounts = [];
+    const aggregatedRss = timestamps.map((_, index) => {
+        let hasValue = false;
+        let activeCount = 0;
+        const sum = perProcessRss.reduce((total, series) => {
+            const value = series[index];
+            if (value === null || !Number.isFinite(value)) {
+                return total;
+            }
+            hasValue = true;
+            activeCount += 1;
+            return total + value;
+        }, 0);
+        activeCounts.push(activeCount);
+        return hasValue ? sum : null;
     });
     // Calculate scales using max of individual processes and aggregated
-    const maxIndividualRss = Math.max(...Array.from(processes.values()).flatMap(p => p.rss));
-    const maxAggregatedRss = Math.max(...aggregatedRss);
+    const rssValues = perProcessRss.flatMap(series => series.filter((value) => value !== null));
+    const maxIndividualRss = rssValues.length > 0 ? Math.max(...rssValues) : 0;
+    const aggregatedValues = aggregatedRss.filter((value) => value !== null);
+    const maxAggregatedRss = aggregatedValues.length > 0 ? Math.max(...aggregatedValues) : 0;
     const maxRss = Math.max(maxIndividualRss, maxAggregatedRss);
+    if (aggregatedValues.length > 0) {
+        const maxActiveCount = Math.max(...activeCounts);
+        if (maxActiveCount >= 2) {
+            const tailThreshold = maxAggregatedRss * 0.2;
+            for (let i = aggregatedRss.length - 1; i >= 0; i -= 1) {
+                const value = aggregatedRss[i];
+                if (value === null) {
+                    continue;
+                }
+                if (activeCounts[i] <= 1 && value <= tailThreshold) {
+                    aggregatedRss[i] = null;
+                    continue;
+                }
+                break;
+            }
+        }
+    }
     // Scale based on observed max to improve visibility
     const yAxisMax = Math.max(50, Math.ceil(maxRss * 1.1));
     const xScale = (width - margin.left - margin.right) / (timestamps.length - 1) || 1;
@@ -213933,22 +214055,20 @@ function generateSvg(processes, timestamps) {
     }
     // Draw process lines and legend
     let legendY = margin.top + 30;
-    Array.from(processes.entries()).forEach(([key, data], idx) => {
+    Array.from(processes.entries()).forEach(([key], idx) => {
         const color = processColors[idx % processColors.length];
+        const rssSeries = perProcessRss[idx];
+        const heapSeries = perProcessHeap[idx];
         // RSS line (solid)
-        const rssPoints = data.timestamps.map((timestamp, i) => {
-            const x = margin.left + (timestamps.indexOf(timestamp) * xScale);
-            const y = height - margin.bottom - (data.rss[i] * yScale);
-            return `${x},${y}`;
-        }).join(' ');
-        svg += `<polyline points="${rssPoints}" stroke="${color}" stroke-width="2.5" fill="none" opacity="0.95"/>\n`;
+        const rssPath = buildPathFromSeries(rssSeries, xScale, yScale, height, { left: margin.left, bottom: margin.bottom });
+        if (rssPath) {
+            svg += `<path d="${rssPath}" stroke="${color}" stroke-width="2.5" fill="none" opacity="0.95"/>\n`;
+        }
         // Heap Used line (dashed)
-        const heapPoints = data.timestamps.map((timestamp, i) => {
-            const x = margin.left + (timestamps.indexOf(timestamp) * xScale);
-            const y = height - margin.bottom - (data.heapUsed[i] * yScale);
-            return `${x},${y}`;
-        }).join(' ');
-        svg += `<polyline points="${heapPoints}" stroke="${color}" stroke-width="2.5" fill="none" opacity="0.95" stroke-dasharray="8,5"/>\n`;
+        const heapPath = buildPathFromSeries(heapSeries, xScale, yScale, height, { left: margin.left, bottom: margin.bottom });
+        if (heapPath) {
+            svg += `<path d="${heapPath}" stroke="${color}" stroke-width="2.5" fill="none" opacity="0.95" stroke-dasharray="8,5"/>\n`;
+        }
         // Legend for this process
         svg += `<rect x="${width - margin.right + 40}" y="${legendY - 10}" width="20" height="6" fill="${color}" opacity="0.95"/>\n`;
         svg += `<text x="${width - margin.right + 70}" y="${legendY - 2}" font-size="14" fill="#333">${key} (RSS)</text>\n`;
@@ -213957,12 +214077,10 @@ function generateSvg(processes, timestamps) {
         legendY += 40;
     });
     // Draw aggregated RSS line (black, solid)
-    const aggregatedPoints = timestamps.map((timestamp, i) => {
-        const x = margin.left + (i * xScale);
-        const y = height - margin.bottom - (aggregatedRss[i] * yScale);
-        return `${x},${y}`;
-    }).join(' ');
-    svg += `<polyline points="${aggregatedPoints}" stroke="${aggRssColor}" stroke-width="3.5" fill="none" opacity="0.9"/>\n`;
+    const aggregatedPath = buildPathFromSeries(aggregatedRss, xScale, yScale, height, { left: margin.left, bottom: margin.bottom });
+    if (aggregatedPath) {
+        svg += `<path d="${aggregatedPath}" stroke="${aggRssColor}" stroke-width="3.5" fill="none" opacity="0.9"/>\n`;
+    }
     // Aggregated legend
     svg += `<rect x="${width - margin.right + 40}" y="${legendY - 10}" width="20" height="20" fill="${aggRssColor}" opacity="0.9"/>\n`;
     svg += `<text x="${width - margin.right + 70}" y="${legendY + 5}" font-size="14" fill="#333">Aggregated RSS</text>\n`;
