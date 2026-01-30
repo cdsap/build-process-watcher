@@ -4,7 +4,7 @@ set -euo pipefail  # safer scripting: exit on error, unset vars, pipe errors
 
 INTERVAL="${1:-5}"
 PATTERNS=("GradleDaemon" "KotlinCompileDaemon" "GradleWorkerMain")
-LOG_FILE="build_process_watcher.log"
+LOG_FILE="${LOG_FILE:-build_process_watcher.log}"
 PID_FILE="monitor.pid"
 
 # Backend configuration
@@ -507,12 +507,14 @@ EOF
     log_script "send_to_backend: Function completed for PID $pid"
 }
 
-# Request initial authentication token
-if [ "$DEBUG_MODE" = "true" ]; then
-    echo "🔐 Requesting initial authentication token..." >&2
-fi
-if ! get_auth_token; then
-    echo "⚠️  Failed to get initial authentication token - will retry on first send" >&2
+# Request initial authentication token (remote monitoring only)
+if [ "$REMOTE_MONITORING" = "true" ]; then
+    if [ "$DEBUG_MODE" = "true" ]; then
+        echo "🔐 Requesting initial authentication token..." >&2
+    fi
+    if ! get_auth_token; then
+        echo "⚠️  Failed to get initial authentication token - will retry on first send" >&2
+    fi
 fi
 
 # Function to save summary statistics to file for cleanup script

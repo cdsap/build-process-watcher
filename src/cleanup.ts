@@ -364,8 +364,9 @@ function generateGcSvg(processes: Map<string, ProcessData>, timestamps: string[]
 async function markProcessAsFinished(runId: string): Promise<void> {
     try {
         const backendUrl = process.env.BACKEND_URL;
+        const backendEnabled = process.env.ENABLE_BACKEND === 'true';
         
-        if (backendUrl) {
+        if (backendEnabled && backendUrl) {
             // Use backend API to mark as finished
             console.log(`🏁 Marking run ${runId} as finished via backend API...`);
             
@@ -657,8 +658,9 @@ async function run() {
 
         // Check if we have a log file
         // The monitor script creates files in the action directory, not the project directory
-        const logFile = path.join(actionDir, '..', 'build_process_watcher.log');
-        const backendMode = process.env.ENABLE_BACKEND === 'true' || process.env.BACKEND_URL;
+        const logFileName = process.env.LOG_FILE || 'build_process_watcher.log';
+        const logFile = path.join(actionDir, '..', logFileName);
+        const backendMode = process.env.ENABLE_BACKEND === 'true';
         
         if (debugMode) {
             console.log(`🔍 Debug: Current working directory: ${process.cwd()}`);

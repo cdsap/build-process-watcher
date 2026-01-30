@@ -25693,6 +25693,7 @@ async function run() {
         const enableBackend = core.getInput('remote_monitoring') === 'true';
         const runId = core.getInput('run_id') || `run-${Date.now()}`;
         const logFile = core.getInput('log_file') || 'build_process_watcher.log';
+        const interval = core.getInput('interval') || '5';
         const debugMode = core.getInput('debug') === 'true';
         // collect_gc defaults to 'true' - only disable if explicitly set to 'false'
         const collectGcInput = core.getInput('collect_gc');
@@ -25823,8 +25824,8 @@ async function run() {
         }
         // Execute the monitoring script
         const args = enableBackend && backendUrl
-            ? ['5', backendUrl, runId] // interval, backend_url, run_id
-            : [logFile];
+            ? [interval, backendUrl, runId] // interval, backend_url, run_id
+            : [interval];
         // Get the action's directory (where the dist folder is located)
         const actionDir = __dirname;
         // The monitor scripts are in the parent directory of dist/
