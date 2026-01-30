@@ -214043,7 +214043,11 @@ async function markProcessAsFinished(runId) {
     try {
         const backendUrl = process.env.BACKEND_URL;
         const backendEnabled = process.env.ENABLE_BACKEND === 'true';
-        if (backendEnabled && backendUrl) {
+        if (!backendEnabled) {
+            console.log(`ℹ️  Remote monitoring disabled; skipping finish for run ${runId}`);
+            return;
+        }
+        if (backendUrl) {
             // Use backend API to mark as finished
             console.log(`🏁 Marking run ${runId} as finished via backend API...`);
             // Get JWT token for this run
@@ -214235,8 +214239,8 @@ async function run() {
                 console.log(`📋 Using GITHUB_RUN_ID as fallback: ${runId}`);
             }
         }
-        // Always try to mark as finished if we have a run ID
-        if (runId) {
+        // Only mark as finished for remote monitoring runs
+        if (runId && process.env.ENABLE_BACKEND === 'true') {
             console.log(`🏁 Marking run ${runId} as finished...`);
             try {
                 await markProcessAsFinished(runId);
@@ -214245,6 +214249,9 @@ async function run() {
                 console.error(`❌ Failed to mark run ${runId} as finished:`, error);
                 // Don't throw - we want cleanup to continue even if marking fails
             }
+        }
+        else if (runId) {
+            console.log(`ℹ️  Remote monitoring disabled; skipping finish for run ${runId}`);
         }
         else {
             console.log('⚠️  No run ID found, skipping Firestore update');
