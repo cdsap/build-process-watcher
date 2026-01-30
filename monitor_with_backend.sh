@@ -36,8 +36,8 @@ DEBUG_MODE="${DEBUG_MODE:-false}"
 # Check if remote monitoring is enabled
 REMOTE_MONITORING="${REMOTE_MONITORING:-false}"
 
-# Check if GC collection is enabled
-COLLECT_GC="${COLLECT_GC:-false}"
+# Check if GC collection is enabled (default to true unless explicitly disabled)
+COLLECT_GC="${COLLECT_GC:-true}"
 
 # Network timeout configuration (in seconds)
 # Default: 30 seconds total, 10 seconds connection timeout
