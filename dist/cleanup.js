@@ -214201,16 +214201,6 @@ function generateGcSvg(processes, timestamps) {
         svg += `<text x="${width - margin.right + 70}" y="${legendY - 2}" font-size="14" fill="#333">${key} (GC Time)</text>\n`;
         legendY += 30;
     });
-    // Draw aggregated GC time line (red, solid)
-    const aggregatedPoints = timestamps.map((timestamp, i) => {
-        const x = margin.left + (i * xScale);
-        const y = height - margin.bottom - (aggregatedGcTime[i] * yScale);
-        return `${x},${y}`;
-    }).join(' ');
-    svg += `<polyline points="${aggregatedPoints}" stroke="${aggGcColor}" stroke-width="3.5" fill="none" opacity="0.9"/>\n`;
-    // Aggregated legend
-    svg += `<rect x="${width - margin.right + 40}" y="${legendY - 10}" width="20" height="20" fill="${aggGcColor}" opacity="0.9"/>\n`;
-    svg += `<text x="${width - margin.right + 70}" y="${legendY + 5}" font-size="14" fill="#333">Aggregated GC Time</text>\n`;
     // Add axis labels
     svg += `<text x="${width / 2}" y="${height - 10}" text-anchor="middle" font-size="16" fill="#333">Time</text>\n`;
     svg += `<text x="${margin.left - 60}" y="${height / 2}" text-anchor="middle" transform="rotate(-90 ${margin.left - 60},${height / 2})" font-size="16" fill="#333">GC Time (seconds)</text>\n`;
