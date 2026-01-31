@@ -11,7 +11,7 @@ Monitor memory usage of Java/Kotlin build processes (`GradleDaemon`, `GradleWork
 ### Local Mode (Artifacts Only)
 
 ```yaml
-- uses: cdsap/build-process-watcher@v0.4.1
+- uses: cdsap/build-process-watcher@v0.5.0
   with:
     remote_monitoring: 'false'
 ```
@@ -21,14 +21,14 @@ Generates log files and charts as workflow artifacts.
 ### Remote Mode (Live Dashboard)
 
 ```yaml
-- uses: cdsap/build-process-watcher@v0.4.1
+- uses: cdsap/build-process-watcher@v0.5.0
   with:
     remote_monitoring: 'true'
     collect_gc: 'true'  # Enabled by default, can be set to 'false' to disable
     disable_summary_output: 'false'  # Set to 'true' to disable GitHub Actions summary when remote
 ```
 
-Data sent to cloud backend with live dashboard (3-hour retention).  
+Data sent to cloud backend with live dashboard (24-hour retention).  
 Dashboard URL shown in job output.
 
 **Note:** By default, GC collection is enabled. Set `collect_gc: 'false'` to disable it. When using remote monitoring, you can disable the GitHub Actions summary output by setting `disable_summary_output: 'true'`.
@@ -94,7 +94,7 @@ The job summary includes:
 
 - **Frontend**: Firebase Hosting (static dashboard)
 - **Backend**: Google Cloud Run (Go API)
-- **Database**: Firestore (3-hour TTL)
+- **Database**: Firestore (24-hour TTL)
 
 ---
 

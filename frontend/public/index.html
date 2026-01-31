@@ -436,7 +436,7 @@
                 <h3><span class="feature-icon">📦</span>Default Mode</h3>
                 <p style="margin-bottom: 1rem; color: var(--gray);">Generate Mermaid diagrams and SVG charts locally, uploaded as GitHub Actions artifacts:</p>
                 <pre><code>- name: Build Process Monitoring
-  uses: cdsap/build-process-watcher@v0.4.1
+  uses: cdsap/build-process-watcher@v0.5.0
  
 - name: Build project
   run: ./gradlew clean build</code></pre>
@@ -449,7 +449,7 @@
                 <h3><span class="feature-icon">🌐</span>Remote Mode</h3>
                 <p style="margin-bottom: 1rem; color: var(--gray);">Enable live dashboard with real-time monitoring and GC metrics:</p>
                 <pre><code>- name: Build Process Monitoring
-  uses: cdsap/build-process-watcher@v0.4.1
+  uses: cdsap/build-process-watcher@v0.5.0
   with:
     remote_monitoring: 'true'
     collect_gc: 'true'
@@ -506,7 +506,7 @@
             </div>
             <div class="info-box info-box-primary" style="text-align: center;">
                 <p style="margin: 0;"><strong>Real data from run 18236843825</strong> - 311 samples from GradleDaemon & KotlinCompileDaemon</p>
-                <p style="margin: 0.5rem 0 0 0; font-size: 0.9rem; opacity: 0.9;">This example demonstrates the Remote Mode dashboard with 3-hour data retention</p>
+                <p style="margin: 0.5rem 0 0 0; font-size: 0.9rem; opacity: 0.9;">This example demonstrates the Remote Mode dashboard with 24-hour data retention</p>
             </div>
         </div>
 
@@ -605,7 +605,7 @@
                         <span>🌐</span> Remote Mode
                     </h4>
                     <p style="color: var(--gray); font-size: 0.95rem;">
-                        Check the current state of processes in real-time through our web dashboard. Data is stored in the cloud with 3-hour retention.
+                        Check the current state of processes in real-time through our web dashboard. Data is stored in the cloud with 24-hour retention.
                     </p>
                 </div>
 
@@ -635,7 +635,7 @@
         <!-- Footer -->
         <div class="footer">
             <p style="font-size: 1.1rem; font-weight: 600; color: var(--dark);">🚀 Build Process Watcher</p>
-            <p>Free service with 3-hour memory report availability</p>
+            <p>Free service with 24-hour memory report availability</p>
             <p style="font-size: 0.9rem; opacity: 0.8; margin-top: 0.5rem;">
                 Keep this service free by accessing your data within 24 hours
             </p>

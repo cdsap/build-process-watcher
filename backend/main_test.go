@@ -427,21 +427,21 @@ func TestRunDocTimestampUpdate(t *testing.T) {
 	t.Logf("✅ Difference: %d ms", runDoc.UpdatedAtTimestamp-toMillis(now))
 }
 
-// TestDataRetentionCutoff tests the 3-hour cutoff calculation
+// TestDataRetentionCutoff tests the 24-hour cutoff calculation
 func TestDataRetentionCutoff(t *testing.T) {
-	// Test run that's 4 hours old (should be deleted)
-	oldTime := time.Now().Add(-4 * time.Hour)
+	// Test run that's 30 hours old (should be deleted)
+	oldTime := time.Now().Add(-30 * time.Hour)
 	oldTimestamp := toMillis(oldTime)
 
 	// Test run that's 2 hours old (should NOT be deleted)
 	recentTime := time.Now().Add(-2 * time.Hour)
 	recentTimestamp := toMillis(recentTime)
 
-	// Calculate 3-hour cutoff
+	// Calculate 24-hour cutoff
 	cutoffTime := time.Now().Add(-dataRetentionPeriod)
 	cutoffTimestamp := toMillis(cutoffTime)
 
-	t.Logf("Old run timestamp:    %d (4 hours ago)", oldTimestamp)
+	t.Logf("Old run timestamp:    %d (30 hours ago)", oldTimestamp)
 	t.Logf("Recent run timestamp: %d (2 hours ago)", recentTimestamp)
 	t.Logf("Cutoff timestamp:     %d (24 hours ago)", cutoffTimestamp)
 
