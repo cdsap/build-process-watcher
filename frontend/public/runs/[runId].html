@@ -795,9 +795,18 @@
                 </div>
                 ` : ''}
 
-                <div id="compare-section" class="compare-section" style="display: none;"></div>
-
                 ${processInfoHtml}
+
+                ${isFinished === true ? `
+                    <div class="compare-controls">
+                        <div class="meta"><strong>Compare builds:</strong> upload a CSV export to overlay in replay</div>
+                        <input type="file" id="compare-file-input" accept=".csv">
+                        <button class="btn secondary" id="compare-clear" style="display: none;">Clear comparison</button>
+                        <div class="meta" id="compare-file-name">No file selected</div>
+                    </div>
+                ` : ''}
+
+                <div id="compare-section" class="compare-section" style="display: none;"></div>
             `;
 
             if (samples.length > 0) {
