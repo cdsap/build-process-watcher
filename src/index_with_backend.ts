@@ -9,13 +9,20 @@ async function run() {
     let backendUrl = core.getInput('backend_url');
     const enableBackend = core.getInput('remote_monitoring') === 'true';
     const runId = core.getInput('run_id') || `run-${Date.now()}`;
-    const logFile = core.getInput('log_file') || 'build_process_watcher.log';
-    const workspaceDir = process.env.GITHUB_WORKSPACE;
-    const logFilePath = !path.isAbsolute(logFile) && workspaceDir
-      ? path.join(workspaceDir, logFile)
-      : logFile;
-    const interval = core.getInput('interval') || '5';
     const debugMode = core.getInput('debug') === 'true';
+    const logFileInput = core.getInput('log_file') || 'build_process_watcher.log';
+    const workspaceDir = process.env.GITHUB_WORKSPACE;
+    let logFilePath = !path.isAbsolute(logFileInput) && workspaceDir
+      ? path.join(workspaceDir, logFileInput)
+      : logFileInput;
+    if (logFileInput === 'build_process_watcher.log' && fs.existsSync(logFilePath)) {
+      const logDir = path.dirname(logFilePath);
+      logFilePath = path.join(logDir, `build_process_watcher-${runId}.log`);
+      if (debugMode) {
+        core.info(`🧭 Log file already exists, using: ${logFilePath}`);
+      }
+    }
+    const interval = core.getInput('interval') || '5';
     // collect_gc defaults to 'true' - only disable if explicitly set to 'false'
     const collectGcInput = core.getInput('collect_gc');
     const collectGc = collectGcInput === '' || collectGcInput === 'true';
@@ -259,7 +266,7 @@ async function run() {
     } else {
       if (debugMode) {
         core.info('✅ Local monitoring started in background');
-        core.info(`📁 Check log file: ${logFile}`);
+        core.info(`📁 Check log file: ${logFilePath}`);
         core.info(`🔄 Monitoring will continue until the job completes`);
       }
     }

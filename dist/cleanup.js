@@ -214569,16 +214569,20 @@ async function run() {
         // Generate both charts
         const mermaidChart = generateMermaidChart(processes, timestamps);
         const svgContent = generateSvg(processes, timestamps);
+        const outputDir = path.dirname(logFile);
+        const outputSuffix = runId ? `-${runId}` : '';
+        const memorySvgFile = `memory_usage${outputSuffix}.svg`;
+        const gcSvgFile = `gc_time${outputSuffix}.svg`;
+        const csvFile = `build_process_watcher${outputSuffix}.csv`;
         // Save SVG file
-        fs.writeFileSync('memory_usage.svg', svgContent);
+        fs.writeFileSync(path.join(outputDir, memorySvgFile), svgContent);
         // Generate GC SVG (includes a fallback message if no GC data)
         if (debugMode) {
             console.log('Generating GC time graph...');
         }
         const gcSvgContent = generateGcSvg(processes, timestamps);
-        fs.writeFileSync('gc_time.svg', gcSvgContent);
-        const csvFile = 'build_process_watcher.csv';
-        generateCsvReport(logFile, csvFile, hasGcData);
+        fs.writeFileSync(path.join(outputDir, gcSvgFile), gcSvgContent);
+        generateCsvReport(logFile, path.join(outputDir, csvFile), hasGcData);
         // Upload artifacts (only if files exist)
         // Only upload artifacts if we're in a GitHub Actions context and have runtime token
         // When called from script trap, we might not have the token, so skip upload
@@ -214604,29 +214608,40 @@ async function run() {
                     : `build_process_watcher-${jobId}-${runAttempt}`;
                 const files = [];
                 // Only include files that exist
-                if (fs.existsSync('build_process_watcher.log')) {
-                    files.push('build_process_watcher.log');
+                const logFileBase = path.basename(logFile);
+                if (fs.existsSync(logFile)) {
+                    files.push(logFileBase);
                 }
-                if (fs.existsSync('memory_usage.svg')) {
-                    files.push('memory_usage.svg');
+                if (fs.existsSync(path.join(outputDir, memorySvgFile))) {
+                    files.push(memorySvgFile);
                 }
-                if (fs.existsSync('gc_time.svg')) {
-                    files.push('gc_time.svg');
+                if (fs.existsSync(path.join(outputDir, gcSvgFile))) {
+                    files.push(gcSvgFile);
                 }
-                if (fs.existsSync(csvFile)) {
+                if (fs.existsSync(path.join(outputDir, csvFile))) {
                     files.push(csvFile);
                 }
-                if (fs.existsSync('backend_debug.log')) {
-                    files.push('backend_debug.log');
+                const backendDebugLog = path.join(actionDir, '..', 'backend_debug.log');
+                if (fs.existsSync(backendDebugLog)) {
+                    const debugCopy = path.join(outputDir, `backend_debug${outputSuffix}.log`);
+                    if (!fs.existsSync(debugCopy)) {
+                        fs.copyFileSync(backendDebugLog, debugCopy);
+                    }
+                    files.push(path.basename(debugCopy));
                 }
-                if (fs.existsSync('script_debug.log')) {
-                    files.push('script_debug.log');
+                const scriptDebugLog = path.join(actionDir, '..', 'script_debug.log');
+                if (fs.existsSync(scriptDebugLog)) {
+                    const debugCopy = path.join(outputDir, `script_debug${outputSuffix}.log`);
+                    if (!fs.existsSync(debugCopy)) {
+                        fs.copyFileSync(scriptDebugLog, debugCopy);
+                    }
+                    files.push(path.basename(debugCopy));
                 }
                 if (files.length > 0) {
                     if (debugMode) {
                         console.log('Uploading artifacts...');
                     }
-                    await artifactClient.uploadArtifact(artifactName, files, '.');
+                    await artifactClient.uploadArtifact(artifactName, files, outputDir);
                     if (debugMode) {
                         console.log('Successfully uploaded artifacts');
                     }
@@ -214664,7 +214679,7 @@ async function run() {
                 const frontendUrl = `https://process-watcher.web.app/runs/${runId}`;
                 let newSummary = `${summary}
 
-## Build Process Monitoring
+## Build Process Monitoring${runId ? ` (${runId})` : ''}
 
 ### Remote Monitoring Mode
 - **Dashboard URL**: ${frontendUrl} (**Data Retention**: 24 hours)
@@ -214700,7 +214715,7 @@ ${Array.from(processes.entries()).map(([key, data]) => {
 - Last measurement: ${lastRss.toFixed(2)} MB`;
                     }).join('\n\n')}
 
-> Note: A detailed SVG graph and log file are available in the artifacts of this workflow run.`;
+                > Note: A detailed SVG graph and log file are available in the artifacts of this workflow run.`;
                 }
                 fs.writeFileSync(process.env.GITHUB_STEP_SUMMARY, newSummary);
             }
@@ -214713,7 +214728,7 @@ ${Array.from(processes.entries()).map(([key, data]) => {
                     'N/A';
                 const newSummary = `${summary}
 
-## Build Process Analysis
+## Build Process Analysis${runId ? ` (${runId})` : ''}
 
 ### Build Process Graph
 \`\`\`mermaid
@@ -214744,8 +214759,8 @@ ${Array.from(processes.entries()).map(([key, data]) => {
 - Last measurement: ${lastRss.toFixed(2)} MB${gcStats}`;
                 }).join('\n\n')}
 
-${hasGcData ? '\n> GC chart is available in the artifacts as `gc_time.svg`.' : ''}
-> Note: A detailed SVG graph, CSV report, and log file are available in the artifacts of this workflow run.`;
+${hasGcData ? `\n> GC chart is available in the artifacts as \`${gcSvgFile}\`.` : ''}
+                > Note: A detailed SVG graph, CSV report, and log file are available in the artifacts of this workflow run.`;
                 fs.writeFileSync(process.env.GITHUB_STEP_SUMMARY, newSummary);
             }
         }
