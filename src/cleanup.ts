@@ -864,7 +864,15 @@ async function run() {
         // Check if we have a log file
         // The monitor script creates files in the action directory, not the project directory
         const logFileName = process.env.LOG_FILE || 'build_process_watcher.log';
-        const logFile = path.join(actionDir, '..', logFileName);
+        let logFile = logFileName;
+        if (!path.isAbsolute(logFileName)) {
+            const workspaceDir = process.env.GITHUB_WORKSPACE;
+            const candidates = [
+                path.join(actionDir, '..', logFileName),
+                workspaceDir ? path.join(workspaceDir, logFileName) : ''
+            ].filter(Boolean);
+            logFile = candidates.find(candidate => fs.existsSync(candidate)) || candidates[0];
+        }
         const backendMode = process.env.ENABLE_BACKEND === 'true';
         
         if (debugMode) {

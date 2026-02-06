@@ -10,6 +10,10 @@ async function run() {
     const enableBackend = core.getInput('remote_monitoring') === 'true';
     const runId = core.getInput('run_id') || `run-${Date.now()}`;
     const logFile = core.getInput('log_file') || 'build_process_watcher.log';
+    const workspaceDir = process.env.GITHUB_WORKSPACE;
+    const logFilePath = !path.isAbsolute(logFile) && workspaceDir
+      ? path.join(workspaceDir, logFile)
+      : logFile;
     const interval = core.getInput('interval') || '5';
     const debugMode = core.getInput('debug') === 'true';
     // collect_gc defaults to 'true' - only disable if explicitly set to 'false'
@@ -98,7 +102,7 @@ async function run() {
     core.exportVariable('ENABLE_BACKEND', enableBackend.toString());
     core.exportVariable('BACKEND_URL', backendUrl || '');
     core.exportVariable('RUN_ID', runId);
-    core.exportVariable('LOG_FILE', logFile);
+    core.exportVariable('LOG_FILE', logFilePath);
     core.exportVariable('ENVIRONMENT', environment);
     core.exportVariable('DISABLE_SUMMARY_OUTPUT', disableSummaryOutput.toString());
     
@@ -109,6 +113,13 @@ async function run() {
       fs.writeFileSync(runIdFile, runId, 'utf8');
       if (debugMode) {
         core.info(`💾 Saved RUN_ID to file: ${runIdFile}`);
+      }
+      if (workspaceDir) {
+        const workspaceRunIdFile = path.join(workspaceDir, '.build-process-watcher-run-id');
+        fs.writeFileSync(workspaceRunIdFile, runId, 'utf8');
+        if (debugMode) {
+          core.info(`💾 Saved RUN_ID to workspace file: ${workspaceRunIdFile}`);
+        }
       }
     } catch (error) {
       // Non-critical - env var export should be sufficient
@@ -150,8 +161,8 @@ async function run() {
         core.info(`📊 Run data will be stored in Firestore with ID: ${runId}`);
       }
     } else {
-      if (debugMode) {
-        core.info(`📝 LOCAL LOGGING MODE - Data will be saved to: ${logFile}`);
+    if (debugMode) {
+      core.info(`📝 LOCAL LOGGING MODE - Data will be saved to: ${logFilePath}`);
       }
     }
 
@@ -200,7 +211,7 @@ async function run() {
       ...process.env,
       BACKEND_URL: backendUrl,
       RUN_ID: runId,
-      LOG_FILE: logFile,
+      LOG_FILE: logFilePath,
       DEBUG_MODE: debugMode.toString(),
       REMOTE_MONITORING: (enableBackend && backendUrl) ? 'true' : 'false',
       COLLECT_GC: collectGc.toString()
