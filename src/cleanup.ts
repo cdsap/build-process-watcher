@@ -1001,21 +1001,23 @@ async function run() {
                 if (fs.existsSync(path.join(outputDir, csvFile))) {
                     files.push(csvFile);
                 }
-                const backendDebugLog = path.join(actionDir, '..', 'backend_debug.log');
-                if (fs.existsSync(backendDebugLog)) {
-                    const debugCopy = path.join(outputDir, `backend_debug${outputSuffix}.log`);
-                    if (!fs.existsSync(debugCopy)) {
-                        fs.copyFileSync(backendDebugLog, debugCopy);
+                if (debugMode) {
+                    const backendDebugLog = path.join(actionDir, '..', 'backend_debug.log');
+                    if (fs.existsSync(backendDebugLog)) {
+                        const debugCopy = path.join(outputDir, `backend_debug${outputSuffix}.log`);
+                        if (!fs.existsSync(debugCopy)) {
+                            fs.copyFileSync(backendDebugLog, debugCopy);
+                        }
+                        files.push(path.basename(debugCopy));
                     }
-                    files.push(path.basename(debugCopy));
-                }
-                const scriptDebugLog = path.join(actionDir, '..', 'script_debug.log');
-                if (fs.existsSync(scriptDebugLog)) {
-                    const debugCopy = path.join(outputDir, `script_debug${outputSuffix}.log`);
-                    if (!fs.existsSync(debugCopy)) {
-                        fs.copyFileSync(scriptDebugLog, debugCopy);
+                    const scriptDebugLog = path.join(actionDir, '..', 'script_debug.log');
+                    if (fs.existsSync(scriptDebugLog)) {
+                        const debugCopy = path.join(outputDir, `script_debug${outputSuffix}.log`);
+                        if (!fs.existsSync(debugCopy)) {
+                            fs.copyFileSync(scriptDebugLog, debugCopy);
+                        }
+                        files.push(path.basename(debugCopy));
                     }
-                    files.push(path.basename(debugCopy));
                 }
                 
                 if (files.length > 0) {
