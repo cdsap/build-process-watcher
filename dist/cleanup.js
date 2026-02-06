@@ -214367,10 +214367,18 @@ async function run() {
         // Try to read from file if not in env var
         if (!runId) {
             try {
-                const runIdFile = path.join(process.cwd(), '.build-process-watcher-run-id');
-                if (fs.existsSync(runIdFile)) {
-                    runId = fs.readFileSync(runIdFile, 'utf8').trim();
-                    console.log(`📋 Read RUN_ID from file: ${runId}`);
+                const cwdRunIdFile = path.join(process.cwd(), '.build-process-watcher-run-id');
+                const workspaceDir = process.env.GITHUB_WORKSPACE;
+                const workspaceRunIdFile = workspaceDir
+                    ? path.join(workspaceDir, '.build-process-watcher-run-id')
+                    : '';
+                const candidateFiles = [cwdRunIdFile, workspaceRunIdFile].filter(Boolean);
+                for (const runIdFile of candidateFiles) {
+                    if (fs.existsSync(runIdFile)) {
+                        runId = fs.readFileSync(runIdFile, 'utf8').trim();
+                        console.log(`📋 Read RUN_ID from file: ${runId}`);
+                        break;
+                    }
                 }
             }
             catch (error) {
