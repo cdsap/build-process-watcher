@@ -25692,9 +25692,20 @@ async function run() {
         let backendUrl = core.getInput('backend_url');
         const enableBackend = core.getInput('remote_monitoring') === 'true';
         const runId = core.getInput('run_id') || `run-${Date.now()}`;
-        const logFile = core.getInput('log_file') || 'build_process_watcher.log';
-        const interval = core.getInput('interval') || '5';
         const debugMode = core.getInput('debug') === 'true';
+        const logFileInput = core.getInput('log_file') || 'build_process_watcher.log';
+        const workspaceDir = process.env.GITHUB_WORKSPACE;
+        let logFilePath = !path.isAbsolute(logFileInput) && workspaceDir
+            ? path.join(workspaceDir, logFileInput)
+            : logFileInput;
+        if (logFileInput === 'build_process_watcher.log' && fs.existsSync(logFilePath)) {
+            const logDir = path.dirname(logFilePath);
+            logFilePath = path.join(logDir, `build_process_watcher-${runId}.log`);
+            if (debugMode) {
+                core.info(`🧭 Log file already exists, using: ${logFilePath}`);
+            }
+        }
+        const interval = core.getInput('interval') || '5';
         // collect_gc defaults to 'true' - only disable if explicitly set to 'false'
         const collectGcInput = core.getInput('collect_gc');
         const collectGc = collectGcInput === '' || collectGcInput === 'true';
@@ -25771,7 +25782,7 @@ async function run() {
         core.exportVariable('ENABLE_BACKEND', enableBackend.toString());
         core.exportVariable('BACKEND_URL', backendUrl || '');
         core.exportVariable('RUN_ID', runId);
-        core.exportVariable('LOG_FILE', logFile);
+        core.exportVariable('LOG_FILE', logFilePath);
         core.exportVariable('ENVIRONMENT', environment);
         core.exportVariable('DISABLE_SUMMARY_OUTPUT', disableSummaryOutput.toString());
         // Also write RUN_ID to a file as a backup for the post step
@@ -25781,6 +25792,13 @@ async function run() {
             fs.writeFileSync(runIdFile, runId, 'utf8');
             if (debugMode) {
                 core.info(`💾 Saved RUN_ID to file: ${runIdFile}`);
+            }
+            if (workspaceDir) {
+                const workspaceRunIdFile = path.join(workspaceDir, '.build-process-watcher-run-id');
+                fs.writeFileSync(workspaceRunIdFile, runId, 'utf8');
+                if (debugMode) {
+                    core.info(`💾 Saved RUN_ID to workspace file: ${workspaceRunIdFile}`);
+                }
             }
         }
         catch (error) {
@@ -25819,7 +25837,7 @@ async function run() {
         }
         else {
             if (debugMode) {
-                core.info(`📝 LOCAL LOGGING MODE - Data will be saved to: ${logFile}`);
+                core.info(`📝 LOCAL LOGGING MODE - Data will be saved to: ${logFilePath}`);
             }
         }
         // Execute the monitoring script
@@ -25863,7 +25881,7 @@ async function run() {
             ...process.env,
             BACKEND_URL: backendUrl,
             RUN_ID: runId,
-            LOG_FILE: logFile,
+            LOG_FILE: logFilePath,
             DEBUG_MODE: debugMode.toString(),
             REMOTE_MONITORING: (enableBackend && backendUrl) ? 'true' : 'false',
             COLLECT_GC: collectGc.toString()
@@ -25908,7 +25926,7 @@ async function run() {
         else {
             if (debugMode) {
                 core.info('✅ Local monitoring started in background');
-                core.info(`📁 Check log file: ${logFile}`);
+                core.info(`📁 Check log file: ${logFilePath}`);
                 core.info(`🔄 Monitoring will continue until the job completes`);
             }
         }
