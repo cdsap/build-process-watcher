@@ -845,7 +845,7 @@
         }
 
         function hasGCData(samples) {
-            return samples.some(sample => sample.GCTime !== undefined && sample.GCTime !== null && sample.GCTime > 0);
+            return samples.some(sample => sample.GCTime !== undefined && sample.GCTime !== null && !Number.isNaN(sample.GCTime));
         }
 
         function shouldShowRssHeapRatioChart(samples) {
@@ -862,17 +862,6 @@
             '#e67e22',
             '#1abc9c',
             '#e91e63'
-        ];
-
-        const COMPARE_PALETTE = [
-            '#0f172a',
-            '#7c2d12',
-            '#312e81',
-            '#064e3b',
-            '#78350f',
-            '#7f1d1d',
-            '#0f766e',
-            '#6b21a8'
         ];
 
         const traceVisibility = {};
@@ -1651,7 +1640,7 @@
             };
         }
 
-        function buildMetricTraces(data, timestamps, frameIndex, metric, style) {
+        function buildMetricTraces(data, timestamps, frameIndex, metric, style, xValues) {
             const lineWidth = style?.lineWidth ?? 3;
             const heapLineWidth = style?.heapLineWidth ?? 2;
             const markerSize = style?.markerSize ?? 6;
@@ -1660,7 +1649,9 @@
             const includeTotalRss = style?.includeTotalRss ?? false;
             const totalLabel = style?.totalLabel ?? 'Total RSS Memory';
             const totalColor = style?.totalColor ?? '#2c3e50';
-            const frameTimestamps = timestamps.slice(0, frameIndex + 1).map(t => new Date(t));
+            const frameTimestamps = xValues
+                ? xValues.slice(0, frameIndex + 1)
+                : timestamps.slice(0, frameIndex + 1).map(t => new Date(t));
             const traces = [];
             data.processKeys.forEach(processKey => {
                 const def = data.series[processKey];
@@ -1825,8 +1816,9 @@
 
             compareSection.style.display = 'block';
 
+            const elapsedSeconds = timestamps.map(ts => Math.max(0, (ts - timestamps[0]) / 1000));
             const baseData = buildReplayData(baseSamples, timestamps, COLOR_PALETTE);
-            const compareData = buildReplayData(compareSamples, timestamps, COMPARE_PALETTE);
+            const compareData = buildReplayData(compareSamples, timestamps, COLOR_PALETTE);
 
             const baseStyle = {
                 lineWidth: 3,
@@ -1842,8 +1834,8 @@
                 lineWidth: 4,
                 heapLineWidth: 3,
                 markerSize: 8,
-                lineDash: 'solid',
-                heapDash: 'dot',
+                lineDash: 'dot',
+                heapDash: 'dashdot',
                 includeTotalRss: true,
                 totalLabel: 'Compare Total RSS Memory',
                 totalColor: '#0f172a'
@@ -1876,23 +1868,79 @@
                 meta.textContent = `Frame ${frameIndex + 1} / ${timestamps.length}`;
                 const timestamp = timestamps[frameIndex];
                 const elapsed = elapsedByTimestamp.get(timestamp) || 0;
-                const timeText = new Date(timestamp).toLocaleTimeString();
-                timeLabel.textContent = `Elapsed: ${elapsed}s | ${timeText}`;
+                timeLabel.textContent = `Elapsed: ${elapsed}s`;
             }
 
             function renderFrame(frameIndex) {
                 currentFrame = frameIndex;
                 updateUi(frameIndex);
                 const tasks = [];
-                tasks.push(Plotly.react('compare-current-rss', applyVisibilityToTraces('compare-current-rss', buildMetricTraces(baseData, timestamps, frameIndex, 'rss', baseStyle)), getMemoryLayout(), getMemoryConfig()));
-                tasks.push(Plotly.react('compare-other-rss', applyVisibilityToTraces('compare-other-rss', buildMetricTraces(compareData, timestamps, frameIndex, 'rss', compareStyle)), getMemoryLayout(), getMemoryConfig()));
+                const compareLayout = {
+                    ...getMemoryLayout(),
+                    xaxis: {
+                        ...getMemoryLayout().xaxis,
+                        title: 'Elapsed (s)',
+                        tickformat: null,
+                        type: 'linear'
+                    },
+                    legend: {
+                        x: 0.5,
+                        y: -0.25,
+                        xanchor: 'center',
+                        orientation: 'h'
+                    },
+                    margin: {
+                        ...getMemoryLayout().margin,
+                        b: 110
+                    }
+                };
+                tasks.push(Plotly.react('compare-current-rss', applyVisibilityToTraces('compare-current-rss', buildMetricTraces(baseData, timestamps, frameIndex, 'rss', baseStyle, elapsedSeconds)), compareLayout, getMemoryConfig()));
+                tasks.push(Plotly.react('compare-other-rss', applyVisibilityToTraces('compare-other-rss', buildMetricTraces(compareData, timestamps, frameIndex, 'rss', compareStyle, elapsedSeconds)), compareLayout, getMemoryConfig()));
                 if (showGC) {
-                    tasks.push(Plotly.react('compare-current-gc', applyVisibilityToTraces('compare-current-gc', buildMetricTraces(baseData, timestamps, frameIndex, 'gc', baseStyle)), getGcLayout(), getGcConfig()));
-                    tasks.push(Plotly.react('compare-other-gc', applyVisibilityToTraces('compare-other-gc', buildMetricTraces(compareData, timestamps, frameIndex, 'gc', compareStyle)), getGcLayout(), getGcConfig()));
+                    const compareGcLayout = {
+                        ...getGcLayout(),
+                        xaxis: {
+                            ...getGcLayout().xaxis,
+                            title: 'Elapsed (s)',
+                            tickformat: null,
+                            type: 'linear'
+                        },
+                        legend: {
+                            x: 0.5,
+                            y: -0.25,
+                            xanchor: 'center',
+                            orientation: 'h'
+                        },
+                        margin: {
+                            ...getGcLayout().margin,
+                            b: 110
+                        }
+                    };
+                    tasks.push(Plotly.react('compare-current-gc', applyVisibilityToTraces('compare-current-gc', buildMetricTraces(baseData, timestamps, frameIndex, 'gc', baseStyle, elapsedSeconds)), compareGcLayout, getGcConfig()));
+                    tasks.push(Plotly.react('compare-other-gc', applyVisibilityToTraces('compare-other-gc', buildMetricTraces(compareData, timestamps, frameIndex, 'gc', compareStyle, elapsedSeconds)), compareGcLayout, getGcConfig()));
                 }
                 if (showRatio) {
-                    tasks.push(Plotly.react('compare-current-ratio', applyVisibilityToTraces('compare-current-ratio', buildMetricTraces(baseData, timestamps, frameIndex, 'ratio', baseStyle)), getRatioLayout(), getRatioConfig()));
-                    tasks.push(Plotly.react('compare-other-ratio', applyVisibilityToTraces('compare-other-ratio', buildMetricTraces(compareData, timestamps, frameIndex, 'ratio', compareStyle)), getRatioLayout(), getRatioConfig()));
+                    const compareRatioLayout = {
+                        ...getRatioLayout(),
+                        xaxis: {
+                            ...getRatioLayout().xaxis,
+                            title: 'Elapsed (s)',
+                            tickformat: null,
+                            type: 'linear'
+                        },
+                        legend: {
+                            x: 0.5,
+                            y: -0.25,
+                            xanchor: 'center',
+                            orientation: 'h'
+                        },
+                        margin: {
+                            ...getRatioLayout().margin,
+                            b: 110
+                        }
+                    };
+                    tasks.push(Plotly.react('compare-current-ratio', applyVisibilityToTraces('compare-current-ratio', buildMetricTraces(baseData, timestamps, frameIndex, 'ratio', baseStyle, elapsedSeconds)), compareRatioLayout, getRatioConfig()));
+                    tasks.push(Plotly.react('compare-other-ratio', applyVisibilityToTraces('compare-other-ratio', buildMetricTraces(compareData, timestamps, frameIndex, 'ratio', compareStyle, elapsedSeconds)), compareRatioLayout, getRatioConfig()));
                 }
                 return Promise.all(tasks);
             }
