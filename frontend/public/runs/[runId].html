@@ -845,7 +845,12 @@
         }
 
         function hasGCData(samples) {
-            return samples.some(sample => sample.GCTime !== undefined && sample.GCTime !== null && !Number.isNaN(sample.GCTime));
+            return samples.some(sample => {
+                if (sample.GCTimeSeconds !== undefined && sample.GCTimeSeconds !== null) {
+                    return !Number.isNaN(sample.GCTimeSeconds);
+                }
+                return sample.GCTime !== undefined && sample.GCTime !== null && !Number.isNaN(sample.GCTime);
+            });
         }
 
         function shouldShowRssHeapRatioChart(samples) {
@@ -1248,8 +1253,10 @@
                 const rss = buildForwardFilledSeries(samples, timestamps, processName, pid, s => s.RSS);
                 const heap = buildForwardFilledSeries(samples, timestamps, processName, pid, s => s.HeapUsed);
                 const gc = buildForwardFilledSeries(samples, timestamps, processName, pid, s => {
-                    if (s.GCTime === undefined || s.GCTime === null || Number.isNaN(s.GCTime)) return null;
-                    return s.GCTime / 1000;
+                    const gcSeconds = s.GCTimeSeconds ?? (s.GCTime !== null && s.GCTime !== undefined && !Number.isNaN(s.GCTime)
+                        ? s.GCTime / 1000
+                        : null);
+                    return gcSeconds === null || Number.isNaN(gcSeconds) ? null : gcSeconds;
                 });
                 const ratio = buildExactSeries(samples, timestamps, processName, pid, s => {
                     if (!s.RSS || s.RSS <= 0) return null;
@@ -1536,7 +1543,7 @@
                 const timestamp = Number(get('timestamp'));
                 const elapsed = Number(get('elapsed_time'));
                 const gcRaw = get('gc_time_s');
-                const gcValue = gcRaw ? Number(gcRaw) : null;
+                const gcValue = gcRaw !== '' ? Number(gcRaw) : null;
                 return {
                     Timestamp: Number.isNaN(timestamp) ? 0 : timestamp,
                     ElapsedTime: Number.isNaN(elapsed) ? 0 : elapsed,
@@ -1545,7 +1552,8 @@
                     RSS: Number(get('rss_mb')) || 0,
                     HeapUsed: Number(get('heap_used_mb')) || 0,
                     HeapCap: Number(get('heap_capacity_mb')) || 0,
-                    GCTime: gcValue && !Number.isNaN(gcValue) ? gcValue * 1000 : 0
+                    GCTime: gcValue !== null && !Number.isNaN(gcValue) ? gcValue * 1000 : null,
+                    GCTimeSeconds: gcValue !== null && !Number.isNaN(gcValue) ? gcValue : null
                 };
             });
         }
