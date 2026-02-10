@@ -1615,7 +1615,7 @@
                 const rss = buildForwardFilledSeries(samples, timestamps, processName, pid, s => s.RSS);
                 const heap = buildForwardFilledSeries(samples, timestamps, processName, pid, s => s.HeapUsed);
                 const gc = buildExactSeries(samples, timestamps, processName, pid, s => {
-                    if (!s.GCTime || s.GCTime <= 0) return null;
+                    if (s.GCTime === undefined || s.GCTime === null || Number.isNaN(s.GCTime)) return null;
                     return s.GCTime / 1000;
                 });
                 const ratio = buildExactSeries(samples, timestamps, processName, pid, s => {
