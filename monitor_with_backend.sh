@@ -3,13 +3,15 @@
 set -euo pipefail  # safer scripting: exit on error, unset vars, pipe errors
 
 INTERVAL="${1:-5}"
+ARG_BACKEND_URL="${2:-}"
+ARG_RUN_ID="${3:-}"
 PATTERNS=("GradleDaemon" "KotlinCompileDaemon" "GradleWorkerMain")
 LOG_FILE="${LOG_FILE:-build_process_watcher.log}"
 PID_FILE="monitor.pid"
 
 # Backend configuration
-BACKEND_URL="${BACKEND_URL:-https://build-process-watcher-backend-685615422311.us-central1.run.app}"
-RUN_ID="${RUN_ID:-build-$(date +%s)}"
+BACKEND_URL="${ARG_BACKEND_URL:-${BACKEND_URL:-https://build-process-watcher-backend-685615422311.us-central1.run.app}}"
+RUN_ID="${ARG_RUN_ID:-${RUN_ID:-build-$(date +%s)}}"
 ORG_REPO="${ORG_REPO:-local/dev}"
 JOB_ID="${JOB_ID:-$(date +%s)}"
 

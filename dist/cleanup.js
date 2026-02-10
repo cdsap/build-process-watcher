@@ -214209,7 +214209,16 @@ function generateGcSvg(processes, timestamps) {
 }
 async function markProcessAsFinished(runId) {
     try {
-        const backendUrl = process.env.BACKEND_URL;
+        let backendUrl = '';
+        const workspaceDir = process.env.GITHUB_WORKSPACE;
+        const candidateDirs = [process.cwd(), workspaceDir].filter(Boolean);
+        for (const dir of candidateDirs) {
+            const backendFile = path.join(dir, '.build-process-watcher-backend-url');
+            if (fs.existsSync(backendFile)) {
+                backendUrl = fs.readFileSync(backendFile, 'utf8').trim();
+                break;
+            }
+        }
         const backendEnabled = process.env.ENABLE_BACKEND === 'true';
         if (!backendEnabled) {
             console.log(`ℹ️  Remote monitoring disabled; skipping finish for run ${runId}`);
@@ -214530,20 +214539,23 @@ async function run() {
                 // Always show the dashboard URL for remote monitoring
                 // Check if frontend URL is explicitly set, otherwise derive from backend URL or environment
                 let frontendUrl = '';
-                const explicitFrontendUrl = process.env.FRONTEND_URL || '';
+                let explicitFrontendUrl = '';
+                const workspaceDir = process.env.GITHUB_WORKSPACE;
+                const candidateDirs = [process.cwd(), workspaceDir].filter(Boolean);
+                for (const dir of candidateDirs) {
+                    const frontendFile = path.join(dir, '.build-process-watcher-frontend-url');
+                    if (fs.existsSync(frontendFile)) {
+                        explicitFrontendUrl = fs.readFileSync(frontendFile, 'utf8').trim();
+                        break;
+                    }
+                }
                 if (explicitFrontendUrl) {
                     // Use explicit frontend URL
                     frontendUrl = `${explicitFrontendUrl}/runs/${runId}`;
                 }
                 else {
                     // Derive frontend URL from backend URL pattern or environment
-                    const backendUrl = process.env.BACKEND_URL || '';
-                    const environment = process.env.ENVIRONMENT || 'production';
                     let baseFrontendUrl = 'https://process-watcher.web.app';
-                    // Check environment first, then backend URL pattern as fallback
-                    if (environment === 'staging' || backendUrl.includes('-staging')) {
-                        baseFrontendUrl = 'https://build-process-watcher-staging.web.app';
-                    }
                     frontendUrl = `${baseFrontendUrl}/runs/${runId}`;
                 }
                 console.log(`🌐 Dashboard URL: ${frontendUrl}`);
@@ -214551,7 +214563,6 @@ async function run() {
                     console.log('Backend mode detected - no local log file to process');
                     console.log('Data has been sent to the backend and can be viewed at:');
                     console.log(`- Frontend: ${frontendUrl}`);
-                    console.log(`- Backend API: ${process.env.BACKEND_URL || 'not configured'}`);
                 }
             }
             else {

@@ -33,10 +33,6 @@ inputs:
     description: 'Disable GitHub Actions summary output when remote monitoring is enabled (only applies when remote_monitoring is true)'
     required: false
     default: 'false'
-  environment:
-    description: 'Environment name (production or staging) - used for auto-detecting default URLs'
-    required: false
-    default: 'production'
   frontend_url:
     description: 'Frontend URL for dashboard (optional - can also be set via FRONTEND_URL or FRONTEND_URL_STAGING env vars, will be auto-detected from backend_url/environment if not provided)'
     required: false
