@@ -986,9 +986,17 @@
         function buildTotalRssSeries(samples, timestamps, processKeys) {
             const lastKnown = {};
             const lastSeen = {};
+            const cursors = {};
+            const perProcessSamples = {};
+
             processKeys.forEach(processKey => {
                 lastKnown[processKey] = 0;
                 lastSeen[processKey] = 0;
+                cursors[processKey] = 0;
+                const [processName, pid] = processKey.split('|');
+                perProcessSamples[processKey] = samples
+                    .filter(s => s.Name === processName && s.PID === pid)
+                    .sort((a, b) => a.Timestamp - b.Timestamp);
             });
 
             const medianDelta = getMedianDelta(timestamps);
@@ -1001,22 +1009,22 @@
                 const included = {};
 
                 processKeys.forEach(processKey => {
-                    const [processName, pid] = processKey.split('|');
-                    const sample = samples
-                        .filter(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp)
-                        [0];
-
-                    if (sample) {
+                    const list = perProcessSamples[processKey];
+                    let cursor = cursors[processKey];
+                    while (cursor < list.length && list[cursor].Timestamp <= timestamp) {
+                        const sample = list[cursor];
                         if (sample.RSS && sample.RSS > 0) {
                             lastKnown[processKey] = sample.RSS;
                         } else {
                             lastKnown[processKey] = 0;
                         }
-                        lastSeen[processKey] = timestamp;
+                        lastSeen[processKey] = sample.Timestamp;
+                        cursor += 1;
                     }
+                    cursors[processKey] = cursor;
 
-                    const recentlySeen = maxGap > 0 && (timestamp - lastSeen[processKey]) <= maxGap;
-                    if (lastKnown[processKey] > 0 && (sample || recentlySeen)) {
+                    const recentlySeen = maxGap > 0 && lastSeen[processKey] > 0 && (timestamp - lastSeen[processKey]) <= maxGap;
+                    if (lastKnown[processKey] > 0 && (recentlySeen || lastSeen[processKey] === timestamp)) {
                         total += lastKnown[processKey];
                         included[processKey] = lastKnown[processKey];
                     }
@@ -1825,6 +1833,18 @@
             const elapsedSeconds = timestamps.map(ts => Math.max(0, (ts - timestamps[0]) / 1000));
             const baseData = buildReplayData(baseSamples, timestamps, COLOR_PALETTE);
             const compareData = buildReplayData(compareSamples, timestamps, COLOR_PALETTE);
+
+            const sharedProcessNames = [...new Set([
+                ...baseSamples.map(s => s.Name),
+                ...compareSamples.map(s => s.Name)
+            ])];
+            const sharedColorMap = buildColorMap(sharedProcessNames, COLOR_PALETTE);
+            [baseData, compareData].forEach(data => {
+                data.processKeys.forEach(processKey => {
+                    const def = data.series[processKey];
+                    def.color = sharedColorMap[def.processName] || def.color;
+                });
+            });
 
             const baseStyle = {
                 lineWidth: 3,
