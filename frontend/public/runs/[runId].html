@@ -1247,7 +1247,7 @@
                 const [processName, pid] = processKey.split('|');
                 const rss = buildForwardFilledSeries(samples, timestamps, processName, pid, s => s.RSS);
                 const heap = buildForwardFilledSeries(samples, timestamps, processName, pid, s => s.HeapUsed);
-                const gc = buildExactSeries(samples, timestamps, processName, pid, s => {
+                const gc = buildForwardFilledSeries(samples, timestamps, processName, pid, s => {
                     if (s.GCTime === undefined || s.GCTime === null || Number.isNaN(s.GCTime)) return null;
                     return s.GCTime / 1000;
                 });
