@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - gc_in_comparison
     paths:
       - 'frontend/**'
   workflow_dispatch:
