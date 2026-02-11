@@ -1534,7 +1534,7 @@
                 headerIndex[header] = index;
             });
 
-            return lines.slice(1).map(line => {
+            const parsed = lines.slice(1).map(line => {
                 const values = line.split(',');
                 const get = (key) => {
                     const index = headerIndex[key];
@@ -1556,6 +1556,10 @@
                     GCTimeSeconds: gcValue !== null && !Number.isNaN(gcValue) ? gcValue : null
                 };
             });
+            console.log('[compare] Parsed CSV rows:', parsed.length);
+            console.log('[compare] CSV headers:', headers);
+            console.log('[compare] Sample GC seconds:', parsed.slice(0, 5).map(row => row.GCTimeSeconds));
+            return parsed;
         }
 
         function normalizeCompareSamples(samples, baseTimestamp) {
@@ -1749,6 +1753,8 @@
             const compareHasRatio = shouldShowRssHeapRatioChart(compareSamples);
             const showGC = baseHasGC && compareHasGC;
             const showRatio = baseHasRatio && compareHasRatio;
+            console.log('[compare] baseHasGC:', baseHasGC, 'compareHasGC:', compareHasGC, 'showGC:', showGC);
+            console.log('[compare] Compare GC sample:', compareSamples.slice(0, 5).map(s => ({ name: s.Name, pid: s.PID, gc: s.GCTimeSeconds })));
 
             compareSection.innerHTML = `
                 <div class="compare-header">
@@ -1841,6 +1847,8 @@
             const elapsedSeconds = timestamps.map(ts => Math.max(0, (ts - timestamps[0]) / 1000));
             const baseData = buildReplayData(baseSamples, timestamps, COLOR_PALETTE);
             const compareData = buildReplayData(compareSamples, timestamps, COLOR_PALETTE);
+            console.log('[compare] Base GC series lengths:', baseData.processKeys.map(k => baseData.series[k].gc.filter(v => v !== null).length));
+            console.log('[compare] Compare GC series lengths:', compareData.processKeys.map(k => compareData.series[k].gc.filter(v => v !== null).length));
 
             const sharedProcessNames = [...new Set([
                 ...baseSamples.map(s => s.Name),
