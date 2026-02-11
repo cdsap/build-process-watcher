@@ -1574,7 +1574,7 @@
             });
         }
 
-        function buildForwardFilledSeries(samples, timestamps, processName, pid, valueSelector) {
+        function buildForwardFilledSeries(samples, timestamps, processName, pid, valueSelector, maxGapOverride) {
             const filtered = samples
                 .filter(s => s.Name === processName && s.PID === pid)
                 .sort((a, b) => a.Timestamp - b.Timestamp);
@@ -1583,7 +1583,7 @@
             let lastValue = null;
             let lastSeen = 0;
             const medianDelta = getMedianDelta(timestamps);
-            const maxGap = medianDelta ? medianDelta * 2 : 0;
+            const maxGap = maxGapOverride !== undefined ? maxGapOverride : (medianDelta ? medianDelta * 2 : 0);
 
             for (const timestamp of timestamps) {
                 while (idx < filtered.length && filtered[idx].Timestamp <= timestamp) {
@@ -1626,10 +1626,12 @@
                 const [processName, pid] = processKey.split('|');
                 const rss = buildForwardFilledSeries(samples, timestamps, processName, pid, s => s.RSS);
                 const heap = buildForwardFilledSeries(samples, timestamps, processName, pid, s => s.HeapUsed);
-                const gc = buildExactSeries(samples, timestamps, processName, pid, s => {
-                    if (s.GCTime === undefined || s.GCTime === null || Number.isNaN(s.GCTime)) return null;
-                    return s.GCTime / 1000;
-                });
+                const gc = buildForwardFilledSeries(samples, timestamps, processName, pid, s => {
+                    const gcSeconds = s.GCTimeSeconds ?? (s.GCTime !== null && s.GCTime !== undefined && !Number.isNaN(s.GCTime)
+                        ? s.GCTime / 1000
+                        : null);
+                    return gcSeconds === null || Number.isNaN(gcSeconds) ? null : gcSeconds;
+                }, Number.POSITIVE_INFINITY);
                 const ratio = buildExactSeries(samples, timestamps, processName, pid, s => {
                     if (!s.RSS || s.RSS <= 0) return null;
                     return s.HeapUsed / s.RSS;
