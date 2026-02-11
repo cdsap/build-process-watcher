@@ -1797,18 +1797,18 @@
                 </div>
                 <div class="compare-grid">
                     <div class="compare-column">
-                        <h3>Current Run</h3>
+                        <h3>Current vs Comparison (Split View)</h3>
                         <div class="chart-container">
                             <h4>Memory Usage Over Time</h4>
                             <div class="chart-wrapper">
-                                <div id="compare-current-rss" style="width: 100%; height: 460px;"></div>
+                                <div id="compare-rss" style="width: 100%; height: 460px;"></div>
                             </div>
                         </div>
                         ${showGC ? `
                         <div class="chart-container">
                             <h4>Garbage Collection Time Over Time</h4>
                             <div class="chart-wrapper">
-                                <div id="compare-current-gc" style="width: 100%; height: 460px;"></div>
+                                <div id="compare-gc" style="width: 100%; height: 460px;"></div>
                             </div>
                         </div>
                         ` : ''}
@@ -1816,32 +1816,7 @@
                         <div class="chart-container">
                             <h4>Heap/RSS Ratio Over Time</h4>
                             <div class="chart-wrapper">
-                                <div id="compare-current-ratio" style="width: 100%; height: 460px;"></div>
-                            </div>
-                        </div>
-                        ` : ''}
-                    </div>
-                    <div class="compare-column">
-                        <h3>Comparison Run</h3>
-                        <div class="chart-container">
-                            <h4>Memory Usage Over Time</h4>
-                            <div class="chart-wrapper">
-                                <div id="compare-other-rss" style="width: 100%; height: 460px;"></div>
-                            </div>
-                        </div>
-                        ${showGC ? `
-                        <div class="chart-container">
-                            <h4>Garbage Collection Time Over Time</h4>
-                            <div class="chart-wrapper">
-                                <div id="compare-other-gc" style="width: 100%; height: 460px;"></div>
-                            </div>
-                        </div>
-                        ` : ''}
-                        ${showRatio ? `
-                        <div class="chart-container">
-                            <h4>Heap/RSS Ratio Over Time</h4>
-                            <div class="chart-wrapper">
-                                <div id="compare-other-ratio" style="width: 100%; height: 460px;"></div>
+                                <div id="compare-ratio" style="width: 100%; height: 460px;"></div>
                             </div>
                         </div>
                         ` : ''}
@@ -1852,6 +1827,8 @@
             compareSection.style.display = 'block';
 
             const elapsedSeconds = timestamps.map(ts => Math.max(0, (ts - timestamps[0]) / 1000));
+            const maxElapsed = elapsedSeconds.length ? elapsedSeconds[elapsedSeconds.length - 1] : 0;
+            const compareElapsed = elapsedSeconds.map(value => value + maxElapsed);
             const baseData = buildReplayData(baseSamples, timestamps, COLOR_PALETTE);
             const compareData = buildReplayData(compareSamples, timestamps, COLOR_PALETTE);
             console.log('[compare] Base GC series lengths:', baseData.processKeys.map(k => baseData.series[k].gc.filter(v => v !== null).length));
@@ -1945,10 +1922,25 @@
                     margin: {
                         ...getMemoryLayout().margin,
                         b: 110
-                    }
+                    },
+                    shapes: [
+                        {
+                            type: 'line',
+                            x0: maxElapsed,
+                            x1: maxElapsed,
+                            y0: 0,
+                            y1: 1,
+                            xref: 'x',
+                            yref: 'paper',
+                            line: { color: '#94a3b8', width: 1, dash: 'dot' }
+                        }
+                    ]
                 };
-                tasks.push(Plotly.react('compare-current-rss', applyVisibilityToTraces('compare-current-rss', buildMetricTraces(baseData, timestamps, frameIndex, 'rss', baseStyle, elapsedSeconds)), compareLayout, getMemoryConfig()));
-                tasks.push(Plotly.react('compare-other-rss', applyVisibilityToTraces('compare-other-rss', buildMetricTraces(compareData, timestamps, frameIndex, 'rss', compareStyle, elapsedSeconds)), compareLayout, getMemoryConfig()));
+                const rssTraces = [
+                    ...buildMetricTraces(baseData, timestamps, frameIndex, 'rss', baseStyle, elapsedSeconds),
+                    ...buildMetricTraces(compareData, timestamps, frameIndex, 'rss', compareStyle, compareElapsed)
+                ];
+                tasks.push(Plotly.react('compare-rss', applyVisibilityToTraces('compare-rss', rssTraces), compareLayout, getMemoryConfig()));
                 if (showGC) {
                     const compareGcLayout = {
                         ...getGcLayout(),
@@ -1967,10 +1959,25 @@
                         margin: {
                             ...getGcLayout().margin,
                             b: 110
-                        }
+                        },
+                        shapes: [
+                            {
+                                type: 'line',
+                                x0: maxElapsed,
+                                x1: maxElapsed,
+                                y0: 0,
+                                y1: 1,
+                                xref: 'x',
+                                yref: 'paper',
+                                line: { color: '#94a3b8', width: 1, dash: 'dot' }
+                            }
+                        ]
                     };
-                    tasks.push(Plotly.react('compare-current-gc', applyVisibilityToTraces('compare-current-gc', buildMetricTraces(baseData, timestamps, frameIndex, 'gc', baseStyle, elapsedSeconds)), compareGcLayout, getGcConfig()));
-                    tasks.push(Plotly.react('compare-other-gc', applyVisibilityToTraces('compare-other-gc', buildMetricTraces(compareData, timestamps, frameIndex, 'gc', compareStyle, elapsedSeconds)), compareGcLayout, getGcConfig()));
+                    const gcTraces = [
+                        ...buildMetricTraces(baseData, timestamps, frameIndex, 'gc', baseStyle, elapsedSeconds),
+                        ...buildMetricTraces(compareData, timestamps, frameIndex, 'gc', compareStyle, compareElapsed)
+                    ];
+                    tasks.push(Plotly.react('compare-gc', applyVisibilityToTraces('compare-gc', gcTraces), compareGcLayout, getGcConfig()));
                 }
                 if (showRatio) {
                     const compareRatioLayout = {
@@ -1990,10 +1997,25 @@
                         margin: {
                             ...getRatioLayout().margin,
                             b: 110
-                        }
+                        },
+                        shapes: [
+                            {
+                                type: 'line',
+                                x0: maxElapsed,
+                                x1: maxElapsed,
+                                y0: 0,
+                                y1: 1,
+                                xref: 'x',
+                                yref: 'paper',
+                                line: { color: '#94a3b8', width: 1, dash: 'dot' }
+                            }
+                        ]
                     };
-                    tasks.push(Plotly.react('compare-current-ratio', applyVisibilityToTraces('compare-current-ratio', buildMetricTraces(baseData, timestamps, frameIndex, 'ratio', baseStyle, elapsedSeconds)), compareRatioLayout, getRatioConfig()));
-                    tasks.push(Plotly.react('compare-other-ratio', applyVisibilityToTraces('compare-other-ratio', buildMetricTraces(compareData, timestamps, frameIndex, 'ratio', compareStyle, elapsedSeconds)), compareRatioLayout, getRatioConfig()));
+                    const ratioTraces = [
+                        ...buildMetricTraces(baseData, timestamps, frameIndex, 'ratio', baseStyle, elapsedSeconds),
+                        ...buildMetricTraces(compareData, timestamps, frameIndex, 'ratio', compareStyle, compareElapsed)
+                    ];
+                    tasks.push(Plotly.react('compare-ratio', applyVisibilityToTraces('compare-ratio', ratioTraces), compareRatioLayout, getRatioConfig()));
                 }
                 return Promise.all(tasks);
             }
@@ -2051,15 +2073,12 @@
 
             const initialFrame = Math.max(0, timestamps.length - 1);
             renderFrame(initialFrame).then(() => {
-                attachLegendVisibilityHandlers('compare-current-rss');
-                attachLegendVisibilityHandlers('compare-other-rss');
+                attachLegendVisibilityHandlers('compare-rss');
                 if (showGC) {
-                    attachLegendVisibilityHandlers('compare-current-gc');
-                    attachLegendVisibilityHandlers('compare-other-gc');
+                    attachLegendVisibilityHandlers('compare-gc');
                 }
                 if (showRatio) {
-                    attachLegendVisibilityHandlers('compare-current-ratio');
-                    attachLegendVisibilityHandlers('compare-other-ratio');
+                    attachLegendVisibilityHandlers('compare-ratio');
                 }
             });
         }
