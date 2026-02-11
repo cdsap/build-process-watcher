@@ -1755,6 +1755,7 @@
             const showRatio = baseHasRatio && compareHasRatio;
             console.log('[compare] baseHasGC:', baseHasGC, 'compareHasGC:', compareHasGC, 'showGC:', showGC);
             console.log('[compare] Compare GC sample:', compareSamples.slice(0, 5).map(s => ({ name: s.Name, pid: s.PID, gc: s.GCTimeSeconds })));
+            console.log('[compare] compareSamples timestamp range:', compareSamples[0]?.Timestamp, compareSamples[compareSamples.length - 1]?.Timestamp);
 
             compareSection.innerHTML = `
                 <div class="compare-header">
