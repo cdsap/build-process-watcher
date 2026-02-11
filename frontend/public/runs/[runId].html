@@ -1258,10 +1258,10 @@
                         : null);
                     return gcSeconds === null || Number.isNaN(gcSeconds) ? null : gcSeconds;
                 });
-                const ratio = buildExactSeries(samples, timestamps, processName, pid, s => {
+                const ratio = buildForwardFilledSeries(samples, timestamps, processName, pid, s => {
                     if (!s.RSS || s.RSS <= 0) return null;
                     return s.HeapUsed / s.RSS;
-                });
+                }, Number.POSITIVE_INFINITY);
 
                 series[processKey] = {
                     processName,
