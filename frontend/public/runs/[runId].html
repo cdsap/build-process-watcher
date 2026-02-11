@@ -858,6 +858,10 @@
             return uniqueTimestamps.size > 10;
         }
 
+        function hasRatioData(samples) {
+            return samples.some(sample => sample && sample.RSS && sample.RSS > 0);
+        }
+
         const COLOR_PALETTE = [
             '#3498db',
             '#e74c3c',
@@ -1751,8 +1755,8 @@
             const compareSamples = normalizeCompareSamples(compareSamplesRaw, timestamps[0]);
             const baseHasGC = hasGCData(baseSamples);
             const compareHasGC = hasGCData(compareSamples);
-            const baseHasRatio = shouldShowRssHeapRatioChart(baseSamples);
-            const compareHasRatio = shouldShowRssHeapRatioChart(compareSamples);
+            const baseHasRatio = hasRatioData(baseSamples);
+            const compareHasRatio = hasRatioData(compareSamples);
             const showGC = baseHasGC && compareHasGC;
             const showRatio = baseHasRatio && compareHasRatio;
             console.log('[compare] baseHasGC:', baseHasGC, 'compareHasGC:', compareHasGC, 'showGC:', showGC);
