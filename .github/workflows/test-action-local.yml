@@ -65,6 +65,15 @@ jobs:
           ls -la memory_usage-*.svg
           ls -la gc_time-*.svg
 
+      - name: Verify summary not written (local mode)
+        run: |
+          if [ -s "$GITHUB_STEP_SUMMARY" ]; then
+            echo "Expected no summary for local mode, but summary has content."
+            cat "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "Summary is empty as expected for local mode."
+
   local-mode-composite:
     runs-on: ubuntu-latest
     steps:
@@ -101,3 +110,12 @@ jobs:
           ls -la build_process_watcher-*.csv
           ls -la memory_usage-*.svg
           ls -la gc_time-*.svg
+
+      - name: Verify summary not written (local mode composite)
+        run: |
+          if [ -s "$GITHUB_STEP_SUMMARY" ]; then
+            echo "Expected no summary for local mode composite, but summary has content."
+            cat "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "Summary is empty as expected for local mode composite."
