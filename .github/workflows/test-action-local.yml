@@ -157,6 +157,76 @@ jobs:
             exit 1
           fi
 
+  local-mode-disable-summary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build action bundle
+        run: ./build.sh
+
+      - name: Start Build Process Watcher (local, disable summary)
+        uses: ./
+        with:
+          remote_monitoring: 'false'
+          debug: 'true'
+          collect_gc: 'true'
+          disable_summary_output: 'true'
+          interval: '2'
+
+      - name: Run dummy GradleDaemon process
+        run: |
+          cat > GradleDaemon.java <<'EOF'
+          public class GradleDaemon {
+            public static void main(String[] args) throws Exception {
+              long end = System.currentTimeMillis() + 15000;
+              while (System.currentTimeMillis() < end) {
+                Thread.sleep(500);
+              }
+            }
+          }
+          EOF
+          javac GradleDaemon.java
+          java GradleDaemon &
+          echo $! > gradle-daemon.pid
+          sleep 18
+          kill "$(cat gradle-daemon.pid)" || true
+
+      - name: Generate local artifacts (manual cleanup)
+        env:
+          CLEANUP_FROM_TRAP: 'true'
+        run: node dist/cleanup.js
+
+      - name: Verify outputs exist
+        run: |
+          ls -la build_process_watcher*.log
+          ls -la build_process_watcher*.csv
+          ls -la memory_usage*.svg
+          ls -la gc_time*.svg
+
+      - name: Verify summary not written (disable summary)
+        run: |
+          if [ -s "$GITHUB_STEP_SUMMARY" ]; then
+            echo "Expected summary disabled, but summary has content."
+            cat "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "Summary is empty as expected with disable_summary_output."
+
   local-mode-composite:
     runs-on: ubuntu-latest
     steps:
