@@ -74,6 +74,14 @@ jobs:
           fi
           echo "Summary is empty as expected for local mode."
 
+      - name: Verify debug logs exist (local mode)
+        run: |
+          ls -la backend_debug*.log
+          ls -la script_debug*.log
+          test -s backend_debug*.log
+          test -s script_debug*.log
+          rg "REMOTE_MONITORING|Starting local monitoring loop|LOG_FILE" script_debug*.log
+
   local-mode-composite:
     runs-on: ubuntu-latest
     steps:
@@ -119,3 +127,103 @@ jobs:
             exit 1
           fi
           echo "Summary is empty as expected for local mode composite."
+
+      - name: Verify debug logs exist (local mode composite)
+        run: |
+          ls -la backend_debug*.log
+          ls -la script_debug*.log
+          test -s backend_debug*.log
+          test -s script_debug*.log
+          python - <<'PY'
+          import glob, sys
+          patterns = ["REMOTE_MONITORING", "Starting local monitoring loop", "LOG_FILE"]
+          files = glob.glob("script_debug*.log")
+          if not files:
+            print("No script_debug logs found")
+            sys.exit(1)
+          data = "\n".join(open(f, "r", encoding="utf-8").read() for f in files)
+          missing = [p for p in patterns if p not in data]
+          if missing:
+            print("Missing patterns:", missing)
+            sys.exit(1)
+          print("Local composite debug patterns present.")
+          PY
+
+  remote-mode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build action bundle
+        run: ./build.sh
+
+      - name: Start Build Process Watcher (remote mode)
+        uses: ./
+        with:
+          remote_monitoring: 'true'
+          backend_url: 'https://example.invalid'
+          debug: 'true'
+          collect_gc: 'true'
+          interval: '2'
+
+      - name: Run dummy GradleDaemon process
+        run: |
+          cat > GradleDaemon.java <<'EOF'
+          public class GradleDaemon {
+            public static void main(String[] args) throws Exception {
+              long end = System.currentTimeMillis() + 15000;
+              while (System.currentTimeMillis() < end) {
+                Thread.sleep(500);
+              }
+            }
+          }
+          EOF
+          javac GradleDaemon.java
+          java GradleDaemon &
+          echo $! > gradle-daemon.pid
+          sleep 18
+          kill "$(cat gradle-daemon.pid)" || true
+
+      - name: Generate local artifacts (manual cleanup)
+        env:
+          CLEANUP_FROM_TRAP: 'true'
+        run: node dist/cleanup.js
+
+      - name: Verify remote-mode debug logs
+        run: |
+          ls -la backend_debug*.log
+          ls -la script_debug*.log
+          test -s backend_debug*.log
+          test -s script_debug*.log
+          python - <<'PY'
+          import glob, sys
+          patterns = [
+            "REMOTE_MONITORING: true",
+            "Backend not reachable",
+            "Falling back to local monitoring mode"
+          ]
+          files = glob.glob("script_debug*.log")
+          if not files:
+            print("No script_debug logs found")
+            sys.exit(1)
+          data = "\n".join(open(f, "r", encoding="utf-8").read() for f in files)
+          missing = [p for p in patterns if p not in data]
+          if missing:
+            print("Missing patterns:", missing)
+            sys.exit(1)
+          print("Remote-mode debug patterns present.")
+          PY
