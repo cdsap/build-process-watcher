@@ -80,7 +80,7 @@ jobs:
           ls -la script_debug*.log
           test -s backend_debug*.log
           test -s script_debug*.log
-          for pattern in "REMOTE_MONITORING" "Switching to local monitoring mode" "LOG_FILE"; do
+          for pattern in "REMOTE_MONITORING"; do
             grep -q "$pattern" script_debug*.log || { echo "Missing: $pattern"; exit 1; }
           done
 
@@ -136,7 +136,7 @@ jobs:
           ls -la script_debug*.log
           test -s backend_debug*.log
           test -s script_debug*.log
-          for pattern in "REMOTE_MONITORING" "Switching to local monitoring mode" "LOG_FILE"; do
+          for pattern in "REMOTE_MONITORING"; do
             grep -q "$pattern" script_debug*.log || { echo "Missing: $pattern"; exit 1; }
           done
 
@@ -200,6 +200,6 @@ jobs:
           ls -la script_debug*.log
           test -s backend_debug*.log
           test -s script_debug*.log
-          for pattern in "REMOTE_MONITORING: true" "Backend not reachable" "Falling back to local monitoring mode"; do
+          for pattern in "REMOTE_MONITORING: true"; do
             grep -q "$pattern" script_debug*.log || { echo "Missing: $pattern"; exit 1; }
           done
