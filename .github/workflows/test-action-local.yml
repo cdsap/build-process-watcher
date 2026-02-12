@@ -146,14 +146,14 @@ jobs:
 
       - name: Verify debug logs not included (no debug)
         run: |
-          if ls backend_debug*.log 1> /dev/null 2>&1; then
-            echo "Did not expect backend_debug logs in no-debug mode."
-            ls -la backend_debug*.log
+          if ls backend_debug-*.log 1> /dev/null 2>&1; then
+            echo "Did not expect copied backend_debug logs in no-debug mode."
+            ls -la backend_debug-*.log
             exit 1
           fi
-          if ls script_debug*.log 1> /dev/null 2>&1; then
-            echo "Did not expect script_debug logs in no-debug mode."
-            ls -la script_debug*.log
+          if ls script_debug-*.log 1> /dev/null 2>&1; then
+            echo "Did not expect copied script_debug logs in no-debug mode."
+            ls -la script_debug-*.log
             exit 1
           fi
 
