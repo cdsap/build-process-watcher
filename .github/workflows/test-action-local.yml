@@ -179,6 +179,16 @@ jobs:
       - name: Build action bundle
         run: ./build.sh
 
+      - name: Capture summary size (before)
+        run: |
+          SUMMARY_FILE="${GITHUB_STEP_SUMMARY}"
+          if [ -f "$SUMMARY_FILE" ]; then
+            BEFORE_SIZE=$(wc -c < "$SUMMARY_FILE")
+          else
+            BEFORE_SIZE=0
+          fi
+          echo "SUMMARY_SIZE_BEFORE=$BEFORE_SIZE" >> "$GITHUB_ENV"
+
       - name: Start Build Process Watcher (local, disable summary)
         uses: ./
         with:
@@ -218,14 +228,22 @@ jobs:
           ls -la memory_usage*.svg
           ls -la gc_time*.svg
 
-      - name: Verify summary not written (disable summary)
+      - name: Verify summary not changed (disable summary)
         run: |
-          if [ -s "$GITHUB_STEP_SUMMARY" ]; then
-            echo "Expected summary disabled, but summary has content."
-            cat "$GITHUB_STEP_SUMMARY"
+          SUMMARY_FILE="${GITHUB_STEP_SUMMARY}"
+          if [ -f "$SUMMARY_FILE" ]; then
+            AFTER_SIZE=$(wc -c < "$SUMMARY_FILE")
+          else
+            AFTER_SIZE=0
+          fi
+          if [ "$AFTER_SIZE" -ne "${SUMMARY_SIZE_BEFORE:-0}" ]; then
+            echo "Expected summary size unchanged, but it changed."
+            echo "Before: ${SUMMARY_SIZE_BEFORE:-0} bytes"
+            echo "After:  $AFTER_SIZE bytes"
+            cat "$SUMMARY_FILE" || true
             exit 1
           fi
-          echo "Summary is empty as expected with disable_summary_output."
+          echo "Summary unchanged as expected with disable_summary_output."
 
   local-mode-composite:
     runs-on: ubuntu-latest
