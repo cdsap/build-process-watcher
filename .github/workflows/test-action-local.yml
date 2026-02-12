@@ -60,10 +60,10 @@ jobs:
 
       - name: Verify outputs exist
         run: |
-          ls -la build_process_watcher-*.log
-          ls -la build_process_watcher-*.csv
-          ls -la memory_usage-*.svg
-          ls -la gc_time-*.svg
+          ls -la build_process_watcher*.log
+          ls -la build_process_watcher*.csv
+          ls -la memory_usage*.svg
+          ls -la gc_time*.svg
 
       - name: Verify summary not written (local mode)
         run: |
@@ -114,10 +114,10 @@ jobs:
 
       - name: Verify outputs exist
         run: |
-          ls -la build_process_watcher-*.log
-          ls -la build_process_watcher-*.csv
-          ls -la memory_usage-*.svg
-          ls -la gc_time-*.svg
+          ls -la build_process_watcher*.log
+          ls -la build_process_watcher*.csv
+          ls -la memory_usage*.svg
+          ls -la gc_time*.svg
 
       - name: Verify summary not written (local mode composite)
         run: |
