@@ -1,0 +1,31 @@
+name: Test Local Composite
+description: Composite wrapper for local mode test
+runs:
+  using: "composite"
+  steps:
+    - name: Start Build Process Watcher (local)
+      uses: ./
+      with:
+        remote_monitoring: 'false'
+        debug: 'true'
+        collect_gc: 'true'
+        interval: '2'
+
+    - name: Run dummy GradleDaemon process
+      shell: bash
+      run: |
+        cat > GradleDaemon.java <<'EOF'
+        public class GradleDaemon {
+          public static void main(String[] args) throws Exception {
+            long end = System.currentTimeMillis() + 15000;
+            while (System.currentTimeMillis() < end) {
+              Thread.sleep(500);
+            }
+          }
+        }
+        EOF
+        javac GradleDaemon.java
+        java GradleDaemon &
+        echo $! > gradle-daemon.pid
+        sleep 18
+        kill "$(cat gradle-daemon.pid)" || true
