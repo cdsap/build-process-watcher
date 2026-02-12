@@ -80,7 +80,9 @@ jobs:
           ls -la script_debug*.log
           test -s backend_debug*.log
           test -s script_debug*.log
-          rg "REMOTE_MONITORING|Starting local monitoring loop|LOG_FILE" script_debug*.log
+          for pattern in "REMOTE_MONITORING" "Starting local monitoring loop" "LOG_FILE"; do
+            grep -q "$pattern" script_debug*.log || { echo "Missing: $pattern"; exit 1; }
+          done
 
   local-mode-composite:
     runs-on: ubuntu-latest
@@ -134,20 +136,9 @@ jobs:
           ls -la script_debug*.log
           test -s backend_debug*.log
           test -s script_debug*.log
-          python - <<'PY'
-          import glob, sys
-          patterns = ["REMOTE_MONITORING", "Starting local monitoring loop", "LOG_FILE"]
-          files = glob.glob("script_debug*.log")
-          if not files:
-            print("No script_debug logs found")
-            sys.exit(1)
-          data = "\n".join(open(f, "r", encoding="utf-8").read() for f in files)
-          missing = [p for p in patterns if p not in data]
-          if missing:
-            print("Missing patterns:", missing)
-            sys.exit(1)
-          print("Local composite debug patterns present.")
-          PY
+          for pattern in "REMOTE_MONITORING" "Starting local monitoring loop" "LOG_FILE"; do
+            grep -q "$pattern" script_debug*.log || { echo "Missing: $pattern"; exit 1; }
+          done
 
   remote-mode:
     runs-on: ubuntu-latest
@@ -209,21 +200,6 @@ jobs:
           ls -la script_debug*.log
           test -s backend_debug*.log
           test -s script_debug*.log
-          python - <<'PY'
-          import glob, sys
-          patterns = [
-            "REMOTE_MONITORING: true",
-            "Backend not reachable",
-            "Falling back to local monitoring mode"
-          ]
-          files = glob.glob("script_debug*.log")
-          if not files:
-            print("No script_debug logs found")
-            sys.exit(1)
-          data = "\n".join(open(f, "r", encoding="utf-8").read() for f in files)
-          missing = [p for p in patterns if p not in data]
-          if missing:
-            print("Missing patterns:", missing)
-            sys.exit(1)
-          print("Remote-mode debug patterns present.")
-          PY
+          for pattern in "REMOTE_MONITORING: true" "Backend not reachable" "Falling back to local monitoring mode"; do
+            grep -q "$pattern" script_debug*.log || { echo "Missing: $pattern"; exit 1; }
+          done
