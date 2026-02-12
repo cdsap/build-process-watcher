@@ -65,14 +65,13 @@ jobs:
           ls -la memory_usage*.svg
           ls -la gc_time*.svg
 
-      - name: Verify summary not written (local mode)
+      - name: Verify summary written (local mode)
         run: |
-          if [ -s "$GITHUB_STEP_SUMMARY" ]; then
-            echo "Expected no summary for local mode, but summary has content."
-            cat "$GITHUB_STEP_SUMMARY"
+          if [ ! -s "$GITHUB_STEP_SUMMARY" ]; then
+            echo "Expected summary for local mode, but summary is empty."
             exit 1
           fi
-          echo "Summary is empty as expected for local mode."
+          echo "Summary has content as expected for local mode."
 
       - name: Verify debug logs exist (local mode)
         run: |
@@ -143,6 +142,14 @@ jobs:
           ls -la build_process_watcher*.csv
           ls -la memory_usage*.svg
           ls -la gc_time*.svg
+
+      - name: Verify summary written (local mode no debug)
+        run: |
+          if [ ! -s "$GITHUB_STEP_SUMMARY" ]; then
+            echo "Expected summary for local mode no-debug, but summary is empty."
+            exit 1
+          fi
+          echo "Summary has content as expected for local mode no-debug."
 
       - name: Verify debug logs not included (no debug)
         run: |
@@ -282,14 +289,13 @@ jobs:
           ls -la memory_usage*.svg
           ls -la gc_time*.svg
 
-      - name: Verify summary not written (local mode composite)
+      - name: Verify summary written (local mode composite)
         run: |
-          if [ -s "$GITHUB_STEP_SUMMARY" ]; then
-            echo "Expected no summary for local mode composite, but summary has content."
-            cat "$GITHUB_STEP_SUMMARY"
+          if [ ! -s "$GITHUB_STEP_SUMMARY" ]; then
+            echo "Expected summary for local mode composite, but summary is empty."
             exit 1
           fi
-          echo "Summary is empty as expected for local mode composite."
+          echo "Summary has content as expected for local mode composite."
 
       - name: Verify debug logs exist (local mode composite)
         run: |
