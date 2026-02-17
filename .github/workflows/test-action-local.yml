@@ -1,0 +1,375 @@
+name: Test Action (Local Mode)
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  local-mode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build action bundle
+        run: ./build.sh
+
+      - name: Start Build Process Watcher (local)
+        uses: ./
+        with:
+          remote_monitoring: 'false'
+          debug: 'true'
+          collect_gc: 'true'
+          interval: '2'
+
+      - name: Run dummy GradleDaemon process
+        run: |
+          cat > GradleDaemon.java <<'EOF'
+          public class GradleDaemon {
+            public static void main(String[] args) throws Exception {
+              long end = System.currentTimeMillis() + 15000;
+              while (System.currentTimeMillis() < end) {
+                Thread.sleep(500);
+              }
+            }
+          }
+          EOF
+          javac GradleDaemon.java
+          java GradleDaemon &
+          echo $! > gradle-daemon.pid
+          sleep 18
+          kill "$(cat gradle-daemon.pid)" || true
+
+      - name: Generate local artifacts (manual cleanup)
+        env:
+          CLEANUP_FROM_TRAP: 'true'
+        run: |
+          node dist/cleanup.js
+          cp "$GITHUB_STEP_SUMMARY" summary-local-mode.md
+
+      - name: Verify outputs exist
+        run: |
+          ls -la build_process_watcher*.log
+          ls -la build_process_watcher*.csv
+          ls -la memory_usage*.svg
+          ls -la gc_time*.svg
+
+      - name: Verify summary written (local mode)
+        run: |
+          if [ ! -s summary-local-mode.md ]; then
+            echo "Expected summary for local mode, but summary is empty."
+            exit 1
+          fi
+          echo "Summary has content as expected for local mode."
+
+      - name: Verify debug logs exist (local mode)
+        run: |
+          ls -la backend_debug*.log
+          ls -la script_debug*.log
+          test -s backend_debug*.log
+          test -s script_debug*.log
+          for pattern in "REMOTE_MONITORING"; do
+            grep -q "$pattern" script_debug*.log || { echo "Missing: $pattern"; exit 1; }
+          done
+
+  local-mode-no-debug:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build action bundle
+        run: ./build.sh
+
+      - name: Start Build Process Watcher (local, no debug)
+        uses: ./
+        with:
+          remote_monitoring: 'false'
+          debug: 'false'
+          collect_gc: 'true'
+          interval: '2'
+
+      - name: Run dummy GradleDaemon process
+        run: |
+          cat > GradleDaemon.java <<'EOF'
+          public class GradleDaemon {
+            public static void main(String[] args) throws Exception {
+              long end = System.currentTimeMillis() + 15000;
+              while (System.currentTimeMillis() < end) {
+                Thread.sleep(500);
+              }
+            }
+          }
+          EOF
+          javac GradleDaemon.java
+          java GradleDaemon &
+          echo $! > gradle-daemon.pid
+          sleep 18
+          kill "$(cat gradle-daemon.pid)" || true
+
+      - name: Generate local artifacts (manual cleanup)
+        env:
+          CLEANUP_FROM_TRAP: 'true'
+        run: |
+          node dist/cleanup.js
+          cp "$GITHUB_STEP_SUMMARY" summary-local-no-debug.md
+
+      - name: Verify outputs exist
+        run: |
+          ls -la build_process_watcher*.log
+          ls -la build_process_watcher*.csv
+          ls -la memory_usage*.svg
+          ls -la gc_time*.svg
+
+      - name: Verify summary written (local mode no debug)
+        run: |
+          if [ ! -s summary-local-no-debug.md ]; then
+            echo "Expected summary for local mode no-debug, but summary is empty."
+            exit 1
+          fi
+          echo "Summary has content as expected for local mode no-debug."
+
+      - name: Verify debug logs not included (no debug)
+        run: |
+          if ls backend_debug-*.log 1> /dev/null 2>&1; then
+            echo "Did not expect copied backend_debug logs in no-debug mode."
+            ls -la backend_debug-*.log
+            exit 1
+          fi
+          if ls script_debug-*.log 1> /dev/null 2>&1; then
+            echo "Did not expect copied script_debug logs in no-debug mode."
+            ls -la script_debug-*.log
+            exit 1
+          fi
+
+  local-mode-disable-summary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build action bundle
+        run: ./build.sh
+
+      - name: Start Build Process Watcher (local, disable summary)
+        uses: ./
+        with:
+          remote_monitoring: 'false'
+          debug: 'true'
+          collect_gc: 'true'
+          disable_summary_output: 'true'
+          interval: '2'
+
+      - name: Run dummy GradleDaemon process
+        run: |
+          cat > GradleDaemon.java <<'EOF'
+          public class GradleDaemon {
+            public static void main(String[] args) throws Exception {
+              long end = System.currentTimeMillis() + 15000;
+              while (System.currentTimeMillis() < end) {
+                Thread.sleep(500);
+              }
+            }
+          }
+          EOF
+          javac GradleDaemon.java
+          java GradleDaemon &
+          echo $! > gradle-daemon.pid
+          sleep 18
+          kill "$(cat gradle-daemon.pid)" || true
+
+      - name: Generate local artifacts (manual cleanup)
+        env:
+          CLEANUP_FROM_TRAP: 'true'
+        run: |
+          SUMMARY_FILE="${GITHUB_STEP_SUMMARY}"
+          if [ -f "$SUMMARY_FILE" ]; then
+            BEFORE_SIZE=$(wc -c < "$SUMMARY_FILE")
+          else
+            BEFORE_SIZE=0
+          fi
+          node dist/cleanup.js
+          if [ -f "$SUMMARY_FILE" ]; then
+            AFTER_SIZE=$(wc -c < "$SUMMARY_FILE")
+          else
+            AFTER_SIZE=0
+          fi
+          echo "SUMMARY_SIZE_BEFORE=$BEFORE_SIZE" >> "$GITHUB_ENV"
+          echo "SUMMARY_SIZE_AFTER=$AFTER_SIZE" >> "$GITHUB_ENV"
+
+      - name: Verify outputs exist
+        run: |
+          ls -la build_process_watcher*.log
+          ls -la build_process_watcher*.csv
+          ls -la memory_usage*.svg
+          ls -la gc_time*.svg
+
+      - name: Verify summary not changed (disable summary)
+        run: |
+          if [ "${SUMMARY_SIZE_AFTER:-0}" -ne "${SUMMARY_SIZE_BEFORE:-0}" ]; then
+            echo "Expected summary size unchanged, but it changed."
+            echo "Before: ${SUMMARY_SIZE_BEFORE:-0} bytes"
+            echo "After:  ${SUMMARY_SIZE_AFTER:-0} bytes"
+            exit 1
+          fi
+          echo "Summary unchanged as expected with disable_summary_output."
+
+  local-mode-composite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build action bundle
+        run: ./build.sh
+
+      - name: Run composite local action
+        uses: ./.github/actions/test-local-composite
+
+      - name: Generate local artifacts (manual cleanup)
+        env:
+          CLEANUP_FROM_TRAP: 'true'
+        run: |
+          node dist/cleanup.js
+          cp "$GITHUB_STEP_SUMMARY" summary-local-composite.md
+
+      - name: Verify outputs exist
+        run: |
+          ls -la build_process_watcher*.log
+          ls -la build_process_watcher*.csv
+          ls -la memory_usage*.svg
+          ls -la gc_time*.svg
+
+      - name: Verify summary written (local mode composite)
+        run: |
+          if [ ! -s summary-local-composite.md ]; then
+            echo "Expected summary for local mode composite, but summary is empty."
+            exit 1
+          fi
+          echo "Summary has content as expected for local mode composite."
+
+      - name: Verify debug logs exist (local mode composite)
+        run: |
+          ls -la backend_debug*.log
+          ls -la script_debug*.log
+          test -s backend_debug*.log
+          test -s script_debug*.log
+          for pattern in "REMOTE_MONITORING"; do
+            grep -q "$pattern" script_debug*.log || { echo "Missing: $pattern"; exit 1; }
+          done
+
+  remote-mode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build action bundle
+        run: ./build.sh
+
+      - name: Start Build Process Watcher (remote mode)
+        uses: ./
+        with:
+          remote_monitoring: 'true'
+          backend_url: 'https://example.invalid'
+          debug: 'true'
+          collect_gc: 'true'
+          interval: '2'
+
+      - name: Run dummy GradleDaemon process
+        run: |
+          cat > GradleDaemon.java <<'EOF'
+          public class GradleDaemon {
+            public static void main(String[] args) throws Exception {
+              long end = System.currentTimeMillis() + 15000;
+              while (System.currentTimeMillis() < end) {
+                Thread.sleep(500);
+              }
+            }
+          }
+          EOF
+          javac GradleDaemon.java
+          java GradleDaemon &
+          echo $! > gradle-daemon.pid
+          sleep 18
+          kill "$(cat gradle-daemon.pid)" || true
+
+      - name: Generate local artifacts (manual cleanup)
+        env:
+          CLEANUP_FROM_TRAP: 'true'
+        run: node dist/cleanup.js
+
+      - name: Verify remote-mode debug logs
+        run: |
+          ls -la backend_debug*.log
+          ls -la script_debug*.log
+          test -s backend_debug*.log
+          test -s script_debug*.log
+          for pattern in "REMOTE_MONITORING: true"; do
+            grep -q "$pattern" script_debug*.log || { echo "Missing: $pattern"; exit 1; }
+          done

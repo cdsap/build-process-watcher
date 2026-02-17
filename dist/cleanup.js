@@ -214671,9 +214671,9 @@ async function run() {
                 }
             }
         }
-        // Add to GitHub Actions summary (only if not disabled for remote mode)
+        // Add to GitHub Actions summary unless explicitly disabled
         const disableSummaryOutput = process.env.DISABLE_SUMMARY_OUTPUT === 'true';
-        const shouldGenerateSummary = !(backendMode && disableSummaryOutput);
+        const shouldGenerateSummary = !disableSummaryOutput;
         if (process.env.GITHUB_STEP_SUMMARY && shouldGenerateSummary) {
             const summary = fs.readFileSync(process.env.GITHUB_STEP_SUMMARY, 'utf8');
             if (backendMode && runId) {
