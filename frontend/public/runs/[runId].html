@@ -526,6 +526,7 @@
             const samples = data.samples || [];
             const processInfo = data.process_info || {};
             window.currentSamples = samples;
+            window.currentProcessSummary = CompareShared.buildProcessSummary(samples, processInfo);
             
             const refreshStatus = isFinished ? 'Stopped' : `Active (${refreshInterval}s)`;
             const lastRefreshText = lastRefreshTime ? lastRefreshTime.toLocaleTimeString() : 'Never';
@@ -825,8 +826,8 @@
 
                 ${isFinished === true ? `
                     <div class="compare-controls">
-                        <div class="meta"><strong>Compare builds:</strong> upload a CSV export to overlay in replay</div>
-                        <input type="file" id="compare-file-input" accept=".csv">
+                        <div class="meta"><strong>Compare builds:</strong> upload a JSON export to overlay in replay</div>
+                        <input type="file" id="compare-file-input" accept=".json">
                         <button class="btn secondary" id="compare-clear" style="display: none;">Clear comparison</button>
                         <div class="meta" id="compare-file-name">No file selected</div>
                     </div>
@@ -1384,17 +1385,19 @@
                 reader.onload = () => {
                     try {
                         const text = String(reader.result || '');
-                        const parsed = parseCsvText(text);
-                        window.compareSamples = parsed;
+                        const parsed = CompareShared.parseJsonText(text);
+                        window.compareSamples = parsed.samples || [];
+                        window.compareProcessSummary = parsed.processSummary || null;
                         fileName.textContent = file.name;
                         clearBtn.style.display = 'inline-flex';
                         if (compareSection) compareSection.style.display = 'block';
                         renderCompareSection(samples);
                         initReplay(samples);
                     } catch (err) {
-                        console.error('Failed to parse comparison CSV', err);
+                        console.error('Failed to parse comparison JSON', err);
                         window.compareSamples = [];
-                        fileName.textContent = 'Failed to parse CSV';
+                        window.compareProcessSummary = null;
+                        fileName.textContent = 'Failed to parse JSON';
                     }
                 };
                 reader.readAsText(file);
@@ -1402,6 +1405,7 @@
 
             clearBtn.addEventListener('click', () => {
                 window.compareSamples = [];
+                window.compareProcessSummary = null;
                 fileName.textContent = 'No file selected';
                 clearBtn.style.display = 'none';
                 input.value = '';
@@ -1878,7 +1882,9 @@
                 headerSubtitle: 'Replay both builds with a shared timeline',
                 memoryFilenameBase: `build-monitor-${runId}`,
                 gcFilenameBase: `build-monitor-gc-${runId}`,
-                ratioFilenameBase: `build-monitor-rss-heap-${runId}`
+                ratioFilenameBase: `build-monitor-rss-heap-${runId}`,
+                baseProcessSummary: window.currentProcessSummary || null,
+                compareProcessSummary: window.compareProcessSummary || null
             });
         }
 
@@ -2053,7 +2059,14 @@
         function downloadJson(runId) {
             try {
                 const data = window.currentRunData || {};
-                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const samples = Array.isArray(data.samples) ? data.samples : [];
+                const processInfo = data.process_info || {};
+                const processSummary = CompareShared.buildProcessSummary(samples, processInfo);
+                const payload = {
+                    ...data,
+                    process_summary: processSummary
+                };
+                const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;

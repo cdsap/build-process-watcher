@@ -168,21 +168,21 @@
     <div class="container">
         <header>
             <h1>Compare CSV Builds</h1>
-            <div class="meta">Upload two CSV exports to compare memory, GC, and heap/RSS ratio.</div>
+            <div class="meta">Upload two JSON exports to compare memory, GC, and process configuration.</div>
         </header>
 
         <section class="compare-controls">
             <div class="row">
-                <strong>Build A CSV</strong>
-                <input type="file" id="compare-a-input" accept=".csv">
+                <strong>Build A JSON</strong>
+                <input type="file" id="compare-a-input" accept=".json">
                 <span class="meta" id="compare-a-name">No file selected</span>
             </div>
             <div class="row">
-                <strong>Build B CSV</strong>
-                <input type="file" id="compare-b-input" accept=".csv">
+                <strong>Build B JSON</strong>
+                <input type="file" id="compare-b-input" accept=".json">
                 <span class="meta" id="compare-b-name">No file selected</span>
             </div>
-            <div class="meta" id="compare-hint">Select both CSV files to render the comparison.</div>
+            <div class="meta" id="compare-hint">Select both JSON files to render the comparison.</div>
         </section>
 
         <section id="compare-section" class="compare-section"></section>
