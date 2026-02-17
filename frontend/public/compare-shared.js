@@ -231,6 +231,97 @@
         };
     }
 
+    function getMaxHeapGiB(vmFlags) {
+        if (!Array.isArray(vmFlags)) return null;
+        const flag = vmFlags.find(entry => entry.startsWith('-XX:MaxHeapSize='));
+        if (!flag) return null;
+        const value = Number(flag.split('=')[1]);
+        if (!Number.isFinite(value) || value <= 0) return null;
+        const gib = value / (1024 * 1024 * 1024);
+        return gib.toFixed(2);
+    }
+
+    function buildProcessSummary(samples, processInfo) {
+        const byPid = {};
+        const byName = {};
+        let overallMaxRss = 0;
+
+        if (!processInfo || typeof processInfo !== 'object') {
+            return { byPid, byName, overallMaxRss };
+        }
+
+        for (const [pid, info] of Object.entries(processInfo)) {
+            const processSamples = samples.filter(s => s.PID === pid);
+            let maxRss = 0;
+            let maxHeap = 0;
+            let maxGCTimeSeconds = 0;
+
+            processSamples.forEach(sample => {
+                if (sample.RSS && sample.RSS > maxRss) {
+                    maxRss = sample.RSS;
+                }
+                if (sample.HeapUsed && sample.HeapUsed > maxHeap) {
+                    maxHeap = sample.HeapUsed;
+                }
+                if (sample.GCTime) {
+                    const gcSeconds = sample.GCTime / 1000;
+                    if (gcSeconds > maxGCTimeSeconds) {
+                        maxGCTimeSeconds = gcSeconds;
+                    }
+                }
+            });
+
+            const vmFlags = Array.isArray(info?.vm_flags) ? info.vm_flags : [];
+            const heapMaxGiB = getMaxHeapGiB(vmFlags);
+
+            byPid[pid] = {
+                pid,
+                name: info?.name || 'Unknown',
+                vmFlags,
+                heapMaxGiB,
+                maxRss,
+                maxHeap,
+                totalGCTime: maxGCTimeSeconds
+            };
+        }
+
+        Object.values(byPid).forEach(entry => {
+            const name = entry.name || 'Unknown';
+            if (!byName[name]) {
+                byName[name] = {
+                    name,
+                    heapMaxGiB: entry.heapMaxGiB ? Number(entry.heapMaxGiB) : null,
+                    maxRss: entry.maxRss || 0,
+                    maxHeap: entry.maxHeap || 0,
+                    totalGCTime: entry.totalGCTime || 0
+                };
+                return;
+            }
+            byName[name].maxRss = Math.max(byName[name].maxRss, entry.maxRss || 0);
+            byName[name].maxHeap = Math.max(byName[name].maxHeap, entry.maxHeap || 0);
+            byName[name].totalGCTime = Math.max(byName[name].totalGCTime, entry.totalGCTime || 0);
+            if (entry.heapMaxGiB) {
+                const value = Number(entry.heapMaxGiB);
+                if (!Number.isNaN(value)) {
+                    byName[name].heapMaxGiB = Math.max(byName[name].heapMaxGiB || 0, value);
+                }
+            }
+        });
+
+        if (samples && samples.length) {
+            const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
+            const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
+            const totalSeries = buildTotalRssSeries(samples, timestamps, processKeys);
+            totalSeries.totalRss.forEach(value => {
+                if (value && value > overallMaxRss) {
+                    overallMaxRss = value;
+                }
+            });
+        }
+
+        return { byPid, byName, overallMaxRss };
+    }
+
     function buildMetricTraces(data, timestamps, frameIndex, metric, style, xValues) {
         const lineWidth = style?.lineWidth ?? 3;
         const heapLineWidth = style?.heapLineWidth ?? 2;
@@ -338,6 +429,19 @@
             };
         });
         return parsed;
+    }
+
+    function parseJsonText(text) {
+        const raw = JSON.parse(text);
+        const samples = Array.isArray(raw?.samples) ? raw.samples : [];
+        const processInfo = raw?.process_info && typeof raw.process_info === 'object' ? raw.process_info : {};
+        const processSummary = raw?.process_summary || buildProcessSummary(samples, processInfo);
+        return {
+            samples,
+            processInfo,
+            processSummary,
+            raw
+        };
     }
 
     function normalizeCompareSamples(samples, baseTimestamp) {
@@ -490,6 +594,104 @@
         };
     }
 
+    function formatValue(value, digits = 1) {
+        if (value === null || value === undefined || Number.isNaN(value)) return 'N/A';
+        if (typeof value !== 'number') return String(value);
+        return value.toFixed(digits);
+    }
+
+    function formatDelta(value, digits = 1) {
+        if (value === null || value === undefined || Number.isNaN(value)) return 'N/A';
+        const sign = value > 0 ? '+' : '';
+        return `${sign}${value.toFixed(digits)}`;
+    }
+
+    function buildCompareSummaryHtml({ baseLabel, compareLabel, baseProcessSummary, compareProcessSummary }) {
+        const baseSummary = baseProcessSummary;
+        const compareSummary = compareProcessSummary;
+        if (!baseSummary || !compareSummary) {
+            return '';
+        }
+
+        const names = new Set([
+            ...Object.keys(baseSummary.byName || {}),
+            ...Object.keys(compareSummary.byName || {})
+        ]);
+
+        if (!names.size) return '';
+
+        const rows = [...names].sort().map(name => {
+            const base = baseSummary.byName?.[name] || {};
+            const compare = compareSummary.byName?.[name] || {};
+            const heapMaxA = base.heapMaxGiB ?? null;
+            const heapMaxB = compare.heapMaxGiB ?? null;
+            const heapDelta = heapMaxA !== null && heapMaxB !== null ? heapMaxB - heapMaxA : null;
+
+            const maxRssA = base.maxRss ?? null;
+            const maxRssB = compare.maxRss ?? null;
+            const maxRssDelta = maxRssA !== null && maxRssB !== null ? maxRssB - maxRssA : null;
+
+            const maxHeapA = base.maxHeap ?? null;
+            const maxHeapB = compare.maxHeap ?? null;
+            const maxHeapDelta = maxHeapA !== null && maxHeapB !== null ? maxHeapB - maxHeapA : null;
+
+            const gcA = base.totalGCTime ?? null;
+            const gcB = compare.totalGCTime ?? null;
+            const gcDelta = gcA !== null && gcB !== null ? gcB - gcA : null;
+
+            return `
+                <tr>
+                    <td style="padding: 0.5rem; font-weight: 600;">${name}</td>
+                    <td style="padding: 0.5rem;">
+                        ${baseLabel}: ${formatValue(heapMaxA, 2)}<br>
+                        ${compareLabel}: ${formatValue(heapMaxB, 2)}<br>
+                        Δ: ${formatDelta(heapDelta, 2)}
+                    </td>
+                    <td style="padding: 0.5rem;">
+                        ${baseLabel}: ${formatValue(maxRssA, 1)} MB<br>
+                        ${compareLabel}: ${formatValue(maxRssB, 1)} MB<br>
+                        Δ: ${formatDelta(maxRssDelta, 1)} MB
+                    </td>
+                    <td style="padding: 0.5rem;">
+                        ${baseLabel}: ${formatValue(maxHeapA, 1)} MB<br>
+                        ${compareLabel}: ${formatValue(maxHeapB, 1)} MB<br>
+                        Δ: ${formatDelta(maxHeapDelta, 1)} MB
+                    </td>
+                    <td style="padding: 0.5rem;">
+                        ${baseLabel}: ${formatValue(gcA, 3)} s<br>
+                        ${compareLabel}: ${formatValue(gcB, 3)} s<br>
+                        Δ: ${formatDelta(gcDelta, 3)} s
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        const overallDelta = (compareSummary.overallMaxRss ?? 0) - (baseSummary.overallMaxRss ?? 0);
+
+        return `
+            <div style="margin: 1rem 0; padding: 1rem; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 0.75rem;">
+                <h3 style="margin-bottom: 0.5rem;">Process Summary (Delta)</h3>
+                <div class="meta" style="margin-bottom: 0.75rem;">Overall Max RSS Δ: ${formatDelta(overallDelta, 1)} MB</div>
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; min-width: 720px;">
+                        <thead>
+                            <tr style="text-align: left; border-bottom: 1px solid #fed7aa;">
+                                <th style="padding: 0.5rem;">Process</th>
+                                <th style="padding: 0.5rem;">Heap Max (GiB)</th>
+                                <th style="padding: 0.5rem;">Max RSS (MB)</th>
+                                <th style="padding: 0.5rem;">Max Heap (MB)</th>
+                                <th style="padding: 0.5rem;">Total GC (s)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rows}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    }
+
     function renderCompareSection(options) {
         const {
             baseSamples = [],
@@ -502,7 +704,9 @@
             headerSubtitle = 'Replay both builds with a shared timeline',
             memoryFilenameBase,
             gcFilenameBase,
-            ratioFilenameBase
+            ratioFilenameBase,
+            baseProcessSummary,
+            compareProcessSummary
         } = options || {};
 
         const compareSection = typeof compareSectionId === 'string'
@@ -526,6 +730,13 @@
         const isSplitMode = compareMode === 'split';
         const splitLabel = `${baseLabel} vs ${compareLabel} (Split View)`;
 
+        const summaryHtml = buildCompareSummaryHtml({
+            baseLabel,
+            compareLabel,
+            baseProcessSummary,
+            compareProcessSummary
+        });
+
         compareSection.innerHTML = `
             <div class="compare-header">
                 <h2>${headerTitle}</h2>
@@ -538,6 +749,7 @@
                     </select>
                 </label>
             </div>
+            ${summaryHtml}
             <div class="replay-controls" id="compare-replay-controls">
                 <div class="buttons">
                     <button class="btn" id="btn-compare-replay-play">Play</button>
@@ -877,7 +1089,9 @@
                     headerSubtitle,
                     memoryFilenameBase,
                     gcFilenameBase,
-                    ratioFilenameBase
+                    ratioFilenameBase,
+                    baseProcessSummary,
+                    compareProcessSummary
                 });
             });
         }
@@ -898,6 +1112,8 @@
         buildReplayData,
         buildMetricTraces,
         parseCsvText,
+        parseJsonText,
+        buildProcessSummary,
         normalizeCompareSamples,
         getGcLayout,
         getGcConfig,
