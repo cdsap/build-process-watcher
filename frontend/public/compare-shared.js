@@ -519,10 +519,7 @@
         const compareSamples = normalizeCompareSamples(compareSamplesRaw, timestamps[0]);
         const baseHasGC = hasGCData(baseSamples);
         const compareHasGC = hasGCData(compareSamples);
-        const baseHasRatio = hasRatioData(baseSamples);
-        const compareHasRatio = hasRatioData(compareSamples);
         const showGC = baseHasGC && compareHasGC;
-        const showRatio = baseHasRatio && compareHasRatio;
 
         const storedMode = localStorage.getItem(compareModeStorageKey) || 'split';
         const compareMode = storedMode === 'side' ? 'side' : 'split';
@@ -586,14 +583,7 @@
                         </div>
                     </div>
                     ` : ''}
-                    ${showRatio ? `
-                    <div class="chart-container">
-                        <h4>Heap/RSS Ratio Over Time</h4>
-                        <div class="chart-wrapper">
-                            <div id="compare-ratio" style="width: 100%; height: 460px;"></div>
-                        </div>
-                    </div>
-                    ` : ''}
+                    
                 </div>
                 ` : `
                 <div class="compare-column">
@@ -612,14 +602,7 @@
                         </div>
                     </div>
                     ` : ''}
-                    ${showRatio ? `
-                    <div class="chart-container">
-                        <h4>Heap/RSS Ratio Over Time</h4>
-                        <div class="chart-wrapper">
-                            <div id="compare-current-ratio" style="width: 100%; height: 460px;"></div>
-                        </div>
-                    </div>
-                    ` : ''}
+                    
                 </div>
                 <div class="compare-column">
                     <h3>${compareLabel}</h3>
@@ -637,14 +620,7 @@
                         </div>
                     </div>
                     ` : ''}
-                    ${showRatio ? `
-                    <div class="chart-container">
-                        <h4>Heap/RSS Ratio Over Time</h4>
-                        <div class="chart-wrapper">
-                            <div id="compare-other-ratio" style="width: 100%; height: 460px;"></div>
-                        </div>
-                    </div>
-                    ` : ''}
+                    
                 </div>
                 `}
             </div>
@@ -821,62 +797,11 @@
                     tasks.push(Plotly.react('compare-other-gc', applyVisibilityToTraces('compare-other-gc', buildMetricTraces(compareData, timestamps, frameIndex, 'gc', compareStyle, compareElapsed)), sideGcLayout, getGcConfig(gcFilenameBase)));
                 }
             }
-            if (showRatio) {
-                const compareRatioLayout = {
-                    ...getRatioLayout(),
-                    xaxis: {
-                        ...getRatioLayout().xaxis,
-                        title: 'Elapsed (s)',
-                        tickformat: null,
-                        type: 'linear'
-                    },
-                    legend: {
-                        x: 0.5,
-                        y: -0.25,
-                        xanchor: 'center',
-                        orientation: 'h'
-                    },
-                    margin: {
-                        ...getRatioLayout().margin,
-                        b: 110
-                    },
-                    shapes: [
-                        {
-                            type: 'line',
-                            x0: maxElapsed,
-                            x1: maxElapsed,
-                            y0: 0,
-                            y1: 1,
-                            xref: 'x',
-                            yref: 'paper',
-                            line: { color: '#94a3b8', width: 1, dash: 'dot' }
-                        }
-                    ]
-                };
-                if (isSplitMode) {
-                    const ratioTraces = [
-                        ...buildMetricTraces(baseData, timestamps, frameIndex, 'ratio', baseStyle, elapsedSeconds),
-                        ...buildMetricTraces(compareData, timestamps, frameIndex, 'ratio', compareStyle, compareElapsed)
-                    ];
-                    tasks.push(Plotly.react('compare-ratio', applyVisibilityToTraces('compare-ratio', ratioTraces), compareRatioLayout, getRatioConfig(ratioFilenameBase)));
-                } else {
-                    const sideRatioLayout = {
-                        ...compareRatioLayout,
-                        shapes: []
-                    };
-                    tasks.push(Plotly.react('compare-current-ratio', applyVisibilityToTraces('compare-current-ratio', buildMetricTraces(baseData, timestamps, frameIndex, 'ratio', baseStyle, elapsedSeconds)), sideRatioLayout, getRatioConfig(ratioFilenameBase)));
-                    tasks.push(Plotly.react('compare-other-ratio', applyVisibilityToTraces('compare-other-ratio', buildMetricTraces(compareData, timestamps, frameIndex, 'ratio', compareStyle, compareElapsed)), sideRatioLayout, getRatioConfig(ratioFilenameBase)));
-                }
-            }
-
             return Promise.all(tasks).then(() => {
                 if (isSplitMode) {
                     attachLegendVisibilityHandlers('compare-rss');
                     if (showGC) {
                         attachLegendVisibilityHandlers('compare-gc');
-                    }
-                    if (showRatio) {
-                        attachLegendVisibilityHandlers('compare-ratio');
                     }
                 } else {
                     attachLegendVisibilityHandlers('compare-current-rss');
@@ -884,10 +809,6 @@
                     if (showGC) {
                         attachLegendVisibilityHandlers('compare-current-gc');
                         attachLegendVisibilityHandlers('compare-other-gc');
-                    }
-                    if (showRatio) {
-                        attachLegendVisibilityHandlers('compare-current-ratio');
-                        attachLegendVisibilityHandlers('compare-other-ratio');
                     }
                 }
             });
