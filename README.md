@@ -46,9 +46,37 @@ Dashboard URL shown in job output.
 | `interval` | Polling interval (seconds) | `5` | No |
 | `debug` | Enable debug logging | `false` | No |
 | `collect_gc` | Enable garbage collection monitoring (requires Java processes) | `true` | No |
-| `disable_summary_output` | Disable GitHub Actions summary output when remote monitoring is enabled (only applies when `remote_monitoring` is `true`) | `false` | No |
-| `environment` | Environment name (production or staging) - used for auto-detecting default URLs | `production` | No |
-| `frontend_url` | Frontend URL for dashboard (optional - can also be set via FRONTEND_URL or FRONTEND_URL_STAGING env vars, will be auto-detected from backend_url/environment if not provided) | Auto-detected | No |
+| `disable_summary_output` | Disable GitHub Actions summary output | `false` | No |
+| `frontend_url` | Frontend URL for dashboard override | Auto-detected | No |
+
+---
+
+## 🧭 Behavior Matrix
+
+| Mode | Debug | Summary | Debug logs in artifacts | Notes |
+|------|-------|---------|-------------------------|-------|
+| Local | `false` | ✅ (default) | ❌ | CSV/SVG/log generated locally. |
+| Local | `true` | ✅ (default) | ✅ | Copies `backend_debug*.log` and `script_debug*.log` into artifacts. |
+| Local | `any` | ❌ (`disable_summary_output: true`) | depends on debug | Summary suppressed when disabled. |
+| Remote | `false` | ✅ (default) | ❌ | Dashboard URL shown; local artifacts if log exists. |
+| Remote | `true` | ✅ (default) | ✅ | Debug logs copied into artifacts. |
+| Remote | `any` | ❌ (`disable_summary_output: true`) | depends on debug | Summary suppressed when disabled. |
+
+---
+
+## 🧪 Run CI Locally with act
+
+You can execute the local CI workflow using `act`:
+
+```bash
+act -W .github/workflows/test-action-local.yml
+```
+
+To run a single job:
+
+```bash
+act -W .github/workflows/test-action-local.yml -j local-mode
+```
 
 ---
 
