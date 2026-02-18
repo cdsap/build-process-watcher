@@ -255,6 +255,8 @@
             let maxRss = 0;
             let maxHeap = 0;
             let maxGCTimeSeconds = 0;
+            let minTimestamp = Number.POSITIVE_INFINITY;
+            let maxTimestamp = 0;
 
             processSamples.forEach(sample => {
                 if (sample.RSS && sample.RSS > maxRss) {
@@ -269,10 +271,19 @@
                         maxGCTimeSeconds = gcSeconds;
                     }
                 }
+                if (sample.Timestamp && sample.Timestamp < minTimestamp) {
+                    minTimestamp = sample.Timestamp;
+                }
+                if (sample.Timestamp && sample.Timestamp > maxTimestamp) {
+                    maxTimestamp = sample.Timestamp;
+                }
             });
 
             const vmFlags = Array.isArray(info?.vm_flags) ? info.vm_flags : [];
             const heapMaxGiB = getMaxHeapGiB(vmFlags);
+            const durationSeconds = Number.isFinite(minTimestamp) && maxTimestamp >= minTimestamp
+                ? Math.max(0, (maxTimestamp - minTimestamp) / 1000)
+                : 0;
 
             byPid[pid] = {
                 pid,
@@ -281,7 +292,8 @@
                 heapMaxGiB,
                 maxRss,
                 maxHeap,
-                totalGCTime: maxGCTimeSeconds
+                totalGCTime: maxGCTimeSeconds,
+                durationSeconds
             };
         }
 
@@ -293,19 +305,24 @@
                     heapMaxGiB: entry.heapMaxGiB ? Number(entry.heapMaxGiB) : null,
                     maxRss: entry.maxRss || 0,
                     maxHeap: entry.maxHeap || 0,
-                    totalGCTime: entry.totalGCTime || 0
+                    totalGCTime: entry.totalGCTime || 0,
+                    durationSeconds: entry.durationSeconds || 0,
+                    vmFlags: [...new Set(entry.vmFlags || [])]
                 };
                 return;
             }
             byName[name].maxRss = Math.max(byName[name].maxRss, entry.maxRss || 0);
             byName[name].maxHeap = Math.max(byName[name].maxHeap, entry.maxHeap || 0);
             byName[name].totalGCTime = Math.max(byName[name].totalGCTime, entry.totalGCTime || 0);
+            byName[name].durationSeconds = Math.max(byName[name].durationSeconds || 0, entry.durationSeconds || 0);
             if (entry.heapMaxGiB) {
                 const value = Number(entry.heapMaxGiB);
                 if (!Number.isNaN(value)) {
                     byName[name].heapMaxGiB = Math.max(byName[name].heapMaxGiB || 0, value);
                 }
             }
+            const mergedFlags = new Set([...(byName[name].vmFlags || []), ...(entry.vmFlags || [])]);
+            byName[name].vmFlags = [...mergedFlags];
         });
 
         if (samples && samples.length) {
@@ -606,6 +623,14 @@
         return `${sign}${value.toFixed(digits)}`;
     }
 
+    function getProcessType(name) {
+        if (!name) return 'Other';
+        if (name.includes('GradleDaemon')) return 'Gradle Daemon';
+        if (name.includes('KotlinCompileDaemon')) return 'Kotlin Daemon';
+        if (name.includes('GradleWorkerMain')) return 'Gradle Worker';
+        return 'Other';
+    }
+
     function buildCompareSummaryHtml({ baseLabel, compareLabel, baseProcessSummary, compareProcessSummary }) {
         const baseSummary = baseProcessSummary;
         const compareSummary = compareProcessSummary;
@@ -620,74 +645,118 @@
 
         if (!names.size) return '';
 
-        const rows = [...names].sort().map(name => {
+        const typeOrder = ['Gradle Daemon', 'Kotlin Daemon', 'Gradle Worker', 'Other'];
+        const grouped = {};
+        typeOrder.forEach(type => {
+            grouped[type] = [];
+        });
+
+        [...names].forEach(name => {
             const base = baseSummary.byName?.[name] || {};
             const compare = compareSummary.byName?.[name] || {};
-            const heapMaxA = base.heapMaxGiB ?? null;
-            const heapMaxB = compare.heapMaxGiB ?? null;
-            const heapDelta = heapMaxA !== null && heapMaxB !== null ? heapMaxB - heapMaxA : null;
+            const type = getProcessType(name);
+            const durationA = base.durationSeconds ?? null;
+            const durationB = compare.durationSeconds ?? null;
+            const durationSort = Math.max(durationA || 0, durationB || 0);
+            const vmFlags = [...new Set([...(base.vmFlags || []), ...(compare.vmFlags || [])])];
 
-            const maxRssA = base.maxRss ?? null;
-            const maxRssB = compare.maxRss ?? null;
-            const maxRssDelta = maxRssA !== null && maxRssB !== null ? maxRssB - maxRssA : null;
+            grouped[type].push({
+                name,
+                type,
+                durationA,
+                durationB,
+                durationSort,
+                heapMaxA: base.heapMaxGiB ?? null,
+                heapMaxB: compare.heapMaxGiB ?? null,
+                maxRssA: base.maxRss ?? null,
+                maxRssB: compare.maxRss ?? null,
+                maxHeapA: base.maxHeap ?? null,
+                maxHeapB: compare.maxHeap ?? null,
+                gcA: base.totalGCTime ?? null,
+                gcB: compare.totalGCTime ?? null,
+                vmFlags
+            });
+        });
 
-            const maxHeapA = base.maxHeap ?? null;
-            const maxHeapB = compare.maxHeap ?? null;
-            const maxHeapDelta = maxHeapA !== null && maxHeapB !== null ? maxHeapB - maxHeapA : null;
-
-            const gcA = base.totalGCTime ?? null;
-            const gcB = compare.totalGCTime ?? null;
-            const gcDelta = gcA !== null && gcB !== null ? gcB - gcA : null;
-
-            return `
-                <tr>
-                    <td style="padding: 0.5rem; font-weight: 600;">${name}</td>
-                    <td style="padding: 0.5rem;">
-                        ${baseLabel}: ${formatValue(heapMaxA, 2)}<br>
-                        ${compareLabel}: ${formatValue(heapMaxB, 2)}<br>
-                        Δ: ${formatDelta(heapDelta, 2)}
-                    </td>
-                    <td style="padding: 0.5rem;">
-                        ${baseLabel}: ${formatValue(maxRssA, 1)} MB<br>
-                        ${compareLabel}: ${formatValue(maxRssB, 1)} MB<br>
-                        Δ: ${formatDelta(maxRssDelta, 1)} MB
-                    </td>
-                    <td style="padding: 0.5rem;">
-                        ${baseLabel}: ${formatValue(maxHeapA, 1)} MB<br>
-                        ${compareLabel}: ${formatValue(maxHeapB, 1)} MB<br>
-                        Δ: ${formatDelta(maxHeapDelta, 1)} MB
-                    </td>
-                    <td style="padding: 0.5rem;">
-                        ${baseLabel}: ${formatValue(gcA, 3)} s<br>
-                        ${compareLabel}: ${formatValue(gcB, 3)} s<br>
-                        Δ: ${formatDelta(gcDelta, 3)} s
-                    </td>
-                </tr>
-            `;
-        }).join('');
+        typeOrder.forEach(type => {
+            grouped[type].sort((a, b) => b.durationSort - a.durationSort);
+        });
 
         const overallDelta = (compareSummary.overallMaxRss ?? 0) - (baseSummary.overallMaxRss ?? 0);
+
+        const sections = typeOrder.map(type => {
+            const items = grouped[type];
+            if (!items.length) return '';
+            const cards = items.map(item => {
+                const heapDelta = item.heapMaxA !== null && item.heapMaxB !== null ? item.heapMaxB - item.heapMaxA : null;
+                const maxRssDelta = item.maxRssA !== null && item.maxRssB !== null ? item.maxRssB - item.maxRssA : null;
+                const maxHeapDelta = item.maxHeapA !== null && item.maxHeapB !== null ? item.maxHeapB - item.maxHeapA : null;
+                const gcDelta = item.gcA !== null && item.gcB !== null ? item.gcB - item.gcA : null;
+                const durationDelta = item.durationA !== null && item.durationB !== null ? item.durationB - item.durationA : null;
+
+                const flagList = item.vmFlags.length
+                    ? item.vmFlags.map(flag => `<span class="vm-flag">${flag}</span>`).join('')
+                    : '<span class="meta">No VM flags</span>';
+
+                return `
+                    <div style="background: #fff; border: 1px solid #e5e7eb; border-radius: 0.75rem; padding: 1rem; margin-bottom: 1rem;">
+                        <div style="display:flex; flex-wrap:wrap; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.5rem;">
+                            <div style="font-weight: 600;">${item.name}</div>
+                            <div class="meta">Duration Δ: ${formatDelta(durationDelta, 1)} s</div>
+                        </div>
+                        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem;">
+                            <div>
+                                <strong>Heap Max (GiB)</strong><br>
+                                ${baseLabel}: ${formatValue(item.heapMaxA, 2)}<br>
+                                ${compareLabel}: ${formatValue(item.heapMaxB, 2)}<br>
+                                Δ: ${formatDelta(heapDelta, 2)}
+                            </div>
+                            <div>
+                                <strong>Max RSS (MB)</strong><br>
+                                ${baseLabel}: ${formatValue(item.maxRssA, 1)}<br>
+                                ${compareLabel}: ${formatValue(item.maxRssB, 1)}<br>
+                                Δ: ${formatDelta(maxRssDelta, 1)}
+                            </div>
+                            <div>
+                                <strong>Max Heap (MB)</strong><br>
+                                ${baseLabel}: ${formatValue(item.maxHeapA, 1)}<br>
+                                ${compareLabel}: ${formatValue(item.maxHeapB, 1)}<br>
+                                Δ: ${formatDelta(maxHeapDelta, 1)}
+                            </div>
+                            <div>
+                                <strong>Total GC (s)</strong><br>
+                                ${baseLabel}: ${formatValue(item.gcA, 3)}<br>
+                                ${compareLabel}: ${formatValue(item.gcB, 3)}<br>
+                                Δ: ${formatDelta(gcDelta, 3)}
+                            </div>
+                            <div>
+                                <strong>Duration (s)</strong><br>
+                                ${baseLabel}: ${formatValue(item.durationA, 1)}<br>
+                                ${compareLabel}: ${formatValue(item.durationB, 1)}<br>
+                                Δ: ${formatDelta(durationDelta, 1)}
+                            </div>
+                        </div>
+                        <div style="margin-top: 0.75rem;">
+                            <strong>VM Flags</strong>
+                            <div class="vm-flags-list" style="margin-top: 0.35rem;">${flagList}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            return `
+                <div style="margin-top: 1rem;">
+                    <h4 style="margin-bottom: 0.75rem;">${type}</h4>
+                    ${cards}
+                </div>
+            `;
+        }).join('');
 
         return `
             <div style="margin: 1rem 0; padding: 1rem; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 0.75rem;">
                 <h3 style="margin-bottom: 0.5rem;">Process Summary (Delta)</h3>
                 <div class="meta" style="margin-bottom: 0.75rem;">Overall Max RSS Δ: ${formatDelta(overallDelta, 1)} MB</div>
-                <div style="overflow-x: auto;">
-                    <table style="width: 100%; border-collapse: collapse; min-width: 720px;">
-                        <thead>
-                            <tr style="text-align: left; border-bottom: 1px solid #fed7aa;">
-                                <th style="padding: 0.5rem;">Process</th>
-                                <th style="padding: 0.5rem;">Heap Max (GiB)</th>
-                                <th style="padding: 0.5rem;">Max RSS (MB)</th>
-                                <th style="padding: 0.5rem;">Max Heap (MB)</th>
-                                <th style="padding: 0.5rem;">Total GC (s)</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${rows}
-                        </tbody>
-                    </table>
-                </div>
+                ${sections}
             </div>
         `;
     }
