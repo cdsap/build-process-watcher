@@ -96,6 +96,65 @@ function generateCsvReport(logFile: string, outputFile: string, hasGcData: boole
     fs.writeFileSync(outputFile, rows.join('\n'));
 }
 
+function generateJsonReport(logFile: string, outputFile: string, hasGcData: boolean): void {
+    const lines = fs.readFileSync(logFile, 'utf8').split('\n');
+    const dataLines = lines.slice(2).filter(line => line.trim().length > 0);
+    const samples: Array<{
+        Timestamp: number;
+        ElapsedTime: number;
+        PID: string;
+        Name: string;
+        RSS: number;
+        HeapUsed: number;
+        HeapCap: number;
+        GCTime: number | null;
+        GCTimeSeconds: number | null;
+    }> = [];
+    const processInfo: Record<string, { name: string; vm_flags: string[] }> = {};
+
+    dataLines.forEach(line => {
+        const parts = line.trim().split('|').map(p => p.trim());
+        if (parts.length !== 6 && parts.length !== 7) return;
+        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime] = parts;
+        const elapsedSeconds = Number(timestamp);
+        if (Number.isNaN(elapsedSeconds)) return;
+        const rssValue = parseFloat(rss.replace('MB', ''));
+        const heapUsedValue = parseFloat(heapUsed.replace('MB', ''));
+        const heapCapValue = parseFloat(heapCap.replace('MB', ''));
+        const gcSeconds = parts.length === 7 && hasGcData
+            ? parseFloat(gcTime.replace('s', '').replace('N/A', '0'))
+            : NaN;
+        const gcSecondsValue = Number.isNaN(gcSeconds) ? null : gcSeconds;
+
+        samples.push({
+            Timestamp: Math.max(0, elapsedSeconds * 1000),
+            ElapsedTime: Math.max(0, elapsedSeconds),
+            PID: pid,
+            Name: name,
+            RSS: Number.isNaN(rssValue) ? 0 : rssValue,
+            HeapUsed: Number.isNaN(heapUsedValue) ? 0 : heapUsedValue,
+            HeapCap: Number.isNaN(heapCapValue) ? 0 : heapCapValue,
+            GCTime: gcSecondsValue !== null ? gcSecondsValue * 1000 : null,
+            GCTimeSeconds: gcSecondsValue
+        });
+
+        if (!processInfo[pid]) {
+            processInfo[pid] = {
+                name,
+                vm_flags: []
+            };
+        }
+    });
+
+    const payload = {
+        samples,
+        process_info: processInfo,
+        finished: true
+    };
+
+    fs.writeFileSync(outputFile, JSON.stringify(payload, null, 2));
+}
+
 function generateMermaidChart(processes: Map<string, ProcessData>, timestamps: string[]): string {
     // Sample points based on data length:
     // - For short logs (< 30 points): show all points
@@ -945,6 +1004,7 @@ async function run() {
         const memorySvgFile = `memory_usage${outputSuffix}.svg`;
         const gcSvgFile = `gc_time${outputSuffix}.svg`;
         const csvFile = `build_process_watcher${outputSuffix}.csv`;
+        const jsonFile = `build_process_watcher${outputSuffix}.json`;
 
         // Save SVG file
         fs.writeFileSync(path.join(outputDir, memorySvgFile), svgContent);
@@ -957,6 +1017,7 @@ async function run() {
         fs.writeFileSync(path.join(outputDir, gcSvgFile), gcSvgContent);
 
         generateCsvReport(logFile, path.join(outputDir, csvFile), hasGcData);
+        generateJsonReport(logFile, path.join(outputDir, jsonFile), hasGcData);
 
         // Upload artifacts (only if files exist)
         // Only upload artifacts if we're in a GitHub Actions context and have runtime token
@@ -1000,6 +1061,9 @@ async function run() {
                 }
                 if (fs.existsSync(path.join(outputDir, csvFile))) {
                     files.push(csvFile);
+                }
+                if (fs.existsSync(path.join(outputDir, jsonFile))) {
+                    files.push(jsonFile);
                 }
                 if (debugMode) {
                     const backendDebugLog = path.join(actionDir, '..', 'backend_debug.log');

@@ -307,7 +307,8 @@
                     maxHeap: entry.maxHeap || 0,
                     totalGCTime: entry.totalGCTime || 0,
                     durationSeconds: entry.durationSeconds || 0,
-                    vmFlags: [...new Set(entry.vmFlags || [])]
+                    vmFlags: [...new Set(entry.vmFlags || [])],
+                    pids: entry.pid ? [entry.pid] : []
                 };
                 return;
             }
@@ -323,6 +324,9 @@
             }
             const mergedFlags = new Set([...(byName[name].vmFlags || []), ...(entry.vmFlags || [])]);
             byName[name].vmFlags = [...mergedFlags];
+            if (entry.pid && !byName[name].pids.includes(entry.pid)) {
+                byName[name].pids.push(entry.pid);
+            }
         });
 
         if (samples && samples.length) {
@@ -638,125 +642,73 @@
             return '';
         }
 
-        const names = new Set([
-            ...Object.keys(baseSummary.byName || {}),
-            ...Object.keys(compareSummary.byName || {})
-        ]);
-
-        if (!names.size) return '';
-
-        const typeOrder = ['Gradle Daemon', 'Kotlin Daemon', 'Gradle Worker', 'Other'];
-        const grouped = {};
-        typeOrder.forEach(type => {
-            grouped[type] = [];
-        });
-
-        [...names].forEach(name => {
-            const base = baseSummary.byName?.[name] || {};
-            const compare = compareSummary.byName?.[name] || {};
-            const type = getProcessType(name);
-            const durationA = base.durationSeconds ?? null;
-            const durationB = compare.durationSeconds ?? null;
-            const durationSort = Math.max(durationA || 0, durationB || 0);
-            const vmFlags = [...new Set([...(base.vmFlags || []), ...(compare.vmFlags || [])])];
-
-            grouped[type].push({
-                name,
-                type,
-                durationA,
-                durationB,
-                durationSort,
-                heapMaxA: base.heapMaxGiB ?? null,
-                heapMaxB: compare.heapMaxGiB ?? null,
-                maxRssA: base.maxRss ?? null,
-                maxRssB: compare.maxRss ?? null,
-                maxHeapA: base.maxHeap ?? null,
-                maxHeapB: compare.maxHeap ?? null,
-                gcA: base.totalGCTime ?? null,
-                gcB: compare.totalGCTime ?? null,
-                vmFlags
-            });
-        });
-
-        typeOrder.forEach(type => {
-            grouped[type].sort((a, b) => b.durationSort - a.durationSort);
-        });
-
-        const overallDelta = (compareSummary.overallMaxRss ?? 0) - (baseSummary.overallMaxRss ?? 0);
-
-        const sections = typeOrder.map(type => {
-            const items = grouped[type];
-            if (!items.length) return '';
-            const cards = items.map(item => {
-                const heapDelta = item.heapMaxA !== null && item.heapMaxB !== null ? item.heapMaxB - item.heapMaxA : null;
-                const maxRssDelta = item.maxRssA !== null && item.maxRssB !== null ? item.maxRssB - item.maxRssA : null;
-                const maxHeapDelta = item.maxHeapA !== null && item.maxHeapB !== null ? item.maxHeapB - item.maxHeapA : null;
-                const gcDelta = item.gcA !== null && item.gcB !== null ? item.gcB - item.gcA : null;
-                const durationDelta = item.durationA !== null && item.durationB !== null ? item.durationB - item.durationA : null;
-
-                const flagList = item.vmFlags.length
-                    ? item.vmFlags.map(flag => `<span class="vm-flag">${flag}</span>`).join('')
-                    : '<span class="meta">No VM flags</span>';
-
-                return `
-                    <div style="background: #fff; border: 1px solid #e5e7eb; border-radius: 0.75rem; padding: 1rem; margin-bottom: 1rem;">
-                        <div style="display:flex; flex-wrap:wrap; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.5rem;">
-                            <div style="font-weight: 600;">${item.name}</div>
-                            <div class="meta">Duration Δ: ${formatDelta(durationDelta, 1)} s</div>
-                        </div>
-                        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem;">
-                            <div>
-                                <strong>Heap Max (GiB)</strong><br>
-                                ${baseLabel}: ${formatValue(item.heapMaxA, 2)}<br>
-                                ${compareLabel}: ${formatValue(item.heapMaxB, 2)}<br>
-                                Δ: ${formatDelta(heapDelta, 2)}
-                            </div>
-                            <div>
-                                <strong>Max RSS (MB)</strong><br>
-                                ${baseLabel}: ${formatValue(item.maxRssA, 1)}<br>
-                                ${compareLabel}: ${formatValue(item.maxRssB, 1)}<br>
-                                Δ: ${formatDelta(maxRssDelta, 1)}
-                            </div>
-                            <div>
-                                <strong>Max Heap (MB)</strong><br>
-                                ${baseLabel}: ${formatValue(item.maxHeapA, 1)}<br>
-                                ${compareLabel}: ${formatValue(item.maxHeapB, 1)}<br>
-                                Δ: ${formatDelta(maxHeapDelta, 1)}
-                            </div>
-                            <div>
-                                <strong>Total GC (s)</strong><br>
-                                ${baseLabel}: ${formatValue(item.gcA, 3)}<br>
-                                ${compareLabel}: ${formatValue(item.gcB, 3)}<br>
-                                Δ: ${formatDelta(gcDelta, 3)}
-                            </div>
-                            <div>
-                                <strong>Duration (s)</strong><br>
-                                ${baseLabel}: ${formatValue(item.durationA, 1)}<br>
-                                ${compareLabel}: ${formatValue(item.durationB, 1)}<br>
-                                Δ: ${formatDelta(durationDelta, 1)}
-                            </div>
-                        </div>
-                        <div style="margin-top: 0.75rem;">
-                            <strong>VM Flags</strong>
-                            <div class="vm-flags-list" style="margin-top: 0.35rem;">${flagList}</div>
-                        </div>
-                    </div>
-                `;
-            }).join('');
+        const buildTable = (summary, label) => {
+            const entries = Object.values(summary.byName || {});
+            if (!entries.length) return '';
+            const rows = entries
+                .slice()
+                .sort((a, b) => (b.durationSeconds || 0) - (a.durationSeconds || 0))
+                .map(item => {
+                    const flagList = (item.vmFlags || []).length
+                        ? `
+                            <details>
+                                <summary class="meta">View flags (${item.vmFlags.length})</summary>
+                                <div class="vm-flags-list" style="margin-top: 0.35rem;">
+                                    ${item.vmFlags.map(flag => `<span class="vm-flag">${flag}</span>`).join('')}
+                                </div>
+                            </details>
+                        `
+                        : '<span class="meta">No VM flags</span>';
+                    const pidList = (item.pids || []).length ? item.pids.join(', ') : 'N/A';
+                    return `
+                        <tr>
+                            <td style="padding: 0.5rem; font-weight: 600;">${item.name}</td>
+                            <td style="padding: 0.5rem;">${pidList}</td>
+                            <td style="padding: 0.5rem;">${formatValue(item.heapMaxGiB, 2)}</td>
+                            <td style="padding: 0.5rem;">${formatValue(item.maxRss, 1)} MB</td>
+                            <td style="padding: 0.5rem;">${formatValue(item.maxHeap, 1)} MB</td>
+                            <td style="padding: 0.5rem;">${formatValue(item.totalGCTime, 3)} s</td>
+                            <td style="padding: 0.5rem;">${formatValue(item.durationSeconds, 1)} s</td>
+                            <td style="padding: 0.5rem;">${flagList}</td>
+                        </tr>
+                    `;
+                }).join('');
 
             return `
-                <div style="margin-top: 1rem;">
-                    <h4 style="margin-bottom: 0.75rem;">${type}</h4>
-                    ${cards}
+                <div style="margin-top: 1rem; padding: 1rem; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 0.75rem;">
+                    <h4 style="margin-bottom: 0.75rem;">${label}</h4>
+                    <div style="overflow-x: auto;">
+                        <table style="width: 100%; border-collapse: collapse; min-width: 720px;">
+                            <thead>
+                                <tr style="text-align: left; border-bottom: 1px solid #e5e7eb;">
+                                    <th style="padding: 0.5rem;">Process</th>
+                                    <th style="padding: 0.5rem;">PIDs</th>
+                                    <th style="padding: 0.5rem;">Heap Max (GiB)</th>
+                                    <th style="padding: 0.5rem;">Max RSS (MB)</th>
+                                    <th style="padding: 0.5rem;">Max Heap (MB)</th>
+                                    <th style="padding: 0.5rem;">Total GC (s)</th>
+                                    <th style="padding: 0.5rem;">Duration (s)</th>
+                                    <th style="padding: 0.5rem;">VM Flags</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${rows}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             `;
-        }).join('');
+        };
+
+        const baseTable = buildTable(baseSummary, baseLabel);
+        const compareTable = buildTable(compareSummary, compareLabel);
+        if (!baseTable && !compareTable) return '';
 
         return `
             <div style="margin: 1rem 0; padding: 1rem; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 0.75rem;">
-                <h3 style="margin-bottom: 0.5rem;">Process Summary (Delta)</h3>
-                <div class="meta" style="margin-bottom: 0.75rem;">Overall Max RSS Δ: ${formatDelta(overallDelta, 1)} MB</div>
-                ${sections}
+                <h3 style="margin-bottom: 0.5rem;">Process Summary</h3>
+                ${baseTable}
+                ${compareTable}
             </div>
         `;
     }
@@ -897,19 +849,24 @@
                 </div>
                 `}
             </div>
-            ${buildCompareSummaryHtml({
-                baseLabel,
-                compareLabel,
-                baseProcessSummary,
-                compareProcessSummary
-            })}
         `;
 
         compareSection.style.display = 'block';
 
         const elapsedSeconds = timestamps.map(ts => Math.max(0, (ts - timestamps[0]) / 1000));
         const maxElapsed = elapsedSeconds.length ? elapsedSeconds[elapsedSeconds.length - 1] : 0;
-        const compareElapsed = elapsedSeconds;
+        const compareElapsed = isSplitMode
+            ? elapsedSeconds.map(value => value + maxElapsed)
+            : elapsedSeconds;
+        const tickVals = [];
+        const tickText = [];
+        if (isSplitMode && maxElapsed > 0) {
+            const tickStep = Math.max(1, Math.round(maxElapsed / 5));
+            for (let value = 0; value <= maxElapsed; value += tickStep) {
+                tickVals.push(value, value + maxElapsed);
+                tickText.push(String(value), String(value));
+            }
+        }
         const baseData = buildReplayData(baseSamples, timestamps, COLOR_PALETTE);
         const compareData = buildReplayData(compareSamples, timestamps, COLOR_PALETTE);
 
@@ -990,7 +947,9 @@
                     ...getMemoryLayout().xaxis,
                     title: 'Elapsed (s)',
                     tickformat: null,
-                    type: 'linear'
+                    type: 'linear',
+                    tickvals: isSplitMode ? tickVals : undefined,
+                    ticktext: isSplitMode ? tickText : undefined
                 },
                 legend: {
                     x: 0.5,
@@ -1036,7 +995,9 @@
                         ...getGcLayout().xaxis,
                         title: 'Elapsed (s)',
                         tickformat: null,
-                        type: 'linear'
+                        type: 'linear',
+                        tickvals: isSplitMode ? tickVals : undefined,
+                        ticktext: isSplitMode ? tickText : undefined
                     },
                     legend: {
                         x: 0.5,
@@ -1138,7 +1099,19 @@
         }
         global.compareReplayStops.default = pause;
 
-        renderFrame(0);
+        renderFrame(0).then(() => {
+            const summaryHtml = buildCompareSummaryHtml({
+                baseLabel,
+                compareLabel,
+                baseProcessSummary,
+                compareProcessSummary
+            });
+            if (summaryHtml) {
+                const summaryWrapper = document.createElement('div');
+                summaryWrapper.innerHTML = summaryHtml;
+                compareSection.appendChild(summaryWrapper);
+            }
+        });
 
         const viewSelect = document.getElementById('compare-view-mode');
         if (viewSelect) {
