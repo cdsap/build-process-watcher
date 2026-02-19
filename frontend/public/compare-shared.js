@@ -799,13 +799,6 @@
         const isSplitMode = compareMode === 'split';
         const splitLabel = `${baseLabel} vs ${compareLabel} (Split View)`;
 
-        const summaryHtml = buildCompareSummaryHtml({
-            baseLabel,
-            compareLabel,
-            baseProcessSummary,
-            compareProcessSummary
-        });
-
         compareSection.innerHTML = `
             <div class="compare-header">
                 <h2>${headerTitle}</h2>
@@ -818,7 +811,6 @@
                     </select>
                 </label>
             </div>
-            ${summaryHtml}
             <div class="replay-controls" id="compare-replay-controls">
                 <div class="buttons">
                     <button class="btn" id="btn-compare-replay-play">Play</button>
@@ -905,13 +897,19 @@
                 </div>
                 `}
             </div>
+            ${buildCompareSummaryHtml({
+                baseLabel,
+                compareLabel,
+                baseProcessSummary,
+                compareProcessSummary
+            })}
         `;
 
         compareSection.style.display = 'block';
 
         const elapsedSeconds = timestamps.map(ts => Math.max(0, (ts - timestamps[0]) / 1000));
         const maxElapsed = elapsedSeconds.length ? elapsedSeconds[elapsedSeconds.length - 1] : 0;
-        const compareElapsed = elapsedSeconds.map(value => value + maxElapsed);
+        const compareElapsed = elapsedSeconds;
         const baseData = buildReplayData(baseSamples, timestamps, COLOR_PALETTE);
         const compareData = buildReplayData(compareSamples, timestamps, COLOR_PALETTE);
 

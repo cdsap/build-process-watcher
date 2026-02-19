@@ -1380,6 +1380,9 @@
                     try {
                         const text = String(reader.result || '');
                         const parsed = CompareShared.parseJsonText(text);
+                        if (!parsed.samples || !parsed.samples.length) {
+                            throw new Error('JSON missing samples');
+                        }
                         window.compareSamples = parsed.samples || [];
                         window.compareProcessSummary = parsed.processSummary || null;
                         fileName.textContent = file.name;

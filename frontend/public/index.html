@@ -510,6 +510,21 @@
             </div>
         </div>
 
+        <!-- Replay & Compare -->
+        <div class="card">
+            <div class="section-header">
+                <span class="section-icon">🧪</span>
+                <h2>Replay & Compare JSON</h2>
+            </div>
+            <p style="font-size: 1.1rem; color: var(--gray); margin-bottom: 1.5rem;">
+                Analyze exported JSON runs offline. Replay a single build or compare two builds side-by-side.
+            </p>
+            <div class="btn-group">
+                <a href="#" id="compare-link" class="btn">Compare JSON Runs</a>
+                <a href="#" id="replay-link" class="btn btn-secondary">Replay JSON Run</a>
+            </div>
+        </div>
+
         <!-- Output Examples -->
         <div class="card">
             <div class="section-header">
@@ -648,6 +663,10 @@
             demoLinks.forEach(link => {
                 link.href = `${frontendUrl}/runs/demo.html`;
             });
+            const compareLink = document.getElementById('compare-link');
+            if (compareLink) compareLink.href = `${frontendUrl}/compare.html`;
+            const replayLink = document.getElementById('replay-link');
+            if (replayLink) replayLink.href = `${frontendUrl}/replay.html`;
         });
 
         // Simple client-side routing for dynamic run pages

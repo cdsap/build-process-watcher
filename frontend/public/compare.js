@@ -54,6 +54,17 @@
             try {
                 const text = String(reader.result || '');
                 const parsed = parseJsonText(text);
+                const hasSamples = parsed.samples && parsed.samples.length > 0;
+                const hasProcessInfo = parsed.processInfo && Object.keys(parsed.processInfo).length > 0;
+                if (!hasSamples) {
+                    setSamples([]);
+                    setSummary(null);
+                    updateHint('JSON is missing samples.');
+                    return;
+                }
+                if (!hasProcessInfo) {
+                    updateHint('JSON is missing process info. Please export from the run page.');
+                }
                 setSamples(parsed.samples || []);
                 setSummary(parsed.processSummary || null);
                 setName(file.name);
