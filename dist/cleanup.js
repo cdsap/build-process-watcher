@@ -213812,9 +213812,7 @@ function generateJsonReport(logFile, outputFile, hasGcData) {
         if (parts.length !== 6 && parts.length !== 7)
             return;
         const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime] = parts;
-        const elapsedSeconds = Number(timestamp);
-        if (Number.isNaN(elapsedSeconds))
-            return;
+        const elapsedSeconds = parseTimestampSeconds(timestamp);
         const rssValue = parseFloat(rss.replace('MB', ''));
         const heapUsedValue = parseFloat(heapUsed.replace('MB', ''));
         const heapCapValue = parseFloat(heapCap.replace('MB', ''));
