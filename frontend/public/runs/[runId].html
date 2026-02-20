@@ -640,16 +640,17 @@
                 processInfoHtml += '</div>';
             }
             
-            document.getElementById('content').innerHTML = `
-                <div class="run-info">
-                    <h2>Run Details</h2>
-                    <p><strong>Run ID:</strong> <code>${runId}</code></p>
-                    ${data.finished_at ? `<p><strong>Finished:</strong> ${new Date(data.finished_at).toLocaleString()}</p>` : ''}
-                    ${data.updated_at ? `<p><strong>Last Updated:</strong> ${new Date(data.updated_at).toLocaleString()}</p>` : ''}
-                </div>
+            const runDetailsInline = `
+                <span class="status-text"><strong>Run Details:</strong></span>
+                <span class="status-text"><strong>Run ID:</strong> <code>${runId}</code></span>
+                ${data.finished_at ? `<span class="status-text"><strong>Finished:</strong> ${new Date(data.finished_at).toLocaleString()}</span>` : ''}
+                ${data.updated_at ? `<span class="status-text"><strong>Last Updated:</strong> ${new Date(data.updated_at).toLocaleString()}</span>` : ''}
+            `;
 
+            document.getElementById('content').innerHTML = `
                 ${!isFinished ? `
                     <div class="refresh-controls">
+                        ${runDetailsInline}
                         <label for="refreshInterval">🔄 Auto-refresh interval:</label>
                         <select id="refreshInterval" onchange="setRefreshInterval(parseInt(this.value))">
                             <option value="5" ${refreshInterval === 5 ? 'selected' : ''}>5 seconds</option>
@@ -659,9 +660,15 @@
                             <option value="120" ${refreshInterval === 120 ? 'selected' : ''}>2 minutes</option>
                             <option value="300" ${refreshInterval === 300 ? 'selected' : ''}>5 minutes</option>
                         </select>
-                        <span class="status-text">Last refresh: ${lastRefreshText}</span>
                     </div>
-                ` : ''}
+                ` : `
+                    <div class="refresh-info">
+                        <div><strong>Run Details</strong></div>
+                        <div><strong>Run ID:</strong> <code>${runId}</code></div>
+                        ${data.finished_at ? `<div><strong>Finished:</strong> ${new Date(data.finished_at).toLocaleString()}</div>` : ''}
+                        ${data.updated_at ? `<div><strong>Last Updated:</strong> ${new Date(data.updated_at).toLocaleString()}</div>` : ''}
+                    </div>
+                `}
 
                 <div class="status-grid">
                     <div class="status-card">

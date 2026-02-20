@@ -45,6 +45,25 @@
             font-size: 0.875rem;
         }
 
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            color: #2563eb;
+            text-decoration: none;
+            font-size: 0.9rem;
+            margin-top: 0.5rem;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 3rem;
+            padding: 2rem 1rem;
+            border-top: 1px solid #e5e7eb;
+            color: #6b7280;
+            font-size: 0.95rem;
+        }
+
         .compare-controls {
             display: flex;
             flex-direction: column;
@@ -169,6 +188,7 @@
         <header>
             <h1>Compare CSV Builds</h1>
             <div class="meta">Upload two JSON exports to compare memory, GC, and process configuration.</div>
+            <a class="back-link" href="/">← Back to Home</a>
         </header>
 
         <section class="compare-controls">
@@ -186,6 +206,11 @@
         </section>
 
         <section id="compare-section" class="compare-section"></section>
+
+        <footer class="footer">
+            <div>Build Process Watcher</div>
+            <div>Replay and compare exported JSON runs.</div>
+        </footer>
     </div>
 
     <script src="/compare.js"></script>
