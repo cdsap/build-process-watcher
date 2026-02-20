@@ -118,6 +118,17 @@ The job summary includes:
 
 ---
 
+## 📂 Replay & Compare Runs
+
+The dashboard lets you:
+
+- **Replay a run** – Upload an exported JSON file to replay memory and GC charts offline.
+- **Compare runs** – Upload two JSON files to compare two runs side-by-side with a shared timeline.
+
+Export JSON from any run via the dashboard download button.
+
+---
+
 ## 🏗️ Architecture
 
 - **Frontend**: Firebase Hosting (static dashboard)

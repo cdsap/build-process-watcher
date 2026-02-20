@@ -26,8 +26,8 @@
             updateHint('Select both JSON files to render the comparison.');
             return;
         }
-        const baseLabel = fileAName ? `Build A (${fileAName})` : 'Build A';
-        const compareLabel = fileBName ? `Build B (${fileBName})` : 'Build B';
+        const baseLabel = fileAName ? `Run A (${fileAName})` : 'Run A';
+        const compareLabel = fileBName ? `Run B (${fileBName})` : 'Run B';
         renderCompareSection({
             baseSamples: samplesA,
             compareSamplesRaw: samplesB,

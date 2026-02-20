@@ -722,7 +722,7 @@
             baseLabel = 'Current Run',
             compareLabel = 'Comparison Run',
             headerTitle = 'Comparison',
-            headerSubtitle = 'Replay both builds with a shared timeline',
+            headerSubtitle = 'Replay both runs with a shared timeline',
             memoryFilenameBase,
             gcFilenameBase,
             ratioFilenameBase,

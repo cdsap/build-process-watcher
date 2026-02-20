@@ -697,7 +697,7 @@
                     ` : ''}
                 </div>
 
-                <!-- Compare builds hidden until ready -->
+                <!-- Compare runs hidden until ready -->
 
                 <div class="chart-container">
                     <div class="downloads-toolbar">
@@ -833,7 +833,7 @@
 
                 ${isFinished === true ? `
                     <div class="compare-controls">
-                        <div class="meta"><strong>Compare builds:</strong> upload a JSON export to overlay in replay</div>
+                        <div class="meta"><strong>Compare runs:</strong> upload a JSON export to overlay in replay</div>
                         <input type="file" id="compare-file-input" accept=".json">
                         <button class="btn secondary" id="compare-clear" style="display: none;">Clear comparison</button>
                         <div class="meta" id="compare-file-name">No file selected</div>
@@ -1454,7 +1454,7 @@
             compareSection.innerHTML = `
                 <div class="compare-header">
                     <h2>Comparison</h2>
-                    <span class="meta">Replay both builds with a shared timeline</span>
+                    <span class="meta">Replay both runs with a shared timeline</span>
                     <label class="meta" style="display:flex; align-items:center; gap:0.5rem;">
                         View:
                         <select id="compare-view-mode">
@@ -1889,7 +1889,7 @@
                 baseLabel: 'Current Run',
                 compareLabel: 'Comparison Run',
                 headerTitle: 'Comparison',
-                headerSubtitle: 'Replay both builds with a shared timeline',
+                headerSubtitle: 'Replay both runs with a shared timeline',
                 memoryFilenameBase: `build-monitor-${runId}`,
                 gcFilenameBase: `build-monitor-gc-${runId}`,
                 ratioFilenameBase: `build-monitor-rss-heap-${runId}`,

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Build Process Watcher - Compare JSON</title>
+    <title>Build Process Watcher - Compare JSON Runs</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
     <script src="/config.js"></script>
@@ -187,19 +187,19 @@
 <body>
     <div class="container">
         <header>
-            <h1>Compare JSON Builds</h1>
+            <h1>Compare JSON Runs</h1>
             <div class="meta">Upload two JSON files to compare memory, GC, and process configuration.</div>
             <a class="back-link back-home-link" href="https://process-watcher.web.app">← Back to Home</a>
         </header>
 
         <section class="compare-controls">
             <div class="row">
-                <strong>Build A (JSON file)</strong>
+                <strong>Run A (JSON file)</strong>
                 <input type="file" id="compare-a-input" accept=".json">
                 <span class="meta" id="compare-a-name">No file selected</span>
             </div>
             <div class="row">
-                <strong>Build B (JSON file)</strong>
+                <strong>Run B (JSON file)</strong>
                 <input type="file" id="compare-b-input" accept=".json">
                 <span class="meta" id="compare-b-name">No file selected</span>
             </div>
