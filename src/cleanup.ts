@@ -1122,10 +1122,11 @@ async function run() {
             if (backendMode && runId) {
                 // Remote monitoring mode - show dashboard info + Mermaid diagram if data available
                 const frontendUrl = `https://process-watcher.web.app/runs/${runId}`;
+                const summarySubtitle = process.env.GITHUB_JOB || runId || '';
                 
                 let newSummary = `${summary}
 
-## Build Process Monitoring${runId ? ` (${runId})` : ''}
+## Build Process Watcher${summarySubtitle ? ` (${summarySubtitle})` : ''}
 
 ### Remote Monitoring Mode
 - **Dashboard URL**: ${frontendUrl} (**Data Retention**: 24 hours)
@@ -1174,10 +1175,11 @@ ${Array.from(processes.entries()).map(([key, data]) => {
                 const duration = timestamps.length > 0 ?
                     `from ${timestamps[0]} to ${timestamps[timestamps.length - 1]}` :
                     'N/A';
+                const summarySubtitle = process.env.GITHUB_JOB || runId || '';
 
                 const newSummary = `${summary}
 
-## Build Process Analysis${runId ? ` (${runId})` : ''}
+## Build Process Watcher${summarySubtitle ? ` (${summarySubtitle})` : ''}
 
 ### Build Process Graph
 \`\`\`mermaid

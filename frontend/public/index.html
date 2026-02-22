@@ -435,7 +435,7 @@
             <div class="feature-card">
                 <h3><span class="feature-icon">📦</span>Default Mode</h3>
                 <p style="margin-bottom: 1rem; color: var(--gray);">Generate Mermaid diagrams and SVG charts locally, uploaded as GitHub Actions artifacts:</p>
-                <pre><code>- name: Build Process Monitoring
+                <pre><code>- name: Build Process Watcher
   uses: cdsap/build-process-watcher@v0.5.1
  
 - name: Build project
@@ -448,7 +448,7 @@
             <div class="feature-card">
                 <h3><span class="feature-icon">🌐</span>Remote Mode</h3>
                 <p style="margin-bottom: 1rem; color: var(--gray);">Enable live dashboard with real-time monitoring and GC metrics:</p>
-                <pre><code>- name: Build Process Monitoring
+                <pre><code>- name: Build Process Watcher
   uses: cdsap/build-process-watcher@v0.5.1
   with:
     remote_monitoring: 'true'
@@ -519,6 +519,10 @@
             <p style="font-size: 1.1rem; color: var(--gray); margin-bottom: 1.5rem;">
                 Analyze exported JSON runs offline. Replay a single run or compare two runs side-by-side.
             </p>
+            <div class="example-image">
+                <img src="/reply.gif" alt="Replay JSON run demo">
+                <p>Example: Replay exported JSON runs with interactive charts</p>
+            </div>
             <div class="btn-group">
                 <a href="#" id="compare-link" class="btn">Compare JSON Runs</a>
                 <a href="#" id="replay-link" class="btn btn-secondary">Replay JSON Run</a>
