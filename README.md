@@ -2,6 +2,15 @@
 
 [![GitHub Marketplace](https://img.shields.io/badge/action-marketplace-blue?logo=github)](https://github.com/marketplace/actions/build-process-watcher)
 
+![Performance Demo](frontend/public/performance.gif)
+
+```mermaid
+flowchart LR
+    A[Build Start] --> B[Monitor Processes]
+    B --> C[Collect Memory/GC]
+    C --> D[Dashboard / Artifacts]
+```
+
 Monitor memory usage of Java/Kotlin build processes (`GradleDaemon`, `GradleWorkerMain`, `KotlinCompileDaemon`) during CI builds. Track heap and RSS usage, generate charts, and visualize data in real-time dashboards.
 
 ---
