@@ -5,10 +5,29 @@
 ![Performance Demo](frontend/public/performance.gif)
 
 ```mermaid
+%%{init: {'theme': 'dark'}}%%
 flowchart LR
-    A[Build Start] --> B[Monitor Processes]
-    B --> C[Collect Memory/GC]
-    C --> D[Dashboard / Artifacts]
+    subgraph Time["Memory Usage Over Time"]
+        direction TB
+        subgraph T0["00:03:03"]
+            GradleDaemon_0["GradleDaemon<br/>2311MB"]
+            KotlinCompileDaemon_0["KotlinCompileDaemon<br/>488MB"]
+            Agg_0["Aggregated<br/>2799MB"]
+        end
+        subgraph T1["00:03:23"]
+            GradleDaemon_1["GradleDaemon<br/>3219MB"]
+            KotlinCompileDaemon_1["KotlinCompileDaemon<br/>488MB"]
+            Agg_1["Aggregated<br/>3708MB"]
+        end
+    end
+    GradleDaemon_0 --> GradleDaemon_1
+    KotlinCompileDaemon_0 --> KotlinCompileDaemon_1
+    Agg_0 --> Agg_1
+    classDef process fill:#4ECDC4,stroke:#333,stroke-width:2px
+    classDef aggregated fill:#FF6B6B,stroke:#333,stroke-width:2px
+    class GradleDaemon process
+    class KotlinCompileDaemon process
+    class Agg_0,Agg_1 aggregated
 ```
 
 Monitor memory usage of Java/Kotlin build processes (`GradleDaemon`, `GradleWorkerMain`, `KotlinCompileDaemon`) during CI builds. Track heap and RSS usage, generate charts, and visualize data in real-time dashboards.
@@ -134,7 +153,7 @@ The dashboard lets you:
 - **Replay a run** – Upload an exported JSON file to replay memory and GC charts offline.
 - **Compare runs** – Upload two JSON files to compare two runs side-by-side with a shared timeline.
 
-Export JSON from any run via the dashboard download button.
+**Using without Remote Mode:** You don't need Remote Mode to use Replay and Compare. With Local Mode, the action generates JSON files in the workflow artifacts. Download the JSON from your artifacts and upload it to [Replay](https://process-watcher.web.app/replay.html) or [Compare](https://process-watcher.web.app/compare.html). You can also open these HTML files locally in your browser.
 
 ---
 

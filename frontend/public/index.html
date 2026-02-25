@@ -431,10 +431,29 @@
             </div>
             <h1>🚀 Build Process Watcher</h1>
             <p>Monitor memory usage and performance of your Gradle build processes in real-time with our powerful GitHub Action.</p>
-            <pre style="margin-top: 1.5rem; font-size: 0.85rem; background: rgba(0,0,0,0.05); padding: 1rem; border-radius: 0.75rem; overflow-x: auto; text-align: center;"><code>flowchart LR
-    A[Build Start] --> B[Monitor Processes]
-    B --> C[Collect Memory/GC]
-    C --> D[Dashboard / Artifacts]</code></pre>
+            <pre style="margin-top: 1.5rem; font-size: 0.75rem; background: rgba(0,0,0,0.05); padding: 1rem; border-radius: 0.75rem; overflow-x: auto;"><code>%%{init: {'theme': 'dark'}}%%
+flowchart LR
+    subgraph Time["Memory Usage Over Time"]
+        direction TB
+        subgraph T0["00:03:03"]
+            GradleDaemon_0["GradleDaemon&lt;br/&gt;2311MB"]
+            KotlinCompileDaemon_0["KotlinCompileDaemon&lt;br/&gt;488MB"]
+            Agg_0["Aggregated&lt;br/&gt;2799MB"]
+        end
+        subgraph T1["00:03:23"]
+            GradleDaemon_1["GradleDaemon&lt;br/&gt;3219MB"]
+            KotlinCompileDaemon_1["KotlinCompileDaemon&lt;br/&gt;488MB"]
+            Agg_1["Aggregated&lt;br/&gt;3708MB"]
+        end
+    end
+    GradleDaemon_0 --> GradleDaemon_1
+    KotlinCompileDaemon_0 --> KotlinCompileDaemon_1
+    Agg_0 --> Agg_1
+    classDef process fill:#4ECDC4,stroke:#333,stroke-width:2px
+    classDef aggregated fill:#FF6B6B,stroke:#333,stroke-width:2px
+    class GradleDaemon process
+    class KotlinCompileDaemon process
+    class Agg_0,Agg_1 aggregated</code></pre>
         </div>
 
         <!-- Quick Start -->
@@ -550,6 +569,9 @@
             <p style="font-size: 1.1rem; color: var(--gray); margin-bottom: 1.5rem;">
                 Analyze exported JSON runs offline. Replay a single run or compare two runs side-by-side.
             </p>
+            <div class="info-box info-box-primary" style="margin-bottom: 1.5rem;">
+                <strong>💡 No Remote Mode needed:</strong> With Local Mode, the action generates JSON files in the workflow artifacts. Download the JSON from your artifacts and upload it to <a href="https://process-watcher.web.app/replay.html" target="_blank" rel="noopener noreferrer">Replay</a> or <a href="https://process-watcher.web.app/compare.html" target="_blank" rel="noopener noreferrer">Compare</a>. You can also open these HTML files locally in your browser.
+            </div>
             <div class="example-image">
                 <img src="/reply.gif" alt="Replay JSON run demo">
                 <p>Example: Replay exported JSON runs with interactive charts</p>
