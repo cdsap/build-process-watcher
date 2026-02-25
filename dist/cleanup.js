@@ -214641,16 +214641,11 @@ async function run() {
         if (shouldUpload) {
             try {
                 const artifactClient = new artifact_1.DefaultArtifactClient();
-                // Create stable artifact name using job ID and run attempt
-                // Use run_id if available, otherwise use a simple name to avoid duplicates
-                const jobId = process.env.GITHUB_JOB || 'default';
+                // Create stable artifact name using job name and run attempt
+                const jobName = process.env.GITHUB_JOB || 'default';
                 const runAttempt = process.env.GITHUB_RUN_ATTEMPT || '1';
-                const runId = process.env.RUN_ID || '';
-                // Use run_id in artifact name if available, otherwise use job+attempt
-                // This prevents duplicate artifacts when cleanup runs multiple times
-                const artifactName = runId
-                    ? `build_process_watcher-${runId}`
-                    : `build_process_watcher-${jobId}-${runAttempt}`;
+                // Use job name in artifact name (run attempt avoids duplicates on re-runs)
+                const artifactName = `build_process_watcher-${jobName}-${runAttempt}`;
                 const files = [];
                 // Only include files that exist
                 const logFileBase = path.basename(logFile);
