@@ -458,9 +458,6 @@
                 <div class="info-box info-box-success">
                     <strong>🌐 Output:</strong> Dashboard URL displayed in action output (data available for 24 hours)
                 </div>
-                <div class="info-box info-box-warning" style="margin-top: 1rem;">
-                    <strong>💡 GC Collection:</strong> Set <code>collect_gc: 'true'</code> to monitor garbage collection time in seconds. This adds a GC time chart to your dashboard.
-                </div>
             </div>
         </div>
 
@@ -550,10 +547,6 @@
                 <span class="section-icon">🆕</span>
                 <h2>GC Metrics Collection</h2>
             </div>
-            <p style="font-size: 1.1rem; color: var(--gray); margin-bottom: 2rem;">
-                When using Remote Mode with <code>collect_gc: 'true'</code>, you'll get a comprehensive GC time chart in your dashboard:
-            </p>
-            
             <div>
                 <h3 style="margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
                     <span>🔄</span> GC Time Chart
@@ -563,10 +556,6 @@
                     GC time is displayed in seconds and works across all JVM GC collectors (Parallel, G1, Serial, CMS).
                 </p>
                 
-                <div class="info-box info-box-success">
-                    <strong>✨ Feature:</strong> Enable <code>collect_gc: 'true'</code> in your workflow to monitor GC time alongside memory usage
-                </div>
-
                 <div class="example-image">
                     <img src="/gc_diagram.png" alt="GC Time Chart Example">
                     <p>Example: GC time chart showing garbage collection performance over time</p>
@@ -600,14 +589,6 @@
                     </p>
                 </div>
 
-                <div>
-                    <h4 style="color: var(--warning); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
-                        <span>🔄</span> GC Monitoring
-                    </h4>
-                    <p style="color: var(--gray); font-size: 0.95rem;">
-                        Track garbage collection performance with GC time charts. Enable <code>collect_gc: 'true'</code> to monitor GC-related performance issues.
-                    </p>
-                </div>
             </div>
         </div>
 
