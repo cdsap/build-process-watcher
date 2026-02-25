@@ -431,29 +431,6 @@
             </div>
             <h1>🚀 Build Process Watcher</h1>
             <p>Monitor memory usage and performance of your Gradle build processes in real-time with our powerful GitHub Action.</p>
-            <pre style="margin-top: 1.5rem; font-size: 0.75rem; background: rgba(0,0,0,0.05); padding: 1rem; border-radius: 0.75rem; overflow-x: auto;"><code>%%{init: {'theme': 'dark'}}%%
-flowchart LR
-    subgraph Time["Memory Usage Over Time"]
-        direction TB
-        subgraph T0["00:03:03"]
-            GradleDaemon_0["GradleDaemon&lt;br/&gt;2311MB"]
-            KotlinCompileDaemon_0["KotlinCompileDaemon&lt;br/&gt;488MB"]
-            Agg_0["Aggregated&lt;br/&gt;2799MB"]
-        end
-        subgraph T1["00:03:23"]
-            GradleDaemon_1["GradleDaemon&lt;br/&gt;3219MB"]
-            KotlinCompileDaemon_1["KotlinCompileDaemon&lt;br/&gt;488MB"]
-            Agg_1["Aggregated&lt;br/&gt;3708MB"]
-        end
-    end
-    GradleDaemon_0 --> GradleDaemon_1
-    KotlinCompileDaemon_0 --> KotlinCompileDaemon_1
-    Agg_0 --> Agg_1
-    classDef process fill:#4ECDC4,stroke:#333,stroke-width:2px
-    classDef aggregated fill:#FF6B6B,stroke:#333,stroke-width:2px
-    class GradleDaemon process
-    class KotlinCompileDaemon process
-    class Agg_0,Agg_1 aggregated</code></pre>
         </div>
 
         <!-- Quick Start -->
