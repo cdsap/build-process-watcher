@@ -452,7 +452,6 @@
   uses: cdsap/build-process-watcher@v0.5.1
   with:
     remote_monitoring: 'true'
-    collect_gc: 'true'
     
 - name: Build project
   run: ./gradlew clean build</code></pre>
@@ -462,33 +461,6 @@
                 <div class="info-box info-box-warning" style="margin-top: 1rem;">
                     <strong>💡 GC Collection:</strong> Set <code>collect_gc: 'true'</code> to monitor garbage collection time in seconds. This adds a GC time chart to your dashboard.
                 </div>
-            </div>
-        </div>
-
-        <!-- How Remote Mode Works -->
-        <div class="card">
-            <div class="section-header">
-                <span class="section-icon">🔗</span>
-                <h2>How Remote Mode URL is Generated</h2>
-            </div>
-            <p style="font-size: 1.1rem; color: var(--gray); margin-bottom: 1.5rem;">
-                When you enable Remote Mode, the action automatically generates a unique dashboard URL for your build run. 
-                This URL is displayed in the GitHub Actions output and allows you to monitor your build in real-time.
-            </p>
-            
-            <div class="example-image">
-                <img src="/gha_log.png" alt="GitHub Actions Log showing URL generation">
-                <p>Example: The dashboard URL is automatically generated and displayed in the GitHub Actions log</p>
-            </div>
-
-            <div class="info-box info-box-success" style="margin-top: 1.5rem;">
-                <strong>📋 How it works:</strong>
-                <ul style="margin: 0.75rem 0 0 1.5rem; padding: 0;">
-                    <li>The action creates a unique run ID for each build</li>
-                    <li>A dashboard URL is automatically generated using this run ID</li>
-                    <li>The URL is displayed in the GitHub Actions output for easy access</li>
-                    <li>Data is available for 24 hours after the build completes</li>
-                </ul>
             </div>
         </div>
 
