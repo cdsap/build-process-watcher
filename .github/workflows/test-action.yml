@@ -5,6 +5,8 @@ on:
     branches: [ main, develop ]
     paths:
       - 'src/**'
+      - '__tests__/**'
+      - 'jest.config.js'
       - 'build.sh'
       - 'package.json'
       - 'package-lock.json'
@@ -15,6 +17,8 @@ on:
     branches: [ main, develop ]
     paths:
       - 'src/**'
+      - '__tests__/**'
+      - 'jest.config.js'
       - 'build.sh'
       - 'package.json'
       - 'package-lock.json'
@@ -94,6 +98,25 @@ jobs:
       run: |
         echo "🔍 Running TypeScript type check..."
         npx tsc --noEmit
+
+    - name: Run unit tests
+      run: |
+        echo "🧪 Running unit tests..."
+        npm test
+
+    - name: Verify artifact naming uses job name
+      run: |
+        echo "🧪 Verifying artifact naming in cleanup..."
+        if grep -q 'jobName\|GITHUB_JOB' src/cleanup.ts && grep -q 'artifactName' src/cleanup.ts; then
+          if grep -q 'build_process_watcher-.*jobName\|build_process_watcher-.*GITHUB_JOB' src/cleanup.ts; then
+            echo "✅ PASS: Cleanup uses job name (GITHUB_JOB) in artifact naming"
+          else
+            echo "✅ PASS: Cleanup references job name for artifacts"
+          fi
+        else
+          echo "❌ FAIL: Cleanup should use GITHUB_JOB for artifact naming"
+          exit 1
+        fi
 
     - name: Test collect_gc functionality
       run: |
