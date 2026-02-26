@@ -57,6 +57,10 @@ if [ "$COLLECT_GC" = "true" ]; then
 else
     echo "Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB" > "$LOG_FILE"
 fi
+
+# Process info file for VM flags (used by cleanup to include in JSON artifact)
+PROCESS_INFO_FILE="${LOG_FILE%.log}.process_info"
+: > "$PROCESS_INFO_FILE"
 if [ "$DEBUG_MODE" = "true" ]; then
     echo "✅ Log file created: $LOG_FILE" >&2
     echo "📁 Full log file path: $(pwd)/$LOG_FILE" >&2
@@ -743,6 +747,8 @@ while true; do
             if [ "$DEBUG_MODE" = "true" ]; then
               echo "✅ Got VM flags for PID $PID" >&2
             fi
+            # Write VM flags to process_info file for JSON artifact (used by cleanup)
+            printf '%s\t%s\t%s\n' "$PID" "$NAME" "$VM_FLAGS_JSON" >> "$PROCESS_INFO_FILE"
             # Send process info to backend
             log_script "Calling send_process_info_to_backend for PID $PID"
             if send_process_info_to_backend "$PID" "$NAME" "$VM_FLAGS_JSON"; then

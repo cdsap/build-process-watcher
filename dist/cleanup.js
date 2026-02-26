@@ -213802,12 +213802,54 @@ function generateCsvReport(logFile, outputFile, hasGcData) {
     });
     fs.writeFileSync(outputFile, rows.join('\n'));
 }
+function loadProcessInfoFromFile(logFile) {
+    const processInfo = {};
+    const processInfoPath = logFile.replace(/\.log$/, '.process_info');
+    if (!fs.existsSync(processInfoPath))
+        return processInfo;
+    try {
+        const content = fs.readFileSync(processInfoPath, 'utf8');
+        for (const line of content.split('\n')) {
+            const trimmed = line.trim();
+            if (!trimmed)
+                continue;
+            const tabIdx = trimmed.indexOf('\t');
+            if (tabIdx === -1)
+                continue;
+            const pid = trimmed.slice(0, tabIdx).trim();
+            const rest = trimmed.slice(tabIdx + 1);
+            const secondTabIdx = rest.indexOf('\t');
+            if (secondTabIdx === -1)
+                continue;
+            const name = rest.slice(0, secondTabIdx).trim();
+            const vmFlagsJson = rest.slice(secondTabIdx + 1).trim();
+            let vm_flags = [];
+            try {
+                vm_flags = JSON.parse(vmFlagsJson);
+                if (!Array.isArray(vm_flags))
+                    vm_flags = [];
+            }
+            catch {
+                // ignore parse errors
+            }
+            if (pid && name) {
+                processInfo[pid] = { name, vm_flags };
+            }
+        }
+    }
+    catch {
+        // ignore read errors
+    }
+    return processInfo;
+}
 function generateJsonReport(logFile, outputFile, hasGcData) {
     const lines = fs.readFileSync(logFile, 'utf8').split('\n');
     const dataLines = lines.slice(2).filter(line => line.trim().length > 0);
     const samples = [];
+    const processInfoFromFile = loadProcessInfoFromFile(logFile);
     const processInfo = {};
     dataLines.forEach(line => {
+        var _a;
         const parts = line.trim().split('|').map(p => p.trim());
         if (parts.length !== 6 && parts.length !== 7)
             return;
@@ -213832,9 +213874,10 @@ function generateJsonReport(logFile, outputFile, hasGcData) {
             GCTimeSeconds: gcSecondsValue
         });
         if (!processInfo[pid]) {
+            const fromFile = processInfoFromFile[pid];
             processInfo[pid] = {
                 name,
-                vm_flags: []
+                vm_flags: (_a = fromFile === null || fromFile === void 0 ? void 0 : fromFile.vm_flags) !== null && _a !== void 0 ? _a : []
             };
         }
     });
