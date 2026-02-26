@@ -53,9 +53,11 @@ fi
 
 # Initialize log file with header
 if [ "$COLLECT_GC" = "true" ]; then
-    echo "Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB | GC_Time_S" > "$LOG_FILE"
+    echo "Session started: $(date '+%Y-%m-%d %H:%M:%S')" > "$LOG_FILE"
+    echo "Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB | GC_Time_S" >> "$LOG_FILE"
 else
-    echo "Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB" > "$LOG_FILE"
+    echo "Session started: $(date '+%Y-%m-%d %H:%M:%S')" > "$LOG_FILE"
+    echo "Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB" >> "$LOG_FILE"
 fi
 
 # Process info file for VM flags (used by cleanup to include in JSON artifact)
