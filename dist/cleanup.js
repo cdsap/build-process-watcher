@@ -55751,7 +55751,7 @@ Object.defineProperty(exports, "subchannelAddressToString", ({ enumerable: true,
 Object.defineProperty(exports, "endpointToString", ({ enumerable: true, get: function () { return subchannel_address_1.endpointToString; } }));
 Object.defineProperty(exports, "endpointHasAddress", ({ enumerable: true, get: function () { return subchannel_address_1.endpointHasAddress; } }));
 Object.defineProperty(exports, "EndpointMap", ({ enumerable: true, get: function () { return subchannel_address_1.EndpointMap; } }));
-var load_balancer_child_handler_1 = __nccwpck_require__(21450);
+var load_balancer_child_handler_1 = __nccwpck_require__(99069);
 Object.defineProperty(exports, "ChildLoadBalancerHandler", ({ enumerable: true, get: function () { return load_balancer_child_handler_1.ChildLoadBalancerHandler; } }));
 var picker_1 = __nccwpck_require__(71663);
 Object.defineProperty(exports, "UnavailablePicker", ({ enumerable: true, get: function () { return picker_1.UnavailablePicker; } }));
@@ -56963,7 +56963,7 @@ exports.InternalChannel = InternalChannel;
 
 /***/ }),
 
-/***/ 21450:
+/***/ 99069:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
@@ -57151,7 +57151,7 @@ const constants_1 = __nccwpck_require__(68288);
 const duration_1 = __nccwpck_require__(63929);
 const experimental_1 = __nccwpck_require__(20079);
 const load_balancer_1 = __nccwpck_require__(7000);
-const load_balancer_child_handler_1 = __nccwpck_require__(21450);
+const load_balancer_child_handler_1 = __nccwpck_require__(99069);
 const picker_1 = __nccwpck_require__(71663);
 const subchannel_address_1 = __nccwpck_require__(97021);
 const subchannel_interface_1 = __nccwpck_require__(70098);
@@ -61366,7 +61366,7 @@ const metadata_1 = __nccwpck_require__(36100);
 const logging = __nccwpck_require__(8536);
 const constants_2 = __nccwpck_require__(68288);
 const uri_parser_1 = __nccwpck_require__(56027);
-const load_balancer_child_handler_1 = __nccwpck_require__(21450);
+const load_balancer_child_handler_1 = __nccwpck_require__(99069);
 const TRACER_NAME = 'resolving_load_balancer';
 function trace(text) {
     logging.trace(constants_2.LogVerbosity.DEBUG, TRACER_NAME, text);
@@ -98195,7 +98195,7 @@ exports.colors = [6, 2, 3, 4, 5, 1];
 try {
 	// Optional dependency (as in, doesn't need to be installed, NOT like optionalDependencies in package.json)
 	// eslint-disable-next-line import/no-extraneous-dependencies
-	const supportsColor = __nccwpck_require__(60075);
+	const supportsColor = __nccwpck_require__(21450);
 
 	if (supportsColor && (supportsColor.stderr || supportsColor).level >= 2) {
 		exports.colors = [
@@ -125209,6 +125209,22 @@ async function _GoogleToken_requestToken() {
     }
 };
 //# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ 83813:
+/***/ ((module) => {
+
+"use strict";
+
+
+module.exports = (flag, argv = process.argv) => {
+	const prefix = flag.startsWith('-') ? '' : (flag.length === 1 ? '-' : '--');
+	const position = argv.indexOf(prefix + flag);
+	const terminatorPosition = argv.indexOf('--');
+	return position !== -1 && (terminatorPosition === -1 || position < terminatorPosition);
+};
+
 
 /***/ }),
 
@@ -185688,6 +185704,149 @@ function simpleEnd(buf) {
 
 /***/ }),
 
+/***/ 21450:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+const os = __nccwpck_require__(70857);
+const tty = __nccwpck_require__(52018);
+const hasFlag = __nccwpck_require__(83813);
+
+const {env} = process;
+
+let forceColor;
+if (hasFlag('no-color') ||
+	hasFlag('no-colors') ||
+	hasFlag('color=false') ||
+	hasFlag('color=never')) {
+	forceColor = 0;
+} else if (hasFlag('color') ||
+	hasFlag('colors') ||
+	hasFlag('color=true') ||
+	hasFlag('color=always')) {
+	forceColor = 1;
+}
+
+if ('FORCE_COLOR' in env) {
+	if (env.FORCE_COLOR === 'true') {
+		forceColor = 1;
+	} else if (env.FORCE_COLOR === 'false') {
+		forceColor = 0;
+	} else {
+		forceColor = env.FORCE_COLOR.length === 0 ? 1 : Math.min(parseInt(env.FORCE_COLOR, 10), 3);
+	}
+}
+
+function translateLevel(level) {
+	if (level === 0) {
+		return false;
+	}
+
+	return {
+		level,
+		hasBasic: true,
+		has256: level >= 2,
+		has16m: level >= 3
+	};
+}
+
+function supportsColor(haveStream, streamIsTTY) {
+	if (forceColor === 0) {
+		return 0;
+	}
+
+	if (hasFlag('color=16m') ||
+		hasFlag('color=full') ||
+		hasFlag('color=truecolor')) {
+		return 3;
+	}
+
+	if (hasFlag('color=256')) {
+		return 2;
+	}
+
+	if (haveStream && !streamIsTTY && forceColor === undefined) {
+		return 0;
+	}
+
+	const min = forceColor || 0;
+
+	if (env.TERM === 'dumb') {
+		return min;
+	}
+
+	if (process.platform === 'win32') {
+		// Windows 10 build 10586 is the first Windows release that supports 256 colors.
+		// Windows 10 build 14931 is the first release that supports 16m/TrueColor.
+		const osRelease = os.release().split('.');
+		if (
+			Number(osRelease[0]) >= 10 &&
+			Number(osRelease[2]) >= 10586
+		) {
+			return Number(osRelease[2]) >= 14931 ? 3 : 2;
+		}
+
+		return 1;
+	}
+
+	if ('CI' in env) {
+		if (['TRAVIS', 'CIRCLECI', 'APPVEYOR', 'GITLAB_CI', 'GITHUB_ACTIONS', 'BUILDKITE'].some(sign => sign in env) || env.CI_NAME === 'codeship') {
+			return 1;
+		}
+
+		return min;
+	}
+
+	if ('TEAMCITY_VERSION' in env) {
+		return /^(9\.(0*[1-9]\d*)\.|\d{2,}\.)/.test(env.TEAMCITY_VERSION) ? 1 : 0;
+	}
+
+	if (env.COLORTERM === 'truecolor') {
+		return 3;
+	}
+
+	if ('TERM_PROGRAM' in env) {
+		const version = parseInt((env.TERM_PROGRAM_VERSION || '').split('.')[0], 10);
+
+		switch (env.TERM_PROGRAM) {
+			case 'iTerm.app':
+				return version >= 3 ? 3 : 2;
+			case 'Apple_Terminal':
+				return 2;
+			// No default
+		}
+	}
+
+	if (/-256(color)?$/i.test(env.TERM)) {
+		return 2;
+	}
+
+	if (/^screen|^xterm|^vt100|^vt220|^rxvt|color|ansi|cygwin|linux/i.test(env.TERM)) {
+		return 1;
+	}
+
+	if ('COLORTERM' in env) {
+		return 1;
+	}
+
+	return min;
+}
+
+function getSupportLevel(stream) {
+	const level = supportsColor(stream, stream && stream.isTTY);
+	return translateLevel(level);
+}
+
+module.exports = {
+	supportsColor: getSupportLevel,
+	stdout: translateLevel(supportsColor(true, tty.isatty(1))),
+	stderr: translateLevel(supportsColor(true, tty.isatty(2)))
+};
+
+
+/***/ }),
+
 /***/ 20775:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
@@ -213728,6 +213887,7 @@ const path = __importStar(__nccwpck_require__(16928));
 const artifact_1 = __nccwpck_require__(76846);
 const app_1 = __nccwpck_require__(75919);
 const firestore_1 = __nccwpck_require__(27157);
+const report_1 = __nccwpck_require__(47185);
 const execAsync = (0, util_1.promisify)(child_process_1.exec);
 function parseLogFile(logFile) {
     const processes = new Map();
@@ -213772,7 +213932,7 @@ function parseLogFile(logFile) {
         }
     });
     const orderedTimestamps = Array.from(timestamps)
-        .sort((a, b) => parseTimestampSeconds(a) - parseTimestampSeconds(b));
+        .sort((a, b) => (0, report_1.parseTimestampSeconds)(a) - (0, report_1.parseTimestampSeconds)(b));
     return { processes, timestamps: orderedTimestamps, hasGcData };
 }
 function generateCsvReport(logFile, outputFile, hasGcData) {
@@ -213801,92 +213961,6 @@ function generateCsvReport(logFile, outputFile, hasGcData) {
         rows.push(baseRow.join(','));
     });
     fs.writeFileSync(outputFile, rows.join('\n'));
-}
-function loadProcessInfoFromFile(logFile) {
-    const processInfo = {};
-    const processInfoPath = logFile.replace(/\.log$/, '.process_info');
-    if (!fs.existsSync(processInfoPath))
-        return processInfo;
-    try {
-        const content = fs.readFileSync(processInfoPath, 'utf8');
-        for (const line of content.split('\n')) {
-            const trimmed = line.trim();
-            if (!trimmed)
-                continue;
-            const tabIdx = trimmed.indexOf('\t');
-            if (tabIdx === -1)
-                continue;
-            const pid = trimmed.slice(0, tabIdx).trim();
-            const rest = trimmed.slice(tabIdx + 1);
-            const secondTabIdx = rest.indexOf('\t');
-            if (secondTabIdx === -1)
-                continue;
-            const name = rest.slice(0, secondTabIdx).trim();
-            const vmFlagsJson = rest.slice(secondTabIdx + 1).trim();
-            let vm_flags = [];
-            try {
-                vm_flags = JSON.parse(vmFlagsJson);
-                if (!Array.isArray(vm_flags))
-                    vm_flags = [];
-            }
-            catch {
-                // ignore parse errors
-            }
-            if (pid && name) {
-                processInfo[pid] = { name, vm_flags };
-            }
-        }
-    }
-    catch {
-        // ignore read errors
-    }
-    return processInfo;
-}
-function generateJsonReport(logFile, outputFile, hasGcData) {
-    const lines = fs.readFileSync(logFile, 'utf8').split('\n');
-    const dataLines = lines.slice(2).filter(line => line.trim().length > 0);
-    const samples = [];
-    const processInfoFromFile = loadProcessInfoFromFile(logFile);
-    const processInfo = {};
-    dataLines.forEach(line => {
-        var _a;
-        const parts = line.trim().split('|').map(p => p.trim());
-        if (parts.length !== 6 && parts.length !== 7)
-            return;
-        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime] = parts;
-        const elapsedSeconds = parseTimestampSeconds(timestamp);
-        const rssValue = parseFloat(rss.replace('MB', ''));
-        const heapUsedValue = parseFloat(heapUsed.replace('MB', ''));
-        const heapCapValue = parseFloat(heapCap.replace('MB', ''));
-        const gcSeconds = parts.length === 7 && hasGcData
-            ? parseFloat(gcTime.replace('s', '').replace('N/A', '0'))
-            : NaN;
-        const gcSecondsValue = Number.isNaN(gcSeconds) ? null : gcSeconds;
-        samples.push({
-            Timestamp: Math.max(0, elapsedSeconds * 1000),
-            ElapsedTime: Math.max(0, elapsedSeconds),
-            PID: pid,
-            Name: name,
-            RSS: Number.isNaN(rssValue) ? 0 : rssValue,
-            HeapUsed: Number.isNaN(heapUsedValue) ? 0 : heapUsedValue,
-            HeapCap: Number.isNaN(heapCapValue) ? 0 : heapCapValue,
-            GCTime: gcSecondsValue !== null ? gcSecondsValue * 1000 : null,
-            GCTimeSeconds: gcSecondsValue
-        });
-        if (!processInfo[pid]) {
-            const fromFile = processInfoFromFile[pid];
-            processInfo[pid] = {
-                name,
-                vm_flags: (_a = fromFile === null || fromFile === void 0 ? void 0 : fromFile.vm_flags) !== null && _a !== void 0 ? _a : []
-            };
-        }
-    });
-    const payload = {
-        samples,
-        process_info: processInfo,
-        finished: true
-    };
-    fs.writeFileSync(outputFile, JSON.stringify(payload, null, 2));
 }
 function generateMermaidChart(processes, timestamps) {
     // Sample points based on data length:
@@ -213948,16 +214022,6 @@ flowchart LR
         return `class ${cleanKey} process`;
     }).join('\n    ')}
     ${sampledTimestamps.map((_, i) => `class Agg_${i} aggregated`).join('\n    ')}`;
-}
-function parseTimestampSeconds(timestamp) {
-    if (timestamp.includes(':')) {
-        const parts = timestamp.split(':').map(part => parseInt(part, 10));
-        if (parts.length === 3 && parts.every(Number.isFinite)) {
-            return (parts[0] * 3600) + (parts[1] * 60) + parts[2];
-        }
-    }
-    const numeric = parseFloat(timestamp);
-    return Number.isFinite(numeric) ? numeric : 0;
 }
 function median(values) {
     if (values.length === 0)
@@ -214037,7 +214101,7 @@ function generateSvg(processes, timestamps) {
         bottom: 100,
         left: 100
     };
-    const timestampSeconds = timestamps.map(parseTimestampSeconds);
+    const timestampSeconds = timestamps.map(report_1.parseTimestampSeconds);
     const deltas = timestampSeconds.slice(1).map((value, index) => value - timestampSeconds[index]).filter(delta => delta > 0);
     const medianDelta = median(deltas) || 1;
     const maxGapSeconds = medianDelta * 2;
@@ -214670,7 +214734,7 @@ async function run() {
         const gcSvgContent = generateGcSvg(processes, timestamps);
         fs.writeFileSync(path.join(outputDir, gcSvgFile), gcSvgContent);
         generateCsvReport(logFile, path.join(outputDir, csvFile), hasGcData);
-        generateJsonReport(logFile, path.join(outputDir, jsonFile), hasGcData);
+        (0, report_1.generateJsonReport)(logFile, path.join(outputDir, jsonFile), hasGcData);
         // Upload artifacts (only if files exist)
         // Only upload artifacts if we're in a GitHub Actions context and have runtime token
         // When called from script trap, we might not have the token, so skip upload
@@ -214869,18 +214933,163 @@ run();
 
 /***/ }),
 
-/***/ 42078:
-/***/ ((module) => {
+/***/ 47185:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
-module.exports = eval("require")("encoding");
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.parseTimestampSeconds = parseTimestampSeconds;
+exports.loadProcessInfoFromFile = loadProcessInfoFromFile;
+exports.generateJsonReport = generateJsonReport;
+const fs = __importStar(__nccwpck_require__(79896));
+/**
+ * Parse timestamp string (HH:MM:SS or seconds number) to seconds.
+ */
+function parseTimestampSeconds(timestamp) {
+    if (timestamp.includes(':')) {
+        const parts = timestamp.split(':').map(part => parseInt(part, 10));
+        if (parts.length === 3 && parts.every(Number.isFinite)) {
+            return (parts[0] * 3600) + (parts[1] * 60) + parts[2];
+        }
+    }
+    const numeric = parseFloat(timestamp);
+    return Number.isFinite(numeric) ? numeric : 0;
+}
+/**
+ * Load process info (including vm_flags) from .process_info file.
+ * Format: PID\tName\tVM_FLAGS_JSON per line.
+ */
+function loadProcessInfoFromFile(logFile) {
+    const processInfo = {};
+    const processInfoPath = logFile.replace(/\.log$/, '.process_info');
+    if (!fs.existsSync(processInfoPath))
+        return processInfo;
+    try {
+        const content = fs.readFileSync(processInfoPath, 'utf8');
+        for (const line of content.split('\n')) {
+            const trimmed = line.trim();
+            if (!trimmed)
+                continue;
+            const tabIdx = trimmed.indexOf('\t');
+            if (tabIdx === -1)
+                continue;
+            const pid = trimmed.slice(0, tabIdx).trim();
+            const rest = trimmed.slice(tabIdx + 1);
+            const secondTabIdx = rest.indexOf('\t');
+            if (secondTabIdx === -1)
+                continue;
+            const name = rest.slice(0, secondTabIdx).trim();
+            const vmFlagsJson = rest.slice(secondTabIdx + 1).trim();
+            let vm_flags = [];
+            try {
+                vm_flags = JSON.parse(vmFlagsJson);
+                if (!Array.isArray(vm_flags))
+                    vm_flags = [];
+            }
+            catch {
+                // ignore parse errors
+            }
+            if (pid && name) {
+                processInfo[pid] = { name, vm_flags };
+            }
+        }
+    }
+    catch {
+        // ignore read errors
+    }
+    return processInfo;
+}
+/**
+ * Generate JSON report from log file, merging vm_flags from process_info when available.
+ */
+function generateJsonReport(logFile, outputFile, hasGcData) {
+    const lines = fs.readFileSync(logFile, 'utf8').split('\n');
+    const dataLines = lines.slice(2).filter(line => line.trim().length > 0);
+    const samples = [];
+    const processInfoFromFile = loadProcessInfoFromFile(logFile);
+    const processInfo = {};
+    dataLines.forEach(line => {
+        var _a;
+        const parts = line.trim().split('|').map(p => p.trim());
+        if (parts.length !== 6 && parts.length !== 7)
+            return;
+        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime] = parts;
+        const elapsedSeconds = parseTimestampSeconds(timestamp);
+        const rssValue = parseFloat(rss.replace('MB', ''));
+        const heapUsedValue = parseFloat(heapUsed.replace('MB', ''));
+        const heapCapValue = parseFloat(heapCap.replace('MB', ''));
+        const gcSeconds = parts.length === 7 && hasGcData
+            ? parseFloat(gcTime.replace('s', '').replace('N/A', '0'))
+            : NaN;
+        const gcSecondsValue = Number.isNaN(gcSeconds) ? null : gcSeconds;
+        samples.push({
+            Timestamp: Math.max(0, elapsedSeconds * 1000),
+            ElapsedTime: Math.max(0, elapsedSeconds),
+            PID: pid,
+            Name: name,
+            RSS: Number.isNaN(rssValue) ? 0 : rssValue,
+            HeapUsed: Number.isNaN(heapUsedValue) ? 0 : heapUsedValue,
+            HeapCap: Number.isNaN(heapCapValue) ? 0 : heapCapValue,
+            GCTime: gcSecondsValue !== null ? gcSecondsValue * 1000 : null,
+            GCTimeSeconds: gcSecondsValue
+        });
+        if (!processInfo[pid]) {
+            const fromFile = processInfoFromFile[pid];
+            processInfo[pid] = {
+                name,
+                vm_flags: (_a = fromFile === null || fromFile === void 0 ? void 0 : fromFile.vm_flags) !== null && _a !== void 0 ? _a : []
+            };
+        }
+    });
+    const payload = {
+        samples,
+        process_info: processInfo,
+        finished: true
+    };
+    fs.writeFileSync(outputFile, JSON.stringify(payload, null, 2));
+}
 
 
 /***/ }),
 
-/***/ 60075:
+/***/ 42078:
 /***/ ((module) => {
 
-module.exports = eval("require")("supports-color");
+module.exports = eval("require")("encoding");
 
 
 /***/ }),
