@@ -6,7 +6,7 @@ import * as path from 'path';
 
 async function run() {
   try {
-    let backendUrl = core.getInput('backend_url');
+    let backendUrl = process.env.BACKEND_URL || '';
     const enableBackend = core.getInput('remote_monitoring') === 'true';
     const runId = core.getInput('run_id') || `run-${Date.now()}`;
     const debugMode = core.getInput('debug') === 'true';
@@ -51,8 +51,8 @@ async function run() {
     // Build frontend URL if backend is enabled (do this before exporting)
     let frontendUrl = '';
     if (enableBackend && backendUrl) {
-      // Check explicit frontend URL input
-      const explicitFrontendUrl = core.getInput('frontend_url');
+      // Use FRONTEND_URL env var (from secrets) or default
+      const explicitFrontendUrl = process.env.FRONTEND_URL || '';
       
       if (explicitFrontendUrl) {
         // Use explicitly provided frontend URL (from env var or input)
@@ -121,10 +121,6 @@ async function run() {
     core.setOutput('backend_url', backendUrl || '');
     core.setOutput('remote_monitoring', enableBackend.toString());
     core.setOutput('frontend_url', frontendUrl);
-
-    if (enableBackend && !backendUrl) {
-      core.warning('⚠️  Remote monitoring is enabled but no backend_url provided and default URL not available.');
-    }
 
     // Always show the dashboard URL when remote monitoring is enabled (regardless of debug mode)
     if (enableBackend && frontendUrl) {
