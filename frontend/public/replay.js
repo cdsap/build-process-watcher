@@ -9,7 +9,8 @@
         getMemoryLayout,
         getMemoryConfig,
         getGcLayout,
-        getGcConfig
+        getGcConfig,
+        visibilityStore
     } = window.BpwCompareShared || {};
 
     const input = document.getElementById('replay-input');
@@ -62,6 +63,11 @@
                     </div>
                 </div>
             </div>
+            <div class="chart-filters" id="single-chart-filters">
+                <label><input type="checkbox" id="filter-single-total-rss" checked> Total RSS</label>
+                <label><input type="checkbox" id="filter-single-rss" checked> RSS</label>
+                <label><input type="checkbox" id="filter-single-heap" checked> Heap</label>
+            </div>
             <div class="chart-container">
                 <h4>Memory Usage Over Time</h4>
                 <div class="chart-wrapper">
@@ -94,6 +100,63 @@
         let speedMultiplier = Number(speedSelect.value) || 15;
 
         timeline.max = String(Math.max(0, timestamps.length - 1));
+
+        const traceVisibility = visibilityStore || {};
+
+        function updateSingleReplayFilterCheckboxes() {
+            const total = document.getElementById('filter-single-total-rss');
+            const rss = document.getElementById('filter-single-rss');
+            const heap = document.getElementById('filter-single-heap');
+            const chart = document.getElementById('single-rss');
+            if (!total || !rss || !heap || !chart || !chart.data) return;
+            const map = traceVisibility['single-rss'] || {};
+            let rssVisible = false;
+            let heapVisible = false;
+            chart.data.forEach(trace => {
+                if (!trace.name) return;
+                const vis = map[trace.name];
+                const isVisible = vis !== 'legendonly' && vis !== false;
+                if (trace.name === 'Total RSS Memory') {
+                    /* total handled below */
+                } else if (trace.name.includes('(RSS)')) {
+                    rssVisible = rssVisible || isVisible;
+                } else if (trace.name.includes('(Heap)')) {
+                    heapVisible = heapVisible || isVisible;
+                }
+            });
+            const totalVis = map['Total RSS Memory'];
+            total.checked = totalVis === undefined ? true : (totalVis !== 'legendonly' && totalVis !== false);
+            rss.checked = rssVisible;
+            heap.checked = heapVisible;
+        }
+
+        function setupSingleReplayFilters() {
+            const total = document.getElementById('filter-single-total-rss');
+            const rss = document.getElementById('filter-single-rss');
+            const heap = document.getElementById('filter-single-heap');
+            if (!total || !rss || !heap) return;
+            const applyFilters = () => {
+                const chart = document.getElementById('single-rss');
+                if (!chart || !chart.data) return;
+                const map = traceVisibility['single-rss'] || (traceVisibility['single-rss'] = {});
+                chart.data.forEach(trace => {
+                    if (!trace.name) return;
+                    if (trace.name === 'Total RSS Memory') {
+                        map[trace.name] = total.checked ? true : 'legendonly';
+                    } else if (trace.name.includes('(RSS)')) {
+                        map[trace.name] = rss.checked ? true : 'legendonly';
+                    } else if (trace.name.includes('(Heap)')) {
+                        map[trace.name] = heap.checked ? true : 'legendonly';
+                    }
+                });
+                const visArray = chart.data.map(trace => map[trace.name] !== undefined ? map[trace.name] : true);
+                Plotly.restyle(chart, 'visible', visArray);
+            };
+            total.addEventListener('change', applyFilters);
+            rss.addEventListener('change', applyFilters);
+            heap.addEventListener('change', applyFilters);
+            applyFilters();
+        }
 
         const elapsedByTimestamp = new Map();
         samples.forEach(sample => {
@@ -171,7 +234,8 @@
             }
 
             return Promise.all(tasks).then(() => {
-                attachLegendVisibilityHandlers('single-rss');
+                setupSingleReplayFilters();
+                attachLegendVisibilityHandlers('single-rss', updateSingleReplayFilterCheckboxes);
                 if (showGC) {
                     attachLegendVisibilityHandlers('single-gc');
                 }

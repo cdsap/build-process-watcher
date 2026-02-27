@@ -794,6 +794,11 @@
                 ${isSplitMode ? `
                 <div class="compare-column">
                     <h3>${splitLabel}</h3>
+                    <div class="chart-filters" id="compare-split-filters">
+                        <label><input type="checkbox" id="filter-compare-total-rss" checked> Total RSS</label>
+                        <label><input type="checkbox" id="filter-compare-rss" checked> RSS</label>
+                        <label><input type="checkbox" id="filter-compare-heap" checked> Heap</label>
+                    </div>
                     <div class="chart-container">
                         <h4>Memory Usage Over Time</h4>
                         <div class="chart-wrapper">
@@ -813,6 +818,11 @@
                 ` : `
                 <div class="compare-column">
                     <h3>${baseLabel}</h3>
+                    <div class="chart-filters" id="compare-current-filters">
+                        <label><input type="checkbox" id="filter-current-total-rss" checked> Total RSS</label>
+                        <label><input type="checkbox" id="filter-current-rss" checked> RSS</label>
+                        <label><input type="checkbox" id="filter-current-heap" checked> Heap</label>
+                    </div>
                     <div class="chart-container">
                         <h4>Memory Usage Over Time</h4>
                         <div class="chart-wrapper">
@@ -831,6 +841,11 @@
                 </div>
                 <div class="compare-column">
                     <h3>${compareLabel}</h3>
+                    <div class="chart-filters" id="compare-other-filters">
+                        <label><input type="checkbox" id="filter-other-total-rss" checked> Total RSS</label>
+                        <label><input type="checkbox" id="filter-other-rss" checked> RSS</label>
+                        <label><input type="checkbox" id="filter-other-heap" checked> Heap</label>
+                    </div>
                     <div class="chart-container">
                         <h4>Memory Usage Over Time</h4>
                         <div class="chart-wrapper">
@@ -928,6 +943,61 @@
                 elapsedByTimestamp.set(sample.Timestamp, sample.ElapsedTime);
             }
         });
+
+        function setupCompareChartFilters(chartId, totalId, rssId, heapId, isTotalTrace) {
+            const total = document.getElementById(totalId);
+            const rss = document.getElementById(rssId);
+            const heap = document.getElementById(heapId);
+            if (!total || !rss || !heap) return;
+            const applyFilters = () => {
+                const chart = document.getElementById(chartId);
+                if (!chart || !chart.data) return;
+                const map = visibilityStore[chartId] || (visibilityStore[chartId] = {});
+                chart.data.forEach(trace => {
+                    if (!trace.name) return;
+                    if (isTotalTrace(trace.name)) {
+                        map[trace.name] = total.checked ? true : 'legendonly';
+                    } else if (trace.name.includes('(RSS)')) {
+                        map[trace.name] = rss.checked ? true : 'legendonly';
+                    } else if (trace.name.includes('(Heap)')) {
+                        map[trace.name] = heap.checked ? true : 'legendonly';
+                    }
+                });
+                const visArray = chart.data.map(trace => map[trace.name] !== undefined ? map[trace.name] : true);
+                Plotly.restyle(chart, 'visible', visArray);
+            };
+            total.addEventListener('change', applyFilters);
+            rss.addEventListener('change', applyFilters);
+            heap.addEventListener('change', applyFilters);
+            applyFilters();
+        }
+
+        function updateCompareChartFilterCheckboxes(chartId, totalId, rssId, heapId, isTotalTrace) {
+            const total = document.getElementById(totalId);
+            const rss = document.getElementById(rssId);
+            const heap = document.getElementById(heapId);
+            const chart = document.getElementById(chartId);
+            if (!total || !rss || !heap || !chart || !chart.data) return;
+            const map = visibilityStore[chartId] || {};
+            let rssVisible = false;
+            let heapVisible = false;
+            let totalVisible = true;
+            chart.data.forEach(trace => {
+                if (!trace.name) return;
+                const vis = map[trace.name];
+                const isVisible = vis !== 'legendonly' && vis !== false;
+                if (isTotalTrace(trace.name)) {
+                    totalVisible = totalVisible && isVisible;
+                } else if (trace.name.includes('(RSS)')) {
+                    rssVisible = rssVisible || isVisible;
+                } else if (trace.name.includes('(Heap)')) {
+                    heapVisible = heapVisible || isVisible;
+                }
+            });
+            total.checked = totalVisible;
+            rss.checked = rssVisible;
+            heap.checked = heapVisible;
+        }
 
         function updateUi(frameIndex) {
             timeline.value = String(frameIndex);
@@ -1038,14 +1108,20 @@
                 }
             }
             return Promise.all(tasks).then(() => {
+                const isTotalSplit = (name) => name === 'Total RSS Memory' || name === 'Compare Total RSS Memory';
+                const isTotalBase = (name) => name === 'Total RSS Memory';
+                const isTotalCompare = (name) => name === 'Compare Total RSS Memory';
                 if (isSplitMode) {
-                    attachLegendVisibilityHandlers('compare-rss');
+                    setupCompareChartFilters('compare-rss', 'filter-compare-total-rss', 'filter-compare-rss', 'filter-compare-heap', isTotalSplit);
+                    attachLegendVisibilityHandlers('compare-rss', () => updateCompareChartFilterCheckboxes('compare-rss', 'filter-compare-total-rss', 'filter-compare-rss', 'filter-compare-heap', isTotalSplit));
                     if (showGC) {
                         attachLegendVisibilityHandlers('compare-gc');
                     }
                 } else {
-                    attachLegendVisibilityHandlers('compare-current-rss');
-                    attachLegendVisibilityHandlers('compare-other-rss');
+                    setupCompareChartFilters('compare-current-rss', 'filter-current-total-rss', 'filter-current-rss', 'filter-current-heap', isTotalBase);
+                    setupCompareChartFilters('compare-other-rss', 'filter-other-total-rss', 'filter-other-rss', 'filter-other-heap', isTotalCompare);
+                    attachLegendVisibilityHandlers('compare-current-rss', () => updateCompareChartFilterCheckboxes('compare-current-rss', 'filter-current-total-rss', 'filter-current-rss', 'filter-current-heap', isTotalBase));
+                    attachLegendVisibilityHandlers('compare-other-rss', () => updateCompareChartFilterCheckboxes('compare-other-rss', 'filter-other-total-rss', 'filter-other-rss', 'filter-other-heap', isTotalCompare));
                     if (showGC) {
                         attachLegendVisibilityHandlers('compare-current-gc');
                         attachLegendVisibilityHandlers('compare-other-gc');

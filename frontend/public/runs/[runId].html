@@ -1256,7 +1256,7 @@
             }
 
             function setupReplayPanel(options) {
-                const { panelKey, chartId, controlsId, buildTraces, layoutGetter, configGetter } = options;
+                const { panelKey, chartId, controlsId, buildTraces, layoutGetter, configGetter, onLegendUpdate } = options;
                 const controls = document.getElementById(controlsId);
                 const chart = document.getElementById(chartId);
                 if (!controls || !chart) return;
@@ -1348,7 +1348,7 @@
 
                 const initialFrame = Math.max(0, timestamps.length - 1);
                 renderFrame(initialFrame).then(() => {
-                    attachLegendVisibilityHandlers(chartId);
+                    attachLegendVisibilityHandlers(chartId, onLegendUpdate);
                 });
             }
 
@@ -1358,7 +1358,8 @@
                 controlsId: 'rss-replay-controls',
                 buildTraces: buildMemoryTraces,
                 layoutGetter: getMemoryLayout,
-                configGetter: getMemoryConfig
+                configGetter: getMemoryConfig,
+                onLegendUpdate: updateMainChartFilterCheckboxes
             });
             setupReplayPanel({
                 panelKey: 'gc',
