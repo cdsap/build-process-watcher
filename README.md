@@ -55,14 +55,14 @@ Generates log files and charts as workflow artifacts.
     FRONTEND_URL: ${{ secrets.FRONTEND_URL }} # Optional - defaults to process-watcher.web.app if unset
   with:
     remote_monitoring: 'true'
-    collect_gc: 'true'  # Enabled by default, can be set to 'false' to disable
     disable_summary_output: 'false'  # Set to 'true' to disable GitHub Actions summary when remote
 ```
 
 Data sent to cloud backend with live dashboard (24-hour retention).  
-Dashboard URL shown in job output.
+Dashboard URL shown in job output. GC (garbage collection) monitoring is always enabled.
 
-**Note:** Set `BACKEND_URL` and `FRONTEND_URL` as repository secrets for custom URLs. If unset, default Cloud Run and dashboard URLs are used. By default, GC collection is enabled. Set `collect_gc: 'false'` to disable it. When using remote monitoring, you can disable the GitHub Actions summary output by setting `disable_summary_output: 'true'`.
+**Note:** Set `BACKEND_URL` and `FRONTEND_URL` as repository secrets for custom URLs. If unset, default Cloud Run and dashboard URLs are used. 
+When using remote monitoring, you can disable the GitHub Actions summary output by setting `disable_summary_output: 'true'`.
 
 ---
 
@@ -75,7 +75,6 @@ Dashboard URL shown in job output.
 | `log_file` | Local log filename | `build_process_watcher.log` | No |
 | `interval` | Polling interval (seconds) | `5` | No |
 | `debug` | Enable debug logging | `false` | No |
-| `collect_gc` | Enable garbage collection monitoring (requires Java processes) | `true` | No |
 | `disable_summary_output` | Disable GitHub Actions summary output | `false` | No |
 
 **Environment variables (for Remote Mode):** Set `BACKEND_URL` and `FRONTEND_URL` as env vars (e.g. from secrets) for custom URLs. If unset, default Cloud Run and dashboard URLs are used.
@@ -116,14 +115,14 @@ act -W .github/workflows/test-action-local.yml -j local-mode
 ### Local Mode
 - `build_process_watcher.log` - Raw memory data
 - `memory_usage.svg` - SVG chart
-- `gc_time.svg` - GC time chart (if `collect_gc` is enabled)
+- `gc_time.svg` - GC time chart
 - GitHub Actions job summary with Mermaid chart
 
 ### Remote Mode
 - Live dashboard URL (in job output)
 - Data retention: 24 hours
 - Real-time process monitoring
-- GC time metrics (if `collect_gc` is enabled)
+- GC time metrics
 - GitHub Actions job summary (unless `disable_summary_output: 'true'` is set)
 
 ---

@@ -22,10 +22,6 @@ inputs:
     description: 'Enable debug mode for detailed logging'
     required: false
     default: 'false'
-  collect_gc:
-    description: 'Enable garbage collection monitoring (requires Java processes)'
-    required: false
-    default: 'true'
   disable_summary_output:
     description: 'Disable GitHub Actions summary output when remote monitoring is enabled (only applies when remote_monitoring is true)'
     required: false

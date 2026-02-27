@@ -226,35 +226,18 @@ jobs:
         
         echo "✅ Script execution test completed"
         
-    - name: Test collect_gc environment variable
+    - name: Verify GC is always enabled in script
       timeout-minutes: 1
       run: |
-        echo "🧪 Testing collect_gc environment variable handling..."
-        export BACKEND_URL=""
-        export RUN_ID="test-run-gc"
-        export LOG_FILE="test_gc.log"
-        export DEBUG_MODE="true"
-        export REMOTE_MONITORING="false"
-        export COLLECT_GC="true"
-        
-        # Check that script recognizes COLLECT_GC
-        if grep -q "COLLECT_GC" monitor_with_backend.sh; then
-          echo "✅ Script references COLLECT_GC variable"
+        echo "🧪 Verifying GC is always enabled..."
+        # GC is always enabled - script should always include GC_Time_S in header
+        if grep -q "GC_Time_S" monitor_with_backend.sh; then
+          echo "✅ Script includes GC_Time_S in log header (GC always enabled)"
         else
-          echo "❌ ERROR: Script does not reference COLLECT_GC!"
+          echo "❌ ERROR: Script should include GC_Time_S in header!"
           exit 1
         fi
-        
-        # Verify log header would include GC when COLLECT_GC=true (without running script)
-        # This is a deterministic test that doesn't require running the script
-        if grep -A 2 'if \[ "\$COLLECT_GC" = "true" \]' monitor_with_backend.sh | grep -q "GC_Time_S"; then
-          echo "✅ Script includes GC_Time_S in header when COLLECT_GC=true"
-        else
-          echo "❌ ERROR: Script does not include GC logic!"
-          exit 1
-        fi
-        
-        echo "✅ collect_gc environment variable test completed"
+        echo "✅ GC always enabled verification completed"
 
     - name: Verify log file was created
       run: |
@@ -318,86 +301,29 @@ jobs:
         retention-days: 7
 
   test-collect-gc:
-    name: Test collect_gc Functionality
+    name: Verify GC Always Enabled
     runs-on: ubuntu-latest
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Test script with COLLECT_GC=true
+    - name: Verify script always uses GC header
       run: |
-        echo "🧪 Testing script behavior with COLLECT_GC=true"
-        export COLLECT_GC="true"
-        export REMOTE_MONITORING="false"
-        export LOG_FILE="test_gc.log"
-        export DEBUG_MODE="true"
-        
-        # Initialize the script to create log file header
-        # Simulate what the script does at startup
-        if [ "$COLLECT_GC" = "true" ]; then
-          echo "Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB | GC_Time_S" > "$LOG_FILE"
-        else
-          echo "Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB" > "$LOG_FILE"
-        fi
-        
-        # Verify the log file has GC header
-        if grep -q "GC_Time_S" "$LOG_FILE"; then
-          echo "✅ PASS: Log file contains GC column header when COLLECT_GC=true"
-        else
-          echo "❌ FAIL: Log file does not contain GC header when COLLECT_GC=true"
+        echo "🧪 Verifying GC is always enabled (no collect_gc input)"
+        # Script should always write GC_Time_S header - no conditional
+        if ! grep -q "GC_Time_S" monitor_with_backend.sh; then
+          echo "❌ FAIL: Script should include GC_Time_S in log header"
           exit 1
         fi
-        
-        echo "📄 Log file content:"
-        cat "$LOG_FILE"
-
-    - name: Test script with COLLECT_GC=false
-      run: |
-        echo "🧪 Testing script behavior with COLLECT_GC=false"
-        export COLLECT_GC="false"
-        export REMOTE_MONITORING="false"
-        export LOG_FILE="test_no_gc.log"
-        export DEBUG_MODE="true"
-        
-        # Initialize the script to create log file header
-        if [ "$COLLECT_GC" = "true" ]; then
-          echo "Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB | GC_Time_S" > "$LOG_FILE"
-        else
-          echo "Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB" > "$LOG_FILE"
-        fi
-        
-        # Verify the log file does NOT have GC header
-        if grep -q "GC_Time_S" "$LOG_FILE"; then
-          echo "❌ FAIL: Log file contains GC header when COLLECT_GC=false"
-          exit 1
-        else
-          echo "✅ PASS: Log file correctly excludes GC column when COLLECT_GC=false"
-        fi
-        
-        echo "📄 Log file content:"
-        cat "$LOG_FILE"
-
-    - name: Verify script logic handles COLLECT_GC correctly
-      run: |
-        echo "🧪 Verifying script logic for COLLECT_GC..."
-        
-        # Check that script has the conditional logic
-        if grep -A 2 'if \[ "\$COLLECT_GC" = "true" \]' monitor_with_backend.sh | grep -q "GC_Time_S"; then
-          echo "✅ PASS: Script includes GC_Time_S in header when COLLECT_GC=true"
-        else
-          echo "❌ FAIL: Script does not include GC_Time_S logic"
+        echo "✅ PASS: Script includes GC_Time_S in header"
+        # action.yaml should NOT have collect_gc input
+        if grep -q "collect_gc:" action.yaml; then
+          echo "❌ FAIL: action.yaml should not have collect_gc (GC is always enabled)"
           exit 1
         fi
-        
-        # Check that script has alternative header without GC
-        if grep -B 2 -A 2 'if \[ "\$COLLECT_GC" = "true" \]' monitor_with_backend.sh | grep -q "Elapsed_Time.*PID.*Name"; then
-          echo "✅ PASS: Script has alternative header without GC"
-        else
-          echo "⚠️  WARNING: Could not verify non-GC header logic"
-        fi
-        
-        echo "✅ Script logic verification completed"
+        echo "✅ PASS: action.yaml correctly has no collect_gc input"
+        echo "✅ GC always enabled verification completed"
 
   test-composite-actions:
     name: Test Composite Actions
@@ -449,7 +375,7 @@ jobs:
         echo "  ✅ Local mode test: ${{ needs.test-local-mode.result }}"
         echo "  ✅ Remote mode test: ${{ needs.test-remote-mode-dry-run.result }}"
         echo "  ✅ Script test: ${{ needs.test-monitoring-script.result }}"
-        echo "  ✅ collect_gc test: ${{ needs.test-collect-gc.result }}"
+        echo "  ✅ GC always enabled test: ${{ needs.test-collect-gc.result }}"
         echo "  ✅ Composite actions: ${{ needs.test-composite-actions.result }}"
         
         if [ "${{ needs.test-local-mode.result }}" != "success" ] || \
