@@ -113,9 +113,10 @@ jobs:
 
     - name: Test action in remote mode (without actual backend)
       uses: ./
+      env:
+        BACKEND_URL: 'https://test-backend.example.com'
       with:
         remote_monitoring: 'true'
-        backend_url: 'https://test-backend.example.com'
         run_id: 'test-run-${{ github.run_id }}'
         log_file: '${{ github.workspace }}/test_remote.log'
         interval: '2'

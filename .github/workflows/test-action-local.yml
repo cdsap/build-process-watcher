@@ -331,9 +331,10 @@ jobs:
 
       - name: Start Build Process Watcher (remote mode)
         uses: ./
+        env:
+          BACKEND_URL: 'https://example.invalid'
         with:
           remote_monitoring: 'true'
-          backend_url: 'https://example.invalid'
           debug: 'true'
           interval: '2'
 

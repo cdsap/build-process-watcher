@@ -50,6 +50,9 @@ Generates log files and charts as workflow artifacts.
 
 ```yaml
 - uses: cdsap/build-process-watcher@v0.5.1
+  env:
+    BACKEND_URL: ${{ secrets.BACKEND_URL }}   # Optional - defaults to Cloud Run URL if unset
+    FRONTEND_URL: ${{ secrets.FRONTEND_URL }} # Optional - defaults to process-watcher.web.app if unset
   with:
     remote_monitoring: 'true'
     disable_summary_output: 'false'  # Set to 'true' to disable GitHub Actions summary when remote
@@ -58,7 +61,8 @@ Generates log files and charts as workflow artifacts.
 Data sent to cloud backend with live dashboard (24-hour retention).  
 Dashboard URL shown in job output. GC (garbage collection) monitoring is always enabled.
 
-**Note:** When using remote monitoring, you can disable the GitHub Actions summary output by setting `disable_summary_output: 'true'`.
+**Note:** Set `BACKEND_URL` and `FRONTEND_URL` as repository secrets for custom URLs. If unset, default Cloud Run and dashboard URLs are used. 
+When using remote monitoring, you can disable the GitHub Actions summary output by setting `disable_summary_output: 'true'`.
 
 ---
 
@@ -67,13 +71,13 @@ Dashboard URL shown in job output. GC (garbage collection) monitoring is always 
 | Input | Description | Default | Required |
 |-------|-------------|---------|----------|
 | `remote_monitoring` | Enable cloud dashboard | `false` | No |
-| `backend_url` | Custom backend URL | Default Cloud Run URL | No |
 | `run_id` | Custom run identifier | Auto-generated | No |
 | `log_file` | Local log filename | `build_process_watcher.log` | No |
 | `interval` | Polling interval (seconds) | `5` | No |
 | `debug` | Enable debug logging | `false` | No |
 | `disable_summary_output` | Disable GitHub Actions summary output | `false` | No |
-| `frontend_url` | Frontend URL for dashboard override | Auto-detected | No |
+
+**Environment variables (for Remote Mode):** Set `BACKEND_URL` and `FRONTEND_URL` as env vars (e.g. from secrets) for custom URLs. If unset, default Cloud Run and dashboard URLs are used.
 
 ---
 
