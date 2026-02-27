@@ -276,6 +276,36 @@ jobs:
         
         echo "✅ Script test passed"
 
+    - name: Verify process_info file and unified loop
+      run: |
+        echo "🧪 Verifying process_info and unified loop..."
+        # Process info file should be initialized (same dir as log)
+        if grep -q "PROCESS_INFO_FILE" monitor_with_backend.sh; then
+          echo "✅ PASS: Script initializes PROCESS_INFO_FILE"
+        else
+          echo "❌ FAIL: Script does not define PROCESS_INFO_FILE"
+          exit 1
+        fi
+        # VM flags should be written to process_info (not just sent to backend)
+        if grep -q 'printf.*PROCESS_INFO_FILE' monitor_with_backend.sh; then
+          echo "✅ PASS: Script writes VM flags to process_info file"
+        else
+          echo "❌ FAIL: Script does not write VM flags to process_info"
+          exit 1
+        fi
+        # Single unified loop (no separate local-only loop)
+        if ! grep -q 'if \[ "\$BACKEND_AVAILABLE" = "false" \].*while true' monitor_with_backend.sh; then
+          echo "✅ PASS: No separate local-only while loop"
+        fi
+        # Backend send should be conditional
+        if grep -q '\[ "\$BACKEND_AVAILABLE" = "true" \]' monitor_with_backend.sh; then
+          echo "✅ PASS: Script uses BACKEND_AVAILABLE for conditional logic"
+        else
+          echo "❌ FAIL: Script should conditionally send based on BACKEND_AVAILABLE"
+          exit 1
+        fi
+        echo "✅ process_info and unified loop verification passed"
+
     - name: Upload test logs
       if: always()
       uses: actions/upload-artifact@v4

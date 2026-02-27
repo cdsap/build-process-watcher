@@ -6,6 +6,7 @@ import { DefaultArtifactClient } from '@actions/artifact';
 import * as core from '@actions/core';
 import { initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { parseTimestampSeconds, generateJsonReport } from './lib/report';
 
 const execAsync = promisify(exec);
 
@@ -154,17 +155,6 @@ flowchart LR
         return `class ${cleanKey} process`;
     }).join('\n    ')}
     ${sampledTimestamps.map((_, i) => `class Agg_${i} aggregated`).join('\n    ')}`;
-}
-
-function parseTimestampSeconds(timestamp: string): number {
-    if (timestamp.includes(':')) {
-        const parts = timestamp.split(':').map(part => parseInt(part, 10));
-        if (parts.length === 3 && parts.every(Number.isFinite)) {
-            return (parts[0] * 3600) + (parts[1] * 60) + parts[2];
-        }
-    }
-    const numeric = parseFloat(timestamp);
-    return Number.isFinite(numeric) ? numeric : 0;
 }
 
 function median(values: number[]): number {
@@ -955,6 +945,7 @@ async function run() {
         const memorySvgFile = `memory_usage${outputSuffix}.svg`;
         const gcSvgFile = `gc_time${outputSuffix}.svg`;
         const csvFile = `build_process_watcher${outputSuffix}.csv`;
+        const jsonFile = `build_process_watcher${outputSuffix}.json`;
 
         // Save SVG file
         fs.writeFileSync(path.join(outputDir, memorySvgFile), svgContent);
@@ -967,6 +958,7 @@ async function run() {
         fs.writeFileSync(path.join(outputDir, gcSvgFile), gcSvgContent);
 
         generateCsvReport(logFile, path.join(outputDir, csvFile), hasGcData);
+        generateJsonReport(logFile, path.join(outputDir, jsonFile), hasGcData);
 
         // Upload artifacts (only if files exist)
         // Only upload artifacts if we're in a GitHub Actions context and have runtime token
@@ -983,17 +975,12 @@ async function run() {
         if (shouldUpload) {
             try {
                 const artifactClient = new DefaultArtifactClient();
-                // Create stable artifact name using job ID and run attempt
-                // Use run_id if available, otherwise use a simple name to avoid duplicates
-                const jobId = process.env.GITHUB_JOB || 'default';
+                // Create stable artifact name using job name and run attempt
+                const jobName = process.env.GITHUB_JOB || 'default';
                 const runAttempt = process.env.GITHUB_RUN_ATTEMPT || '1';
-                const runId = process.env.RUN_ID || '';
                 
-                // Use run_id in artifact name if available, otherwise use job+attempt
-                // This prevents duplicate artifacts when cleanup runs multiple times
-                const artifactName = runId 
-                    ? `build_process_watcher-${runId}`
-                    : `build_process_watcher-${jobId}-${runAttempt}`;
+                // Use job name in artifact name (run attempt avoids duplicates on re-runs)
+                const artifactName = `build_process_watcher-${jobName}-${runAttempt}`;
                 
                 const files: string[] = [];
                 
@@ -1010,6 +997,9 @@ async function run() {
                 }
                 if (fs.existsSync(path.join(outputDir, csvFile))) {
                     files.push(csvFile);
+                }
+                if (fs.existsSync(path.join(outputDir, jsonFile))) {
+                    files.push(jsonFile);
                 }
                 if (debugMode) {
                     const backendDebugLog = path.join(actionDir, '..', 'backend_debug.log');
@@ -1059,9 +1049,9 @@ async function run() {
             }
         }
 
-        // Add to GitHub Actions summary (only if not disabled for remote mode)
+        // Add to GitHub Actions summary unless explicitly disabled
         const disableSummaryOutput = process.env.DISABLE_SUMMARY_OUTPUT === 'true';
-        const shouldGenerateSummary = !(backendMode && disableSummaryOutput);
+        const shouldGenerateSummary = !disableSummaryOutput;
         
         if (process.env.GITHUB_STEP_SUMMARY && shouldGenerateSummary) {
             const summary = fs.readFileSync(process.env.GITHUB_STEP_SUMMARY, 'utf8');
@@ -1069,10 +1059,11 @@ async function run() {
             if (backendMode && runId) {
                 // Remote monitoring mode - show dashboard info + Mermaid diagram if data available
                 const frontendUrl = `https://process-watcher.web.app/runs/${runId}`;
+                const summarySubtitle = process.env.GITHUB_JOB || runId || '';
                 
                 let newSummary = `${summary}
 
-## Build Process Monitoring${runId ? ` (${runId})` : ''}
+## Build Process Watcher${summarySubtitle ? ` (${summarySubtitle})` : ''}
 
 ### Remote Monitoring Mode
 - **Dashboard URL**: ${frontendUrl} (**Data Retention**: 24 hours)
@@ -1121,10 +1112,11 @@ ${Array.from(processes.entries()).map(([key, data]) => {
                 const duration = timestamps.length > 0 ?
                     `from ${timestamps[0]} to ${timestamps[timestamps.length - 1]}` :
                     'N/A';
+                const summarySubtitle = process.env.GITHUB_JOB || runId || '';
 
                 const newSummary = `${summary}
 
-## Build Process Analysis${runId ? ` (${runId})` : ''}
+## Build Process Watcher${summarySubtitle ? ` (${summarySubtitle})` : ''}
 
 ### Build Process Graph
 \`\`\`mermaid

@@ -2,6 +2,34 @@
 
 [![GitHub Marketplace](https://img.shields.io/badge/action-marketplace-blue?logo=github)](https://github.com/marketplace/actions/build-process-watcher)
 
+![Performance Demo](frontend/public/performance.gif)
+
+```mermaid
+%%{init: {'theme': 'dark'}}%%
+flowchart LR
+    subgraph Time["Memory Usage Over Time"]
+        direction TB
+        subgraph T0["00:03:03"]
+            GradleDaemon_0["GradleDaemon<br/>2311MB"]
+            KotlinCompileDaemon_0["KotlinCompileDaemon<br/>488MB"]
+            Agg_0["Aggregated<br/>2799MB"]
+        end
+        subgraph T1["00:03:23"]
+            GradleDaemon_1["GradleDaemon<br/>3219MB"]
+            KotlinCompileDaemon_1["KotlinCompileDaemon<br/>488MB"]
+            Agg_1["Aggregated<br/>3708MB"]
+        end
+    end
+    GradleDaemon_0 --> GradleDaemon_1
+    KotlinCompileDaemon_0 --> KotlinCompileDaemon_1
+    Agg_0 --> Agg_1
+    classDef process fill:#4ECDC4,stroke:#333,stroke-width:2px
+    classDef aggregated fill:#FF6B6B,stroke:#333,stroke-width:2px
+    class GradleDaemon process
+    class KotlinCompileDaemon process
+    class Agg_0,Agg_1 aggregated
+```
+
 Monitor memory usage of Java/Kotlin build processes (`GradleDaemon`, `GradleWorkerMain`, `KotlinCompileDaemon`) during CI builds. Track heap and RSS usage, generate charts, and visualize data in real-time dashboards.
 
 ---
@@ -11,7 +39,7 @@ Monitor memory usage of Java/Kotlin build processes (`GradleDaemon`, `GradleWork
 ### Local Mode (Artifacts Only)
 
 ```yaml
-- uses: cdsap/build-process-watcher@v0.5.0
+- uses: cdsap/build-process-watcher@v0.5.1
   with:
     remote_monitoring: 'false'
 ```
@@ -21,7 +49,7 @@ Generates log files and charts as workflow artifacts.
 ### Remote Mode (Live Dashboard)
 
 ```yaml
-- uses: cdsap/build-process-watcher@v0.5.0
+- uses: cdsap/build-process-watcher@v0.5.1
   with:
     remote_monitoring: 'true'
     collect_gc: 'true'  # Enabled by default, can be set to 'false' to disable
@@ -46,9 +74,37 @@ Dashboard URL shown in job output.
 | `interval` | Polling interval (seconds) | `5` | No |
 | `debug` | Enable debug logging | `false` | No |
 | `collect_gc` | Enable garbage collection monitoring (requires Java processes) | `true` | No |
-| `disable_summary_output` | Disable GitHub Actions summary output when remote monitoring is enabled (only applies when `remote_monitoring` is `true`) | `false` | No |
-| `environment` | Environment name (production or staging) - used for auto-detecting default URLs | `production` | No |
-| `frontend_url` | Frontend URL for dashboard (optional - can also be set via FRONTEND_URL or FRONTEND_URL_STAGING env vars, will be auto-detected from backend_url/environment if not provided) | Auto-detected | No |
+| `disable_summary_output` | Disable GitHub Actions summary output | `false` | No |
+| `frontend_url` | Frontend URL for dashboard override | Auto-detected | No |
+
+---
+
+## 🧭 Behavior Matrix
+
+| Mode | Debug | Summary | Debug logs in artifacts | Notes |
+|------|-------|---------|-------------------------|-------|
+| Local | `false` | ✅ (default) | ❌ | CSV/SVG/log generated locally. |
+| Local | `true` | ✅ (default) | ✅ | Copies `backend_debug*.log` and `script_debug*.log` into artifacts. |
+| Local | `any` | ❌ (`disable_summary_output: true`) | depends on debug | Summary suppressed when disabled. |
+| Remote | `false` | ✅ (default) | ❌ | Dashboard URL shown; local artifacts if log exists. |
+| Remote | `true` | ✅ (default) | ✅ | Debug logs copied into artifacts. |
+| Remote | `any` | ❌ (`disable_summary_output: true`) | depends on debug | Summary suppressed when disabled. |
+
+---
+
+## 🧪 Run CI Locally with act
+
+You can execute the local CI workflow using `act`:
+
+```bash
+act -W .github/workflows/test-action-local.yml
+```
+
+To run a single job:
+
+```bash
+act -W .github/workflows/test-action-local.yml -j local-mode
+```
 
 ---
 
@@ -87,6 +143,17 @@ The job summary includes:
 - Mermaid flowchart showing process memory progression
 - Per-process statistics (max, average, final measurements)
 - Timeline of monitoring session
+
+---
+
+## 📂 Replay & Compare Runs
+
+The dashboard lets you:
+
+- **Replay a run** – Upload an exported JSON file to replay memory and GC charts offline.
+- **Compare runs** – Upload two JSON files to compare two runs side-by-side with a shared timeline.
+
+**Using without Remote Mode:** You don't need Remote Mode to use Replay and Compare. With Local Mode, the action generates JSON files in the workflow artifacts. Download the JSON from your artifacts and upload it to [Replay](https://process-watcher.web.app/replay.html) or [Compare](https://process-watcher.web.app/compare.html). You can also open these HTML files locally in your browser.
 
 ---
 

@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Build Process Watcher - Compare JSON Runs</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <script src="/config.js"></script>
+    <script src="/compare-shared.js"></script>
+    <script>
+        (function() {
+            const frontendUrl = window.BUILD_PROCESS_WATCHER_CONFIG?.frontendUrl || 'https://process-watcher.web.app';
+            document.addEventListener('DOMContentLoaded', function() {
+                document.querySelectorAll('.back-home-link, a[href="https://process-watcher.web.app"]').forEach(link => {
+                    link.href = frontendUrl;
+                });
+            });
+        })();
+    </script>
+    <style>
+        * {
+            box-sizing: border-box;
+            padding: 0;
+            margin: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+            background: #fff;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            border-bottom: 1px solid #e5e7eb;
+            padding: 1rem 0;
+            margin-bottom: 2rem;
+        }
+
+        h1 {
+            font-size: 2rem;
+            font-weight: 600;
+            color: #111827;
+        }
+
+        .meta {
+            color: #6b7280;
+            font-size: 0.875rem;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            color: #2563eb;
+            text-decoration: none;
+            font-size: 0.9rem;
+            margin-top: 0.5rem;
+        }
+
+        .compare-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.75rem;
+            padding: 1rem 1.25rem;
+            margin-bottom: 2rem;
+        }
+
+        .compare-controls .row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .compare-controls input[type="file"] {
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+            padding: 0.4rem 0.6rem;
+            font-size: 0.9rem;
+        }
+
+        .compare-section {
+            display: none;
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.75rem;
+            padding: 1rem 1.25rem;
+        }
+
+        .compare-header {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 1rem;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+        }
+
+        .compare-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+            gap: 2rem;
+        }
+
+        .compare-column h3 {
+            font-size: 1.1rem;
+            color: #111827;
+            margin-bottom: 1rem;
+        }
+
+        .chart-container {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.75rem;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .chart-container h4 {
+            font-size: 1rem;
+            color: #111827;
+            margin-bottom: 0.75rem;
+        }
+
+        .replay-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .replay-controls .buttons {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .replay-controls .timeline {
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 0.5rem;
+            padding: 0.4rem 0.8rem;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn.secondary {
+            background: #6b7280;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        @media (max-width: 768px) {
+            .compare-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Compare JSON Runs</h1>
+            <div class="meta">Upload two JSON files to compare memory, GC, and process configuration.</div>
+            <a class="back-link back-home-link" href="https://process-watcher.web.app">← Back to Home</a>
+        </header>
+
+        <section class="compare-controls">
+            <div class="row">
+                <strong>Run A (JSON file)</strong>
+                <input type="file" id="compare-a-input" accept=".json">
+                <span class="meta" id="compare-a-name">No file selected</span>
+            </div>
+            <div class="row">
+                <strong>Run B (JSON file)</strong>
+                <input type="file" id="compare-b-input" accept=".json">
+                <span class="meta" id="compare-b-name">No file selected</span>
+            </div>
+            <div class="meta" id="compare-hint">Select both JSON files to render the comparison.</div>
+        </section>
+
+        <section id="compare-section" class="compare-section"></section>
+    </div>
+
+    <footer style="margin-top: 4rem; padding: 2rem 1rem; border-top: 1px solid #e5e7eb; text-align: center; color: #6b7280; font-size: 0.875rem;">
+        <div style="max-width: 1200px; margin: 0 auto;">
+            <p style="margin-bottom: 1rem;">
+                Build Process Watcher - Monitor your build processes
+            </p>
+            <div style="display: flex; justify-content: center; gap: 2rem; flex-wrap: wrap;">
+                <a href="https://process-watcher.web.app" class="back-home-link" style="color: #2563eb; text-decoration: none;">
+                    Home
+                </a>
+                <a href="https://github.com/cdsap/build-process-watcher" target="_blank" rel="noopener noreferrer" style="color: #2563eb; text-decoration: none;">
+                    GitHub Repository
+                </a>
+                <a href="https://github.com/marketplace/actions/build-process-watcher" target="_blank" rel="noopener noreferrer" style="color: #2563eb; text-decoration: none;">
+                    GitHub Action
+                </a>
+            </div>
+            <p style="margin-top: 1rem; font-size: 0.75rem; color: #9ca3af;">
+                Memory reports are available for 24 hours · Free service
+            </p>
+        </div>
+    </footer>
+
+    <script src="/compare.js"></script>
+</body>
+</html>

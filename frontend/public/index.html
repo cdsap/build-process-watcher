@@ -426,6 +426,9 @@
     <div class="container">
         <!-- Hero Section -->
         <div class="hero">
+            <div style="margin-bottom: 1.5rem;">
+                <img src="/performance.gif" alt="Performance Demo" style="max-width: 100%; border-radius: 1rem; box-shadow: 0 10px 40px rgba(0,0,0,0.2);">
+            </div>
             <h1>🚀 Build Process Watcher</h1>
             <p>Monitor memory usage and performance of your Gradle build processes in real-time with our powerful GitHub Action.</p>
         </div>
@@ -435,7 +438,7 @@
             <div class="feature-card">
                 <h3><span class="feature-icon">📦</span>Default Mode</h3>
                 <p style="margin-bottom: 1rem; color: var(--gray);">Generate Mermaid diagrams and SVG charts locally, uploaded as GitHub Actions artifacts:</p>
-                <pre><code>- name: Build Process Monitoring
+                <pre><code>- name: Build Process Watcher
   uses: cdsap/build-process-watcher@v0.5.1
  
 - name: Build project
@@ -448,47 +451,71 @@
             <div class="feature-card">
                 <h3><span class="feature-icon">🌐</span>Remote Mode</h3>
                 <p style="margin-bottom: 1rem; color: var(--gray);">Enable live dashboard with real-time monitoring and GC metrics:</p>
-                <pre><code>- name: Build Process Monitoring
+                <pre><code>- name: Build Process Watcher
   uses: cdsap/build-process-watcher@v0.5.1
   with:
     remote_monitoring: 'true'
-    collect_gc: 'true'
     
 - name: Build project
   run: ./gradlew clean build</code></pre>
                 <div class="info-box info-box-success">
                     <strong>🌐 Output:</strong> Dashboard URL displayed in action output (data available for 24 hours)
                 </div>
-                <div class="info-box info-box-warning" style="margin-top: 1rem;">
-                    <strong>💡 GC Collection:</strong> Set <code>collect_gc: 'true'</code> to monitor garbage collection time in seconds. This adds a GC time chart to your dashboard.
-                </div>
             </div>
         </div>
 
-        <!-- How Remote Mode Works -->
+        <!-- Inputs -->
         <div class="card">
             <div class="section-header">
-                <span class="section-icon">🔗</span>
-                <h2>How Remote Mode URL is Generated</h2>
+                <span class="section-icon">📋</span>
+                <h2>Inputs</h2>
             </div>
             <p style="font-size: 1.1rem; color: var(--gray); margin-bottom: 1.5rem;">
-                When you enable Remote Mode, the action automatically generates a unique dashboard URL for your build run. 
-                This URL is displayed in the GitHub Actions output and allows you to monitor your build in real-time.
+                Key configuration options for the action. <a href="https://github.com/cdsap/build-process-watcher?tab=readme-ov-file#-inputs" target="_blank" rel="noopener noreferrer">View full inputs on GitHub →</a>
             </p>
-            
-            <div class="example-image">
-                <img src="/gha_log.png" alt="GitHub Actions Log showing URL generation">
-                <p>Example: The dashboard URL is automatically generated and displayed in the GitHub Actions log</p>
-            </div>
-
-            <div class="info-box info-box-success" style="margin-top: 1.5rem;">
-                <strong>📋 How it works:</strong>
-                <ul style="margin: 0.75rem 0 0 1.5rem; padding: 0;">
-                    <li>The action creates a unique run ID for each build</li>
-                    <li>A dashboard URL is automatically generated using this run ID</li>
-                    <li>The URL is displayed in the GitHub Actions output for easy access</li>
-                    <li>Data is available for 24 hours after the build completes</li>
-                </ul>
+            <div style="overflow-x: auto;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.95rem;">
+                    <thead>
+                        <tr style="background: var(--light-gray); border-bottom: 2px solid var(--primary);">
+                            <th style="padding: 0.75rem 1rem; text-align: left;">Input</th>
+                            <th style="padding: 0.75rem 1rem; text-align: left;">Description</th>
+                            <th style="padding: 0.75rem 1rem; text-align: left;">Default</th>
+                            <th style="padding: 0.75rem 1rem; text-align: left;">Required</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr style="border-bottom: 1px solid var(--light-gray);">
+                            <td style="padding: 0.75rem 1rem;"><code>remote_monitoring</code></td>
+                            <td style="padding: 0.75rem 1rem; color: var(--gray);">Enable cloud dashboard</td>
+                            <td style="padding: 0.75rem 1rem;">false</td>
+                            <td style="padding: 0.75rem 1rem;">No</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid var(--light-gray);">
+                            <td style="padding: 0.75rem 1rem;"><code>interval</code></td>
+                            <td style="padding: 0.75rem 1rem; color: var(--gray);">Polling interval (seconds)</td>
+                            <td style="padding: 0.75rem 1rem;">5</td>
+                            <td style="padding: 0.75rem 1rem;">No</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid var(--light-gray);">
+                            <td style="padding: 0.75rem 1rem;"><code>debug</code></td>
+                            <td style="padding: 0.75rem 1rem; color: var(--gray);">Enable debug logging</td>
+                            <td style="padding: 0.75rem 1rem;">false</td>
+                            <td style="padding: 0.75rem 1rem;">No</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid var(--light-gray);">
+                            <td style="padding: 0.75rem 1rem;"><code>collect_gc</code></td>
+                            <td style="padding: 0.75rem 1rem; color: var(--gray);">Enable garbage collection monitoring (requires Java processes)</td>
+                            <td style="padding: 0.75rem 1rem;">true</td>
+                            <td style="padding: 0.75rem 1rem;">No</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid var(--light-gray);">
+                            <td style="padding: 0.75rem 1rem;"><code>disable_summary_output</code></td>
+                            <td style="padding: 0.75rem 1rem; color: var(--gray);">Disable GitHub Actions summary output</td>
+                            <td style="padding: 0.75rem 1rem;">false</td>
+                            <td style="padding: 0.75rem 1rem;">No</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
 
@@ -507,6 +534,32 @@
             <div class="info-box info-box-primary" style="text-align: center;">
                 <p style="margin: 0;"><strong>Real data from run 18236843825</strong> - 311 samples from GradleDaemon & KotlinCompileDaemon</p>
                 <p style="margin: 0.5rem 0 0 0; font-size: 0.9rem; opacity: 0.9;">This example demonstrates the Remote Mode dashboard with 24-hour data retention</p>
+            </div>
+        </div>
+
+        <!-- Replay & Compare -->
+        <div class="card">
+            <div class="section-header">
+                <span class="section-icon">🧪</span>
+                <h2>Replay & Compare JSON</h2>
+            </div>
+            <p style="font-size: 1.1rem; color: var(--gray); margin-bottom: 1.5rem;">
+                Analyze exported JSON runs offline. Replay a single run or compare two runs side-by-side.
+            </p>
+            <div class="info-box info-box-primary" style="margin-bottom: 1.5rem;">
+                <strong>💡 No Remote Mode needed:</strong> With Local Mode, the action generates JSON files in the workflow artifacts. Download the JSON from your artifacts and upload it to <a href="https://process-watcher.web.app/replay.html" target="_blank" rel="noopener noreferrer">Replay</a> or <a href="https://process-watcher.web.app/compare.html" target="_blank" rel="noopener noreferrer">Compare</a>. You can also open these HTML files locally in your browser.
+            </div>
+            <div class="example-image">
+                <img src="/reply.gif" alt="Replay JSON run demo">
+                <p>Example: Replay exported JSON runs with interactive charts</p>
+            </div>
+            <div class="example-image">
+                <img src="/compare.gif" alt="Compare JSON runs demo">
+                <p>Example: Compare two JSON runs side-by-side with a shared timeline</p>
+            </div>
+            <div class="btn-group">
+                <a href="#" id="compare-link" class="btn">Compare JSON Runs</a>
+                <a href="#" id="replay-link" class="btn btn-secondary">Replay JSON Run</a>
             </div>
         </div>
 
@@ -559,10 +612,6 @@
                 <span class="section-icon">🆕</span>
                 <h2>GC Metrics Collection</h2>
             </div>
-            <p style="font-size: 1.1rem; color: var(--gray); margin-bottom: 2rem;">
-                When using Remote Mode with <code>collect_gc: 'true'</code>, you'll get a comprehensive GC time chart in your dashboard:
-            </p>
-            
             <div>
                 <h3 style="margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
                     <span>🔄</span> GC Time Chart
@@ -572,10 +621,6 @@
                     GC time is displayed in seconds and works across all JVM GC collectors (Parallel, G1, Serial, CMS).
                 </p>
                 
-                <div class="info-box info-box-success">
-                    <strong>✨ Feature:</strong> Enable <code>collect_gc: 'true'</code> in your workflow to monitor GC time alongside memory usage
-                </div>
-
                 <div class="example-image">
                     <img src="/gc_diagram.png" alt="GC Time Chart Example">
                     <p>Example: GC time chart showing garbage collection performance over time</p>
@@ -609,14 +654,6 @@
                     </p>
                 </div>
 
-                <div>
-                    <h4 style="color: var(--warning); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
-                        <span>🔄</span> GC Monitoring
-                    </h4>
-                    <p style="color: var(--gray); font-size: 0.95rem;">
-                        Track garbage collection performance with GC time charts. Enable <code>collect_gc: 'true'</code> to monitor GC-related performance issues.
-                    </p>
-                </div>
             </div>
         </div>
 
@@ -648,6 +685,10 @@
             demoLinks.forEach(link => {
                 link.href = `${frontendUrl}/runs/demo.html`;
             });
+            const compareLink = document.getElementById('compare-link');
+            if (compareLink) compareLink.href = `${frontendUrl}/compare.html`;
+            const replayLink = document.getElementById('replay-link');
+            if (replayLink) replayLink.href = `${frontendUrl}/replay.html`;
         });
 
         // Simple client-side routing for dynamic run pages

@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Build Process Watcher - Replay JSON</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <script src="/config.js"></script>
+    <script src="/compare-shared.js"></script>
+    <script>
+        (function() {
+            const frontendUrl = window.BUILD_PROCESS_WATCHER_CONFIG?.frontendUrl || 'https://process-watcher.web.app';
+            document.addEventListener('DOMContentLoaded', function() {
+                document.querySelectorAll('.back-home-link, a[href="https://process-watcher.web.app"]').forEach(link => {
+                    link.href = frontendUrl;
+                });
+            });
+        })();
+    </script>
+    <style>
+        * {
+            box-sizing: border-box;
+            padding: 0;
+            margin: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+            background: #fff;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            border-bottom: 1px solid #e5e7eb;
+            padding: 1rem 0;
+            margin-bottom: 2rem;
+        }
+
+        h1 {
+            font-size: 2rem;
+            font-weight: 600;
+            color: #111827;
+        }
+
+        .meta {
+            color: #6b7280;
+            font-size: 0.875rem;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            color: #2563eb;
+            text-decoration: none;
+            font-size: 0.9rem;
+            margin-top: 0.5rem;
+        }
+
+
+        .upload-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.75rem;
+            padding: 1rem 1.25rem;
+            margin-bottom: 2rem;
+        }
+
+        .upload-controls .row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .upload-controls input[type="file"] {
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+            padding: 0.4rem 0.6rem;
+            font-size: 0.9rem;
+        }
+
+        .replay-section {
+            display: none;
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.75rem;
+            padding: 1rem 1.25rem;
+        }
+
+        .replay-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .replay-controls .buttons {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .replay-controls .timeline {
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 0.5rem;
+            padding: 0.4rem 0.8rem;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn.secondary {
+            background: #6b7280;
+        }
+
+        .chart-container {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.75rem;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .chart-container h4 {
+            font-size: 1rem;
+            color: #111827;
+            margin-bottom: 0.75rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Replay JSON Run</h1>
+            <div class="meta">Upload a JSON export to replay memory and GC panels.</div>
+            <a class="back-link back-home-link" href="https://process-watcher.web.app">← Back to Home</a>
+        </header>
+
+        <section class="upload-controls">
+            <div class="row">
+                <strong>JSON File</strong>
+                <input type="file" id="replay-input" accept=".json">
+                <span class="meta" id="replay-name">No file selected</span>
+            </div>
+            <div class="meta" id="replay-hint">Select a JSON file to render the replay.</div>
+        </section>
+
+        <section id="replay-section" class="replay-section"></section>
+    </div>
+
+    <footer style="margin-top: 4rem; padding: 2rem 1rem; border-top: 1px solid #e5e7eb; text-align: center; color: #6b7280; font-size: 0.875rem;">
+        <div style="max-width: 1200px; margin: 0 auto;">
+            <p style="margin-bottom: 1rem;">
+                Build Process Watcher - Monitor your build processes
+            </p>
+            <div style="display: flex; justify-content: center; gap: 2rem; flex-wrap: wrap;">
+                <a href="https://process-watcher.web.app" class="back-home-link" style="color: #2563eb; text-decoration: none;">
+                    Home
+                </a>
+                <a href="https://github.com/cdsap/build-process-watcher" target="_blank" rel="noopener noreferrer" style="color: #2563eb; text-decoration: none;">
+                    GitHub Repository
+                </a>
+                <a href="https://github.com/marketplace/actions/build-process-watcher" target="_blank" rel="noopener noreferrer" style="color: #2563eb; text-decoration: none;">
+                    GitHub Action
+                </a>
+            </div>
+            <p style="margin-top: 1rem; font-size: 0.75rem; color: #9ca3af;">
+                Memory reports are available for 24 hours · Free service
+            </p>
+        </div>
+    </footer>
+
+    <script src="/replay.js"></script>
+</body>
+</html>
