@@ -32,7 +32,6 @@ jobs:
         with:
           remote_monitoring: 'false'
           debug: 'true'
-          collect_gc: 'true'
           interval: '2'
 
       - name: Run dummy GradleDaemon process
@@ -112,7 +111,6 @@ jobs:
         with:
           remote_monitoring: 'false'
           debug: 'false'
-          collect_gc: 'true'
           interval: '2'
 
       - name: Run dummy GradleDaemon process
@@ -195,7 +193,6 @@ jobs:
         with:
           remote_monitoring: 'false'
           debug: 'true'
-          collect_gc: 'true'
           disable_summary_output: 'true'
           interval: '2'
 
@@ -338,7 +335,6 @@ jobs:
           remote_monitoring: 'true'
           backend_url: 'https://example.invalid'
           debug: 'true'
-          collect_gc: 'true'
           interval: '2'
 
       - name: Run dummy GradleDaemon process

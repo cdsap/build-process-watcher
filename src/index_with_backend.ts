@@ -23,9 +23,6 @@ async function run() {
       }
     }
     const interval = core.getInput('interval') || '5';
-    // collect_gc defaults to 'true' - only disable if explicitly set to 'false'
-    const collectGcInput = core.getInput('collect_gc');
-    const collectGc = collectGcInput === '' || collectGcInput === 'true';
     const disableSummaryOutput = core.getInput('disable_summary_output') === 'true';
     const environment = core.getInput('environment') || 'production'; // Default to production
 
@@ -221,7 +218,7 @@ async function run() {
       LOG_FILE: logFilePath,
       DEBUG_MODE: debugMode.toString(),
       REMOTE_MONITORING: (enableBackend && backendUrl) ? 'true' : 'false',
-      COLLECT_GC: collectGc.toString()
+      COLLECT_GC: 'true'
     };
 
     const child = spawn(scriptPath, args, {

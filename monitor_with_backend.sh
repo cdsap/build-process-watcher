@@ -36,9 +36,6 @@ DEBUG_MODE="${DEBUG_MODE:-false}"
 # Check if remote monitoring is enabled
 REMOTE_MONITORING="${REMOTE_MONITORING:-false}"
 
-# Check if GC collection is enabled (default to true unless explicitly disabled)
-COLLECT_GC="${COLLECT_GC:-true}"
-
 # Network timeout configuration (in seconds)
 # Default: 30 seconds total, 10 seconds connection timeout
 CURL_TIMEOUT="${CURL_TIMEOUT:-30}"
@@ -48,17 +45,11 @@ CURL_CONNECT_TIMEOUT="${CURL_CONNECT_TIMEOUT:-10}"
 if [ "$DEBUG_MODE" = "true" ]; then
     echo "📂 Current working directory: $(pwd)" >&2
     echo "🔧 Remote monitoring: $REMOTE_MONITORING" >&2
-    echo "🗑️  GC collection: $COLLECT_GC" >&2
 fi
 
-# Initialize log file with header
-if [ "$COLLECT_GC" = "true" ]; then
-    echo "Session started: $(date '+%Y-%m-%d %H:%M:%S')" > "$LOG_FILE"
-    echo "Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB | GC_Time_S" >> "$LOG_FILE"
-else
-    echo "Session started: $(date '+%Y-%m-%d %H:%M:%S')" > "$LOG_FILE"
-    echo "Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB" >> "$LOG_FILE"
-fi
+# Initialize log file with header (GC always enabled)
+echo "Session started: $(date '+%Y-%m-%d %H:%M:%S')" > "$LOG_FILE"
+echo "Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB | GC_Time_S" >> "$LOG_FILE"
 
 # Process info file for VM flags (used by cleanup to include in JSON artifact)
 PROCESS_INFO_FILE="${LOG_FILE%.log}.process_info"
@@ -84,7 +75,6 @@ echo "Backend URL: $BACKEND_URL" >> "$SCRIPT_DEBUG_LOG"
 echo "Start Time: $(date)" >> "$SCRIPT_DEBUG_LOG"
 echo "DEBUG_MODE: $DEBUG_MODE" >> "$SCRIPT_DEBUG_LOG"
 echo "REMOTE_MONITORING: $REMOTE_MONITORING" >> "$SCRIPT_DEBUG_LOG"
-echo "COLLECT_GC: $COLLECT_GC" >> "$SCRIPT_DEBUG_LOG"
 echo "INTERVAL: $INTERVAL" >> "$SCRIPT_DEBUG_LOG"
 echo "PATTERNS: ${PATTERNS[*]}" >> "$SCRIPT_DEBUG_LOG"
 echo "PID: $$" >> "$SCRIPT_DEBUG_LOG"
@@ -700,15 +690,9 @@ while true; do
           RSS_MB=$(awk "BEGIN { printf \"%.1f\", $RSS_KB / 1024 }")
 
           if [[ -z "$GC_LINE" ]]; then
-            if [ "$COLLECT_GC" = "true" ]; then
-              echo "$TIMESTAMP | $PID | $NAME | N/A | N/A | ${RSS_MB}MB | N/A" >> "$LOG_FILE"
-              # Store process data for batch sending
-              process_data+=("$TIMESTAMP|$PID|$NAME|0|0|${RSS_MB}MB|N/A")
-            else
-              echo "$TIMESTAMP | $PID | $NAME | N/A | N/A | ${RSS_MB}MB" >> "$LOG_FILE"
-              # Store process data for batch sending
-              process_data+=("$TIMESTAMP|$PID|$NAME|0|0|${RSS_MB}MB")
-            fi
+            echo "$TIMESTAMP | $PID | $NAME | N/A | N/A | ${RSS_MB}MB | N/A" >> "$LOG_FILE"
+            # Store process data for batch sending
+            process_data+=("$TIMESTAMP|$PID|$NAME|0|0|${RSS_MB}MB|N/A")
           else
             EC=$(echo "$GC_LINE" | awk '{print $5}')
             EU=$(echo "$GC_LINE" | awk '{print $6}')
@@ -718,28 +702,22 @@ while true; do
             HEAP_USED_MB=$(awk "BEGIN { printf \"%.1f\", ($EU + $OU) / 1024 }")
             HEAP_CAP_MB=$(awk "BEGIN { printf \"%.1f\", ($EC + $OC) / 1024 }")
 
-            if [ "$COLLECT_GC" = "true" ]; then
-              # Extract GC time from jstat output
-              # YGCT (column 14) = Young generation GC time in seconds
-              # FGCT (column 16) = Full GC time in seconds
-              # Total GC time = YGCT + FGCT (keep in seconds)
-              # This works consistently across all GC collectors (Parallel, G1, Serial, CMS, etc.)
-              YGCT=$(echo "$GC_LINE" | awk '{print $14}' 2>/dev/null || echo "0")
-              FGCT=$(echo "$GC_LINE" | awk '{print $16}' 2>/dev/null || echo "0")
-              # Calculate total GC time (keep in seconds, as reported by jstat)
-              if [ "$YGCT" != "N/A" ] && [ "$FGCT" != "N/A" ] && [ -n "$YGCT" ] && [ -n "$FGCT" ]; then
-                GC_TIME_S=$(awk "BEGIN { printf \"%.3f\", $YGCT + $FGCT }" 2>/dev/null || echo "N/A")
-              else
-                GC_TIME_S="N/A"
-              fi
-              echo "$TIMESTAMP | $PID | $NAME | ${HEAP_USED_MB}MB | ${HEAP_CAP_MB}MB | ${RSS_MB}MB | ${GC_TIME_S}s" >> "$LOG_FILE"
-              # Store process data for batch sending
-              process_data+=("$TIMESTAMP|$PID|$NAME|${HEAP_USED_MB}MB|${HEAP_CAP_MB}MB|${RSS_MB}MB|${GC_TIME_S}s")
+            # Extract GC time from jstat output
+            # YGCT (column 14) = Young generation GC time in seconds
+            # FGCT (column 16) = Full GC time in seconds
+            # Total GC time = YGCT + FGCT (keep in seconds)
+            # This works consistently across all GC collectors (Parallel, G1, Serial, CMS, etc.)
+            YGCT=$(echo "$GC_LINE" | awk '{print $14}' 2>/dev/null || echo "0")
+            FGCT=$(echo "$GC_LINE" | awk '{print $16}' 2>/dev/null || echo "0")
+            # Calculate total GC time (keep in seconds, as reported by jstat)
+            if [ "$YGCT" != "N/A" ] && [ "$FGCT" != "N/A" ] && [ -n "$YGCT" ] && [ -n "$FGCT" ]; then
+              GC_TIME_S=$(awk "BEGIN { printf \"%.3f\", $YGCT + $FGCT }" 2>/dev/null || echo "N/A")
             else
-              echo "$TIMESTAMP | $PID | $NAME | ${HEAP_USED_MB}MB | ${HEAP_CAP_MB}MB | ${RSS_MB}MB" >> "$LOG_FILE"
-              # Store process data for batch sending
-              process_data+=("$TIMESTAMP|$PID|$NAME|${HEAP_USED_MB}MB|${HEAP_CAP_MB}MB|${RSS_MB}MB")
+              GC_TIME_S="N/A"
             fi
+            echo "$TIMESTAMP | $PID | $NAME | ${HEAP_USED_MB}MB | ${HEAP_CAP_MB}MB | ${RSS_MB}MB | ${GC_TIME_S}s" >> "$LOG_FILE"
+            # Store process data for batch sending
+            process_data+=("$TIMESTAMP|$PID|$NAME|${HEAP_USED_MB}MB|${HEAP_CAP_MB}MB|${RSS_MB}MB|${GC_TIME_S}s")
           fi
         } || { 
           log_script "ERROR: Failed to process memory data for PID $PID ($NAME) at $TIMESTAMP"
@@ -770,26 +748,14 @@ while true; do
     for data_line in "${process_data[@]}"; do
       sends_attempted=$((sends_attempted + 1))
       log_script "Sending data line: '$data_line'"
-      if [ "$COLLECT_GC" = "true" ]; then
-        IFS='|' read -r ts pid name heap_used heap_cap rss gc_time <<< "$data_line"
-        log_script "Calling send_to_backend with GC data for PID $pid"
-        if send_to_backend "$ts" "$pid" "$name" "${heap_used}MB" "${heap_cap}MB" "${rss}MB" "$gc_time"; then
-          sends_succeeded=$((sends_succeeded + 1))
-          log_script "send_to_backend succeeded for PID $pid"
-        else
-          sends_failed=$((sends_failed + 1))
-          log_script "send_to_backend failed for PID $pid"
-        fi
+      IFS='|' read -r ts pid name heap_used heap_cap rss gc_time <<< "$data_line"
+      log_script "Calling send_to_backend with GC data for PID $pid"
+      if send_to_backend "$ts" "$pid" "$name" "${heap_used}MB" "${heap_cap}MB" "${rss}MB" "$gc_time"; then
+        sends_succeeded=$((sends_succeeded + 1))
+        log_script "send_to_backend succeeded for PID $pid"
       else
-        IFS='|' read -r ts pid name heap_used heap_cap rss <<< "$data_line"
-        log_script "Calling send_to_backend without GC data for PID $pid"
-        if send_to_backend "$ts" "$pid" "$name" "${heap_used}MB" "${heap_cap}MB" "${rss}MB"; then
-          sends_succeeded=$((sends_succeeded + 1))
-          log_script "send_to_backend succeeded for PID $pid"
-        else
-          sends_failed=$((sends_failed + 1))
-          log_script "send_to_backend failed for PID $pid"
-        fi
+        sends_failed=$((sends_failed + 1))
+        log_script "send_to_backend failed for PID $pid"
       fi
     done
     log_script "Finished sending: $sends_attempted attempted, $sends_succeeded succeeded, $sends_failed failed"
