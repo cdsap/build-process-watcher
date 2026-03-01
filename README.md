@@ -2,33 +2,9 @@
 
 [![GitHub Marketplace](https://img.shields.io/badge/action-marketplace-blue?logo=github)](https://github.com/marketplace/actions/build-process-watcher)
 
-![Performance Demo](frontend/public/performance.gif)
-
-```mermaid
-%%{init: {'theme': 'dark'}}%%
-flowchart LR
-    subgraph Time["Memory Usage Over Time"]
-        direction TB
-        subgraph T0["00:03:03"]
-            GradleDaemon_0["GradleDaemon<br/>2311MB"]
-            KotlinCompileDaemon_0["KotlinCompileDaemon<br/>488MB"]
-            Agg_0["Aggregated<br/>2799MB"]
-        end
-        subgraph T1["00:03:23"]
-            GradleDaemon_1["GradleDaemon<br/>3219MB"]
-            KotlinCompileDaemon_1["KotlinCompileDaemon<br/>488MB"]
-            Agg_1["Aggregated<br/>3708MB"]
-        end
-    end
-    GradleDaemon_0 --> GradleDaemon_1
-    KotlinCompileDaemon_0 --> KotlinCompileDaemon_1
-    Agg_0 --> Agg_1
-    classDef process fill:#4ECDC4,stroke:#333,stroke-width:2px
-    classDef aggregated fill:#FF6B6B,stroke:#333,stroke-width:2px
-    class GradleDaemon process
-    class KotlinCompileDaemon process
-    class Agg_0,Agg_1 aggregated
-```
+<p align="center">
+  <img src="frontend/public/performance.gif" alt="Performance Demo">
+</p>
 
 Monitor memory usage of Java/Kotlin build processes (`GradleDaemon`, `GradleWorkerMain`, `KotlinCompileDaemon`) during CI builds. Track heap and RSS usage, generate charts, and visualize data in real-time dashboards.
 
@@ -39,7 +15,7 @@ Monitor memory usage of Java/Kotlin build processes (`GradleDaemon`, `GradleWork
 ### Local Mode (Artifacts Only)
 
 ```yaml
-- uses: cdsap/build-process-watcher@v0.5.1
+- uses: cdsap/build-process-watcher@v0.6.0
   with:
     remote_monitoring: 'false'
 ```
@@ -49,7 +25,7 @@ Generates log files and charts as workflow artifacts.
 ### Remote Mode (Live Dashboard)
 
 ```yaml
-- uses: cdsap/build-process-watcher@v0.5.1
+- uses: cdsap/build-process-watcher@v0.6.0
   env:
     BACKEND_URL: ${{ secrets.BACKEND_URL }}   # Optional - defaults to Cloud Run URL if unset
     FRONTEND_URL: ${{ secrets.FRONTEND_URL }} # Optional - defaults to process-watcher.web.app if unset
