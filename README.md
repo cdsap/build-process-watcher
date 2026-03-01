@@ -122,6 +122,11 @@ The dashboard lets you:
 - **Replay a run** – Upload an exported JSON file to replay memory and GC charts offline.
 - **Compare runs** – Upload two JSON files to compare two runs side-by-side with a shared timeline.
 
+<p align="center">
+  <img src="frontend/public/reply.gif" alt="Replay Demo" width="600"><br><br>
+  <img src="frontend/public/compare.gif" alt="Compare Demo" width="600">
+</p>
+
 **Using without Remote Mode:** You don't need Remote Mode to use Replay and Compare. With Local Mode, the action generates JSON files in the workflow artifacts. Download the JSON from your artifacts and upload it to [Replay](https://process-watcher.web.app/replay.html) or [Compare](https://process-watcher.web.app/compare.html). You can also open these HTML files locally in your browser.
 
 ---
