@@ -96,6 +96,8 @@
         const maxGap = medianDelta ? medianDelta * 2 : 0;
         const totalRss = [];
         const distribution = [];
+        let lastNonZeroTotal = null;
+        let lastNonZeroDistribution = 'No data';
 
         timestamps.forEach(timestamp => {
             let total = 0;
@@ -123,11 +125,16 @@
                 }
             });
 
-            totalRss.push(total > 0 ? total : null);
-
-            if (total <= 0) {
-                distribution.push('No data');
+            if (total > 0) {
+                lastNonZeroTotal = total;
+                totalRss.push(total);
+            } else if (lastNonZeroTotal !== null) {
+                totalRss.push(lastNonZeroTotal);
             } else {
+                totalRss.push(null);
+            }
+
+            if (total > 0) {
                 const lines = [];
                 processKeys.forEach(processKey => {
                     const rss = included[processKey];
@@ -136,7 +143,12 @@
                     const percent = ((rss / total) * 100).toFixed(1);
                     lines.push(`${processName} PID:${pid}: ${percent}%`);
                 });
-                distribution.push(lines.join('<br>'));
+                lastNonZeroDistribution = lines.join('<br>');
+                distribution.push(lastNonZeroDistribution);
+            } else if (lastNonZeroTotal !== null) {
+                distribution.push(lastNonZeroDistribution);
+            } else {
+                distribution.push('No data');
             }
         });
 
