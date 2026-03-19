@@ -31,8 +31,9 @@
         }
 
         const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
-        const elapsedSeconds = timestamps.map(ts => Math.max(0, (ts - timestamps[0]) / 1000));
         const data = buildReplayData(samples, timestamps);
+        const chartTimestamps = data.timestamps || timestamps;
+        const elapsedSeconds = chartTimestamps.map(ts => Math.max(0, (ts - chartTimestamps[0]) / 1000));
         const showGC = hasGCData(samples);
 
         section.innerHTML = `
@@ -99,7 +100,7 @@
         let currentFrame = 0;
         let speedMultiplier = Number(speedSelect.value) || 15;
 
-        timeline.max = String(Math.max(0, timestamps.length - 1));
+        timeline.max = String(Math.max(0, chartTimestamps.length - 1));
 
         const traceVisibility = visibilityStore || {};
 
@@ -167,8 +168,8 @@
 
         function updateUi(frameIndex) {
             timeline.value = String(frameIndex);
-            meta.textContent = `Frame ${frameIndex + 1} / ${timestamps.length}`;
-            const timestamp = timestamps[frameIndex];
+            meta.textContent = `Frame ${frameIndex + 1} / ${chartTimestamps.length}`;
+            const timestamp = chartTimestamps[frameIndex];
             const elapsed = elapsedByTimestamp.get(timestamp) || 0;
             timeLabel.textContent = `Elapsed: ${elapsed}s`;
         }
@@ -198,7 +199,7 @@
                 }
             };
 
-            const rssTraces = buildMetricTraces(data, timestamps, frameIndex, 'rss', {
+            const rssTraces = buildMetricTraces(data, chartTimestamps, frameIndex, 'rss', {
                 lineDash: 'solid',
                 heapDash: 'dash',
                 includeTotalRss: true,
@@ -227,7 +228,7 @@
                         b: 110
                     }
                 };
-                const gcTraces = buildMetricTraces(data, timestamps, frameIndex, 'gc', {
+                const gcTraces = buildMetricTraces(data, chartTimestamps, frameIndex, 'gc', {
                     lineDash: 'solid'
                 }, elapsedSeconds);
                 tasks.push(Plotly.react('single-gc', applyVisibilityToTraces('single-gc', gcTraces), gcLayout, getGcConfig('build-replay-gc')));
@@ -244,13 +245,13 @@
 
         function scheduleNext() {
             if (!isPlaying) return;
-            if (currentFrame >= timestamps.length - 1) {
+            if (currentFrame >= chartTimestamps.length - 1) {
                 isPlaying = false;
                 return;
             }
             const nextDelay = Math.max(
                 16,
-                (timestamps[currentFrame + 1] - timestamps[currentFrame]) / speedMultiplier
+                (chartTimestamps[currentFrame + 1] - chartTimestamps[currentFrame]) / speedMultiplier
             );
             playTimer = setTimeout(() => {
                 renderFrame(currentFrame + 1).then(scheduleNext);

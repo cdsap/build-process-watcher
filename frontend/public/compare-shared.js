@@ -94,12 +94,15 @@
 
         const medianDelta = getMedianDelta(timestamps);
         const maxGap = medianDelta ? medianDelta * 2 : 0;
+        const DROP_THRESHOLD = 0.2;
+        const MIN_PEAK_MB = 500;
         const totalRss = [];
         const distribution = [];
         let peakTotal = 0;
         let lastDistribution = 'No data';
+        let buildEndIndex = -1;
 
-        timestamps.forEach(timestamp => {
+        timestamps.forEach((timestamp, i) => {
             let total = 0;
             const included = {};
 
@@ -127,6 +130,9 @@
 
             if (total > 0) {
                 peakTotal = Math.max(peakTotal, total);
+                if (buildEndIndex === -1 && peakTotal >= MIN_PEAK_MB && total < DROP_THRESHOLD * peakTotal) {
+                    buildEndIndex = i;
+                }
                 totalRss.push(peakTotal);
                 const lines = [];
                 processKeys.forEach(processKey => {
@@ -139,6 +145,9 @@
                 lastDistribution = lines.join('<br>');
                 distribution.push(lastDistribution);
             } else if (peakTotal > 0) {
+                if (buildEndIndex === -1 && peakTotal >= MIN_PEAK_MB) {
+                    buildEndIndex = i;
+                }
                 totalRss.push(peakTotal);
                 distribution.push(lastDistribution);
             } else {
@@ -147,7 +156,7 @@
             }
         });
 
-        return { totalRss, distribution };
+        return { totalRss, distribution, buildEndIndex };
     }
 
     function buildForwardFilledSeries(samples, timestamps, processName, pid, valueSelector, maxGapOverride) {
@@ -228,13 +237,40 @@
         });
 
         const totalSeries = buildTotalRssSeries(samples, timestamps, processKeys);
+        const { totalRss, distribution, buildEndIndex } = totalSeries;
+
+        let finalTimestamps = timestamps;
+        let finalSeries = series;
+        let finalTotalRss = totalRss;
+        let finalDistribution = distribution;
+
+        if (buildEndIndex >= 0 && buildEndIndex < timestamps.length) {
+            finalTimestamps = timestamps.slice(0, buildEndIndex);
+            finalTotalRss = totalRss.slice(0, buildEndIndex);
+            finalDistribution = distribution.slice(0, buildEndIndex);
+            finalSeries = {};
+            processKeys.forEach(processKey => {
+                const def = series[processKey];
+                finalSeries[processKey] = {
+                    ...def,
+                    rss: def.rss.slice(0, buildEndIndex),
+                    heap: def.heap.slice(0, buildEndIndex),
+                    gc: def.gc.slice(0, buildEndIndex),
+                    ratio: def.ratio.slice(0, buildEndIndex),
+                    firstRss: def.firstRss >= buildEndIndex ? -1 : def.firstRss,
+                    firstGc: def.firstGc >= buildEndIndex ? -1 : def.firstGc,
+                    firstRatio: def.firstRatio >= buildEndIndex ? -1 : def.firstRatio
+                };
+            });
+        }
 
         return {
             processKeys,
-            series,
-            totalRss: totalSeries.totalRss,
-            totalRssDistribution: totalSeries.distribution,
-            firstTotalRssIndex: totalSeries.totalRss.findIndex(value => value !== null)
+            series: finalSeries,
+            timestamps: finalTimestamps,
+            totalRss: finalTotalRss,
+            totalRssDistribution: finalDistribution,
+            firstTotalRssIndex: finalTotalRss.findIndex(value => value !== null)
         };
     }
 
@@ -875,7 +911,11 @@
 
         compareSection.style.display = 'block';
 
-        const elapsedSeconds = timestamps.map(ts => Math.max(0, (ts - timestamps[0]) / 1000));
+        const baseData = buildReplayData(baseSamples, timestamps, COLOR_PALETTE);
+        const chartTimestamps = baseData.timestamps || timestamps;
+        const compareData = buildReplayData(compareSamples, chartTimestamps, COLOR_PALETTE);
+
+        const elapsedSeconds = chartTimestamps.map(ts => Math.max(0, (ts - chartTimestamps[0]) / 1000));
         const maxElapsed = elapsedSeconds.length ? elapsedSeconds[elapsedSeconds.length - 1] : 0;
         const compareElapsed = isSplitMode
             ? elapsedSeconds.map(value => value + maxElapsed)
@@ -889,8 +929,6 @@
                 tickText.push(String(value), String(value));
             }
         }
-        const baseData = buildReplayData(baseSamples, timestamps, COLOR_PALETTE);
-        const compareData = buildReplayData(compareSamples, timestamps, COLOR_PALETTE);
 
         const sharedProcessNames = [...new Set([
             ...baseSamples.map(s => s.Name),
@@ -942,7 +980,7 @@
         let currentFrame = 0;
         let speedMultiplier = Number(speedSelect.value) || 15;
 
-        timeline.max = String(Math.max(0, timestamps.length - 1));
+        timeline.max = String(Math.max(0, chartTimestamps.length - 1));
 
         const elapsedByTimestamp = new Map();
         baseSamples.forEach(sample => {
@@ -1008,8 +1046,8 @@
 
         function updateUi(frameIndex) {
             timeline.value = String(frameIndex);
-            meta.textContent = `Frame ${frameIndex + 1} / ${timestamps.length}`;
-            const timestamp = timestamps[frameIndex];
+            meta.textContent = `Frame ${frameIndex + 1} / ${chartTimestamps.length}`;
+            const timestamp = chartTimestamps[frameIndex];
             const elapsed = elapsedByTimestamp.get(timestamp) || 0;
             timeLabel.textContent = `Elapsed: ${elapsed}s`;
         }
@@ -1148,9 +1186,9 @@
             isPlaying = true;
             const tick = () => {
                 if (!isPlaying) return;
-                const nextFrame = Math.min(currentFrame + 1, timestamps.length - 1);
+                const nextFrame = Math.min(currentFrame + 1, chartTimestamps.length - 1);
                 renderFrame(nextFrame);
-                if (nextFrame >= timestamps.length - 1) {
+                if (nextFrame >= chartTimestamps.length - 1) {
                     pause();
                     return;
                 }

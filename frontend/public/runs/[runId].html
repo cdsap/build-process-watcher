@@ -1172,13 +1172,38 @@
             });
 
             const totalSeries = buildTotalRssSeries(samples, timestamps, processKeys);
-            const firstTotalRssIndex = totalSeries.totalRss.findIndex(value => value !== null);
-
-            function buildMemoryTraces(frameIndex) {
-                const frameTimestamps = timestamps.slice(0, frameIndex + 1).map(t => new Date(t));
-                const traces = [];
+            let chartTimestamps = timestamps;
+            let chartSeries = series;
+            let chartTotalSeries = totalSeries;
+            if (totalSeries.buildEndIndex >= 0 && totalSeries.buildEndIndex < timestamps.length) {
+                const end = totalSeries.buildEndIndex;
+                chartTimestamps = timestamps.slice(0, end);
+                chartSeries = {};
                 processKeys.forEach(processKey => {
                     const def = series[processKey];
+                    chartSeries[processKey] = {
+                        ...def,
+                        rss: def.rss.slice(0, end),
+                        heap: def.heap.slice(0, end),
+                        gc: def.gc.slice(0, end),
+                        ratio: def.ratio.slice(0, end),
+                        firstRss: def.firstRss >= end ? -1 : def.firstRss,
+                        firstGc: def.firstGc >= end ? -1 : def.firstGc,
+                        firstRatio: def.firstRatio >= end ? -1 : def.firstRatio
+                    };
+                });
+                chartTotalSeries = {
+                    totalRss: totalSeries.totalRss.slice(0, end),
+                    distribution: totalSeries.distribution.slice(0, end)
+                };
+            }
+            const firstTotalRssIndex = chartTotalSeries.totalRss.findIndex(value => value !== null);
+
+            function buildMemoryTraces(frameIndex) {
+                const frameTimestamps = chartTimestamps.slice(0, frameIndex + 1).map(t => new Date(t));
+                const traces = [];
+                processKeys.forEach(processKey => {
+                    const def = chartSeries[processKey];
                     if (def.firstRss === -1 || frameIndex < def.firstRss) return;
                     traces.push({
                         x: frameTimestamps,
@@ -1202,13 +1227,13 @@
                 if (firstTotalRssIndex !== -1 && frameIndex >= firstTotalRssIndex) {
                     traces.push({
                         x: frameTimestamps,
-                        y: totalSeries.totalRss.slice(0, frameIndex + 1),
+                        y: chartTotalSeries.totalRss.slice(0, frameIndex + 1),
                         type: 'scatter',
                         mode: 'lines',
                         name: 'Total RSS Memory',
                         line: { color: '#2c3e50', width: 4 },
                         connectgaps: false,
-                        customdata: totalSeries.distribution.slice(0, frameIndex + 1),
+                        customdata: chartTotalSeries.distribution.slice(0, frameIndex + 1),
                         hovertemplate: 'Total RSS: %{y} MB<br>%{customdata}<extra></extra>'
                     });
                 }
@@ -1216,10 +1241,10 @@
             }
 
             function buildGCTraces(frameIndex) {
-                const frameTimestamps = timestamps.slice(0, frameIndex + 1).map(t => new Date(t));
+                const frameTimestamps = chartTimestamps.slice(0, frameIndex + 1).map(t => new Date(t));
                 const traces = [];
                 processKeys.forEach(processKey => {
-                    const def = series[processKey];
+                    const def = chartSeries[processKey];
                     if (def.firstGc === -1 || frameIndex < def.firstGc) return;
                     traces.push({
                         x: frameTimestamps,
@@ -1236,10 +1261,10 @@
             }
 
             function buildRatioTraces(frameIndex) {
-                const frameTimestamps = timestamps.slice(0, frameIndex + 1).map(t => new Date(t));
+                const frameTimestamps = chartTimestamps.slice(0, frameIndex + 1).map(t => new Date(t));
                 const traces = [];
                 processKeys.forEach(processKey => {
-                    const def = series[processKey];
+                    const def = chartSeries[processKey];
                     if (def.firstRatio === -1 || frameIndex < def.firstRatio) return;
                     traces.push({
                         x: frameTimestamps,
@@ -1281,12 +1306,12 @@
                 let currentFrame = 0;
                 let speedMultiplier = Number(speedSelect.value) || 15;
 
-                timeline.max = String(Math.max(0, timestamps.length - 1));
+                timeline.max = String(Math.max(0, chartTimestamps.length - 1));
 
                 function updateUi(frameIndex) {
                     timeline.value = String(frameIndex);
-                    meta.textContent = `Frame ${frameIndex + 1} / ${timestamps.length}`;
-                    const timestamp = timestamps[frameIndex];
+                    meta.textContent = `Frame ${frameIndex + 1} / ${chartTimestamps.length}`;
+                    const timestamp = chartTimestamps[frameIndex];
                     const elapsed = elapsedByTimestamp.get(timestamp);
                     const timeText = new Date(timestamp).toLocaleTimeString();
                     timeLabel.textContent = `Elapsed: ${elapsed}s | ${timeText}`;
@@ -1300,13 +1325,13 @@
 
                 function scheduleNext() {
                     if (!isPlaying) return;
-                    if (currentFrame >= timestamps.length - 1) {
+                    if (currentFrame >= chartTimestamps.length - 1) {
                         isPlaying = false;
                         return;
                     }
                     const nextDelay = Math.max(
                         16,
-                        (timestamps[currentFrame + 1] - timestamps[currentFrame]) / speedMultiplier
+                        (chartTimestamps[currentFrame + 1] - chartTimestamps[currentFrame]) / speedMultiplier
                     );
                     playTimer = setTimeout(() => {
                         renderFrame(currentFrame + 1).then(scheduleNext);
@@ -1346,7 +1371,7 @@
                     }
                 });
 
-                const initialFrame = Math.max(0, timestamps.length - 1);
+                const initialFrame = Math.max(0, chartTimestamps.length - 1);
                 renderFrame(initialFrame).then(() => {
                     attachLegendVisibilityHandlers(chartId, onLegendUpdate);
                 });
@@ -1575,11 +1600,12 @@
 
             compareSection.style.display = 'block';
 
-            const elapsedSeconds = timestamps.map(ts => Math.max(0, (ts - timestamps[0]) / 1000));
+            const baseData = buildReplayData(baseSamples, timestamps, COLOR_PALETTE);
+            const chartTimestamps = baseData.timestamps || timestamps;
+            const compareData = buildReplayData(compareSamples, chartTimestamps, COLOR_PALETTE);
+            const elapsedSeconds = chartTimestamps.map(ts => Math.max(0, (ts - chartTimestamps[0]) / 1000));
             const maxElapsed = elapsedSeconds.length ? elapsedSeconds[elapsedSeconds.length - 1] : 0;
             const compareElapsed = elapsedSeconds.map(value => value + maxElapsed);
-            const baseData = buildReplayData(baseSamples, timestamps, COLOR_PALETTE);
-            const compareData = buildReplayData(compareSamples, timestamps, COLOR_PALETTE);
             console.log('[compare] Base GC series lengths:', baseData.processKeys.map(k => baseData.series[k].gc.filter(v => v !== null).length));
             console.log('[compare] Compare GC series lengths:', compareData.processKeys.map(k => compareData.series[k].gc.filter(v => v !== null).length));
 
@@ -1633,7 +1659,7 @@
             let currentFrame = 0;
             let speedMultiplier = Number(speedSelect.value) || 15;
 
-            timeline.max = String(Math.max(0, timestamps.length - 1));
+            timeline.max = String(Math.max(0, chartTimestamps.length - 1));
 
             const elapsedByTimestamp = new Map();
             baseSamples.forEach(sample => {
@@ -1644,8 +1670,8 @@
 
             function updateUi(frameIndex) {
                 timeline.value = String(frameIndex);
-                meta.textContent = `Frame ${frameIndex + 1} / ${timestamps.length}`;
-                const timestamp = timestamps[frameIndex];
+                meta.textContent = `Frame ${frameIndex + 1} / ${chartTimestamps.length}`;
+                const timestamp = chartTimestamps[frameIndex];
                 const elapsed = elapsedByTimestamp.get(timestamp) || 0;
                 timeLabel.textContent = `Elapsed: ${elapsed}s`;
             }
@@ -1687,8 +1713,8 @@
                 };
                 if (isSplitMode) {
                     const rssTraces = [
-                        ...buildMetricTraces(baseData, timestamps, frameIndex, 'rss', baseStyle, elapsedSeconds),
-                        ...buildMetricTraces(compareData, timestamps, frameIndex, 'rss', compareStyle, compareElapsed)
+                        ...buildMetricTraces(baseData, chartTimestamps, frameIndex, 'rss', baseStyle, elapsedSeconds),
+                        ...buildMetricTraces(compareData, chartTimestamps, frameIndex, 'rss', compareStyle, compareElapsed)
                     ];
                     tasks.push(Plotly.react('compare-rss', applyVisibilityToTraces('compare-rss', rssTraces), compareLayout, getMemoryConfig()));
                 } else {
@@ -1696,8 +1722,8 @@
                         ...compareLayout,
                         shapes: []
                     };
-                    tasks.push(Plotly.react('compare-current-rss', applyVisibilityToTraces('compare-current-rss', buildMetricTraces(baseData, timestamps, frameIndex, 'rss', baseStyle, elapsedSeconds)), sideLayout, getMemoryConfig()));
-                    tasks.push(Plotly.react('compare-other-rss', applyVisibilityToTraces('compare-other-rss', buildMetricTraces(compareData, timestamps, frameIndex, 'rss', compareStyle, elapsedSeconds)), sideLayout, getMemoryConfig()));
+                    tasks.push(Plotly.react('compare-current-rss', applyVisibilityToTraces('compare-current-rss', buildMetricTraces(baseData, chartTimestamps, frameIndex, 'rss', baseStyle, elapsedSeconds)), sideLayout, getMemoryConfig()));
+                    tasks.push(Plotly.react('compare-other-rss', applyVisibilityToTraces('compare-other-rss', buildMetricTraces(compareData, chartTimestamps, frameIndex, 'rss', compareStyle, elapsedSeconds)), sideLayout, getMemoryConfig()));
                 }
                 if (showGC) {
                     const compareGcLayout = {
@@ -1733,8 +1759,8 @@
                     };
                     if (isSplitMode) {
                         const gcTraces = [
-                            ...buildMetricTraces(baseData, timestamps, frameIndex, 'gc', baseStyle, elapsedSeconds),
-                            ...buildMetricTraces(compareData, timestamps, frameIndex, 'gc', compareStyle, compareElapsed)
+                            ...buildMetricTraces(baseData, chartTimestamps, frameIndex, 'gc', baseStyle, elapsedSeconds),
+                            ...buildMetricTraces(compareData, chartTimestamps, frameIndex, 'gc', compareStyle, compareElapsed)
                         ];
                         tasks.push(Plotly.react('compare-gc', applyVisibilityToTraces('compare-gc', gcTraces), compareGcLayout, getGcConfig()));
                     } else {
@@ -1742,8 +1768,8 @@
                             ...compareGcLayout,
                             shapes: []
                         };
-                        tasks.push(Plotly.react('compare-current-gc', applyVisibilityToTraces('compare-current-gc', buildMetricTraces(baseData, timestamps, frameIndex, 'gc', baseStyle, elapsedSeconds)), sideGcLayout, getGcConfig()));
-                        tasks.push(Plotly.react('compare-other-gc', applyVisibilityToTraces('compare-other-gc', buildMetricTraces(compareData, timestamps, frameIndex, 'gc', compareStyle, elapsedSeconds)), sideGcLayout, getGcConfig()));
+                        tasks.push(Plotly.react('compare-current-gc', applyVisibilityToTraces('compare-current-gc', buildMetricTraces(baseData, chartTimestamps, frameIndex, 'gc', baseStyle, elapsedSeconds)), sideGcLayout, getGcConfig()));
+                        tasks.push(Plotly.react('compare-other-gc', applyVisibilityToTraces('compare-other-gc', buildMetricTraces(compareData, chartTimestamps, frameIndex, 'gc', compareStyle, elapsedSeconds)), sideGcLayout, getGcConfig()));
                     }
                 }
                 if (showRatio) {
@@ -1780,8 +1806,8 @@
                     };
                     if (isSplitMode) {
                         const ratioTraces = [
-                            ...buildMetricTraces(baseData, timestamps, frameIndex, 'ratio', baseStyle, elapsedSeconds),
-                            ...buildMetricTraces(compareData, timestamps, frameIndex, 'ratio', compareStyle, compareElapsed)
+                            ...buildMetricTraces(baseData, chartTimestamps, frameIndex, 'ratio', baseStyle, elapsedSeconds),
+                            ...buildMetricTraces(compareData, chartTimestamps, frameIndex, 'ratio', compareStyle, compareElapsed)
                         ];
                         tasks.push(Plotly.react('compare-ratio', applyVisibilityToTraces('compare-ratio', ratioTraces), compareRatioLayout, getRatioConfig()));
                     } else {
@@ -1789,8 +1815,8 @@
                             ...compareRatioLayout,
                             shapes: []
                         };
-                        tasks.push(Plotly.react('compare-current-ratio', applyVisibilityToTraces('compare-current-ratio', buildMetricTraces(baseData, timestamps, frameIndex, 'ratio', baseStyle, elapsedSeconds)), sideRatioLayout, getRatioConfig()));
-                        tasks.push(Plotly.react('compare-other-ratio', applyVisibilityToTraces('compare-other-ratio', buildMetricTraces(compareData, timestamps, frameIndex, 'ratio', compareStyle, elapsedSeconds)), sideRatioLayout, getRatioConfig()));
+                        tasks.push(Plotly.react('compare-current-ratio', applyVisibilityToTraces('compare-current-ratio', buildMetricTraces(baseData, chartTimestamps, frameIndex, 'ratio', baseStyle, elapsedSeconds)), sideRatioLayout, getRatioConfig()));
+                        tasks.push(Plotly.react('compare-other-ratio', applyVisibilityToTraces('compare-other-ratio', buildMetricTraces(compareData, chartTimestamps, frameIndex, 'ratio', compareStyle, elapsedSeconds)), sideRatioLayout, getRatioConfig()));
                     }
                 }
                 return Promise.all(tasks);
@@ -1798,13 +1824,13 @@
 
             function scheduleNext() {
                 if (!isPlaying) return;
-                if (currentFrame >= timestamps.length - 1) {
+                if (currentFrame >= chartTimestamps.length - 1) {
                     isPlaying = false;
                     return;
                 }
                 const nextDelay = Math.max(
                     16,
-                    (timestamps[currentFrame + 1] - timestamps[currentFrame]) / speedMultiplier
+                    (chartTimestamps[currentFrame + 1] - chartTimestamps[currentFrame]) / speedMultiplier
                 );
                 playTimer = setTimeout(() => {
                     renderFrame(currentFrame + 1).then(scheduleNext);
@@ -1847,7 +1873,7 @@
                 }
             });
 
-            const initialFrame = Math.max(0, timestamps.length - 1);
+            const initialFrame = Math.max(0, chartTimestamps.length - 1);
             renderFrame(initialFrame).then(() => {
                 if (isSplitMode) {
                     attachLegendVisibilityHandlers('compare-rss');
@@ -1967,16 +1993,32 @@
             });
             
             const totalSeries = buildTotalRssSeries(samples, timestamps, processKeys);
+            let chartTimestamps = timestamps;
+            let chartTraces = traces;
+            if (totalSeries.buildEndIndex >= 0 && totalSeries.buildEndIndex < timestamps.length) {
+                const end = totalSeries.buildEndIndex;
+                chartTimestamps = timestamps.slice(0, end);
+                chartTraces = traces.map(trace => ({
+                    ...trace,
+                    x: trace.x.slice(0, end),
+                    y: trace.y.slice(0, end),
+                    customdata: trace.customdata ? trace.customdata.slice(0, end) : undefined
+                }));
+            }
             
-            traces.push({
-                x: timestamps.map(t => new Date(t)),
-                y: totalSeries.totalRss,
+            chartTraces.push({
+                x: chartTimestamps.map(t => new Date(t)),
+                y: totalSeries.buildEndIndex >= 0 && totalSeries.buildEndIndex < timestamps.length
+                    ? totalSeries.totalRss.slice(0, totalSeries.buildEndIndex)
+                    : totalSeries.totalRss,
                 type: 'scatter',
                 mode: 'lines',
                 name: 'Total RSS Memory',
                 line: { color: '#2c3e50', width: 4 },
                 connectgaps: false,  // Don't connect across null values
-                customdata: totalSeries.distribution,
+                customdata: totalSeries.buildEndIndex >= 0 && totalSeries.buildEndIndex < timestamps.length
+                    ? totalSeries.distribution.slice(0, totalSeries.buildEndIndex)
+                    : totalSeries.distribution,
                 hovertemplate: 'Total RSS: %{y} MB<br>%{customdata}<extra></extra>'
             });
 
@@ -1986,7 +2028,7 @@
             const layout = getMemoryLayout();
             const config = getMemoryConfig();
 
-            Plotly.newPlot('chart', applyVisibilityToTraces('chart', traces), layout, config);
+            Plotly.newPlot('chart', applyVisibilityToTraces('chart', chartTraces), layout, config);
             attachLegendVisibilityHandlers('chart', updateMainChartFilterCheckboxes);
             
             // Handle window resize
