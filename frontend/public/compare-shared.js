@@ -133,7 +133,7 @@
                 if (buildEndIndex === -1 && peakTotal >= MIN_PEAK_MB && total < DROP_THRESHOLD * peakTotal) {
                     buildEndIndex = i;
                 }
-                totalRss.push(peakTotal);
+                totalRss.push(total);
                 const lines = [];
                 processKeys.forEach(processKey => {
                     const rss = included[processKey];
@@ -148,7 +148,7 @@
                 if (buildEndIndex === -1 && peakTotal >= MIN_PEAK_MB) {
                     buildEndIndex = i;
                 }
-                totalRss.push(peakTotal);
+                totalRss.push(null);
                 distribution.push(lastDistribution);
             } else {
                 totalRss.push(null);
