@@ -273,7 +273,28 @@ func Test_Run_doubleDoesNotDoubleExport(t *testing.T) {
 	}
 	time.Sleep(50 * time.Millisecond)
 	if got := exp.exportCallsCount(); got != 1 {
-		t.Fatalf("ExportRun calls = %d, want 1 (singleflight should coalesce)", got)
+		t.Fatalf("ExportRun calls = %d, want 1 (duplicate runs should coalesce)", got)
+	}
+}
+
+func Test_Run_allowsRetryAfterExhaustedExport(t *testing.T) {
+	exp := &recordingExporter{failRemaining: 3}
+	s := New(exp, func(ctx context.Context, runID string) (*models.RunDoc, error) {
+		return sampleDoc(true, true, 1), nil
+	}, nil)
+
+	s.Run("run-retry")
+	if got := exp.exportCallsCount(); got != 3 {
+		t.Fatalf("ExportRun calls after exhausted retries = %d, want 3", got)
+	}
+
+	exp.mu.Lock()
+	exp.failRemaining = 0
+	exp.mu.Unlock()
+
+	s.Run("run-retry")
+	if got := exp.exportCallsCount(); got != 4 {
+		t.Fatalf("ExportRun calls after retry = %d, want 4", got)
 	}
 }
 

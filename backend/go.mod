@@ -5,7 +5,6 @@ go 1.23.0
 require (
 	cloud.google.com/go/bigquery v1.70.0
 	cloud.google.com/go/firestore v1.18.0
-	golang.org/x/sync v0.16.0
 	google.golang.org/api v0.247.0
 )
 
@@ -41,6 +40,7 @@ require (
 	golang.org/x/mod v0.26.0 // indirect
 	golang.org/x/net v0.43.0 // indirect
 	golang.org/x/oauth2 v0.30.0 // indirect
+	golang.org/x/sync v0.16.0 // indirect
 	golang.org/x/sys v0.35.0 // indirect
 	golang.org/x/text v0.28.0 // indirect
 	golang.org/x/time v0.12.0 // indirect

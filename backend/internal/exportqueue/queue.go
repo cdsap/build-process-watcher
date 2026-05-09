@@ -3,10 +3,10 @@ package exportqueue
 import (
 	"context"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
-	"golang.org/x/sync/singleflight"
 )
 
 // RunGetter loads a run document (typically from Firestore) using the given context.
@@ -26,12 +26,18 @@ type Scheduler struct {
 	exp          RunExporter
 	getRun       RunGetter
 	getProcesses ProcessGetter
-	group        singleflight.Group
+	mu           sync.Mutex
+	scheduled    map[string]struct{}
 }
 
 // New returns a scheduler. If exp is nil or getRun is nil, Run is a no-op. getProcesses may be nil.
 func New(exp RunExporter, getRun RunGetter, getProcesses ProcessGetter) *Scheduler {
-	return &Scheduler{exp: exp, getRun: getRun, getProcesses: getProcesses}
+	return &Scheduler{
+		exp:          exp,
+		getRun:       getRun,
+		getProcesses: getProcesses,
+		scheduled:    make(map[string]struct{}),
+	}
 }
 
 // Run exports runID synchronously. Keeping this work in the request path avoids
@@ -40,10 +46,29 @@ func (s *Scheduler) Run(runID string) {
 	if s == nil || s.exp == nil || s.getRun == nil || runID == "" {
 		return
 	}
-	_, _, _ = s.group.Do(runID, func() (interface{}, error) {
-		s.exportRunWithRetries(runID)
-		return nil, nil
-	})
+	if !s.markScheduled(runID) {
+		log.Printf("BigQuery export already scheduled for %s; skipping duplicate request", runID)
+		return
+	}
+	if !s.exportRunWithRetries(runID) {
+		s.clearScheduled(runID)
+	}
+}
+
+func (s *Scheduler) markScheduled(runID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.scheduled[runID]; ok {
+		return false
+	}
+	s.scheduled[runID] = struct{}{}
+	return true
+}
+
+func (s *Scheduler) clearScheduled(runID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.scheduled, runID)
 }
 
 func procRowCount(p *models.ProcessDoc) int {
@@ -53,7 +78,7 @@ func procRowCount(p *models.ProcessDoc) int {
 	return len(p.ProcessInfo)
 }
 
-func (s *Scheduler) exportRunWithRetries(runID string) {
+func (s *Scheduler) exportRunWithRetries(runID string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
@@ -65,7 +90,7 @@ func (s *Scheduler) exportRunWithRetries(runID string) {
 			select {
 			case <-ctx.Done():
 				log.Printf("BigQuery export for %s: context done before retry: %v", runID, ctx.Err())
-				return
+				return false
 			case <-time.After(time.Duration(1<<uint(attempt-1)) * time.Second):
 			}
 		}
@@ -78,11 +103,11 @@ func (s *Scheduler) exportRunWithRetries(runID string) {
 		}
 		if !doc.ExportToBigquery {
 			log.Printf("BigQuery export skipped for %s (export_to_bigquery not set)", runID)
-			return
+			return true
 		}
 		if !doc.Finished {
 			log.Printf("BigQuery export skipped for %s (run not finished in Firestore)", runID)
-			return
+			return true
 		}
 
 		finishedAt := doc.FinishedAt
@@ -104,7 +129,7 @@ func (s *Scheduler) exportRunWithRetries(runID string) {
 		hasProcs := procDoc != nil && len(procDoc.ProcessInfo) > 0
 		if !hasSamples && !hasProcs {
 			log.Printf("BigQuery export skipped for %s (no samples and no process metadata)", runID)
-			return
+			return true
 		}
 
 		if hasSamples && !samplesExported {
@@ -128,7 +153,8 @@ func (s *Scheduler) exportRunWithRetries(runID string) {
 
 		log.Printf("✅ BigQuery export completed for %s (samples=%d process_rows=%d, read from Firestore)",
 			runID, len(doc.Samples), procRowCount(procDoc))
-		return
+		return true
 	}
 	log.Printf("❌ BigQuery export exhausted retries for %s: %v", runID, lastErr)
+	return false
 }
