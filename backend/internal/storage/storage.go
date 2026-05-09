@@ -19,7 +19,7 @@ type Client struct {
 	ctx       context.Context
 }
 
-// NewClient creates a new storage client
+// NewClient creates a new storage client.
 func NewClient(ctx context.Context, projectID string) (*Client, error) {
 	client, err := firestore.NewClient(ctx, projectID)
 	if err != nil {
@@ -38,10 +38,33 @@ func (c *Client) Close() error {
 	return c.firestore.Close()
 }
 
+// SetRunExportToBigquery records that a run should be exported to BigQuery when it finishes.
+func (c *Client) SetRunExportToBigquery(runID string, enabled bool) error {
+	if !enabled {
+		return nil
+	}
+	_, err := c.firestore.Collection("runs").Doc(runID).Set(c.ctx, map[string]interface{}{
+		"run_id":               runID,
+		"export_to_bigquery":   true,
+		"updated_at":           time.Now(),
+		"updated_at_timestamp": ToMillis(time.Now()),
+	}, firestore.MergeAll)
+	if err != nil {
+		return fmt.Errorf("merge export_to_bigquery for run %s: %w", runID, err)
+	}
+	log.Printf("📊 Marked run %s for BigQuery export on finish", runID)
+	return nil
+}
+
 // GetRun retrieves a run document by ID
 func (c *Client) GetRun(runID string) (*models.RunDoc, error) {
+	return c.GetRunWithContext(c.ctx, runID)
+}
+
+// GetRunWithContext loads a run using ctx (use for requests or background timeouts).
+func (c *Client) GetRunWithContext(ctx context.Context, runID string) (*models.RunDoc, error) {
 	doc := c.firestore.Collection("runs").Doc(runID)
-	snapshot, err := doc.Get(c.ctx)
+	snapshot, err := doc.Get(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -76,6 +99,14 @@ func (c *Client) StoreSamples(runID string, samples []models.Sample) error {
 		if err := snapshot.DataTo(&runDoc); err != nil {
 			log.Printf("❌ Error parsing document data: %v", err)
 			return err
+		}
+		if runDoc.StartTime.IsZero() {
+			now := time.Now()
+			runDoc.StartTime = now
+			if runDoc.CreatedAt.IsZero() {
+				runDoc.CreatedAt = now
+			}
+			log.Printf("📄 Run %s had no start_time (e.g. export flag only); set to %v", runID, now)
 		}
 		log.Printf("📄 Found existing document with %d samples", len(runDoc.Samples))
 	} else {
@@ -172,8 +203,13 @@ func (c *Client) StoreProcessInfo(runID string, processInfo models.ProcessInfo) 
 
 // GetProcesses retrieves process information for a run from the processes collection
 func (c *Client) GetProcesses(runID string) (*models.ProcessDoc, error) {
+	return c.GetProcessesWithContext(c.ctx, runID)
+}
+
+// GetProcessesWithContext loads processes/{runID} using ctx (for background BigQuery export).
+func (c *Client) GetProcessesWithContext(ctx context.Context, runID string) (*models.ProcessDoc, error) {
 	doc := c.firestore.Collection("processes").Doc(runID)
-	snapshot, err := doc.Get(c.ctx)
+	snapshot, err := doc.Get(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -194,27 +230,27 @@ func (c *Client) GetProcesses(runID string) (*models.ProcessDoc, error) {
 	return &processDoc, nil
 }
 
-// MarkRunAsFinished marks a run as finished
-func (c *Client) MarkRunAsFinished(runID string) error {
+// MarkRunAsFinished marks a run as finished. newlyFinished is true when this call transitioned the run to finished (so callers can enqueue async work such as BigQuery export).
+func (c *Client) MarkRunAsFinished(runID string) (newlyFinished bool, err error) {
 	doc := c.firestore.Collection("runs").Doc(runID)
 	snapshot, err := doc.Get(c.ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if !snapshot.Exists() {
-		return fmt.Errorf("run %s not found", runID)
+		return false, fmt.Errorf("run %s not found", runID)
 	}
 
 	var runDoc models.RunDoc
 	if err := snapshot.DataTo(&runDoc); err != nil {
-		return err
+		return false, err
 	}
 
 	// If already finished, nothing to do
 	if runDoc.Finished {
 		log.Printf("Run %s is already finished", runID)
-		return nil
+		return false, nil
 	}
 
 	// Mark as finished
@@ -229,10 +265,10 @@ func (c *Client) MarkRunAsFinished(runID string) error {
 	// Update in Firestore
 	_, err = doc.Set(c.ctx, runDoc)
 	if err != nil {
-		return err
+		return false, err
 	}
 
-	return nil
+	return true, nil
 }
 
 // FindStaleRuns finds runs that haven't been updated within the timeout period

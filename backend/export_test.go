@@ -46,8 +46,8 @@ var (
 func init() {
 	auth.Initialize()
 	// Handlers will work without storage for tests that don't need Firestore
-	testHandlers = handlers.NewHandlers(nil)
-	testCleanupService = cleanup.NewService(nil)
+	testHandlers = handlers.NewHandlers(nil, nil)
+	testCleanupService = cleanup.NewService(nil, nil)
 }
 
 // SetAdminSecret sets the admin secret for tests
