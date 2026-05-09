@@ -24,14 +24,19 @@ build:
 	@go build -o bin/main .
 
 # Deploy to Google Cloud Run
+# Optional: BIGQUERY_EXPORT_DATASET, BIGQUERY_EXPORT_TABLE, BIGQUERY_EXPORT_PROCESSES_TABLE — BigQuery export
 deploy:
 	@echo "Deploying to Google Cloud Run..."
-	@gcloud run deploy $(SERVICE_NAME) \
+	@ENV_VARS="GOOGLE_CLOUD_PROJECT=$(GOOGLE_CLOUD_PROJECT),JWT_SECRET_KEY=$(JWT_SECRET_KEY),ADMIN_SECRET=$(ADMIN_SECRET)"; \
+	if [ -n "$(BIGQUERY_EXPORT_DATASET)" ]; then ENV_VARS="$$ENV_VARS,BIGQUERY_EXPORT_DATASET=$(BIGQUERY_EXPORT_DATASET)"; fi; \
+	if [ -n "$(BIGQUERY_EXPORT_TABLE)" ]; then ENV_VARS="$$ENV_VARS,BIGQUERY_EXPORT_TABLE=$(BIGQUERY_EXPORT_TABLE)"; fi; \
+	if [ -n "$(BIGQUERY_EXPORT_PROCESSES_TABLE)" ]; then ENV_VARS="$$ENV_VARS,BIGQUERY_EXPORT_PROCESSES_TABLE=$(BIGQUERY_EXPORT_PROCESSES_TABLE)"; fi; \
+	gcloud run deploy $(SERVICE_NAME) \
 		--source . \
 		--platform managed \
 		--region $(REGION) \
 		--allow-unauthenticated \
-		--set-env-vars GOOGLE_CLOUD_PROJECT=$(GOOGLE_CLOUD_PROJECT),JWT_SECRET_KEY=$(JWT_SECRET_KEY),ADMIN_SECRET=$(ADMIN_SECRET)
+		--set-env-vars "$$ENV_VARS"
 
 # Run tests
 test:

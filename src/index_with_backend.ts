@@ -24,6 +24,7 @@ async function run() {
     }
     const interval = core.getInput('interval') || '5';
     const disableSummaryOutput = core.getInput('disable_summary_output') === 'true';
+    const exportToBigqueryRequested = core.getInput('export_to_bigquery') === 'true';
 
     // If backend is enabled but no URL provided, use the default Cloud Run URL
     if (enableBackend && !backendUrl) {
@@ -32,6 +33,12 @@ async function run() {
       if (debugMode) {
         core.info(`🔧 Backend enabled but no URL provided, using default URL: ${backendUrl}`);
       }
+    }
+
+    const useBackend = enableBackend && !!backendUrl;
+    const exportToBigquery = exportToBigqueryRequested && useBackend;
+    if (exportToBigqueryRequested && !useBackend && debugMode) {
+      core.info(`ℹ️  export_to_bigquery is ignored without remote_monitoring and a backend URL`);
     }
 
     // Show mode and essential info
@@ -74,6 +81,7 @@ async function run() {
     core.exportVariable('RUN_ID', runId);
     core.exportVariable('LOG_FILE', logFilePath);
     core.exportVariable('DISABLE_SUMMARY_OUTPUT', disableSummaryOutput.toString());
+    core.exportVariable('EXPORT_TO_BIGQUERY', exportToBigquery ? 'true' : 'false');
     
     // Also write RUN_ID to a file as a backup for the post step
     // This ensures the post step can always find the RUN_ID even if env vars aren't available
@@ -118,6 +126,7 @@ async function run() {
     core.setOutput('backend_url', backendUrl || '');
     core.setOutput('remote_monitoring', enableBackend.toString());
     core.setOutput('frontend_url', frontendUrl);
+    core.setOutput('export_to_bigquery', exportToBigquery.toString());
 
     // Always show the dashboard URL when remote monitoring is enabled (regardless of debug mode)
     if (enableBackend && frontendUrl) {
@@ -189,6 +198,7 @@ async function run() {
       LOG_FILE: logFilePath,
       DEBUG_MODE: debugMode.toString(),
       REMOTE_MONITORING: (enableBackend && backendUrl) ? 'true' : 'false',
+      EXPORT_TO_BIGQUERY: exportToBigquery ? 'true' : 'false',
       COLLECT_GC: 'true'
     };
 

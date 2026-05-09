@@ -78,6 +78,7 @@ echo "Start Time: $(date)" >> "$SCRIPT_DEBUG_LOG"
 echo "DEBUG_MODE: $DEBUG_MODE" >> "$SCRIPT_DEBUG_LOG"
 echo "REMOTE_MONITORING: $REMOTE_MONITORING" >> "$SCRIPT_DEBUG_LOG"
 echo "INTERVAL: $INTERVAL" >> "$SCRIPT_DEBUG_LOG"
+echo "EXPORT_TO_BIGQUERY: ${EXPORT_TO_BIGQUERY:-false}" >> "$SCRIPT_DEBUG_LOG"
 echo "PATTERNS: ${PATTERNS[*]}" >> "$SCRIPT_DEBUG_LOG"
 echo "PID: $$" >> "$SCRIPT_DEBUG_LOG"
 echo "" >> "$SCRIPT_DEBUG_LOG"
@@ -125,7 +126,11 @@ get_auth_token() {
     fi
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Requesting auth token for run_id: $RUN_ID" >> "$BACKEND_DEBUG_LOG"
     
-    log_script "get_auth_token: Sending POST to $BACKEND_URL/auth/run/$RUN_ID"
+    local auth_path="$BACKEND_URL/auth/run/$RUN_ID"
+    if [ "${EXPORT_TO_BIGQUERY:-false}" = "true" ]; then
+        auth_path="${auth_path}?export_to_bigquery=true"
+    fi
+    log_script "get_auth_token: Sending POST to $auth_path"
     local auth_response
     local http_code
     
@@ -134,7 +139,7 @@ get_auth_token() {
     log_script "get_auth_token: Starting curl request with timeout ${CURL_TIMEOUT}s, connect timeout ${CURL_CONNECT_TIMEOUT}s"
     auth_response=$(curl -s --max-time "$CURL_TIMEOUT" --connect-timeout "$CURL_CONNECT_TIMEOUT" \
         -w "\nHTTP_CODE:%{http_code}\nTIME_TOTAL:%{time_total}\nTIME_CONNECT:%{time_connect}" \
-        -X POST "$BACKEND_URL/auth/run/$RUN_ID" \
+        -X POST "$auth_path" \
         -H "Content-Type: application/json" 2>&1)
     local curl_exit=$?
     

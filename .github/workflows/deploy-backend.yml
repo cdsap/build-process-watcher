@@ -54,6 +54,9 @@ jobs:
         GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
         JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
         ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
+        BIGQUERY_EXPORT_DATASET: ${{ secrets.BIGQUERY_EXPORT_DATASET }}
+        BIGQUERY_EXPORT_TABLE: ${{ secrets.BIGQUERY_EXPORT_TABLE }}
+        BIGQUERY_EXPORT_PROCESSES_TABLE: ${{ secrets.BIGQUERY_EXPORT_PROCESSES_TABLE }}
       run: make deploy
 
     - name: Get service URL

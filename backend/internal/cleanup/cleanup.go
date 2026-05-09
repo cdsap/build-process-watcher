@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cdsap/build-process-watcher/backend/internal/auth"
+	"github.com/cdsap/build-process-watcher/backend/internal/exportqueue"
 	"github.com/cdsap/build-process-watcher/backend/internal/storage"
 )
 
@@ -19,12 +20,14 @@ const (
 // Service handles cleanup operations
 type Service struct {
 	storage *storage.Client
+	export  *exportqueue.Scheduler
 }
 
-// NewService creates a new cleanup service
-func NewService(storageClient *storage.Client) *Service {
+// NewService creates a new cleanup service. export may be nil.
+func NewService(storageClient *storage.Client, export *exportqueue.Scheduler) *Service {
 	return &Service{
 		storage: storageClient,
+		export:  export,
 	}
 }
 
@@ -71,12 +74,15 @@ func (s *Service) HandleManualStaleCleanup(w http.ResponseWriter, r *http.Reques
 	// Mark stale runs as finished
 	var cleanedRuns []string
 	for _, runID := range staleRuns {
-		err := s.storage.MarkRunAsFinished(runID)
+		newlyFinished, err := s.storage.MarkRunAsFinished(runID)
 		if err != nil {
 			log.Printf("❌ Error cleaning up stale run %s: %v", runID, err)
 		} else {
 			log.Printf("✅ Successfully marked stale run %s as finished", runID)
 			cleanedRuns = append(cleanedRuns, runID)
+			if newlyFinished && s.export != nil {
+				s.export.Run(runID)
+			}
 		}
 	}
 

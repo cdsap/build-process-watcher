@@ -26,6 +26,10 @@ inputs:
     description: 'Disable GitHub Actions summary output when remote monitoring is enabled (only applies when remote_monitoring is true)'
     required: false
     default: 'false'
+  export_to_bigquery:
+    description: "When true and remote_monitoring is true, ask the backend to export this run's samples to BigQuery when the run finishes (requires BIGQUERY_EXPORT_DATASET on the backend service)"
+    required: false
+    default: 'false'
 
 outputs:
   run_id:
@@ -36,6 +40,8 @@ outputs:
     description: 'Whether remote monitoring was enabled'
   frontend_url:
     description: 'The frontend dashboard URL for viewing results (only available when remote monitoring is enabled)'
+  export_to_bigquery:
+    description: 'Whether BigQuery export was requested for this run (backend must be configured with BIGQUERY_EXPORT_DATASET)'
 
 branding:
   icon: "activity"
