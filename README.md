@@ -15,7 +15,7 @@ Monitor memory usage of Java/Kotlin build processes (`GradleDaemon`, `GradleWork
 ### Local Mode (Artifacts Only)
 
 ```yaml
-- uses: cdsap/build-process-watcher@v0.6.0
+- uses: cdsap/build-process-watcher@v0.6.1
 ```
 
 Generates log files and charts as workflow artifacts.
@@ -23,13 +23,24 @@ Generates log files and charts as workflow artifacts.
 ### Remote Mode (Live Dashboard)
 
 ```yaml
-- uses: cdsap/build-process-watcher@v0.6.0
+- uses: cdsap/build-process-watcher@v0.6.1
   with:
     remote_monitoring: 'true'
 ```
 
 Data sent to cloud backend with live dashboard (24-hour retention).  
 Dashboard URL shown in job output. GC (garbage collection) monitoring is always enabled.
+
+### Optional Metrics Export to BigQuery
+
+```yaml
+- uses: cdsap/build-process-watcher@v0.6.1
+  with:
+    remote_monitoring: 'true'
+    export_to_bigquery: 'true'
+```
+
+This is not required for normal local or remote monitoring. Use it only when you want to collect run metrics in your own BigQuery dataset for longer-term analysis.
 
 ---
 
@@ -43,8 +54,11 @@ Dashboard URL shown in job output. GC (garbage collection) monitoring is always 
 | `interval` | Polling interval (seconds) | `5` | No |
 | `debug` | Enable debug logging | `false` | No |
 | `disable_summary_output` | Disable GitHub Actions summary output | `false` | No |
+| `export_to_bigquery` | Optional metrics export to BigQuery when Remote Mode finishes | `false` | No |
 
 **Environment variables (for Remote Mode):** Set `BACKEND_URL` and `FRONTEND_URL` as env vars (e.g. from secrets) for custom URLs. If unset, default Cloud Run and dashboard URLs are used.
+
+**BigQuery export is optional:** It is only for collecting metrics in BigQuery. Set `export_to_bigquery: 'true'` together with `remote_monitoring: 'true'` when you want that export. The backend service must be configured with `BIGQUERY_EXPORT_DATASET`; optional table overrides are `BIGQUERY_EXPORT_TABLE` and `BIGQUERY_EXPORT_PROCESSES_TABLE`.
 
 ---
 

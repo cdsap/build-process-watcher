@@ -27,7 +27,7 @@ inputs:
     required: false
     default: 'false'
   export_to_bigquery:
-    description: "When true and remote_monitoring is true, ask the backend to export this run's samples to BigQuery when the run finishes (requires BIGQUERY_EXPORT_DATASET on the backend service)"
+    description: "Optional metrics export: when true and remote_monitoring is true, ask the backend to export this run's samples to BigQuery when the run finishes (requires BIGQUERY_EXPORT_DATASET on the backend service)"
     required: false
     default: 'false'
 
@@ -41,7 +41,7 @@ outputs:
   frontend_url:
     description: 'The frontend dashboard URL for viewing results (only available when remote monitoring is enabled)'
   export_to_bigquery:
-    description: 'Whether BigQuery export was requested for this run (backend must be configured with BIGQUERY_EXPORT_DATASET)'
+    description: 'Whether optional BigQuery metrics export was requested for this run (backend must be configured with BIGQUERY_EXPORT_DATASET)'
 
 branding:
   icon: "activity"

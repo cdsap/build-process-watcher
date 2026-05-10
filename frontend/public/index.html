@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Build Process Watcher - Monitor Gradle Build Performance</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="stylesheet" href="/bpw-ui.css">
     <style>
         * {
             box-sizing: border-box;
@@ -12,719 +13,650 @@
             margin: 0;
         }
 
-        :root {
-            --primary: #3b82f6;
-            --primary-dark: #2563eb;
-            --secondary: #8b5cf6;
-            --success: #10b981;
-            --warning: #f59e0b;
-            --danger: #ef4444;
-            --dark: #1e293b;
-            --gray: #64748b;
-            --light-gray: #f1f5f9;
-            --white: #ffffff;
-        }
-
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            background-attachment: fixed;
-            color: var(--dark);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            color: var(--bpw-ink);
             line-height: 1.6;
-            min-height: 100vh;
-            position: relative;
-            overflow-x: hidden;
         }
 
-        body::before {
-            content: '';
+        .home-shell {
+            min-height: 100vh;
+        }
+
+        .home-nav {
             position: fixed;
-            top: 0;
-            left: 0;
+            top: 18px;
+            left: 50%;
+            z-index: 50;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: min(1180px, calc(100% - 28px));
+            padding: 0.65rem 0.8rem;
+            border: 1px solid rgba(255, 255, 255, 0.24);
+            border-radius: 8px;
+            background: rgba(22, 26, 29, 0.74);
+            box-shadow: 0 18px 60px rgba(0, 0, 0, 0.22);
+            backdrop-filter: blur(18px);
+            transform: translateX(-50%);
+        }
+
+        .home-brand {
+            color: #fff;
+            font-weight: 800;
+            letter-spacing: 0;
+            text-decoration: none;
+        }
+
+        .home-nav-links {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            flex-wrap: wrap;
+        }
+
+        .home-nav-links a {
+            padding: 0.42rem 0.65rem;
+            color: rgba(255, 255, 255, 0.84);
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 700;
+            text-decoration: none;
+        }
+
+        .home-nav-links a:hover {
+            background: rgba(255, 255, 255, 0.12);
+            color: #fff;
+        }
+
+        .home-hero {
+            position: relative;
+            display: grid;
+            align-items: end;
+            min-height: 92vh;
+            padding: 8.5rem max(24px, calc((100vw - 1180px) / 2)) 4.5rem;
+            overflow: hidden;
+            color: #fff;
+            background: #161a1d;
+        }
+
+        .home-hero-media {
+            position: absolute;
+            inset: 0;
             width: 100%;
             height: 100%;
-            background: 
-                radial-gradient(circle at 20% 30%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
-                radial-gradient(circle at 80% 70%, rgba(255, 255, 255, 0.1) 0%, transparent 50%);
-            pointer-events: none;
-            z-index: 0;
+            object-fit: cover;
+            opacity: 0.42;
+            filter: saturate(0.9) contrast(1.08);
         }
 
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 2rem;
+        .home-hero::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background:
+                linear-gradient(90deg, rgba(22, 26, 29, 0.92) 0%, rgba(22, 26, 29, 0.68) 48%, rgba(8, 127, 140, 0.46) 100%),
+                linear-gradient(180deg, rgba(22, 26, 29, 0.18) 0%, rgba(22, 26, 29, 0.92) 100%);
+        }
+
+        .home-hero-content {
             position: relative;
             z-index: 1;
-        }
-
-        /* Hero Section */
-        .hero {
-            text-align: center;
-            margin-bottom: 4rem;
-            padding: 4rem 2rem;
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(20px);
-            border-radius: 2rem;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            animation: fadeInUp 0.8s ease-out;
-        }
-
-        @keyframes fadeInUp {
-            from {
-                opacity: 0;
-                transform: translateY(30px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .hero h1 {
-            font-size: 3.5rem;
-            font-weight: 800;
-            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            margin-bottom: 1.5rem;
-            letter-spacing: -0.02em;
-        }
-
-        .hero p {
-            font-size: 1.5rem;
-            color: var(--gray);
-            max-width: 50rem;
-            margin: 0 auto 2rem;
-            font-weight: 300;
-        }
-
-        .hero-badges {
-            display: flex;
-            justify-content: center;
-            gap: 1rem;
-            flex-wrap: wrap;
-            margin-top: 2rem;
-        }
-
-        .badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 0.75rem 1.5rem;
-            background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
-            border: 1px solid rgba(59, 130, 246, 0.2);
-            border-radius: 2rem;
-            font-size: 0.9rem;
-            font-weight: 500;
-            color: var(--primary-dark);
-        }
-
-        /* Cards */
-        .card {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            border-radius: 1.5rem;
-            padding: 2.5rem;
-            margin-bottom: 2rem;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            animation: fadeInUp 0.8s ease-out;
-            animation-fill-mode: both;
-        }
-
-        .card:nth-child(1) { animation-delay: 0.1s; }
-        .card:nth-child(2) { animation-delay: 0.2s; }
-        .card:nth-child(3) { animation-delay: 0.3s; }
-        .card:nth-child(4) { animation-delay: 0.4s; }
-
-        .card:hover {
-            transform: translateY(-8px);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
-            border-color: rgba(255, 255, 255, 0.5);
-        }
-
-        .card h2, .card h3 {
-            font-size: 2rem;
-            font-weight: 700;
-            color: var(--dark);
-            margin-bottom: 1.5rem;
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-        }
-
-        .card h3 {
-            font-size: 1.5rem;
-        }
-
-        /* Feature Grid */
-        .features-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.7fr);
             gap: 2rem;
-            margin-bottom: 3rem;
+            align-items: end;
+        }
+
+        .version-pill {
+            display: inline-flex;
+            width: fit-content;
+            margin-bottom: 1rem;
+            padding: 0.38rem 0.7rem;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.12);
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 0.82rem;
+            font-weight: 760;
+        }
+
+        .home-hero h1 {
+            max-width: 980px;
+            color: #fff !important;
+            font-size: clamp(3rem, 8vw, 7.6rem) !important;
+            line-height: 0.92;
+            letter-spacing: 0 !important;
+        }
+
+        .home-hero p {
+            max-width: 720px;
+            margin-top: 1.2rem;
+            color: rgba(255, 255, 255, 0.82);
+            font-size: clamp(1.05rem, 1.7vw, 1.45rem);
+        }
+
+        .hero-actions {
+            display: flex;
+            gap: 0.7rem;
+            flex-wrap: wrap;
+            margin-top: 1.5rem;
+        }
+
+        .hero-actions .btn {
+            box-shadow: none;
+        }
+
+        .hero-panel {
+            padding: 1rem;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.11);
+            backdrop-filter: blur(12px);
+        }
+
+        .hero-panel h2 {
+            color: #fff;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .hero-metrics {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.7rem;
+            margin-top: 0.85rem;
+        }
+
+        .hero-metric {
+            padding: 0.85rem;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.12);
+        }
+
+        .hero-metric strong {
+            display: block;
+            color: #fff;
+            font-size: 1.3rem;
+            line-height: 1;
+        }
+
+        .hero-metric span {
+            display: block;
+            margin-top: 0.35rem;
+            color: rgba(255, 255, 255, 0.72);
+            font-size: 0.78rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+        }
+
+        .home-section {
+            padding: 4rem max(20px, calc((100vw - 1180px) / 2));
+        }
+
+        .section-kicker {
+            color: var(--bpw-coral);
+            font-size: 0.78rem;
+            font-weight: 800;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
+
+        .section-heading {
+            max-width: 760px;
+            margin-top: 0.35rem;
+            color: var(--bpw-ink);
+            font-size: clamp(2rem, 4vw, 4.2rem);
+            line-height: 1;
+            font-weight: 820;
+            letter-spacing: 0;
+        }
+
+        .section-copy {
+            max-width: 760px;
+            margin-top: 0.9rem;
+            color: var(--bpw-muted);
+            font-size: 1.05rem;
+        }
+
+        .snippet-grid,
+        .feature-grid,
+        .media-grid {
+            display: grid;
+            gap: 1rem;
+            margin-top: 1.8rem;
+        }
+
+        .snippet-grid {
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        }
+
+        .feature-grid {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+
+        .media-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .snippet-card,
+        .feature-card,
+        .media-card,
+        .table-card {
+            border: 1px solid rgba(22, 26, 29, 0.09);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.92);
+            box-shadow: var(--bpw-shadow);
+        }
+
+        .snippet-card,
+        .feature-card,
+        .table-card {
+            padding: 1rem;
+        }
+
+        .snippet-card h3,
+        .feature-card h3,
+        .media-card h3 {
+            color: var(--bpw-ink);
+            font-size: 1.05rem;
+            font-weight: 800;
+        }
+
+        .snippet-card p,
+        .feature-card p,
+        .media-card p {
+            margin-top: 0.45rem;
+            color: var(--bpw-muted);
+            font-size: 0.94rem;
+        }
+
+        pre {
+            margin-top: 1rem;
+            padding: 1rem;
+            overflow-x: auto;
+            border-radius: 8px;
+            background: #161a1d;
+            color: #e8ece7;
+            font-size: 0.88rem;
+            line-height: 1.5;
+        }
+
+        code {
+            font-family: "SF Mono", Monaco, Consolas, monospace;
         }
 
         .feature-card {
-            background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.9) 100%);
-            backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            border-radius: 1.5rem;
-            padding: 2rem;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
+            min-height: 190px;
+        }
+
+        .feature-number {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 2rem;
+            height: 2rem;
+            margin-bottom: 1rem;
+            border-radius: 8px;
+            background: var(--bpw-panel-soft);
+            color: var(--bpw-teal);
+            font-weight: 800;
+        }
+
+        .media-card {
             overflow: hidden;
         }
 
-        .feature-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 4px;
-            background: linear-gradient(90deg, var(--primary) 0%, var(--secondary) 100%);
-            transform: scaleX(0);
-            transition: transform 0.3s ease;
+        .media-card img {
+            display: block;
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            object-fit: cover;
+            background: #fff;
         }
 
-        .feature-card:hover::before {
-            transform: scaleX(1);
+        .media-card-content {
+            padding: 1rem;
         }
 
-        .feature-card:hover {
-            transform: translateY(-8px) scale(1.02);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
-        }
-
-        .feature-card h3 {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: var(--dark);
-            margin-bottom: 1rem;
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-        }
-
-        .feature-icon {
-            font-size: 2rem;
-        }
-
-        /* Code Blocks */
-        pre {
-            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-            color: #e2e8f0;
-            padding: 1.5rem;
-            border-radius: 1rem;
-            overflow-x: auto;
-            margin: 1.5rem 0;
-            font-size: 0.9rem;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.3);
-            position: relative;
-        }
-
-        pre code {
-            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 'Source Code Pro', monospace;
-        }
-
-        /* Buttons */
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 1rem 2rem;
-            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-            color: white;
-            text-decoration: none;
-            border-radius: 0.75rem;
-            font-weight: 600;
-            font-size: 1rem;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
-            border: none;
-            cursor: pointer;
-        }
-
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(59, 130, 246, 0.5);
-        }
-
-        .btn-secondary {
-            background: linear-gradient(135deg, var(--gray) 0%, #475569 100%);
-            box-shadow: 0 4px 15px rgba(100, 116, 139, 0.4);
-        }
-
-        .btn-secondary:hover {
-            box-shadow: 0 8px 25px rgba(100, 116, 139, 0.5);
-        }
-
-        /* Example Images */
-        .example-image {
-            background: var(--light-gray);
-            border: 2px solid rgba(0, 0, 0, 0.05);
-            border-radius: 1rem;
-            padding: 1.5rem;
-            text-align: center;
-            margin: 1.5rem 0;
-            transition: all 0.3s ease;
-        }
-
-        .example-image:hover {
-            border-color: var(--primary);
-            box-shadow: 0 10px 30px rgba(59, 130, 246, 0.2);
-        }
-
-        .example-image img {
-            max-width: 100%;
-            height: auto;
-            border-radius: 0.5rem;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-        }
-
-        .example-image p {
+        .input-table {
+            width: 100%;
+            min-width: 760px;
+            border-collapse: collapse;
             margin-top: 1rem;
-            font-size: 0.875rem;
-            color: var(--gray);
+            font-size: 0.94rem;
         }
 
-        /* Info Boxes */
-        .info-box {
-            padding: 1.25rem;
-            border-radius: 1rem;
-            margin: 1rem 0;
-            font-size: 0.95rem;
-            border-left: 4px solid;
+        .input-table th,
+        .input-table td {
+            padding: 0.8rem;
+            border-bottom: 1px solid var(--bpw-line);
+            text-align: left;
+            vertical-align: top;
         }
 
-        .info-box-primary {
-            background: rgba(59, 130, 246, 0.1);
-            border-color: var(--primary);
-            color: var(--primary-dark);
+        .input-table th {
+            color: var(--bpw-muted);
+            font-size: 0.76rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
         }
 
-        .info-box-success {
-            background: rgba(16, 185, 129, 0.1);
-            border-color: var(--success);
-            color: #047857;
-        }
-
-        .info-box-warning {
-            background: rgba(245, 158, 11, 0.1);
-            border-color: var(--warning);
-            color: #b45309;
-        }
-
-        /* Section Headers */
-        .section-header {
-            display: flex;
+        .home-cta {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 1rem;
             align-items: center;
-            gap: 1rem;
-            margin-bottom: 1.5rem;
+            padding: 1.25rem;
+            border-radius: 8px;
+            background:
+                linear-gradient(130deg, rgba(22, 26, 29, 0.97), rgba(8, 127, 140, 0.9) 62%, rgba(201, 81, 61, 0.86));
+            color: #fff;
+            box-shadow: var(--bpw-shadow);
         }
 
-        .section-icon {
-            font-size: 2.5rem;
+        .home-cta h2 {
+            color: #fff;
+            font-size: clamp(1.5rem, 3vw, 3rem);
+            line-height: 1;
         }
 
-        /* CTA Section */
-        .cta {
-            text-align: center;
-            margin: 4rem 0;
-            padding: 3rem;
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(20px);
-            border-radius: 2rem;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
+        .home-cta p {
+            margin-top: 0.6rem;
+            color: rgba(255, 255, 255, 0.78);
         }
 
-        .cta h2 {
-            font-size: 2.5rem;
-            font-weight: 700;
-            margin-bottom: 1rem;
-            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+        .home-footer {
+            padding: 2rem max(20px, calc((100vw - 1180px) / 2));
+            border-top: 1px solid rgba(22, 26, 29, 0.08);
+            color: var(--bpw-muted);
+            font-size: 0.9rem;
         }
 
-        .btn-group {
-            display: flex;
-            gap: 1rem;
-            justify-content: center;
-            flex-wrap: wrap;
-            margin-top: 2rem;
-        }
-
-        /* Footer */
-        .footer {
-            text-align: center;
-            margin-top: 4rem;
-            padding: 3rem 2rem;
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(20px);
-            border-radius: 2rem;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
-            color: var(--gray);
-        }
-
-        .footer p {
-            font-size: 1rem;
-            margin: 0.5rem 0;
-        }
-
-        /* Responsive */
-        @media (max-width: 768px) {
-            .hero h1 {
-                font-size: 2.5rem;
+        @media (max-width: 900px) {
+            .home-nav {
+                position: absolute;
             }
 
-            .hero p {
-                font-size: 1.25rem;
+            .home-nav-links {
+                justify-content: flex-end;
             }
 
-            .features-grid {
+            .home-hero {
+                min-height: 880px;
+                padding-top: 7rem;
+            }
+
+            .home-hero-content,
+            .snippet-grid,
+            .media-grid,
+            .home-cta {
                 grid-template-columns: 1fr;
             }
 
-            .card {
-                padding: 1.5rem;
+            .feature-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
             }
+        }
 
-            .btn-group {
+        @media (max-width: 560px) {
+            .home-nav {
+                align-items: flex-start;
                 flex-direction: column;
             }
 
-            .btn {
-                width: 100%;
-                justify-content: center;
+            .home-nav-links a {
+                padding-left: 0;
             }
-        }
 
-        /* Animations */
-        @keyframes pulse {
-            0%, 100% {
-                opacity: 1;
+            .home-hero {
+                min-height: 960px;
             }
-            50% {
-                opacity: 0.7;
-            }
-        }
 
-        .pulse {
-            animation: pulse 2s ease-in-out infinite;
+            .feature-grid,
+            .hero-metrics {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <!-- Hero Section -->
-        <div class="hero">
-            <div style="margin-bottom: 1.5rem;">
-                <img src="/performance.gif" alt="Performance Demo" style="max-width: 100%; border-radius: 1rem; box-shadow: 0 10px 40px rgba(0,0,0,0.2);">
+    <main class="home-shell">
+        <nav class="home-nav" aria-label="Primary">
+            <a class="home-brand" href="/">Build Process Watcher</a>
+            <div class="home-nav-links">
+                <a href="#" id="nav-demo-link">Demo</a>
+                <a href="#" id="nav-replay-link">Replay</a>
+                <a href="#" id="nav-compare-link">Compare</a>
+                <a href="https://github.com/cdsap/build-process-watcher">GitHub</a>
             </div>
-            <h1>🚀 Build Process Watcher</h1>
-            <p>Monitor memory usage and performance of your Gradle build processes in real-time with our powerful GitHub Action.</p>
-        </div>
+        </nav>
 
-        <!-- Quick Start -->
-        <div class="features-grid">
-            <div class="feature-card">
-                <h3><span class="feature-icon">📦</span>Default Mode</h3>
-                <p style="margin-bottom: 1rem; color: var(--gray);">Generate Mermaid diagrams and SVG charts locally, uploaded as GitHub Actions artifacts:</p>
-                <pre><code>- name: Build Process Watcher
-  uses: cdsap/build-process-watcher@v0.6.0
- 
+        <section class="home-hero">
+            <img class="home-hero-media" src="/performance.gif" alt="Build Process Watcher dashboard preview">
+            <div class="home-hero-content">
+                <div>
+                    <span class="version-pill">Action snippets updated for v0.6.1</span>
+                    <h1>Build Process Watcher</h1>
+                    <p>Capture Gradle, Kotlin, and JVM memory pressure while CI is running, then replay or compare the build with enough context to explain what changed.</p>
+                    <div class="hero-actions">
+                        <a href="#" id="hero-demo-link" class="btn">Open Demo Dashboard</a>
+                        <a href="https://github.com/cdsap/build-process-watcher" class="btn secondary">View Repository</a>
+                    </div>
+                </div>
+                <aside class="hero-panel" aria-label="Monitoring capabilities">
+                    <h2>Live run surface</h2>
+                    <div class="hero-metrics">
+                        <div class="hero-metric"><strong>RSS</strong><span>Total memory</span></div>
+                        <div class="hero-metric"><strong>Heap</strong><span>JVM pressure</span></div>
+                        <div class="hero-metric"><strong>GC</strong><span>Collector time</span></div>
+                        <div class="hero-metric"><strong>JSON</strong><span>Replay export</span></div>
+                    </div>
+                </aside>
+            </div>
+        </section>
+
+        <section class="home-section" id="quick-start">
+            <div class="section-kicker">Quick Start</div>
+            <h2 class="section-heading">Two modes, one action.</h2>
+            <p class="section-copy">Use local mode for artifacts only, remote mode for the hosted dashboard, or optionally export metrics to BigQuery. Every snippet is pinned to `v0.6.1`.</p>
+
+            <div class="snippet-grid">
+                <article class="snippet-card">
+                    <h3>Local artifacts</h3>
+                    <p>Generates logs, JSON, SVG charts, and the Actions summary inside the workflow.</p>
+                    <pre><code>- name: Build Process Watcher
+  uses: cdsap/build-process-watcher@v0.6.1
+
 - name: Build project
   run: ./gradlew clean build</code></pre>
-                <div class="info-box info-box-primary">
-                    <strong>📤 Output:</strong> Check GitHub Actions artifacts for Mermaid diagrams, SVG charts, and log files
-                </div>
-            </div>
-            
-            <div class="feature-card">
-                <h3><span class="feature-icon">🌐</span>Remote Mode</h3>
-                <p style="margin-bottom: 1rem; color: var(--gray);">Enable live dashboard with real-time monitoring and GC metrics:</p>
-                <pre><code>- name: Build Process Watcher
-  uses: cdsap/build-process-watcher@v0.6.0
+                </article>
+
+                <article class="snippet-card">
+                    <h3>Remote dashboard</h3>
+                    <p>Streams samples to the hosted dashboard and keeps reports available for 24 hours.</p>
+                    <pre><code>- name: Build Process Watcher
+  uses: cdsap/build-process-watcher@v0.6.1
   with:
     remote_monitoring: 'true'
-    
+
 - name: Build project
   run: ./gradlew clean build</code></pre>
-                <div class="info-box info-box-success">
-                    <strong>🌐 Output:</strong> Dashboard URL displayed in action output (data available for 24 hours)
-                </div>
-            </div>
-        </div>
+                </article>
 
-        <!-- Inputs -->
-        <div class="card">
-            <div class="section-header">
-                <span class="section-icon">📋</span>
-                <h2>Inputs</h2>
+                <article class="snippet-card">
+                    <h3>Optional BigQuery metrics</h3>
+                    <p>Not required for monitoring. Enable only when you want finished-run metrics collected in BigQuery.</p>
+                    <pre><code>- name: Build Process Watcher
+  uses: cdsap/build-process-watcher@v0.6.1
+  with:
+    remote_monitoring: 'true'
+    export_to_bigquery: 'true'
+
+- name: Build project
+  run: ./gradlew clean build</code></pre>
+                </article>
             </div>
-            <p style="font-size: 1.1rem; color: var(--gray); margin-bottom: 1.5rem;">
-                Key configuration options for the action. <a href="https://github.com/cdsap/build-process-watcher?tab=readme-ov-file#-inputs" target="_blank" rel="noopener noreferrer">View full inputs on GitHub →</a>
-            </p>
-            <div style="overflow-x: auto;">
-                <table style="width: 100%; border-collapse: collapse; font-size: 0.95rem;">
+        </section>
+
+        <section class="home-section">
+            <div class="section-kicker">Workflow</div>
+            <h2 class="section-heading">Built for comparing real CI behavior.</h2>
+            <p class="section-copy">The UI now centers on the three analysis loops the action supports: watch a run, replay an exported run, and compare two builds side by side.</p>
+            <div class="feature-grid">
+                <article class="feature-card">
+                    <span class="feature-number">01</span>
+                    <h3>Run dashboard</h3>
+                    <p>Track peak RSS, heap, GC time, process metadata, VM flags, and live refresh status.</p>
+                </article>
+                <article class="feature-card">
+                    <span class="feature-number">02</span>
+                    <h3>Replay JSON</h3>
+                    <p>Upload an artifact JSON file and scrub through memory and GC timelines offline.</p>
+                </article>
+                <article class="feature-card">
+                    <span class="feature-number">03</span>
+                    <h3>Compare runs</h3>
+                    <p>Overlay two exported runs with a shared elapsed timeline and per-process colors.</p>
+                </article>
+                <article class="feature-card">
+                    <span class="feature-number">04</span>
+                    <h3>Optional BigQuery export</h3>
+                    <p>Collect finished-run metrics in BigQuery when `export_to_bigquery` is enabled.</p>
+                </article>
+            </div>
+        </section>
+
+        <section class="home-section">
+            <div class="section-kicker">Screens</div>
+            <h2 class="section-heading">The data stays inspectable after the job finishes.</h2>
+            <div class="media-grid">
+                <article class="media-card">
+                    <img src="/reply.gif" alt="Replay JSON run demo">
+                    <div class="media-card-content">
+                        <h3>Replay exported runs</h3>
+                        <p>Use workflow artifacts without enabling remote mode.</p>
+                    </div>
+                </article>
+                <article class="media-card">
+                    <img src="/compare.gif" alt="Compare JSON runs demo">
+                    <div class="media-card-content">
+                        <h3>Compare two builds</h3>
+                        <p>Spot changes in memory pressure, GC, and process configuration.</p>
+                    </div>
+                </article>
+            </div>
+            <div class="hero-actions" style="margin-top: 1.2rem;">
+                <a href="#" id="compare-link" class="btn">Compare JSON Runs</a>
+                <a href="#" id="replay-link" class="btn secondary">Replay JSON Run</a>
+            </div>
+        </section>
+
+        <section class="home-section">
+            <div class="section-kicker">Inputs</div>
+            <h2 class="section-heading">Configuration that matters most.</h2>
+            <p class="section-copy">See the repository README for the full contract and backend deployment details.</p>
+            <div class="table-card" style="overflow-x: auto;">
+                <table class="input-table">
                     <thead>
-                        <tr style="background: var(--light-gray); border-bottom: 2px solid var(--primary);">
-                            <th style="padding: 0.75rem 1rem; text-align: left;">Input</th>
-                            <th style="padding: 0.75rem 1rem; text-align: left;">Description</th>
-                            <th style="padding: 0.75rem 1rem; text-align: left;">Default</th>
-                            <th style="padding: 0.75rem 1rem; text-align: left;">Required</th>
+                        <tr>
+                            <th>Input</th>
+                            <th>Description</th>
+                            <th>Default</th>
+                            <th>Required</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr style="border-bottom: 1px solid var(--light-gray);">
-                            <td style="padding: 0.75rem 1rem;"><code>remote_monitoring</code></td>
-                            <td style="padding: 0.75rem 1rem; color: var(--gray);">Enable cloud dashboard</td>
-                            <td style="padding: 0.75rem 1rem;">false</td>
-                            <td style="padding: 0.75rem 1rem;">No</td>
+                        <tr>
+                            <td><code>remote_monitoring</code></td>
+                            <td>Enable cloud dashboard ingestion.</td>
+                            <td><code>false</code></td>
+                            <td>No</td>
                         </tr>
-                        <tr style="border-bottom: 1px solid var(--light-gray);">
-                            <td style="padding: 0.75rem 1rem;"><code>interval</code></td>
-                            <td style="padding: 0.75rem 1rem; color: var(--gray);">Polling interval (seconds)</td>
-                            <td style="padding: 0.75rem 1rem;">5</td>
-                            <td style="padding: 0.75rem 1rem;">No</td>
+                        <tr>
+                            <td><code>export_to_bigquery</code></td>
+                            <td>Optional metrics export to BigQuery for finished remote runs.</td>
+                            <td><code>false</code></td>
+                            <td>No</td>
                         </tr>
-                        <tr style="border-bottom: 1px solid var(--light-gray);">
-                            <td style="padding: 0.75rem 1rem;"><code>debug</code></td>
-                            <td style="padding: 0.75rem 1rem; color: var(--gray);">Enable debug logging</td>
-                            <td style="padding: 0.75rem 1rem;">false</td>
-                            <td style="padding: 0.75rem 1rem;">No</td>
+                        <tr>
+                            <td><code>interval</code></td>
+                            <td>Polling interval in seconds.</td>
+                            <td><code>5</code></td>
+                            <td>No</td>
                         </tr>
-                        <tr style="border-bottom: 1px solid var(--light-gray);">
-                            <td style="padding: 0.75rem 1rem;"><code>disable_summary_output</code></td>
-                            <td style="padding: 0.75rem 1rem; color: var(--gray);">Disable GitHub Actions summary output</td>
-                            <td style="padding: 0.75rem 1rem;">false</td>
-                            <td style="padding: 0.75rem 1rem;">No</td>
+                        <tr>
+                            <td><code>disable_summary_output</code></td>
+                            <td>Suppress the GitHub Actions job summary.</td>
+                            <td><code>false</code></td>
+                            <td>No</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
-        </div>
+        </section>
 
-        <!-- Live Example -->
-        <div class="card">
-            <div class="section-header">
-                <span class="section-icon">🎯</span>
-                <h2>Live Example Dashboard</h2>
-            </div>
-            <p style="font-size: 1.1rem; color: var(--gray); margin-bottom: 1.5rem;">
-                View a real Gradle build monitoring dashboard with live data from an actual build run.
-            </p>
-            <div style="text-align: center; margin: 2rem 0;">
-                <a href="#" id="demo-link" class="btn">🔗 Open Live Example Dashboard</a>
-            </div>
-            <div class="info-box info-box-primary" style="text-align: center;">
-                <p style="margin: 0;"><strong>Real data from run 18236843825</strong> - 311 samples from GradleDaemon & KotlinCompileDaemon</p>
-                <p style="margin: 0.5rem 0 0 0; font-size: 0.9rem; opacity: 0.9;">This example demonstrates the Remote Mode dashboard with 24-hour data retention</p>
-            </div>
-        </div>
-
-        <!-- Replay & Compare -->
-        <div class="card">
-            <div class="section-header">
-                <span class="section-icon">🧪</span>
-                <h2>Replay & Compare JSON</h2>
-            </div>
-            <p style="font-size: 1.1rem; color: var(--gray); margin-bottom: 1.5rem;">
-                Analyze exported JSON runs offline. Replay a single run or compare two runs side-by-side.
-            </p>
-            <div class="info-box info-box-primary" style="margin-bottom: 1.5rem;">
-                <strong>💡 No Remote Mode needed:</strong> With Local Mode, the action generates JSON files in the workflow artifacts. Download the JSON from your artifacts and upload it to <a href="https://process-watcher.web.app/replay.html" target="_blank" rel="noopener noreferrer">Replay</a> or <a href="https://process-watcher.web.app/compare.html" target="_blank" rel="noopener noreferrer">Compare</a>. You can also open these HTML files locally in your browser.
-            </div>
-            <div class="example-image">
-                <img src="/reply.gif" alt="Replay JSON run demo">
-                <p>Example: Replay exported JSON runs with interactive charts</p>
-            </div>
-            <div class="example-image">
-                <img src="/compare.gif" alt="Compare JSON runs demo">
-                <p>Example: Compare two JSON runs side-by-side with a shared timeline</p>
-            </div>
-            <div class="btn-group">
-                <a href="#" id="compare-link" class="btn">Compare JSON Runs</a>
-                <a href="#" id="replay-link" class="btn btn-secondary">Replay JSON Run</a>
-            </div>
-        </div>
-
-        <!-- Output Examples -->
-        <div class="card">
-            <div class="section-header">
-                <span class="section-icon">📊</span>
-                <h2>Default Mode Output Examples</h2>
-            </div>
-            <p style="font-size: 1.1rem; color: var(--gray); margin-bottom: 2rem;">
-                When using Default Mode, you'll get these outputs in your GitHub Actions artifacts:
-            </p>
-            
-            <div style="margin-bottom: 3rem;">
-                <h3 style="margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
-                    <span>📊</span> Mermaid Diagram
-                </h3>
-                <p style="margin-bottom: 1rem; color: var(--gray);">Interactive flowchart showing memory usage over time with process details</p>
-                
-                <div class="info-box info-box-primary">
-                    <strong>📄 File:</strong> <code>memory_usage.mermaid</code> - Can be rendered in GitHub, GitLab, or any Mermaid-compatible viewer
-                </div>
-
-                <div class="example-image">
-                    <img src="/mermaid-diagram-example.png" alt="Mermaid Diagram Example">
-                    <p>Example: Memory usage flowchart with process details</p>
-                </div>
-            </div>
-
-            <div>
-                <h3 style="margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
-                    <span>📈</span> SVG Chart
-                </h3>
-                <p style="margin-bottom: 1rem; color: var(--gray);">High-quality vector chart showing RSS and Heap usage with process-specific colors</p>
-                
-                <div class="info-box info-box-success">
-                    <strong>📄 File:</strong> <code>memory_usage.svg</code> - Scalable vector graphics perfect for documentation and reports
-                </div>
-
-                <div class="example-image">
-                    <img src="/svg-chart-example.png" alt="SVG Chart Example">
-                    <p>Example: RSS and Heap usage chart with process-specific colors</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- GC Metrics Feature -->
-        <div class="card">
-            <div class="section-header">
-                <span class="section-icon">🆕</span>
-                <h2>GC Metrics Collection</h2>
-            </div>
-            <div>
-                <h3 style="margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
-                    <span>🔄</span> GC Time Chart
-                </h3>
-                <p style="margin-bottom: 1rem; color: var(--gray);">
-                    Track garbage collection performance over time to identify GC-related performance bottlenecks. 
-                    GC time is displayed in seconds and works across all JVM GC collectors (Parallel, G1, Serial, CMS).
-                </p>
-                
-                <div class="example-image">
-                    <img src="/gc_diagram.png" alt="GC Time Chart Example">
-                    <p>Example: GC time chart showing garbage collection performance over time</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- Features Overview -->
-        <div class="card">
-            <div class="section-header">
-                <span class="section-icon">✨</span>
-                <h2>Key Features</h2>
-            </div>
-            
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin-top: 2rem;">
+        <section class="home-section">
+            <div class="home-cta">
                 <div>
-                    <h4 style="color: var(--primary); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
-                        <span>📊</span> Default Mode
-                    </h4>
-                    <p style="color: var(--gray); font-size: 0.95rem;">
-                        Generate Mermaid diagrams and SVG charts locally. Data is stored locally and uploaded as GitHub Actions artifacts.
-                    </p>
+                    <h2>Open a real dashboard.</h2>
+                    <p>The demo uses recorded build data so you can inspect the run UI without waiting for a workflow.</p>
                 </div>
-
-                <div>
-                    <h4 style="color: var(--success); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
-                        <span>🌐</span> Remote Mode
-                    </h4>
-                    <p style="color: var(--gray); font-size: 0.95rem;">
-                        Check the current state of processes in real-time through our web dashboard. Data is stored in the cloud with 24-hour retention.
-                    </p>
-                </div>
-
+                <a href="#" id="demo-link" class="btn">View Example</a>
             </div>
-        </div>
+        </section>
+    </main>
 
-        <!-- CTA Section -->
-        <div class="cta">
-            <h2>Ready to Get Started?</h2>
-            <p style="font-size: 1.2rem; color: var(--gray); margin-bottom: 2rem;">
-                Start monitoring your build processes today with just a few lines of code.
-            </p>
-            <div class="btn-group">
-                <a href="#" id="demo-link-2" class="btn">View Example Dashboard</a>
-                <a href="https://github.com/cdsap/build-process-watcher" class="btn btn-secondary">View on GitHub</a>
-            </div>
-        </div>
-
-        <!-- Footer -->
-        <div class="footer">
-            <p style="font-size: 1.1rem; font-weight: 600; color: var(--dark);">🚀 Build Process Watcher</p>
-            <p>Free service with 24-hour memory report availability</p>
-        </div>
-    </div>
+    <footer class="home-footer">
+        <p>Build Process Watcher. Free hosted reports are retained for 24 hours.</p>
+    </footer>
 
     <script src="/config.js"></script>
     <script>
-        // Set demo links dynamically based on config
         document.addEventListener('DOMContentLoaded', function() {
             const frontendUrl = window.BUILD_PROCESS_WATCHER_CONFIG?.frontendUrl || 'https://process-watcher.web.app';
-            const demoLinks = document.querySelectorAll('#demo-link, #demo-link-2');
-            demoLinks.forEach(link => {
-                link.href = `${frontendUrl}/runs/demo.html`;
-            });
-            const compareLink = document.getElementById('compare-link');
-            if (compareLink) compareLink.href = `${frontendUrl}/compare.html`;
-            const replayLink = document.getElementById('replay-link');
-            if (replayLink) replayLink.href = `${frontendUrl}/replay.html`;
+            const setHref = (selector, path) => {
+                document.querySelectorAll(selector).forEach(link => {
+                    link.href = `${frontendUrl}${path}`;
+                });
+            };
+            setHref('#nav-demo-link, #hero-demo-link, #demo-link', '/runs/demo.html');
+            setHref('#nav-replay-link, #replay-link', '/replay.html');
+            setHref('#nav-compare-link, #compare-link', '/compare.html');
         });
 
-        // Simple client-side routing for dynamic run pages
         if (window.location.pathname.startsWith('/runs/')) {
             const runId = window.location.pathname.split('/runs/')[1];
             if (runId && runId !== 'demo') {
-                // Redirect to the actual dashboard - use config URLs
                 const backendUrl = window.BUILD_PROCESS_WATCHER_CONFIG?.backendUrl || 'https://build-process-watcher-backend-685615422311.us-central1.run.app';
                 const frontendUrl = window.BUILD_PROCESS_WATCHER_CONFIG?.frontendUrl || 'https://process-watcher.web.app';
-                const redirectUrl = `${frontendUrl}/runs/${runId}`;
-                
-                // Check if the run exists by trying to fetch data
                 fetch(`${backendUrl}/runs/${runId}`)
                     .then(response => {
                         if (response.ok) {
-                            // Run exists, redirect to the dashboard
-                            window.location.href = redirectUrl;
-                        } else {
-                            // Run doesn't exist, show 404 message
-                            document.body.innerHTML = `
-                                <div style="text-align: center; padding: 2rem; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+                            window.location.href = `${frontendUrl}/runs/${runId}`;
+                            return;
+                        }
+                        document.body.innerHTML = `
+                            <div style="min-height: 100vh; display: grid; place-items: center; padding: 2rem; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+                                <section style="max-width: 520px; padding: 1.25rem; border: 1px solid #d9ded5; border-radius: 8px; background: #fff;">
                                     <h1>Run Not Found</h1>
                                     <p>The build run with ID <code>${runId}</code> could not be found.</p>
-                                    <p>This might be because:</p>
-                                    <ul style="text-align: left; max-width: 400px; margin: 0 auto;">
-                                        <li>The memory report has expired (available for 24 hours)</li>
-                                        <li>The run ID is incorrect</li>
-                                        <li>The build is still in progress</li>
-                                    </ul>
-                                    <a href="/" style="display: inline-block; margin-top: 1rem; padding: 0.5rem 1rem; background: #2563eb; color: white; text-decoration: none; border-radius: 0.25rem;">Back to Home</a>
-                                </div>
-                            `;
-                        }
+                                    <p>Reports expire after 24 hours, or the run ID may be incorrect.</p>
+                                    <a href="/" style="display: inline-flex; margin-top: 1rem; color: #087f8c; font-weight: 700;">Back to Home</a>
+                                </section>
+                            </div>
+                        `;
                     })
-                    .catch(error => {
-                        console.error('Error checking run:', error);
-                        // On error, show 404 message
+                    .catch(() => {
                         document.body.innerHTML = `
-                            <div style="text-align: center; padding: 2rem; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
-                                <h1>Service Unavailable</h1>
-                                <p>Unable to check if the run exists. The service might be temporarily unavailable.</p>
-                                <a href="/" style="display: inline-block; margin-top: 1rem; padding: 0.5rem 1rem; background: #2563eb; color: white; text-decoration: none; border-radius: 0.25rem;">Back to Home</a>
+                            <div style="min-height: 100vh; display: grid; place-items: center; padding: 2rem; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+                                <section style="max-width: 520px; padding: 1.25rem; border: 1px solid #d9ded5; border-radius: 8px; background: #fff;">
+                                    <h1>Service Unavailable</h1>
+                                    <p>Unable to check whether this run exists right now.</p>
+                                    <a href="/" style="display: inline-flex; margin-top: 1rem; color: #087f8c; font-weight: 700;">Back to Home</a>
+                                </section>
                             </div>
                         `;
                     });
