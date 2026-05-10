@@ -105,6 +105,23 @@ process_exists() {
     return 1
 }
 
+seen_pids=""
+
+pid_seen() {
+    local pid="$1"
+    case " $seen_pids " in
+        *" $pid "*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+mark_pid_seen() {
+    local pid="$1"
+    if ! pid_seen "$pid"; then
+        seen_pids="$seen_pids $pid"
+    fi
+}
+
 # Log network environment (proxy, DNS, etc.) for diagnostics
 log_script "Network environment diagnostics:"
 if [ -n "${HTTP_PROXY:-}" ] || [ -n "${HTTPS_PROXY:-}" ] || [ -n "${http_proxy:-}" ] || [ -n "${https_proxy:-}" ]; then
@@ -572,9 +589,6 @@ if [ "$DEBUG_MODE" = "true" ]; then
     echo "🔍 Looking for Java processes matching patterns: ${PATTERNS[*]}" >&2
 fi
 
-# Track which PIDs we've already sent VM flags for
-declare -A seen_pids=()
-
 log_script "Entering main monitoring loop"
 ITERATION=0
 
@@ -646,9 +660,9 @@ while true; do
         fi
         
         # Check if this is a new process we haven't seen before and get VM flags
-        if [ -z "${seen_pids[$PID]:-}" ]; then
+        if ! pid_seen "$PID"; then
           log_script "New process detected: PID $PID ($NAME) - first time seeing this PID"
-          seen_pids[$PID]=1
+          mark_pid_seen "$PID"
           if [ "$DEBUG_MODE" = "true" ]; then
             echo "🆕 New process detected: PID $PID ($NAME), getting VM flags..." >&2
           fi

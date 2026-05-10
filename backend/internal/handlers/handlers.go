@@ -178,6 +178,10 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		startTime = runDoc.StartTime
+		if startTime.IsZero() {
+			startTime = time.Now()
+			log.Printf("Run %s had no StartTime yet; using current time: %v", req.RunID, startTime)
+		}
 		log.Printf("Using existing StartTime: %v", startTime)
 	}
 

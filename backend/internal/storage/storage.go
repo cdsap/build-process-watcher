@@ -234,17 +234,33 @@ func (c *Client) GetProcessesWithContext(ctx context.Context, runID string) (*mo
 func (c *Client) MarkRunAsFinished(runID string) (newlyFinished bool, err error) {
 	doc := c.firestore.Collection("runs").Doc(runID)
 	snapshot, err := doc.Get(c.ctx)
-	if err != nil {
-		return false, err
-	}
-
-	if !snapshot.Exists() {
-		return false, fmt.Errorf("run %s not found", runID)
-	}
-
 	var runDoc models.RunDoc
-	if err := snapshot.DataTo(&runDoc); err != nil {
-		return false, err
+	now := time.Now()
+	if err != nil {
+		if !strings.Contains(err.Error(), "not found") {
+			return false, err
+		}
+		runDoc = models.RunDoc{
+			ID:        runID,
+			RunID:     runID,
+			StartTime: now,
+			CreatedAt: now,
+			Samples:   []models.Sample{},
+		}
+		log.Printf("Run %s did not exist at finish time; creating finished empty run", runID)
+	} else {
+		if !snapshot.Exists() {
+			runDoc = models.RunDoc{
+				ID:        runID,
+				RunID:     runID,
+				StartTime: now,
+				CreatedAt: now,
+				Samples:   []models.Sample{},
+			}
+			log.Printf("Run %s snapshot did not exist at finish time; creating finished empty run", runID)
+		} else if err := snapshot.DataTo(&runDoc); err != nil {
+			return false, err
+		}
 	}
 
 	// If already finished, nothing to do
@@ -254,7 +270,21 @@ func (c *Client) MarkRunAsFinished(runID string) (newlyFinished bool, err error)
 	}
 
 	// Mark as finished
-	now := time.Now()
+	if runDoc.ID == "" {
+		runDoc.ID = runID
+	}
+	if runDoc.RunID == "" {
+		runDoc.RunID = runID
+	}
+	if runDoc.StartTime.IsZero() {
+		runDoc.StartTime = now
+	}
+	if runDoc.CreatedAt.IsZero() {
+		runDoc.CreatedAt = now
+	}
+	if runDoc.Samples == nil {
+		runDoc.Samples = []models.Sample{}
+	}
 	runDoc.Finished = true
 	runDoc.FinishedAt = now
 	runDoc.UpdatedAt = now
