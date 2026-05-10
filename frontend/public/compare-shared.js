@@ -1,13 +1,13 @@
 (function (global) {
     const COLOR_PALETTE = [
-        '#3498db',
-        '#e74c3c',
-        '#9b59b6',
-        '#2ecc71',
-        '#f39c12',
-        '#e67e22',
-        '#1abc9c',
-        '#e91e63'
+        '#087f8c',
+        '#c9513d',
+        '#b88414',
+        '#247b5b',
+        '#4f5d95',
+        '#9a4d74',
+        '#6f5b3e',
+        '#2f7f6f'
     ];
 
     const visibilityStore = {};
@@ -524,12 +524,23 @@
         const isMobile = window.innerWidth < 768;
         return {
             title: isMobile ? '' : 'Garbage Collection Time Over Time',
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: '#fbfaf6',
+            hovermode: 'x unified',
             xaxis: {
                 title: 'Time',
                 tickformat: isMobile ? '%H:%M' : '%H:%M:%S',
-                tickangle: isMobile ? -45 : 0
+                tickangle: isMobile ? -45 : 0,
+                gridcolor: '#e4e2d8',
+                zerolinecolor: '#d8d4c7',
+                linecolor: '#c8cfc5'
             },
-            yaxis: { title: 'GC Time (s)' },
+            yaxis: {
+                title: 'GC Time (s)',
+                gridcolor: '#e4e2d8',
+                zerolinecolor: '#d8d4c7',
+                linecolor: '#c8cfc5'
+            },
             showlegend: true,
             legend: {
                 x: isMobile ? 0.5 : 1.02,
@@ -544,7 +555,9 @@
                 b: isMobile ? 80 : 60
             },
             font: {
-                size: isMobile ? 10 : 12
+                size: isMobile ? 10 : 12,
+                color: '#161a1d',
+                family: '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'
             }
         };
     }
@@ -570,12 +583,23 @@
         const isMobile = window.innerWidth < 768;
         return {
             title: isMobile ? '' : 'Heap/RSS Ratio Over Time',
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: '#fbfaf6',
+            hovermode: 'x unified',
             xaxis: {
                 title: 'Time',
                 tickformat: isMobile ? '%H:%M' : '%H:%M:%S',
-                tickangle: isMobile ? -45 : 0
+                tickangle: isMobile ? -45 : 0,
+                gridcolor: '#e4e2d8',
+                zerolinecolor: '#d8d4c7',
+                linecolor: '#c8cfc5'
             },
-            yaxis: { title: 'Heap/RSS Ratio' },
+            yaxis: {
+                title: 'Heap/RSS Ratio',
+                gridcolor: '#e4e2d8',
+                zerolinecolor: '#d8d4c7',
+                linecolor: '#c8cfc5'
+            },
             showlegend: true,
             legend: {
                 x: isMobile ? 0.5 : 1.02,
@@ -590,7 +614,9 @@
                 b: isMobile ? 80 : 60
             },
             font: {
-                size: isMobile ? 10 : 12
+                size: isMobile ? 10 : 12,
+                color: '#161a1d',
+                family: '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'
             }
         };
     }
@@ -616,12 +642,23 @@
         const isMobile = window.innerWidth < 768;
         return {
             title: isMobile ? '' : 'Memory Usage Over Time',
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: '#fbfaf6',
+            hovermode: 'x unified',
             xaxis: {
                 title: 'Time',
                 tickformat: isMobile ? '%H:%M' : '%H:%M:%S',
-                tickangle: isMobile ? -45 : 0
+                tickangle: isMobile ? -45 : 0,
+                gridcolor: '#e4e2d8',
+                zerolinecolor: '#d8d4c7',
+                linecolor: '#c8cfc5'
             },
-            yaxis: { title: 'Memory (MB)' },
+            yaxis: {
+                title: 'Memory (MB)',
+                gridcolor: '#e4e2d8',
+                zerolinecolor: '#d8d4c7',
+                linecolor: '#c8cfc5'
+            },
             showlegend: true,
             legend: {
                 x: isMobile ? 0.5 : 1.02,
@@ -636,7 +673,9 @@
                 b: isMobile ? 80 : 60
             },
             font: {
-                size: isMobile ? 10 : 12
+                size: isMobile ? 10 : 12,
+                color: '#161a1d',
+                family: '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'
             }
         };
     }

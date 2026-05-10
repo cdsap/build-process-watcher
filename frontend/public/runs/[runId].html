@@ -436,6 +436,7 @@
             }
         }
     </style>
+    <link rel="stylesheet" href="/bpw-ui.css">
 </head>
 <body>
     <div class="container">
@@ -553,6 +554,8 @@
             
             // Calculate metrics for each process and overall
             let maxRssAllProcesses = 0;
+            let maxHeapAllProcesses = 0;
+            let maxGcTimeAllProcesses = 0;
             const processMetrics = {};
             
             // Calculate metrics per process
@@ -583,6 +586,12 @@
                     maxHeap: maxHeap,
                     totalGCTime: maxGCTimeSeconds
                 };
+                if (maxHeap > maxHeapAllProcesses) {
+                    maxHeapAllProcesses = maxHeap;
+                }
+                if (maxGCTimeSeconds > maxGcTimeAllProcesses) {
+                    maxGcTimeAllProcesses = maxGCTimeSeconds;
+                }
                 
             }
 
@@ -634,12 +643,10 @@
                     processInfoHtml += `<div class="process-meta">PID: ${pid}</div>`;
                     
                     // Add metrics
-                    processInfoHtml += '<div style="margin: 1rem 0; padding: 0.75rem; background: #f0f9ff; border-radius: 0.5rem; border-left: 3px solid #2563eb;">';
-                    processInfoHtml += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; margin-bottom: 0.5rem;">';
-                    processInfoHtml += `<div><strong>Max RSS:</strong> ${metrics.maxRss > 0 ? metrics.maxRss.toFixed(1) + ' MB' : 'N/A'}</div>`;
-                    processInfoHtml += `<div><strong>Max Heap:</strong> ${metrics.maxHeap > 0 ? metrics.maxHeap.toFixed(1) + ' MB' : 'N/A'}</div>`;
-                    processInfoHtml += `<div><strong>Total GC Time:</strong> ${metrics.totalGCTime > 0 ? metrics.totalGCTime.toFixed(3) + ' s' : 'N/A'}</div>`;
-                    processInfoHtml += '</div>';
+                    processInfoHtml += '<div class="process-metric-grid">';
+                    processInfoHtml += `<div class="process-metric"><strong>Max RSS</strong><span>${metrics.maxRss > 0 ? metrics.maxRss.toFixed(1) + ' MB' : 'N/A'}</span></div>`;
+                    processInfoHtml += `<div class="process-metric"><strong>Max Heap</strong><span>${metrics.maxHeap > 0 ? metrics.maxHeap.toFixed(1) + ' MB' : 'N/A'}</span></div>`;
+                    processInfoHtml += `<div class="process-metric"><strong>Total GC Time</strong><span>${metrics.totalGCTime > 0 ? metrics.totalGCTime.toFixed(3) + ' s' : 'N/A'}</span></div>`;
                     processInfoHtml += '</div>';
                     
                     if (vmFlags.length > 0) {
@@ -670,6 +677,11 @@
             const elapsedTimes = samples.map(s => s.ElapsedTime || 0).filter(t => t > 0);
             const durationSec = elapsedTimes.length >= 2 ? Math.max(...elapsedTimes) - Math.min(...elapsedTimes) : (elapsedTimes[0] || 0);
             const formatDur = (s) => s < 60 ? s + 's' : (Math.floor(s / 60) + 'm' + (s % 60 ? ' ' + Math.round(s % 60) + 's' : ''));
+            const formatMb = (value) => value > 0 ? `${value.toFixed(value >= 1000 ? 0 : 1)} MB` : 'N/A';
+            const sampleRate = durationSec > 0 && samples.length > 0 ? (samples.length / Math.max(durationSec, 1)) : 0;
+            const pressure = maxRssAllProcesses > 0 && maxHeapAllProcesses > 0
+                ? Math.min(999, (maxHeapAllProcesses / maxRssAllProcesses) * 100)
+                : 0;
 
             document.getElementById('content').innerHTML = `
                 <div class="run-header-bar">
@@ -695,6 +707,29 @@
                             </select>
                         </div>
                     ` : ''}
+                </div>
+
+                <div class="run-kpi-strip">
+                    <div class="run-kpi">
+                        <div class="run-kpi-label">Peak RSS</div>
+                        <div class="run-kpi-value">${formatMb(maxRssAllProcesses)}</div>
+                        <div class="run-kpi-note">Total memory across active JVMs</div>
+                    </div>
+                    <div class="run-kpi">
+                        <div class="run-kpi-label">Peak Heap</div>
+                        <div class="run-kpi-value">${formatMb(maxHeapAllProcesses)}</div>
+                        <div class="run-kpi-note">${pressure > 0 ? `${pressure.toFixed(0)}% of peak RSS` : 'Heap signal unavailable'}</div>
+                    </div>
+                    <div class="run-kpi">
+                        <div class="run-kpi-label">GC Time</div>
+                        <div class="run-kpi-value">${maxGcTimeAllProcesses > 0 ? `${maxGcTimeAllProcesses.toFixed(2)} s` : 'N/A'}</div>
+                        <div class="run-kpi-note">Highest cumulative process value</div>
+                    </div>
+                    <div class="run-kpi">
+                        <div class="run-kpi-label">Sample Density</div>
+                        <div class="run-kpi-value">${sampleRate > 0 ? `${sampleRate.toFixed(2)}/s` : 'N/A'}</div>
+                        <div class="run-kpi-note">${samples.length} samples over ${durationSec > 0 ? formatDur(durationSec) : 'the run'}</div>
+                    </div>
                 </div>
 
                 <!-- Compare runs hidden until ready -->
@@ -986,48 +1021,8 @@
 
             // Total GC line intentionally omitted.
 
-            // Detect if mobile
-            const isMobile = window.innerWidth < 768;
-            
-            const layout = {
-                title: isMobile ? '' : 'Garbage Collection Time Over Time',
-                xaxis: { 
-                    title: 'Time',
-                    tickformat: isMobile ? '%H:%M' : '%H:%M:%S',
-                    tickangle: isMobile ? -45 : 0
-                },
-                yaxis: { title: 'GC Time (s)' },
-                showlegend: true,
-                legend: { 
-                    x: isMobile ? 0.5 : 1.02, 
-                    y: isMobile ? -0.2 : 1,
-                    xanchor: isMobile ? 'center' : 'left',
-                    orientation: isMobile ? 'h' : 'v'
-                },
-                margin: { 
-                    l: isMobile ? 50 : 60, 
-                    r: isMobile ? 20 : 100, 
-                    t: isMobile ? 20 : 40, 
-                    b: isMobile ? 80 : 60 
-                },
-                font: {
-                    size: isMobile ? 10 : 12
-                }
-            };
-
-            const config = {
-                responsive: true,
-                displayModeBar: true,
-                displaylogo: false,
-                modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d', 'autoScale2d'],
-                toImageButtonOptions: {
-                    format: 'png',
-                    filename: `build-monitor-gc-${runId}`,
-                    height: isMobile ? 400 : 500,
-                    width: isMobile ? 800 : 1000,
-                    scale: 2
-                }
-            };
+            const layout = getGcLayout();
+            const config = getGcConfig();
 
             Plotly.newPlot('gc-chart', applyVisibilityToTraces('gc-chart', traces), layout, config);
             attachLegendVisibilityHandlers('gc-chart');
@@ -1077,48 +1072,8 @@
 
             // Total Heap/RSS ratio line intentionally omitted.
 
-            // Detect if mobile
-            const isMobile = window.innerWidth < 768;
-            
-            const layout = {
-                title: isMobile ? '' : 'Heap/RSS Ratio Over Time',
-                xaxis: { 
-                    title: 'Time',
-                    tickformat: isMobile ? '%H:%M' : '%H:%M:%S',
-                    tickangle: isMobile ? -45 : 0
-                },
-                yaxis: { title: 'Heap/RSS Ratio' },
-                showlegend: true,
-                legend: { 
-                    x: isMobile ? 0.5 : 1.02, 
-                    y: isMobile ? -0.2 : 1,
-                    xanchor: isMobile ? 'center' : 'left',
-                    orientation: isMobile ? 'h' : 'v'
-                },
-                margin: { 
-                    l: isMobile ? 50 : 60, 
-                    r: isMobile ? 20 : 100, 
-                    t: isMobile ? 20 : 40, 
-                    b: isMobile ? 80 : 60 
-                },
-                font: {
-                    size: isMobile ? 10 : 12
-                }
-            };
-
-            const config = {
-                responsive: true,
-                displayModeBar: true,
-                displaylogo: false,
-                modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d', 'autoScale2d'],
-                toImageButtonOptions: {
-                    format: 'png',
-                    filename: `build-monitor-rss-heap-${runId}`,
-                    height: isMobile ? 400 : 500,
-                    width: isMobile ? 800 : 1000,
-                    scale: 2
-                }
-            };
+            const layout = getRatioLayout();
+            const config = getRatioConfig();
 
             Plotly.newPlot('rss-heap-chart', applyVisibilityToTraces('rss-heap-chart', traces), layout, config);
             attachLegendVisibilityHandlers('rss-heap-chart');
