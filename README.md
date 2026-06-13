@@ -6,7 +6,7 @@
   <img src="frontend/public/performance.gif" alt="Performance Demo">
 </p>
 
-Monitor memory usage of Java/Kotlin build processes (`GradleDaemon`, `GradleWorkerMain`, `KotlinCompileDaemon`) during CI builds. Track heap and RSS usage, generate charts, and visualize data in real-time dashboards.
+Monitor Java/Kotlin build processes (`GradleDaemon`, `GradleWorkerMain`, `KotlinCompileDaemon`) during CI builds. Track heap, RSS, garbage collection, JIT compilation, and class loading without injecting a Java agent or changing JVM launch arguments.
 
 ---
 
@@ -104,6 +104,8 @@ act -W .github/workflows/test-action-local.yml -j local-mode
 - Data retention: 24 hours
 - Real-time process monitoring
 - GC time metrics
+- JIT compilation totals and interval activity when `jstat -compiler` is supported
+- Class-loading totals and classes-per-second activity when `jstat -class` is supported
 - GitHub Actions job summary (unless `disable_summary_output: 'true'` is set)
 
 ---
@@ -118,6 +120,13 @@ The dashboard shows:
 - Individual process metrics (RSS, Heap Used, Heap Capacity)
 - Aggregated memory consumption
 - Interactive charts with Plotly.js
+- Conditional JIT and class-loading panels; older runs keep the existing layout
+
+### JIT and Class-Loading Metrics
+
+The watcher calls the JDK's external `jstat` tool at the normal monitoring interval. It stores cumulative compiler and class-loading counters and derives activity rates between actual observations. Missing, unsupported, or failed counters are recorded as `null`; memory and GC collection continue independently.
+
+`jstat` availability and attach permissions vary by JVM and environment. Compilation time is compiler-thread elapsed time and should not be treated as process CPU time or compared as a JVM-independent performance verdict. To measure local collection cost for a representative JVM, run `scripts/benchmark-jstat-metrics.sh <pid>`.
 
 ### GitHub Actions Summary
 ![Mermaid Diagram Example](frontend/public/mermaid-diagram-example.png)
@@ -133,8 +142,8 @@ The job summary includes:
 
 The dashboard lets you:
 
-- **Replay a run** – Upload an exported JSON file to replay memory and GC charts offline.
-- **Compare runs** – Upload two JSON files to compare two runs side-by-side with a shared timeline.
+- **Replay a run** – Upload an exported JSON file to replay memory, GC, JIT, and class-loading charts offline.
+- **Compare runs** – Upload two JSON files to compare two runs in overlay or side-by-side views with a shared timeline.
 
 <p align="center">
   <img src="frontend/public/reply.gif" alt="Replay Demo" width="600"><br><br>

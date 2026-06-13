@@ -169,4 +169,43 @@ describe('generateJsonReport', () => {
     expect(output.samples[0].GCTime).toBe(123);
     expect(output.samples[0].GCTimeSeconds).toBe(0.123);
   });
+
+  it('parses extended JIT and class loading metrics', () => {
+    const logFile = path.join(tmpDir, 'test.log');
+    const outputFile = path.join(tmpDir, 'output.json');
+    fs.writeFileSync(logFile,
+      'header\n\n' +
+      '00:00:05 | 1 | Proc | 10MB | 100MB | 50MB | 0.123s | 42 | 1 | 2 | 0.456 | 900 | 12 | 0.789\n');
+
+    generateJsonReport(logFile, outputFile, true);
+    const sample = JSON.parse(fs.readFileSync(outputFile, 'utf8')).samples[0];
+
+    expect(sample).toMatchObject({
+      JITCompiledMethods: 42,
+      JITFailedCompilations: 1,
+      JITInvalidatedCompilations: 2,
+      JITCompilationTimeMs: 456,
+      ClassesLoaded: 900,
+      ClassesUnloaded: 12,
+      ClassLoadTimeMs: 789,
+    });
+  });
+
+  it('keeps the base sample when optional metrics are unavailable or malformed', () => {
+    const logFile = path.join(tmpDir, 'test.log');
+    const outputFile = path.join(tmpDir, 'output.json');
+    fs.writeFileSync(logFile,
+      'header\n\n' +
+      '00:00:05 | 1 | Proc | 10MB | 100MB | 50MB | N/A | N/A | bad | N/A | N/A | 0 | N/A | broken\n');
+
+    generateJsonReport(logFile, outputFile, true);
+    const sample = JSON.parse(fs.readFileSync(outputFile, 'utf8')).samples[0];
+
+    expect(sample.RSS).toBe(50);
+    expect(sample.GCTime).toBeNull();
+    expect(sample.JITCompiledMethods).toBeNull();
+    expect(sample.JITFailedCompilations).toBeNull();
+    expect(sample.ClassesLoaded).toBe(0);
+    expect(sample.ClassLoadTimeMs).toBeNull();
+  });
 });

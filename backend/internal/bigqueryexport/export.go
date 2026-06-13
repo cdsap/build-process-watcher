@@ -57,16 +57,31 @@ func (e *Exporter) Close() error {
 
 // sampleRow matches schema in schema/bigquery_build_process_samples.sql
 type sampleRow struct {
-	RunID           string    `bigquery:"run_id"`
-	SampleTimestamp time.Time `bigquery:"sample_timestamp"`
-	ElapsedTime     int64     `bigquery:"elapsed_time"`
-	PID             string    `bigquery:"pid"`
-	Name            string    `bigquery:"name"`
-	HeapUsedMB      int64     `bigquery:"heap_used"`
-	HeapCapMB       int64     `bigquery:"heap_cap"`
-	RSSMB           int64     `bigquery:"rss"`
-	GCTimeMS        int64     `bigquery:"gc_time"`
-	RunFinishedAt   time.Time `bigquery:"run_finished_at"`
+	RunID                      string    `bigquery:"run_id"`
+	SampleTimestamp            time.Time `bigquery:"sample_timestamp"`
+	ElapsedTime                int64     `bigquery:"elapsed_time"`
+	PID                        string    `bigquery:"pid"`
+	Name                       string    `bigquery:"name"`
+	HeapUsedMB                 int64     `bigquery:"heap_used"`
+	HeapCapMB                  int64     `bigquery:"heap_cap"`
+	RSSMB                      int64     `bigquery:"rss"`
+	GCTimeMS                   int64     `bigquery:"gc_time"`
+	JITCompiledMethods         *int64    `bigquery:"jit_compiled_methods"`
+	JITFailedCompilations      *int64    `bigquery:"jit_failed_compilations"`
+	JITInvalidatedCompilations *int64    `bigquery:"jit_invalidated_compilations"`
+	JITCompilationTimeMs       *int64    `bigquery:"jit_compilation_time_ms"`
+	ClassesLoaded              *int64    `bigquery:"classes_loaded"`
+	ClassesUnloaded            *int64    `bigquery:"classes_unloaded"`
+	ClassLoadTimeMs            *int64    `bigquery:"class_load_time_ms"`
+	RunFinishedAt              time.Time `bigquery:"run_finished_at"`
+}
+
+func optionalInt64(value *int) *int64 {
+	if value == nil {
+		return nil
+	}
+	converted := int64(*value)
+	return &converted
 }
 
 // ExportRun inserts all samples for a finished run. Errors do not rollback Firestore; callers log and continue.
@@ -78,16 +93,23 @@ func (e *Exporter) ExportRun(ctx context.Context, runID string, samples []models
 	for i, s := range samples {
 		ts := time.UnixMilli(s.Timestamp).UTC()
 		row := sampleRow{
-			RunID:           runID,
-			SampleTimestamp: ts,
-			ElapsedTime:     int64(s.ElapsedTime),
-			PID:             s.PID,
-			Name:            s.Name,
-			HeapUsedMB:      int64(s.HeapUsed),
-			HeapCapMB:       int64(s.HeapCap),
-			RSSMB:           int64(s.RSS),
-			GCTimeMS:        int64(s.GCTime),
-			RunFinishedAt:   finishedAt.UTC(),
+			RunID:                      runID,
+			SampleTimestamp:            ts,
+			ElapsedTime:                int64(s.ElapsedTime),
+			PID:                        s.PID,
+			Name:                       s.Name,
+			HeapUsedMB:                 int64(s.HeapUsed),
+			HeapCapMB:                  int64(s.HeapCap),
+			RSSMB:                      int64(s.RSS),
+			GCTimeMS:                   int64(s.GCTime),
+			JITCompiledMethods:         optionalInt64(s.JITCompiledMethods),
+			JITFailedCompilations:      optionalInt64(s.JITFailedCompilations),
+			JITInvalidatedCompilations: optionalInt64(s.JITInvalidatedCompilations),
+			JITCompilationTimeMs:       optionalInt64(s.JITCompilationTimeMs),
+			ClassesLoaded:              optionalInt64(s.ClassesLoaded),
+			ClassesUnloaded:            optionalInt64(s.ClassesUnloaded),
+			ClassLoadTimeMs:            optionalInt64(s.ClassLoadTimeMs),
+			RunFinishedAt:              finishedAt.UTC(),
 		}
 		rows = append(rows, &bigquery.StructSaver{
 			InsertID: stableInsertID("sample", runID, i, s.Timestamp, s.ElapsedTime, s.PID, s.Name),

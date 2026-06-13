@@ -12,6 +12,8 @@ on:
       - 'package-lock.json'
       - 'tsconfig.json'
       - 'action.yaml'
+      - 'monitor_with_backend.sh'
+      - 'frontend/public/compare-shared.js'
       - '.github/workflows/test-action.yml'
   push:
     branches: [ main, develop ]
@@ -24,6 +26,8 @@ on:
       - 'package-lock.json'
       - 'tsconfig.json'
       - 'action.yaml'
+      - 'monitor_with_backend.sh'
+      - 'frontend/public/compare-shared.js'
       - '.github/workflows/test-action.yml'
   workflow_dispatch:
   workflow_call:
@@ -140,6 +144,15 @@ jobs:
         echo "✅ PASS: TypeScript always enables GC"
         echo "===================================="
 
+    - name: Verify JIT and class-loading contract
+      run: |
+        grep -q "JIT_Compiled" monitor_with_backend.sh
+        grep -q "Classes_Loaded" monitor_with_backend.sh
+        grep -q "jstat_named_values -compiler" monitor_with_backend.sh
+        grep -q "jstat_named_values -class" monitor_with_backend.sh
+        grep -q "JITCompilationTimeMs" src/lib/report.ts
+        grep -q "ClassLoadTimeMs" src/lib/report.ts
+
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
@@ -154,4 +167,3 @@ jobs:
         echo "✅ Action build completed successfully!"
         echo "📦 Built files:"
         ls -lh dist/
-

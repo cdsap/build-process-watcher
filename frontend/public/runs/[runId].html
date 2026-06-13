@@ -464,6 +464,8 @@
             attachLegendVisibilityHandlers,
             hasGCData,
             hasRatioData,
+            hasJITData,
+            hasClassLoadingData,
             buildColorMap,
             buildTotalRssSeries,
             buildForwardFilledSeries,
@@ -564,6 +566,9 @@
                 let maxRss = 0;
                 let maxHeap = 0;
                 let maxGCTimeSeconds = 0;
+                let finalCompiledMethods = null;
+                let finalJITTimeMs = null;
+                let finalClassesLoaded = null;
                 
                 processSamples.forEach(sample => {
                     if (sample.RSS && sample.RSS > maxRss) {
@@ -579,12 +584,18 @@
                             maxGCTimeSeconds = gcSeconds;
                         }
                     }
+                    if (Number.isFinite(Number(sample.JITCompiledMethods))) finalCompiledMethods = Number(sample.JITCompiledMethods);
+                    if (Number.isFinite(Number(sample.JITCompilationTimeMs))) finalJITTimeMs = Number(sample.JITCompilationTimeMs);
+                    if (Number.isFinite(Number(sample.ClassesLoaded))) finalClassesLoaded = Number(sample.ClassesLoaded);
                 });
                 
                 processMetrics[pid] = {
                     maxRss: maxRss,
                     maxHeap: maxHeap,
-                    totalGCTime: maxGCTimeSeconds
+                    totalGCTime: maxGCTimeSeconds,
+                    finalCompiledMethods,
+                    finalJITTimeMs,
+                    finalClassesLoaded
                 };
                 if (maxHeap > maxHeapAllProcesses) {
                     maxHeapAllProcesses = maxHeap;
@@ -647,6 +658,9 @@
                     processInfoHtml += `<div class="process-metric"><strong>Max RSS</strong><span>${metrics.maxRss > 0 ? metrics.maxRss.toFixed(1) + ' MB' : 'N/A'}</span></div>`;
                     processInfoHtml += `<div class="process-metric"><strong>Max Heap</strong><span>${metrics.maxHeap > 0 ? metrics.maxHeap.toFixed(1) + ' MB' : 'N/A'}</span></div>`;
                     processInfoHtml += `<div class="process-metric"><strong>Total GC Time</strong><span>${metrics.totalGCTime > 0 ? metrics.totalGCTime.toFixed(3) + ' s' : 'N/A'}</span></div>`;
+                    processInfoHtml += `<div class="process-metric"><strong>Compiled Methods</strong><span>${metrics.finalCompiledMethods ?? 'N/A'}</span></div>`;
+                    processInfoHtml += `<div class="process-metric"><strong>JIT Time</strong><span>${metrics.finalJITTimeMs !== null ? (metrics.finalJITTimeMs / 1000).toFixed(3) + ' s' : 'N/A'}</span></div>`;
+                    processInfoHtml += `<div class="process-metric"><strong>Classes Loaded</strong><span>${metrics.finalClassesLoaded ?? 'N/A'}</span></div>`;
                     processInfoHtml += '</div>';
                     
                     if (vmFlags.length > 0) {
@@ -863,6 +877,16 @@
                     </div>
                 </div>
                 ` : ''}
+                ${hasJITData(samples) ? `
+                <div class="chart-container"><h3>JIT Compilation</h3>
+                    <div id="jit-time-chart" style="width:100%;height:450px"></div>
+                    <div id="jit-rate-chart" style="width:100%;height:450px"></div>
+                </div>` : ''}
+                ${hasClassLoadingData(samples) ? `
+                <div class="chart-container"><h3>Class Loading</h3>
+                    <div id="classes-loaded-chart" style="width:100%;height:450px"></div>
+                    <div id="class-rate-chart" style="width:100%;height:450px"></div>
+                </div>` : ''}
 
                 ${processInfoHtml}
 
@@ -887,6 +911,7 @@
                 if (shouldShowRssHeapRatioChart(samples)) {
                     renderRssHeapRatioChart(samples);
                 }
+                renderJvmCounterCharts(samples);
                 if (isFinished === true) {
                     setupCompareControls(samples);
                     initReplay(samples);
@@ -1992,6 +2017,25 @@
             });
         }
 
+        function renderJvmCounterCharts(samples) {
+            if (!hasJITData(samples) && !hasClassLoadingData(samples)) return;
+            const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
+            const data = buildReplayData(samples, timestamps);
+            const frame = Math.max(0, data.timestamps.length - 1);
+            const charts = [
+                ['jit-time-chart', 'jitTime', 'Cumulative JIT Compilation Time', 'Compilation Time (s)'],
+                ['jit-rate-chart', 'jitRate', 'JIT Compilation Activity', 'Compiled Methods / s'],
+                ['classes-loaded-chart', 'classesLoaded', 'Cumulative Classes Loaded', 'Classes Loaded'],
+                ['class-rate-chart', 'classRate', 'Class Loading Activity', 'Classes / s']
+            ];
+            charts.forEach(([id, metric, title, yTitle]) => {
+                if (!document.getElementById(id)) return;
+                const traces = buildMetricTraces(data, data.timestamps, frame, metric, {});
+                Plotly.newPlot(id, applyVisibilityToTraces(id, traces), CompareShared.getCounterLayout(title, yTitle), CompareShared.getCounterConfig(`build-monitor-${metric}-${runId}`));
+                attachLegendVisibilityHandlers(id);
+            });
+        }
+
         async function downloadChart(format) {
             try {
                 const chart = document.getElementById('chart');
@@ -2093,9 +2137,7 @@
                 const samples = window.currentSamples || [];
                 if (!samples.length) return;
                 const hasGC = hasGCData(samples);
-                const header = hasGC ? 
-                    ['timestamp','elapsed_time','pid','name','rss_mb','heap_used_mb','heap_capacity_mb','gc_time_s'] :
-                    ['timestamp','elapsed_time','pid','name','rss_mb','heap_used_mb','heap_capacity_mb'];
+                const header = ['timestamp','elapsed_time','pid','name','rss_mb','heap_used_mb','heap_capacity_mb','gc_time_s','jit_compiled_methods','jit_failed_compilations','jit_invalidated_compilations','jit_compilation_time_ms','classes_loaded','classes_unloaded','class_load_time_ms'];
                 const rows = samples.map(s => {
                     const baseRow = [
                         s.Timestamp,
@@ -2106,10 +2148,8 @@
                         s.HeapUsed,
                         s.HeapCap
                     ];
-                    if (hasGC) {
-                        // Convert from milliseconds (stored in DB) to seconds (for display)
-                        baseRow.push(s.GCTime ? (s.GCTime / 1000).toFixed(3) : 0);
-                    }
+                    baseRow.push(s.GCTime !== null && s.GCTime !== undefined ? (s.GCTime / 1000).toFixed(3) : null);
+                    baseRow.push(s.JITCompiledMethods, s.JITFailedCompilations, s.JITInvalidatedCompilations, s.JITCompilationTimeMs, s.ClassesLoaded, s.ClassesUnloaded, s.ClassLoadTimeMs);
                     return baseRow;
                 });
                 const csv = [header.join(','), ...rows.map(r => r.map(escapeCsv).join(','))].join('\n');

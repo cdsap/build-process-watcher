@@ -57,6 +57,18 @@
         return samples.some(sample => sample && sample.RSS && sample.RSS > 0);
     }
 
+    function isValidMetric(value) {
+        return value !== null && value !== undefined && Number.isFinite(Number(value));
+    }
+
+    function hasJITData(samples) {
+        return samples.some(sample => isValidMetric(sample?.JITCompilationTimeMs) || isValidMetric(sample?.JITCompiledMethods));
+    }
+
+    function hasClassLoadingData(samples) {
+        return samples.some(sample => isValidMetric(sample?.ClassesLoaded) || isValidMetric(sample?.ClassLoadTimeMs));
+    }
+
     function buildColorMap(processKeys, palette = COLOR_PALETTE) {
         const colorMap = {};
         processKeys.forEach((processKey, index) => {
@@ -202,6 +214,37 @@
         });
     }
 
+    function buildCounterSeries(samples, timestamps, processName, pid, valueSelector) {
+        const observations = samples
+            .filter(sample => sample.Name === processName && sample.PID === pid)
+            .map(sample => ({ timestamp: sample.Timestamp, value: valueSelector(sample) }))
+            .filter(point => isValidMetric(point.value))
+            .map(point => ({ ...point, value: Number(point.value) }))
+            .sort((a, b) => a.timestamp - b.timestamp);
+        const observationByTimestamp = new Map(observations.map(point => [point.timestamp, point.value]));
+        const rateByTimestamp = new Map();
+        let previous = null;
+        observations.forEach(point => {
+            if (previous) {
+                const elapsedSeconds = (point.timestamp - previous.timestamp) / 1000;
+                if (elapsedSeconds > 0 && point.value >= previous.value) {
+                    rateByTimestamp.set(point.timestamp, (point.value - previous.value) / elapsedSeconds);
+                }
+            }
+            previous = point;
+        });
+
+        let displayValue = null;
+        return {
+            observations,
+            cumulative: timestamps.map(timestamp => {
+                if (observationByTimestamp.has(timestamp)) displayValue = observationByTimestamp.get(timestamp);
+                return displayValue;
+            }),
+            rate: timestamps.map(timestamp => rateByTimestamp.has(timestamp) ? rateByTimestamp.get(timestamp) : null)
+        };
+    }
+
     function buildReplayData(samples, timestamps, palette = COLOR_PALETTE) {
         const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
         const colorMap = buildColorMap(processKeys, palette);
@@ -221,6 +264,9 @@
                 if (!s.RSS || s.RSS <= 0) return null;
                 return s.HeapUsed / s.RSS;
             });
+            const jitTime = buildCounterSeries(samples, timestamps, processName, pid, s => isValidMetric(s.JITCompilationTimeMs) ? s.JITCompilationTimeMs / 1000 : null);
+            const jitActivity = buildCounterSeries(samples, timestamps, processName, pid, s => s.JITCompiledMethods);
+            const classes = buildCounterSeries(samples, timestamps, processName, pid, s => s.ClassesLoaded);
 
             series[processKey] = {
                 processName,
@@ -230,9 +276,17 @@
                 heap,
                 gc,
                 ratio,
+                jitTime: jitTime.cumulative,
+                jitRate: jitActivity.rate,
+                classesLoaded: classes.cumulative,
+                classRate: classes.rate,
                 firstRss: rss.findIndex(value => value !== null),
                 firstGc: gc.findIndex(value => value !== null),
-                firstRatio: ratio.findIndex(value => value !== null)
+                firstRatio: ratio.findIndex(value => value !== null),
+                firstJitTime: jitTime.cumulative.findIndex(value => value !== null),
+                firstJitRate: jitActivity.rate.findIndex(value => value !== null),
+                firstClassesLoaded: classes.cumulative.findIndex(value => value !== null),
+                firstClassRate: classes.rate.findIndex(value => value !== null)
             };
         });
 
@@ -257,9 +311,17 @@
                     heap: def.heap.slice(0, buildEndIndex),
                     gc: def.gc.slice(0, buildEndIndex),
                     ratio: def.ratio.slice(0, buildEndIndex),
+                    jitTime: def.jitTime.slice(0, buildEndIndex),
+                    jitRate: def.jitRate.slice(0, buildEndIndex),
+                    classesLoaded: def.classesLoaded.slice(0, buildEndIndex),
+                    classRate: def.classRate.slice(0, buildEndIndex),
                     firstRss: def.firstRss >= buildEndIndex ? -1 : def.firstRss,
                     firstGc: def.firstGc >= buildEndIndex ? -1 : def.firstGc,
-                    firstRatio: def.firstRatio >= buildEndIndex ? -1 : def.firstRatio
+                    firstRatio: def.firstRatio >= buildEndIndex ? -1 : def.firstRatio,
+                    firstJitTime: def.firstJitTime >= buildEndIndex ? -1 : def.firstJitTime,
+                    firstJitRate: def.firstJitRate >= buildEndIndex ? -1 : def.firstJitRate,
+                    firstClassesLoaded: def.firstClassesLoaded >= buildEndIndex ? -1 : def.firstClassesLoaded,
+                    firstClassRate: def.firstClassRate >= buildEndIndex ? -1 : def.firstClassRate
                 };
             });
         }
@@ -298,6 +360,9 @@
             let maxRss = 0;
             let maxHeap = 0;
             let maxGCTimeSeconds = 0;
+            let finalCompiledMethods = null;
+            let finalJITTimeMs = null;
+            let finalClassesLoaded = null;
             let minTimestamp = Number.POSITIVE_INFINITY;
             let maxTimestamp = 0;
 
@@ -314,6 +379,9 @@
                         maxGCTimeSeconds = gcSeconds;
                     }
                 }
+                if (isValidMetric(sample.JITCompiledMethods)) finalCompiledMethods = Number(sample.JITCompiledMethods);
+                if (isValidMetric(sample.JITCompilationTimeMs)) finalJITTimeMs = Number(sample.JITCompilationTimeMs);
+                if (isValidMetric(sample.ClassesLoaded)) finalClassesLoaded = Number(sample.ClassesLoaded);
                 if (sample.Timestamp && sample.Timestamp < minTimestamp) {
                     minTimestamp = sample.Timestamp;
                 }
@@ -336,7 +404,10 @@
                 maxRss,
                 maxHeap,
                 totalGCTime: maxGCTimeSeconds,
-                durationSeconds
+                durationSeconds,
+                finalCompiledMethods,
+                finalJITTimeMs,
+                finalClassesLoaded
             };
         }
 
@@ -350,6 +421,9 @@
                     maxHeap: entry.maxHeap || 0,
                     totalGCTime: entry.totalGCTime || 0,
                     durationSeconds: entry.durationSeconds || 0,
+                    finalCompiledMethods: entry.finalCompiledMethods,
+                    finalJITTimeMs: entry.finalJITTimeMs,
+                    finalClassesLoaded: entry.finalClassesLoaded,
                     vmFlags: [...new Set(entry.vmFlags || [])],
                     pids: entry.pid ? [entry.pid] : []
                 };
@@ -359,6 +433,9 @@
             byName[name].maxHeap = Math.max(byName[name].maxHeap, entry.maxHeap || 0);
             byName[name].totalGCTime = Math.max(byName[name].totalGCTime, entry.totalGCTime || 0);
             byName[name].durationSeconds = Math.max(byName[name].durationSeconds || 0, entry.durationSeconds || 0);
+            if (entry.finalCompiledMethods !== null) byName[name].finalCompiledMethods = Math.max(byName[name].finalCompiledMethods ?? 0, entry.finalCompiledMethods);
+            if (entry.finalJITTimeMs !== null) byName[name].finalJITTimeMs = Math.max(byName[name].finalJITTimeMs ?? 0, entry.finalJITTimeMs);
+            if (entry.finalClassesLoaded !== null) byName[name].finalClassesLoaded = Math.max(byName[name].finalClassesLoaded ?? 0, entry.finalClassesLoaded);
             if (entry.heapMaxGiB) {
                 const value = Number(entry.heapMaxGiB);
                 if (!Number.isNaN(value)) {
@@ -403,7 +480,16 @@
         const traces = [];
         data.processKeys.forEach(processKey => {
             const def = data.series[processKey];
-            const firstIndex = metric === 'gc' ? def.firstGc : metric === 'ratio' ? def.firstRatio : def.firstRss;
+            const metricMap = {
+                gc: ['firstGc', 'gc'],
+                ratio: ['firstRatio', 'ratio'],
+                jitTime: ['firstJitTime', 'jitTime'],
+                jitRate: ['firstJitRate', 'jitRate'],
+                classesLoaded: ['firstClassesLoaded', 'classesLoaded'],
+                classRate: ['firstClassRate', 'classRate']
+            };
+            const [firstKey, valueKey] = metricMap[metric] || ['firstRss', 'rss'];
+            const firstIndex = def[firstKey];
             if (firstIndex === -1 || frameIndex < firstIndex) return;
             if (metric === 'rss') {
                 traces.push({
@@ -430,7 +516,7 @@
             }
             traces.push({
                 x: frameTimestamps,
-                y: metric === 'gc' ? def.gc.slice(0, frameIndex + 1) : def.ratio.slice(0, frameIndex + 1),
+                y: def[valueKey].slice(0, frameIndex + 1),
                 type: 'scatter',
                 mode: 'lines+markers',
                 name: `${def.processName} PID:${def.pid}`,
@@ -489,7 +575,14 @@
                 HeapUsed: Number(get('heap_used_mb')) || 0,
                 HeapCap: Number(get('heap_capacity_mb')) || 0,
                 GCTime: gcValue !== null && !Number.isNaN(gcValue) ? gcValue * 1000 : null,
-                GCTimeSeconds: gcValue !== null && !Number.isNaN(gcValue) ? gcValue : null
+                GCTimeSeconds: gcValue !== null && !Number.isNaN(gcValue) ? gcValue : null,
+                JITCompiledMethods: get('jit_compiled_methods') === '' ? null : Number(get('jit_compiled_methods')),
+                JITFailedCompilations: get('jit_failed_compilations') === '' ? null : Number(get('jit_failed_compilations')),
+                JITInvalidatedCompilations: get('jit_invalidated_compilations') === '' ? null : Number(get('jit_invalidated_compilations')),
+                JITCompilationTimeMs: get('jit_compilation_time_ms') === '' ? null : Number(get('jit_compilation_time_ms')),
+                ClassesLoaded: get('classes_loaded') === '' ? null : Number(get('classes_loaded')),
+                ClassesUnloaded: get('classes_unloaded') === '' ? null : Number(get('classes_unloaded')),
+                ClassLoadTimeMs: get('class_load_time_ms') === '' ? null : Number(get('class_load_time_ms'))
             };
         });
         return parsed;
@@ -577,6 +670,15 @@
                 scale: 2
             }
         };
+    }
+
+    function getCounterLayout(title, yTitle) {
+        const layout = getGcLayout();
+        return { ...layout, title: window.innerWidth < 768 ? '' : title, yaxis: { ...layout.yaxis, title: yTitle } };
+    }
+
+    function getCounterConfig(filenameBase) {
+        return getGcConfig(filenameBase);
     }
 
     function getRatioLayout() {
@@ -750,6 +852,9 @@
                             <td style="padding: 0.5rem;">${formatValue(item.maxRss, 1)} MB</td>
                             <td style="padding: 0.5rem;">${formatValue(item.maxHeap, 1)} MB</td>
                             <td style="padding: 0.5rem;">${formatValue(item.totalGCTime, 3)} s</td>
+                            <td style="padding: 0.5rem;">${formatValue(item.finalCompiledMethods, 0)}</td>
+                            <td style="padding: 0.5rem;">${item.finalJITTimeMs === null ? 'N/A' : formatValue(item.finalJITTimeMs / 1000, 3) + ' s'}</td>
+                            <td style="padding: 0.5rem;">${formatValue(item.finalClassesLoaded, 0)}</td>
                             <td style="padding: 0.5rem;">${formatValue(item.durationSeconds, 1)} s</td>
                             <td style="padding: 0.5rem;">${flagList}</td>
                         </tr>
@@ -769,6 +874,9 @@
                                     <th style="padding: 0.5rem;">Max RSS (MB)</th>
                                     <th style="padding: 0.5rem;">Max Heap (MB)</th>
                                     <th style="padding: 0.5rem;">Total GC (s)</th>
+                                    <th style="padding: 0.5rem;">Compiled Methods</th>
+                                    <th style="padding: 0.5rem;">JIT Time</th>
+                                    <th style="padding: 0.5rem;">Classes Loaded</th>
                                     <th style="padding: 0.5rem;">Duration (s)</th>
                                     <th style="padding: 0.5rem;">VM Flags</th>
                                 </tr>
@@ -827,11 +935,16 @@
         const baseHasGC = hasGCData(baseSamples);
         const compareHasGC = hasGCData(compareSamples);
         const showGC = baseHasGC && compareHasGC;
+        const showJIT = hasJITData(baseSamples) || hasJITData(compareSamples);
+        const showClasses = hasClassLoadingData(baseSamples) || hasClassLoadingData(compareSamples);
 
         const storedMode = localStorage.getItem(compareModeStorageKey) || 'split';
         const compareMode = storedMode === 'side' ? 'side' : 'split';
         const isSplitMode = compareMode === 'split';
         const splitLabel = `${baseLabel} vs ${compareLabel} (Split View)`;
+        const counterPanel = (title, metrics) => isSplitMode
+            ? `<div class="chart-container"><h4>${title}</h4>${metrics.map(([id]) => `<div id="compare-${id}" style="width:100%;height:400px"></div>`).join('')}</div>`
+            : `<div class="compare-grid">${[baseLabel, compareLabel].map((label, index) => `<div class="chart-container"><h4>${title}: ${label}</h4>${metrics.map(([id]) => `<div id="compare-${index === 0 ? 'current' : 'other'}-${id}" style="width:100%;height:400px"></div>`).join('')}</div>`).join('')}</div>`;
 
         compareSection.innerHTML = `
             <div class="compare-header">
@@ -946,6 +1059,8 @@
                 </div>
                 `}
             </div>
+            ${showJIT ? counterPanel('JIT Compilation', [['jit-time'], ['jit-rate']]) : ''}
+            ${showClasses ? counterPanel('Class Loading', [['classes-loaded'], ['class-rate']]) : ''}
         `;
 
         compareSection.style.display = 'block';
@@ -1191,6 +1306,35 @@
                     tasks.push(Plotly.react('compare-other-gc', applyVisibilityToTraces('compare-other-gc', buildMetricTraces(compareData, timestamps, frameIndex, 'gc', compareStyle, compareElapsed)), sideGcLayout, getGcConfig(gcFilenameBase)));
                 }
             }
+            const renderCounterMetric = (id, metric, title, yTitle) => {
+                const layout = getCounterLayout(title, yTitle);
+                layout.xaxis = {
+                    ...layout.xaxis,
+                    title: 'Elapsed (s)',
+                    tickformat: null,
+                    type: 'linear',
+                    tickvals: isSplitMode ? tickVals : undefined,
+                    ticktext: isSplitMode ? tickText : undefined
+                };
+                if (isSplitMode) {
+                    const traces = [
+                        ...buildMetricTraces(baseData, timestamps, frameIndex, metric, baseStyle, elapsedSeconds),
+                        ...buildMetricTraces(compareData, timestamps, frameIndex, metric, compareStyle, compareElapsed)
+                    ];
+                    tasks.push(Plotly.react(`compare-${id}`, applyVisibilityToTraces(`compare-${id}`, traces), layout, getCounterConfig(`compare-${metric}`)));
+                } else {
+                    tasks.push(Plotly.react(`compare-current-${id}`, applyVisibilityToTraces(`compare-current-${id}`, buildMetricTraces(baseData, timestamps, frameIndex, metric, baseStyle, elapsedSeconds)), layout, getCounterConfig(`compare-current-${metric}`)));
+                    tasks.push(Plotly.react(`compare-other-${id}`, applyVisibilityToTraces(`compare-other-${id}`, buildMetricTraces(compareData, timestamps, frameIndex, metric, compareStyle, elapsedSeconds)), layout, getCounterConfig(`compare-other-${metric}`)));
+                }
+            };
+            if (showJIT) {
+                renderCounterMetric('jit-time', 'jitTime', 'Cumulative JIT Compilation Time', 'Compilation Time (s)');
+                renderCounterMetric('jit-rate', 'jitRate', 'JIT Compilation Activity', 'Compiled Methods / s');
+            }
+            if (showClasses) {
+                renderCounterMetric('classes-loaded', 'classesLoaded', 'Cumulative Classes Loaded', 'Classes Loaded');
+                renderCounterMetric('class-rate', 'classRate', 'Class Loading Activity', 'Classes / s');
+            }
             return Promise.all(tasks).then(() => {
                 const isTotalSplit = (name) => name === 'Total RSS Memory' || name === 'Compare Total RSS Memory';
                 const isTotalBase = (name) => name === 'Total RSS Memory';
@@ -1211,6 +1355,15 @@
                         attachLegendVisibilityHandlers('compare-other-gc');
                     }
                 }
+                const counterIds = ['jit-time', 'jit-rate', 'classes-loaded', 'class-rate'];
+                counterIds.forEach(id => {
+                    if (isSplitMode) {
+                        if (document.getElementById(`compare-${id}`)) attachLegendVisibilityHandlers(`compare-${id}`);
+                    } else {
+                        if (document.getElementById(`compare-current-${id}`)) attachLegendVisibilityHandlers(`compare-current-${id}`);
+                        if (document.getElementById(`compare-other-${id}`)) attachLegendVisibilityHandlers(`compare-other-${id}`);
+                    }
+                });
             });
         }
 
@@ -1304,11 +1457,14 @@
         attachLegendVisibilityHandlers,
         hasGCData,
         hasRatioData,
+        hasJITData,
+        hasClassLoadingData,
         buildColorMap,
         getMedianDelta,
         buildTotalRssSeries,
         buildForwardFilledSeries,
         buildExactSeries,
+        buildCounterSeries,
         buildReplayData,
         buildMetricTraces,
         parseCsvText,
@@ -1317,6 +1473,8 @@
         normalizeCompareSamples,
         getGcLayout,
         getGcConfig,
+        getCounterLayout,
+        getCounterConfig,
         getRatioLayout,
         getRatioConfig,
         getMemoryLayout,
