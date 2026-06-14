@@ -410,8 +410,8 @@ func ParseData(data string, startTime time.Time) ([]models.Sample, error) {
 
 		parts := strings.Split(line, "|")
 		log.Printf("Split into %d parts: %v", len(parts), parts)
-		if len(parts) != 6 && len(parts) != 7 {
-			log.Printf("Skipping line %d: expected 6 or 7 parts, got %d", i, len(parts))
+		if len(parts) != 6 && len(parts) != 7 && len(parts) != 14 {
+			log.Printf("Skipping line %d: expected 6, 7, or 14 parts, got %d", i, len(parts))
 			continue
 		}
 
@@ -467,16 +467,16 @@ func ParseData(data string, startTime time.Time) ([]models.Sample, error) {
 		// Parse GC time if present (7th part)
 		// Format can be either "0.234s" (seconds) or legacy "234ms" (milliseconds)
 		var gcTime int
-		if len(parts) == 7 {
+		if len(parts) >= 7 {
 			gcTimeStr := parts[6]
-			isSeconds := strings.HasSuffix(gcTimeStr, "s")
 			isMilliseconds := strings.HasSuffix(gcTimeStr, "ms")
+			isSeconds := !isMilliseconds && strings.HasSuffix(gcTimeStr, "s")
 
 			// Remove suffix (either "s" or "ms")
-			if isSeconds {
-				gcTimeStr = strings.TrimSuffix(gcTimeStr, "s")
-			} else if isMilliseconds {
+			if isMilliseconds {
 				gcTimeStr = strings.TrimSuffix(gcTimeStr, "ms")
+			} else if isSeconds {
+				gcTimeStr = strings.TrimSuffix(gcTimeStr, "s")
 			}
 
 			if gcTimeStr != "N/A" && gcTimeStr != "" {
@@ -496,19 +496,42 @@ func ParseData(data string, startTime time.Time) ([]models.Sample, error) {
 			}
 		}
 
+		parseOptionalInt := func(index int, secondsToMillis bool) *int {
+			if index >= len(parts) || parts[index] == "" || parts[index] == "N/A" {
+				return nil
+			}
+			value, err := strconv.ParseFloat(strings.TrimSuffix(parts[index], "s"), 64)
+			if err != nil {
+				log.Printf("Warning: optional metric %d parsing failed: %v", index, err)
+				return nil
+			}
+			if secondsToMillis {
+				value *= 1000
+			}
+			parsed := int(value)
+			return &parsed
+		}
+
 		// Calculate consistent timestamp using startTime + elapsedTime
 		// This ensures all samples in the same monitoring cycle have the same timestamp
 		timestamp := startTime.Add(time.Duration(elapsedTime) * time.Second)
 
 		sample := models.Sample{
-			Timestamp:   ToMillis(timestamp),
-			ElapsedTime: elapsedTime,
-			PID:         parts[1],
-			Name:        parts[2],
-			HeapUsed:    heapUsed,
-			HeapCap:     heapCap,
-			RSS:         rss,
-			GCTime:      gcTime,
+			Timestamp:                  ToMillis(timestamp),
+			ElapsedTime:                elapsedTime,
+			PID:                        parts[1],
+			Name:                       parts[2],
+			HeapUsed:                   heapUsed,
+			HeapCap:                    heapCap,
+			RSS:                        rss,
+			GCTime:                     gcTime,
+			JITCompiledMethods:         parseOptionalInt(7, false),
+			JITFailedCompilations:      parseOptionalInt(8, false),
+			JITInvalidatedCompilations: parseOptionalInt(9, false),
+			JITCompilationTimeMs:       parseOptionalInt(10, true),
+			ClassesLoaded:              parseOptionalInt(11, false),
+			ClassesUnloaded:            parseOptionalInt(12, false),
+			ClassLoadTimeMs:            parseOptionalInt(13, true),
 		}
 
 		log.Printf("Created sample: %+v", sample)

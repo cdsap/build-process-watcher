@@ -68,3 +68,22 @@ func TestStableInsertID(t *testing.T) {
 		t.Fatalf("insert id should change when row identity changes: %q", a)
 	}
 }
+
+func TestOptionalInt64(t *testing.T) {
+	if optionalInt64(nil) != nil {
+		t.Fatal("nil metric must remain nil")
+	}
+	value := 42
+	converted := optionalInt64(&value)
+	if converted == nil || *converted != 42 {
+		t.Fatalf("unexpected conversion: %v", converted)
+	}
+}
+
+func TestSampleRowOptionalMetricTags(t *testing.T) {
+	value := int64(1)
+	row := sampleRow{JITCompiledMethods: &value, ClassesLoaded: nil}
+	if row.JITCompiledMethods == nil || row.ClassesLoaded != nil {
+		t.Fatal("sample row must preserve populated and null optional metrics")
+	}
+}

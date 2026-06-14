@@ -73623,7 +73623,7 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.unregisterGlobal = exports.getGlobal = exports.registerGlobal = void 0;
 const platform_1 = __nccwpck_require__(69932);
 const version_1 = __nccwpck_require__(59390);
-const semver_1 = __nccwpck_require__(22707);
+const semver_1 = __nccwpck_require__(45088);
 const major = version_1.VERSION.split('.')[0];
 const GLOBAL_OPENTELEMETRY_API_KEY = Symbol.for(`opentelemetry.js.api.${major}`);
 const _global = platform_1._globalThis;
@@ -73670,7 +73670,7 @@ exports.unregisterGlobal = unregisterGlobal;
 
 /***/ }),
 
-/***/ 22707:
+/***/ 45088:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
@@ -115346,7 +115346,7 @@ exports.UrlSubjectTokenSupplier = UrlSubjectTokenSupplier;
 
 /***/ }),
 
-/***/ 71057:
+/***/ 93438:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
@@ -115503,7 +115503,7 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.createCrypto = createCrypto;
 exports.hasBrowserCrypto = hasBrowserCrypto;
 exports.fromArrayBufferToHex = fromArrayBufferToHex;
-const crypto_1 = __nccwpck_require__(71057);
+const crypto_1 = __nccwpck_require__(93438);
 const crypto_2 = __nccwpck_require__(27388);
 function createCrypto() {
     if (hasBrowserCrypto()) {
@@ -131194,7 +131194,7 @@ module.exports = baseFindIndex;
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 var arrayPush = __nccwpck_require__(50827),
-    isFlattenable = __nccwpck_require__(45088);
+    isFlattenable = __nccwpck_require__(22707);
 
 /**
  * The base implementation of `_.flatten` with support for restricting flattening.
@@ -132048,7 +132048,7 @@ module.exports = hashSet;
 
 /***/ }),
 
-/***/ 45088:
+/***/ 22707:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 var Symbol = __nccwpck_require__(38584),
@@ -213884,7 +213884,6 @@ const child_process_1 = __nccwpck_require__(35317);
 const util_1 = __nccwpck_require__(39023);
 const fs = __importStar(__nccwpck_require__(79896));
 const path = __importStar(__nccwpck_require__(16928));
-const artifact_1 = __nccwpck_require__(76846);
 const app_1 = __nccwpck_require__(75919);
 const firestore_1 = __nccwpck_require__(27157);
 const report_1 = __nccwpck_require__(47185);
@@ -213897,8 +213896,8 @@ function parseLogFile(logFile) {
     // Skip header lines
     lines.slice(2).forEach(line => {
         const parts = line.trim().split('|').map(p => p.trim());
-        // Support both 6 columns (without GC) and 7 columns (with GC)
-        if (parts.length !== 6 && parts.length !== 7)
+        // Support historical 6/7-column records and extended JVM metric records.
+        if (parts.length !== 6 && parts.length !== 7 && parts.length !== 14)
             return;
         const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime] = parts;
         const rssValue = parseFloat(rss.replace('MB', ''));
@@ -213915,7 +213914,7 @@ function parseLogFile(logFile) {
         processData.heapUsed.push(heapUsedValue);
         processData.heapCap.push(heapCapValue);
         // Parse GC time if available (7th column)
-        if (parts.length === 7 && gcTime) {
+        if (parts.length >= 7 && gcTime) {
             hasGcData = true;
             // Remove 's' suffix if present and parse as float
             const gcTimeValue = parseFloat(gcTime.replace('s', ''));
@@ -213938,15 +213937,13 @@ function parseLogFile(logFile) {
 function generateCsvReport(logFile, outputFile, hasGcData) {
     const lines = fs.readFileSync(logFile, 'utf8').split('\n');
     const dataLines = lines.slice(2).filter(line => line.trim().length > 0);
-    const header = hasGcData
-        ? ['elapsed_time', 'pid', 'name', 'heap_used_mb', 'heap_capacity_mb', 'rss_mb', 'gc_time_s']
-        : ['elapsed_time', 'pid', 'name', 'heap_used_mb', 'heap_capacity_mb', 'rss_mb'];
+    const header = ['elapsed_time', 'pid', 'name', 'heap_used_mb', 'heap_capacity_mb', 'rss_mb', 'gc_time_s', 'jit_compiled_methods', 'jit_failed_compilations', 'jit_invalidated_compilations', 'jit_compilation_time_s', 'classes_loaded', 'classes_unloaded', 'class_load_time_s'];
     const rows = [header.join(',')];
     dataLines.forEach(line => {
         const parts = line.trim().split('|').map(p => p.trim());
-        if (parts.length !== 6 && parts.length !== 7)
+        if (parts.length !== 6 && parts.length !== 7 && parts.length !== 14)
             return;
-        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime] = parts;
+        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime, ...optionalMetrics] = parts;
         const baseRow = [
             timestamp,
             pid,
@@ -213955,9 +213952,8 @@ function generateCsvReport(logFile, outputFile, hasGcData) {
             heapCap.replace('MB', ''),
             rss.replace('MB', '')
         ];
-        if (parts.length === 7 && hasGcData) {
-            baseRow.push(gcTime.replace('s', '').replace('N/A', '0'));
-        }
+        baseRow.push(parts.length >= 7 && hasGcData ? gcTime.replace('s', '').replace('N/A', '') : '');
+        baseRow.push(...Array.from({ length: 7 }, (_, index) => { var _a, _b; return (_b = (_a = optionalMetrics[index]) === null || _a === void 0 ? void 0 : _a.replace('N/A', '')) !== null && _b !== void 0 ? _b : ''; }));
         rows.push(baseRow.join(','));
     });
     fs.writeFileSync(outputFile, rows.join('\n'));
@@ -214758,7 +214754,8 @@ async function run() {
         const shouldUpload = !isTrapHandler && isGitHubActions && hasRuntimeToken;
         if (shouldUpload) {
             try {
-                const artifactClient = new artifact_1.DefaultArtifactClient();
+                const { DefaultArtifactClient } = await Promise.resolve().then(() => __importStar(__nccwpck_require__(76846)));
+                const artifactClient = new DefaultArtifactClient();
                 // Create stable artifact name using job name and run attempt
                 const jobName = process.env.GITHUB_JOB || 'default';
                 const runAttempt = process.env.GITHUB_RUN_ATTEMPT || '1';
@@ -215056,17 +215053,27 @@ function generateJsonReport(logFile, outputFile, hasGcData) {
     dataLines.forEach(line => {
         var _a;
         const parts = line.trim().split('|').map(p => p.trim());
-        if (parts.length !== 6 && parts.length !== 7)
+        if (parts.length !== 6 && parts.length !== 7 && parts.length !== 14)
             return;
-        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime] = parts;
+        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime, jitCompiled, jitFailed, jitInvalid, jitTime, classesLoaded, classesUnloaded, classTime] = parts;
         const elapsedSeconds = parseTimestampSeconds(timestamp);
         const rssValue = parseFloat(rss.replace('MB', ''));
         const heapUsedValue = parseFloat(heapUsed.replace('MB', ''));
         const heapCapValue = parseFloat(heapCap.replace('MB', ''));
-        const gcSeconds = parts.length === 7 && hasGcData
-            ? parseFloat(gcTime.replace('s', '').replace('N/A', '0'))
+        const gcSeconds = parts.length >= 7 && hasGcData
+            ? parseFloat(gcTime.replace('s', ''))
             : NaN;
         const gcSecondsValue = Number.isNaN(gcSeconds) ? null : gcSeconds;
+        const optionalNumber = (value) => {
+            if (!value || value === 'N/A')
+                return null;
+            const parsed = Number(value.replace(/s$/, ''));
+            return Number.isFinite(parsed) ? parsed : null;
+        };
+        const optionalMillis = (value) => {
+            const seconds = optionalNumber(value);
+            return seconds === null ? null : seconds * 1000;
+        };
         samples.push({
             Timestamp: Math.max(0, elapsedSeconds * 1000),
             ElapsedTime: Math.max(0, elapsedSeconds),
@@ -215076,7 +215083,14 @@ function generateJsonReport(logFile, outputFile, hasGcData) {
             HeapUsed: Number.isNaN(heapUsedValue) ? 0 : heapUsedValue,
             HeapCap: Number.isNaN(heapCapValue) ? 0 : heapCapValue,
             GCTime: gcSecondsValue !== null ? gcSecondsValue * 1000 : null,
-            GCTimeSeconds: gcSecondsValue
+            GCTimeSeconds: gcSecondsValue,
+            JITCompiledMethods: optionalNumber(jitCompiled),
+            JITFailedCompilations: optionalNumber(jitFailed),
+            JITInvalidatedCompilations: optionalNumber(jitInvalid),
+            JITCompilationTimeMs: optionalMillis(jitTime),
+            ClassesLoaded: optionalNumber(classesLoaded),
+            ClassesUnloaded: optionalNumber(classesUnloaded),
+            ClassLoadTimeMs: optionalMillis(classTime)
         });
         if (!processInfo[pid]) {
             const fromFile = processInfoFromFile[pid];
@@ -221893,7 +221907,7 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.createTracingClient = exports.useInstrumenter = void 0;
 var instrumenter_js_1 = __nccwpck_require__(48729);
 Object.defineProperty(exports, "useInstrumenter", ({ enumerable: true, get: function () { return instrumenter_js_1.useInstrumenter; } }));
-var tracingClient_js_1 = __nccwpck_require__(93438);
+var tracingClient_js_1 = __nccwpck_require__(71057);
 Object.defineProperty(exports, "createTracingClient", ({ enumerable: true, get: function () { return tracingClient_js_1.createTracingClient; } }));
 //# sourceMappingURL=index.js.map
 
@@ -221996,7 +222010,7 @@ exports.state = {
 
 /***/ }),
 
-/***/ 93438:
+/***/ 71057:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";

@@ -2,7 +2,6 @@ import { exec, execSync } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
-import { DefaultArtifactClient } from '@actions/artifact';
 import * as core from '@actions/core';
 import { initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
@@ -27,8 +26,8 @@ function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, t
     // Skip header lines
     lines.slice(2).forEach(line => {
         const parts = line.trim().split('|').map(p => p.trim());
-        // Support both 6 columns (without GC) and 7 columns (with GC)
-        if (parts.length !== 6 && parts.length !== 7) return;
+        // Support historical 6/7-column records and extended JVM metric records.
+        if (parts.length !== 6 && parts.length !== 7 && parts.length !== 14) return;
 
         const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime] = parts;
         const rssValue = parseFloat(rss.replace('MB', ''));
@@ -48,7 +47,7 @@ function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, t
         processData.heapCap.push(heapCapValue);
         
         // Parse GC time if available (7th column)
-        if (parts.length === 7 && gcTime) {
+        if (parts.length >= 7 && gcTime) {
             hasGcData = true;
             // Remove 's' suffix if present and parse as float
             const gcTimeValue = parseFloat(gcTime.replace('s', ''));
@@ -71,15 +70,13 @@ function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, t
 function generateCsvReport(logFile: string, outputFile: string, hasGcData: boolean): void {
     const lines = fs.readFileSync(logFile, 'utf8').split('\n');
     const dataLines = lines.slice(2).filter(line => line.trim().length > 0);
-    const header = hasGcData
-        ? ['elapsed_time', 'pid', 'name', 'heap_used_mb', 'heap_capacity_mb', 'rss_mb', 'gc_time_s']
-        : ['elapsed_time', 'pid', 'name', 'heap_used_mb', 'heap_capacity_mb', 'rss_mb'];
+    const header = ['elapsed_time', 'pid', 'name', 'heap_used_mb', 'heap_capacity_mb', 'rss_mb', 'gc_time_s', 'jit_compiled_methods', 'jit_failed_compilations', 'jit_invalidated_compilations', 'jit_compilation_time_s', 'classes_loaded', 'classes_unloaded', 'class_load_time_s'];
     const rows = [header.join(',')];
 
     dataLines.forEach(line => {
         const parts = line.trim().split('|').map(p => p.trim());
-        if (parts.length !== 6 && parts.length !== 7) return;
-        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime] = parts;
+        if (parts.length !== 6 && parts.length !== 7 && parts.length !== 14) return;
+        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime, ...optionalMetrics] = parts;
         const baseRow = [
             timestamp,
             pid,
@@ -88,9 +85,8 @@ function generateCsvReport(logFile: string, outputFile: string, hasGcData: boole
             heapCap.replace('MB', ''),
             rss.replace('MB', '')
         ];
-        if (parts.length === 7 && hasGcData) {
-            baseRow.push(gcTime.replace('s', '').replace('N/A', '0'));
-        }
+        baseRow.push(parts.length >= 7 && hasGcData ? gcTime.replace('s', '').replace('N/A', '') : '');
+        baseRow.push(...Array.from({ length: 7 }, (_, index) => optionalMetrics[index]?.replace('N/A', '') ?? ''));
         rows.push(baseRow.join(','));
     });
 
@@ -974,6 +970,7 @@ async function run() {
         
         if (shouldUpload) {
             try {
+                const { DefaultArtifactClient } = await import('@actions/artifact');
                 const artifactClient = new DefaultArtifactClient();
                 // Create stable artifact name using job name and run attempt
                 const jobName = process.env.GITHUB_JOB || 'default';

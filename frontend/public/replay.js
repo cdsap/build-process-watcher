@@ -2,6 +2,8 @@
     const {
         parseJsonText,
         hasGCData,
+        hasJITData,
+        hasClassLoadingData,
         buildReplayData,
         buildMetricTraces,
         applyVisibilityToTraces,
@@ -10,6 +12,8 @@
         getMemoryConfig,
         getGcLayout,
         getGcConfig,
+        getCounterLayout,
+        getCounterConfig,
         visibilityStore
     } = window.BpwCompareShared || {};
 
@@ -35,6 +39,8 @@
         const chartTimestamps = data.timestamps || timestamps;
         const elapsedSeconds = chartTimestamps.map(ts => Math.max(0, (ts - chartTimestamps[0]) / 1000));
         const showGC = hasGCData(samples);
+        const showJIT = hasJITData(samples);
+        const showClasses = hasClassLoadingData(samples);
 
         section.innerHTML = `
             <div class="replay-controls" id="single-replay-controls">
@@ -83,6 +89,16 @@
                 </div>
             </div>
             ` : ''}
+            ${showJIT ? `
+            <div class="chart-container"><h4>JIT Compilation</h4>
+                <div id="single-jit-time" style="width:100%;height:400px"></div>
+                <div id="single-jit-rate" style="width:100%;height:400px"></div>
+            </div>` : ''}
+            ${showClasses ? `
+            <div class="chart-container"><h4>Class Loading</h4>
+                <div id="single-classes-loaded" style="width:100%;height:400px"></div>
+                <div id="single-class-rate" style="width:100%;height:400px"></div>
+            </div>` : ''}
         `;
 
         section.style.display = 'block';
@@ -233,6 +249,20 @@
                 }, elapsedSeconds);
                 tasks.push(Plotly.react('single-gc', applyVisibilityToTraces('single-gc', gcTraces), gcLayout, getGcConfig('build-replay-gc')));
             }
+            const counterChart = (id, metric, title, yTitle) => {
+                const layout = getCounterLayout(title, yTitle);
+                layout.xaxis = { ...layout.xaxis, title: 'Elapsed (s)', tickformat: null, type: 'linear' };
+                const traces = buildMetricTraces(data, chartTimestamps, frameIndex, metric, {}, elapsedSeconds);
+                tasks.push(Plotly.react(id, applyVisibilityToTraces(id, traces), layout, getCounterConfig(`build-replay-${metric}`)));
+            };
+            if (showJIT) {
+                counterChart('single-jit-time', 'jitTime', 'Cumulative JIT Compilation Time', 'Compilation Time (s)');
+                counterChart('single-jit-rate', 'jitRate', 'JIT Compilation Activity', 'Compiled Methods / s');
+            }
+            if (showClasses) {
+                counterChart('single-classes-loaded', 'classesLoaded', 'Cumulative Classes Loaded', 'Classes Loaded');
+                counterChart('single-class-rate', 'classRate', 'Class Loading Activity', 'Classes / s');
+            }
 
             return Promise.all(tasks).then(() => {
                 setupSingleReplayFilters();
@@ -240,6 +270,8 @@
                 if (showGC) {
                     attachLegendVisibilityHandlers('single-gc');
                 }
+                ['single-jit-time', 'single-jit-rate', 'single-classes-loaded', 'single-class-rate']
+                    .forEach(id => { if (document.getElementById(id)) attachLegendVisibilityHandlers(id); });
             });
         }
 

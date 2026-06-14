@@ -68,22 +68,38 @@ export function generateJsonReport(logFile: string, outputFile: string, hasGcDat
         HeapCap: number;
         GCTime: number | null;
         GCTimeSeconds: number | null;
+        JITCompiledMethods: number | null;
+        JITFailedCompilations: number | null;
+        JITInvalidatedCompilations: number | null;
+        JITCompilationTimeMs: number | null;
+        ClassesLoaded: number | null;
+        ClassesUnloaded: number | null;
+        ClassLoadTimeMs: number | null;
     }> = [];
     const processInfoFromFile = loadProcessInfoFromFile(logFile);
     const processInfo: Record<string, { name: string; vm_flags: string[] }> = {};
 
     dataLines.forEach(line => {
         const parts = line.trim().split('|').map(p => p.trim());
-        if (parts.length !== 6 && parts.length !== 7) return;
-        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime] = parts;
+        if (parts.length !== 6 && parts.length !== 7 && parts.length !== 14) return;
+        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime, jitCompiled, jitFailed, jitInvalid, jitTime, classesLoaded, classesUnloaded, classTime] = parts;
         const elapsedSeconds = parseTimestampSeconds(timestamp);
         const rssValue = parseFloat(rss.replace('MB', ''));
         const heapUsedValue = parseFloat(heapUsed.replace('MB', ''));
         const heapCapValue = parseFloat(heapCap.replace('MB', ''));
-        const gcSeconds = parts.length === 7 && hasGcData
-            ? parseFloat(gcTime.replace('s', '').replace('N/A', '0'))
+        const gcSeconds = parts.length >= 7 && hasGcData
+            ? parseFloat(gcTime.replace('s', ''))
             : NaN;
         const gcSecondsValue = Number.isNaN(gcSeconds) ? null : gcSeconds;
+        const optionalNumber = (value: string | undefined): number | null => {
+            if (!value || value === 'N/A') return null;
+            const parsed = Number(value.replace(/s$/, ''));
+            return Number.isFinite(parsed) ? parsed : null;
+        };
+        const optionalMillis = (value: string | undefined): number | null => {
+            const seconds = optionalNumber(value);
+            return seconds === null ? null : seconds * 1000;
+        };
 
         samples.push({
             Timestamp: Math.max(0, elapsedSeconds * 1000),
@@ -94,7 +110,14 @@ export function generateJsonReport(logFile: string, outputFile: string, hasGcDat
             HeapUsed: Number.isNaN(heapUsedValue) ? 0 : heapUsedValue,
             HeapCap: Number.isNaN(heapCapValue) ? 0 : heapCapValue,
             GCTime: gcSecondsValue !== null ? gcSecondsValue * 1000 : null,
-            GCTimeSeconds: gcSecondsValue
+            GCTimeSeconds: gcSecondsValue,
+            JITCompiledMethods: optionalNumber(jitCompiled),
+            JITFailedCompilations: optionalNumber(jitFailed),
+            JITInvalidatedCompilations: optionalNumber(jitInvalid),
+            JITCompilationTimeMs: optionalMillis(jitTime),
+            ClassesLoaded: optionalNumber(classesLoaded),
+            ClassesUnloaded: optionalNumber(classesUnloaded),
+            ClassLoadTimeMs: optionalMillis(classTime)
         });
 
         if (!processInfo[pid]) {

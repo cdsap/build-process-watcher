@@ -251,3 +251,22 @@ func TestIngestRequest_WithoutProcessInfo(t *testing.T) {
 		t.Error("ProcessInfo should be nil when not provided")
 	}
 }
+
+func TestSampleOptionalMetricsJSON(t *testing.T) {
+	compiled := 12
+	sample := Sample{PID: "1", JITCompiledMethods: &compiled}
+	data, err := json.Marshal(sample)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded Sample
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.JITCompiledMethods == nil || *decoded.JITCompiledMethods != compiled {
+		t.Fatalf("optional metric did not round trip: %s", data)
+	}
+	if decoded.ClassesLoaded != nil {
+		t.Fatal("unset optional metric should remain nil")
+	}
+}
