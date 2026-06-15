@@ -15,7 +15,7 @@ Monitor Java/Kotlin build processes (`GradleDaemon`, `GradleWorkerMain`, `Kotlin
 ### Local Mode (Artifacts Only)
 
 ```yaml
-- uses: cdsap/build-process-watcher@v0.6.1
+- uses: cdsap/build-process-watcher@v0.6.2
 ```
 
 Generates log files and charts as workflow artifacts.
@@ -23,7 +23,7 @@ Generates log files and charts as workflow artifacts.
 ### Remote Mode (Live Dashboard)
 
 ```yaml
-- uses: cdsap/build-process-watcher@v0.6.1
+- uses: cdsap/build-process-watcher@v0.6.2
   with:
     remote_monitoring: 'true'
 ```
@@ -34,7 +34,7 @@ Dashboard URL shown in job output. GC (garbage collection) monitoring is always 
 ### Optional Metrics Export to BigQuery
 
 ```yaml
-- uses: cdsap/build-process-watcher@v0.6.1
+- uses: cdsap/build-process-watcher@v0.6.2
   with:
     remote_monitoring: 'true'
     export_to_bigquery: 'true'
