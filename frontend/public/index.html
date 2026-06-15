@@ -438,7 +438,7 @@
             <img class="home-hero-media" src="/performance.gif" alt="Build Process Watcher dashboard preview">
             <div class="home-hero-content">
                 <div>
-                    <span class="version-pill">Action snippets updated for v0.6.1</span>
+                    <span class="version-pill">Action snippets updated for v0.6.2</span>
                     <h1>Build Process Watcher</h1>
                     <p>Capture Gradle, Kotlin, and JVM memory pressure while CI is running, then replay or compare the build with enough context to explain what changed.</p>
                     <div class="hero-actions">
@@ -461,14 +461,14 @@
         <section class="home-section" id="quick-start">
             <div class="section-kicker">Quick Start</div>
             <h2 class="section-heading">Two modes, one action.</h2>
-            <p class="section-copy">Use local mode for artifacts only, remote mode for the hosted dashboard, or optionally export metrics to BigQuery. Every snippet is pinned to `v0.6.1`.</p>
+            <p class="section-copy">Use local mode for artifacts only, remote mode for the hosted dashboard, or optionally export metrics to BigQuery. Every snippet is pinned to `v0.6.2`.</p>
 
             <div class="snippet-grid">
                 <article class="snippet-card">
                     <h3>Local artifacts</h3>
                     <p>Generates logs, JSON, SVG charts, and the Actions summary inside the workflow.</p>
                     <pre><code>- name: Build Process Watcher
-  uses: cdsap/build-process-watcher@v0.6.1
+  uses: cdsap/build-process-watcher@v0.6.2
 
 - name: Build project
   run: ./gradlew clean build</code></pre>
@@ -478,7 +478,7 @@
                     <h3>Remote dashboard</h3>
                     <p>Streams samples to the hosted dashboard and keeps reports available for 24 hours.</p>
                     <pre><code>- name: Build Process Watcher
-  uses: cdsap/build-process-watcher@v0.6.1
+  uses: cdsap/build-process-watcher@v0.6.2
   with:
     remote_monitoring: 'true'
 
@@ -490,7 +490,7 @@
                     <h3>Optional BigQuery metrics</h3>
                     <p>Not required for monitoring. Enable only when you want finished-run metrics collected in BigQuery.</p>
                     <pre><code>- name: Build Process Watcher
-  uses: cdsap/build-process-watcher@v0.6.1
+  uses: cdsap/build-process-watcher@v0.6.2
   with:
     remote_monitoring: 'true'
     export_to_bigquery: 'true'
