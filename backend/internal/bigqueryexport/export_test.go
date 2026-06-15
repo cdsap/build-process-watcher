@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"cloud.google.com/go/bigquery"
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
 )
 
@@ -70,20 +71,22 @@ func TestStableInsertID(t *testing.T) {
 }
 
 func TestOptionalInt64(t *testing.T) {
-	if optionalInt64(nil) != nil {
-		t.Fatal("nil metric must remain nil")
+	if got := optionalInt64(nil); got.Valid {
+		t.Fatalf("nil metric must remain invalid, got %+v", got)
 	}
 	value := 42
 	converted := optionalInt64(&value)
-	if converted == nil || *converted != 42 {
+	if !converted.Valid || converted.Int64 != 42 {
 		t.Fatalf("unexpected conversion: %v", converted)
 	}
 }
 
 func TestSampleRowOptionalMetricTags(t *testing.T) {
-	value := int64(1)
-	row := sampleRow{JITCompiledMethods: &value, ClassesLoaded: nil}
-	if row.JITCompiledMethods == nil || row.ClassesLoaded != nil {
+	row := sampleRow{
+		JITCompiledMethods: bigquery.NullInt64{Int64: 1, Valid: true},
+		ClassesLoaded:      bigquery.NullInt64{},
+	}
+	if !row.JITCompiledMethods.Valid || row.ClassesLoaded.Valid {
 		t.Fatal("sample row must preserve populated and null optional metrics")
 	}
 }
