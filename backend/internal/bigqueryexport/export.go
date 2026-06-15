@@ -57,31 +57,30 @@ func (e *Exporter) Close() error {
 
 // sampleRow matches schema in schema/bigquery_build_process_samples.sql
 type sampleRow struct {
-	RunID                      string    `bigquery:"run_id"`
-	SampleTimestamp            time.Time `bigquery:"sample_timestamp"`
-	ElapsedTime                int64     `bigquery:"elapsed_time"`
-	PID                        string    `bigquery:"pid"`
-	Name                       string    `bigquery:"name"`
-	HeapUsedMB                 int64     `bigquery:"heap_used"`
-	HeapCapMB                  int64     `bigquery:"heap_cap"`
-	RSSMB                      int64     `bigquery:"rss"`
-	GCTimeMS                   int64     `bigquery:"gc_time"`
-	JITCompiledMethods         *int64    `bigquery:"jit_compiled_methods"`
-	JITFailedCompilations      *int64    `bigquery:"jit_failed_compilations"`
-	JITInvalidatedCompilations *int64    `bigquery:"jit_invalidated_compilations"`
-	JITCompilationTimeMs       *int64    `bigquery:"jit_compilation_time_ms"`
-	ClassesLoaded              *int64    `bigquery:"classes_loaded"`
-	ClassesUnloaded            *int64    `bigquery:"classes_unloaded"`
-	ClassLoadTimeMs            *int64    `bigquery:"class_load_time_ms"`
-	RunFinishedAt              time.Time `bigquery:"run_finished_at"`
+	RunID                      string             `bigquery:"run_id"`
+	SampleTimestamp            time.Time          `bigquery:"sample_timestamp"`
+	ElapsedTime                int64              `bigquery:"elapsed_time"`
+	PID                        string             `bigquery:"pid"`
+	Name                       string             `bigquery:"name"`
+	HeapUsedMB                 int64              `bigquery:"heap_used"`
+	HeapCapMB                  int64              `bigquery:"heap_cap"`
+	RSSMB                      int64              `bigquery:"rss"`
+	GCTimeMS                   int64              `bigquery:"gc_time"`
+	JITCompiledMethods         bigquery.NullInt64 `bigquery:"jit_compiled_methods"`
+	JITFailedCompilations      bigquery.NullInt64 `bigquery:"jit_failed_compilations"`
+	JITInvalidatedCompilations bigquery.NullInt64 `bigquery:"jit_invalidated_compilations"`
+	JITCompilationTimeMs       bigquery.NullInt64 `bigquery:"jit_compilation_time_ms"`
+	ClassesLoaded              bigquery.NullInt64 `bigquery:"classes_loaded"`
+	ClassesUnloaded            bigquery.NullInt64 `bigquery:"classes_unloaded"`
+	ClassLoadTimeMs            bigquery.NullInt64 `bigquery:"class_load_time_ms"`
+	RunFinishedAt              time.Time          `bigquery:"run_finished_at"`
 }
 
-func optionalInt64(value *int) *int64 {
+func optionalInt64(value *int) bigquery.NullInt64 {
 	if value == nil {
-		return nil
+		return bigquery.NullInt64{}
 	}
-	converted := int64(*value)
-	return &converted
+	return bigquery.NullInt64{Int64: int64(*value), Valid: true}
 }
 
 // ExportRun inserts all samples for a finished run. Errors do not rollback Firestore; callers log and continue.
