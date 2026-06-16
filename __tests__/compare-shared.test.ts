@@ -31,6 +31,18 @@ describe('JIT and class loading series', () => {
     expect(Array.from(result.rate)).toEqual([null, null, null, 4]);
   });
 
+  it('aligns counter observations to the next shared compare frame', () => {
+    const timestamps = [0, 2000, 4000, 6000];
+    const samples = [
+      { Timestamp: 1500, Name: 'P', PID: '1', JITCompiledMethods: 10 },
+      { Timestamp: 3500, Name: 'P', PID: '1', JITCompiledMethods: 30 },
+      { Timestamp: 5500, Name: 'P', PID: '1', JITCompiledMethods: 50 },
+    ];
+    const result = shared.buildCounterSeries(samples, timestamps, 'P', '1', (s: any) => s.JITCompiledMethods);
+    expect(Array.from(result.cumulative)).toEqual([null, 10, 30, 50]);
+    expect(Array.from(result.rate)).toEqual([null, null, 10, 10]);
+  });
+
   it('breaks a rate segment when a counter decreases and isolates PIDs', () => {
     const samples = [
       { Timestamp: 0, Name: 'P', PID: '1', JITCompiledMethods: 10 },
