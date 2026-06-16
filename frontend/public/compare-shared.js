@@ -1312,14 +1312,16 @@
                     ...layout.xaxis,
                     title: 'Elapsed (s)',
                     tickformat: null,
-                    type: 'linear',
-                    tickvals: isSplitMode ? tickVals : undefined,
-                    ticktext: isSplitMode ? tickText : undefined
+                    type: 'linear'
                 };
+                const labelTraces = (traces, label) => traces.map(trace => ({
+                    ...trace,
+                    name: `${label}: ${trace.name}`
+                }));
                 if (isSplitMode) {
                     const traces = [
-                        ...buildMetricTraces(baseData, timestamps, frameIndex, metric, baseStyle, elapsedSeconds),
-                        ...buildMetricTraces(compareData, timestamps, frameIndex, metric, compareStyle, compareElapsed)
+                        ...labelTraces(buildMetricTraces(baseData, timestamps, frameIndex, metric, baseStyle, elapsedSeconds), baseLabel),
+                        ...labelTraces(buildMetricTraces(compareData, timestamps, frameIndex, metric, compareStyle, elapsedSeconds), compareLabel)
                     ];
                     tasks.push(Plotly.react(`compare-${id}`, applyVisibilityToTraces(`compare-${id}`, traces), layout, getCounterConfig(`compare-${metric}`)));
                 } else {
