@@ -878,12 +878,72 @@
                 </div>
                 ` : ''}
                 ${hasJITData(samples) ? `
-                <div class="chart-container"><h3>JIT Compilation</h3>
+                <div class="chart-container">
+                    ${isFinished === true ? `
+                        <div class="replay-controls" id="jit-replay-controls">
+                            <div class="buttons">
+                                <button class="btn" id="btn-jit-replay-play">Play</button>
+                                <button class="btn secondary" id="btn-jit-replay-pause">Pause</button>
+                                <button class="btn secondary" id="btn-jit-replay-reset">Reset</button>
+                            </div>
+                            <div class="meta" id="jit-replay-meta">Frame 0 / 0</div>
+                            <div class="timeline">
+                                <input type="range" id="jit-replay-timeline" min="0" max="0" value="0">
+                                <div class="meta" id="jit-replay-time-label">Elapsed: 0s</div>
+                                <div class="meta">
+                                    Speed:
+                                    <select id="jit-replay-speed">
+                                        <option value="5">5x</option>
+                                        <option value="10">10x</option>
+                                        <option value="15" selected>15x</option>
+                                        <option value="20">20x</option>
+                                        <option value="25">25x</option>
+                                        <option value="30">30x</option>
+                                        <option value="35">35x</option>
+                                        <option value="40">40x</option>
+                                        <option value="45">45x</option>
+                                        <option value="50">50x</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    ` : ''}
+                    <h3>JIT Compilation</h3>
                     <div id="jit-time-chart" style="width:100%;height:450px"></div>
                     <div id="jit-rate-chart" style="width:100%;height:450px"></div>
                 </div>` : ''}
                 ${hasClassLoadingData(samples) ? `
-                <div class="chart-container"><h3>Class Loading</h3>
+                <div class="chart-container">
+                    ${isFinished === true ? `
+                        <div class="replay-controls" id="classes-replay-controls">
+                            <div class="buttons">
+                                <button class="btn" id="btn-classes-replay-play">Play</button>
+                                <button class="btn secondary" id="btn-classes-replay-pause">Pause</button>
+                                <button class="btn secondary" id="btn-classes-replay-reset">Reset</button>
+                            </div>
+                            <div class="meta" id="classes-replay-meta">Frame 0 / 0</div>
+                            <div class="timeline">
+                                <input type="range" id="classes-replay-timeline" min="0" max="0" value="0">
+                                <div class="meta" id="classes-replay-time-label">Elapsed: 0s</div>
+                                <div class="meta">
+                                    Speed:
+                                    <select id="classes-replay-speed">
+                                        <option value="5">5x</option>
+                                        <option value="10">10x</option>
+                                        <option value="15" selected>15x</option>
+                                        <option value="20">20x</option>
+                                        <option value="25">25x</option>
+                                        <option value="30">30x</option>
+                                        <option value="35">35x</option>
+                                        <option value="40">40x</option>
+                                        <option value="45">45x</option>
+                                        <option value="50">50x</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    ` : ''}
+                    <h3>Class Loading</h3>
                     <div id="classes-loaded-chart" style="width:100%;height:450px"></div>
                     <div id="class-rate-chart" style="width:100%;height:450px"></div>
                 </div>` : ''}
@@ -1178,6 +1238,8 @@
                 };
             }
             const firstTotalRssIndex = chartTotalSeries.totalRss.findIndex(value => value !== null);
+            const counterReplayData = buildReplayData(samples, timestamps);
+            const counterElapsedSeconds = chartTimestamps.map(timestamp => Math.max(0, (timestamp - chartTimestamps[0]) / 1000));
 
             function buildMemoryTraces(frameIndex) {
                 const frameTimestamps = chartTimestamps.slice(0, frameIndex + 1).map(t => new Date(t));
@@ -1357,6 +1419,122 @@
                 });
             }
 
+            function setupCounterReplayPanel(options) {
+                const { panelKey, controlsId, charts } = options;
+                const controls = document.getElementById(controlsId);
+                const availableCharts = charts.filter(chart => document.getElementById(chart.id));
+                if (!controls || !availableCharts.length) return;
+
+                if (!window.replayStops) {
+                    window.replayStops = {};
+                }
+                if (window.replayStops[panelKey]) {
+                    window.replayStops[panelKey]();
+                }
+
+                const timeline = document.getElementById(`${panelKey}-replay-timeline`);
+                const meta = document.getElementById(`${panelKey}-replay-meta`);
+                const timeLabel = document.getElementById(`${panelKey}-replay-time-label`);
+                const playBtn = document.getElementById(`btn-${panelKey}-replay-play`);
+                const pauseBtn = document.getElementById(`btn-${panelKey}-replay-pause`);
+                const resetBtn = document.getElementById(`btn-${panelKey}-replay-reset`);
+                const speedSelect = document.getElementById(`${panelKey}-replay-speed`);
+                if (!timeline || !meta || !timeLabel || !playBtn || !pauseBtn || !resetBtn || !speedSelect) return;
+
+                let isPlaying = false;
+                let playTimer = null;
+                let currentFrame = 0;
+                let speedMultiplier = Number(speedSelect.value) || 15;
+
+                timeline.max = String(Math.max(0, chartTimestamps.length - 1));
+
+                function updateUi(frameIndex) {
+                    timeline.value = String(frameIndex);
+                    meta.textContent = `Frame ${frameIndex + 1} / ${chartTimestamps.length}`;
+                    const timestamp = chartTimestamps[frameIndex];
+                    const elapsed = elapsedByTimestamp.get(timestamp);
+                    const timeText = new Date(timestamp).toLocaleTimeString();
+                    timeLabel.textContent = `Elapsed: ${elapsed}s | ${timeText}`;
+                }
+
+                function renderFrame(frameIndex) {
+                    currentFrame = frameIndex;
+                    updateUi(frameIndex);
+                    const tasks = availableCharts.map(chart => {
+                        const traces = buildMetricTraces(
+                            counterReplayData,
+                            chartTimestamps,
+                            frameIndex,
+                            chart.metric,
+                            {},
+                            counterElapsedSeconds
+                        );
+                        const layout = CompareShared.getCounterLayout(chart.title, chart.yTitle);
+                        layout.xaxis = { ...layout.xaxis, title: 'Elapsed (s)', tickformat: null, type: 'linear' };
+                        return Plotly.react(
+                            chart.id,
+                            applyVisibilityToTraces(chart.id, traces),
+                            layout,
+                            CompareShared.getCounterConfig(`build-monitor-${chart.metric}-${runId}`)
+                        );
+                    });
+                    return Promise.all(tasks);
+                }
+
+                function scheduleNext() {
+                    if (!isPlaying) return;
+                    if (currentFrame >= chartTimestamps.length - 1) {
+                        isPlaying = false;
+                        return;
+                    }
+                    const nextDelay = Math.max(
+                        16,
+                        (chartTimestamps[currentFrame + 1] - chartTimestamps[currentFrame]) / speedMultiplier
+                    );
+                    playTimer = setTimeout(() => {
+                        renderFrame(currentFrame + 1).then(scheduleNext);
+                    }, nextDelay);
+                }
+
+                function play() {
+                    if (isPlaying) return;
+                    isPlaying = true;
+                    scheduleNext();
+                }
+
+                function pause() {
+                    isPlaying = false;
+                    if (playTimer) {
+                        clearTimeout(playTimer);
+                        playTimer = null;
+                    }
+                }
+
+                window.replayStops[panelKey] = pause;
+
+                playBtn.addEventListener('click', play);
+                pauseBtn.addEventListener('click', pause);
+                resetBtn.addEventListener('click', () => {
+                    pause();
+                    renderFrame(0);
+                });
+                timeline.addEventListener('input', () => {
+                    pause();
+                    renderFrame(Number(timeline.value));
+                });
+                speedSelect.addEventListener('change', () => {
+                    const parsed = Number(speedSelect.value);
+                    if (!Number.isNaN(parsed) && parsed > 0) {
+                        speedMultiplier = parsed;
+                    }
+                });
+
+                const initialFrame = Math.max(0, chartTimestamps.length - 1);
+                renderFrame(initialFrame).then(() => {
+                    availableCharts.forEach(chart => attachLegendVisibilityHandlers(chart.id));
+                });
+            }
+
             setupReplayPanel({
                 panelKey: 'rss',
                 chartId: 'chart',
@@ -1381,6 +1559,22 @@
                 buildTraces: buildRatioTraces,
                 layoutGetter: getRatioLayout,
                 configGetter: getRatioConfig
+            });
+            setupCounterReplayPanel({
+                panelKey: 'jit',
+                controlsId: 'jit-replay-controls',
+                charts: [
+                    { id: 'jit-time-chart', metric: 'jitTime', title: 'Cumulative JIT Compilation Time', yTitle: 'Compilation Time (s)' },
+                    { id: 'jit-rate-chart', metric: 'jitRate', title: 'JIT Compilation Activity', yTitle: 'Compiled Methods / s' }
+                ]
+            });
+            setupCounterReplayPanel({
+                panelKey: 'classes',
+                controlsId: 'classes-replay-controls',
+                charts: [
+                    { id: 'classes-loaded-chart', metric: 'classesLoaded', title: 'Cumulative Classes Loaded', yTitle: 'Classes Loaded' },
+                    { id: 'class-rate-chart', metric: 'classRate', title: 'Class Loading Activity', yTitle: 'Classes / s' }
+                ]
             });
         }
 
