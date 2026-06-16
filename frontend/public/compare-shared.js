@@ -221,27 +221,48 @@
             .filter(point => isValidMetric(point.value))
             .map(point => ({ ...point, value: Number(point.value) }))
             .sort((a, b) => a.timestamp - b.timestamp);
-        const observationByTimestamp = new Map(observations.map(point => [point.timestamp, point.value]));
-        const rateByTimestamp = new Map();
+        const rateObservations = [];
         let previous = null;
         observations.forEach(point => {
             if (previous) {
                 const elapsedSeconds = (point.timestamp - previous.timestamp) / 1000;
                 if (elapsedSeconds > 0 && point.value >= previous.value) {
-                    rateByTimestamp.set(point.timestamp, (point.value - previous.value) / elapsedSeconds);
+                    rateObservations.push({
+                        timestamp: point.timestamp,
+                        value: (point.value - previous.value) / elapsedSeconds
+                    });
                 }
             }
             previous = point;
         });
 
         let displayValue = null;
+        let observationIndex = 0;
+        let rateIndex = 0;
+        let lastRate = null;
+        let lastRateTimestamp = 0;
+        const medianDelta = getMedianDelta(timestamps);
+        const maxGap = medianDelta ? medianDelta * 2 : 0;
         return {
             observations,
             cumulative: timestamps.map(timestamp => {
-                if (observationByTimestamp.has(timestamp)) displayValue = observationByTimestamp.get(timestamp);
+                while (observationIndex < observations.length && observations[observationIndex].timestamp <= timestamp) {
+                    displayValue = observations[observationIndex].value;
+                    observationIndex += 1;
+                }
                 return displayValue;
             }),
-            rate: timestamps.map(timestamp => rateByTimestamp.has(timestamp) ? rateByTimestamp.get(timestamp) : null)
+            rate: timestamps.map(timestamp => {
+                while (rateIndex < rateObservations.length && rateObservations[rateIndex].timestamp <= timestamp) {
+                    lastRate = rateObservations[rateIndex].value;
+                    lastRateTimestamp = rateObservations[rateIndex].timestamp;
+                    rateIndex += 1;
+                }
+                if (lastRateTimestamp === timestamp || (maxGap > 0 && lastRateTimestamp > 0 && (timestamp - lastRateTimestamp) <= maxGap)) {
+                    return lastRate;
+                }
+                return null;
+            })
         };
     }
 
