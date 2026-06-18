@@ -376,6 +376,25 @@ body.bpw-perspective-story .bpw-chart-studio {
     transition: border-color 0.15s, background 0.15s, box-shadow 0.15s, transform 0.15s;
 }
 
+.bpw-story-phase::before {
+    content: "";
+    width: 2rem;
+    height: 0.2rem;
+    border-radius: 999px;
+    background: var(--bpw-muted, #5f6b63);
+    opacity: 0.45;
+}
+
+.bpw-story-phase.bpw-confidence-high::before {
+    background: var(--bpw-green, #247b5b);
+    opacity: 0.9;
+}
+
+.bpw-story-phase.bpw-confidence-medium::before {
+    background: var(--bpw-gold, #b88414);
+    opacity: 0.9;
+}
+
 .bpw-story-phase:hover {
     border-color: rgba(8, 127, 140, 0.55);
     transform: translateY(-1px);
@@ -396,6 +415,13 @@ body.bpw-perspective-story .bpw-chart-studio {
     color: var(--bpw-muted, #5f6b63);
     font-size: 0.76rem;
     font-weight: 700;
+}
+
+.bpw-story-phase small {
+    color: var(--bpw-muted, #5f6b63);
+    font-size: 0.7rem;
+    font-weight: 680;
+    line-height: 1.25;
 }
 
 .bpw-story-main {
@@ -440,6 +466,41 @@ body.bpw-perspective-story .bpw-chart-studio {
     font-size: 0.9rem;
 }
 
+.bpw-story-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+    margin-top: 0.85rem;
+}
+
+.bpw-story-facts div {
+    min-width: 0;
+    padding: 0.55rem;
+    border: 1px solid rgba(22, 26, 29, 0.08);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.72);
+}
+
+.bpw-story-facts span {
+    display: block;
+    color: var(--bpw-muted, #5f6b63);
+    font-size: 0.66rem;
+    font-weight: 760;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.bpw-story-facts strong {
+    display: block;
+    margin-top: 0.15rem;
+    overflow: hidden;
+    color: var(--bpw-ink, #161a1d);
+    font-size: 0.86rem;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .bpw-story-badges {
     display: flex;
     flex-wrap: wrap;
@@ -474,7 +535,7 @@ body.bpw-perspective-story .bpw-chart-studio {
 
 .bpw-story-evidence-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 0.6rem;
     margin-bottom: 0.75rem;
 }

@@ -182,6 +182,7 @@
             confidence: confidenceFor(primaryDelta || 0, baseline),
             dominantProcess: dominantProcess(start, end),
             badges: badges || [],
+            sampleCount: Math.max(1, end - start + 1),
             deltas
         };
     }
@@ -336,6 +337,17 @@
         return { a, b };
     }
 
+    function metricLabel(metric) {
+        const catalog = shared().METRIC_CATALOG || {};
+        return catalog[metric]?.label || metric || 'Metric';
+    }
+
+    function phaseDuration(phase) {
+        const start = state.elapsedSeconds[phase.start] || 0;
+        const end = state.elapsedSeconds[phase.end] || start;
+        return Math.max(0, end - start);
+    }
+
     function scopedRange(phase) {
         if (state.scope === 'full') return null;
         const maxIndex = Math.max(0, state.timestamps.length - 1);
@@ -409,6 +421,11 @@
                     <span>Peak total RSS, ${formatMetric(d.totalRssDelta, 'mb')} delta</span>
                 </div>
                 <div class="bpw-story-evidence-card">
+                    <div class="bpw-story-evidence-label">Heap/RSS</div>
+                    <strong>${formatMetric(d.ratioPeak, 'ratio')}</strong>
+                    <span>Highest ratio in window</span>
+                </div>
+                <div class="bpw-story-evidence-card">
                     <div class="bpw-story-evidence-label">GC</div>
                     <strong>${formatMetric(d.gcDelta, 'seconds')}</strong>
                     <span>Cumulative delta in window</span>
@@ -460,6 +477,7 @@
                             <span id="bpw-story-time">0s</span>
                         </div>
                         <p id="bpw-story-copy"></p>
+                        <div class="bpw-story-facts" id="bpw-story-facts"></div>
                         <div class="bpw-story-badges" id="bpw-story-badges"></div>
                     </section>
                     <section class="bpw-story-inspector">
@@ -476,10 +494,12 @@
         if (!rail) return;
         rail.innerHTML = state.phases.map((phase) => {
             const active = phase.id === state.selectedPhaseId;
+            const duration = phaseDuration(phase);
             return `
-                <button type="button" class="bpw-story-phase" data-bpw-phase="${phase.id}" aria-pressed="${active ? 'true' : 'false'}">
+                <button type="button" class="bpw-story-phase bpw-confidence-${phase.confidence}" data-bpw-phase="${phase.id}" aria-pressed="${active ? 'true' : 'false'}">
                     <span>${phase.label}</span>
                     <strong>${phaseTime(phase)}</strong>
+                    <small>${phase.dominantMetric} &middot; ${formatSeconds(duration)} &middot; ${phase.confidence}</small>
                 </button>
             `;
         }).join('');
@@ -515,8 +535,10 @@
         const time = document.getElementById('bpw-story-time');
         const copy = document.getElementById('bpw-story-copy');
         const confidence = document.getElementById('bpw-story-confidence');
+        const facts = document.getElementById('bpw-story-facts');
         const badges = document.getElementById('bpw-story-badges');
         const evidence = document.getElementById('bpw-story-evidence');
+        const overlay = defaultOverlayForPhase(phase);
         if (title) title.textContent = phase.label;
         if (time) time.textContent = phaseTime(phase);
         if (copy) {
@@ -526,6 +548,14 @@
             copy.textContent = `${summarySentence(phase)} ${processText}`;
         }
         if (confidence) confidence.textContent = `${phase.confidence} confidence`;
+        if (facts) {
+            facts.innerHTML = `
+                <div><span>Duration</span><strong>${formatSeconds(phaseDuration(phase))}</strong></div>
+                <div><span>Samples</span><strong>${phase.sampleCount}</strong></div>
+                <div><span>Focus</span><strong>${phase.dominantMetric}</strong></div>
+                <div><span>Overlay</span><strong>${metricLabel(overlay.a)}${overlay.b ? ` + ${metricLabel(overlay.b)}` : ''}</strong></div>
+            `;
+        }
         if (badges) {
             badges.innerHTML = [
                 phase.dominantMetric,
