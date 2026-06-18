@@ -206,10 +206,11 @@
 
         if (window.BpwExperimentLayout) {
             BpwExperimentLayout.clearReplayPanels();
-            BpwExperimentLayout.initToggleButtons();
-            BpwExperimentLayout.applyMode(BpwExperimentLayout.getMode());
-            BpwExperimentLayout.initWorkspaceDeck();
-            BpwExperimentLayout.initPanelFocusButtons();
+            BpwExperimentLayout.initToggleButtons?.();
+            BpwExperimentLayout.applyMode?.(BpwExperimentLayout.getMode());
+            const initDeck = BpwExperimentLayout.initWorkspaceDeck || BpwExperimentLayout.initSectionNav;
+            if (typeof initDeck === 'function') initDeck();
+            BpwExperimentLayout.initPanelFocusButtons?.();
         }
 
         const timeline = document.getElementById('single-replay-timeline');

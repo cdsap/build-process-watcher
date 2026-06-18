@@ -453,6 +453,16 @@
         initToggleButtons();
     }
 
+    function initAfterRunRender() {
+        initToggleButtons();
+        applyMode(getMode());
+        initPanelFocusButtons();
+    }
+
+    function initSectionNav() {
+        initWorkspaceDeck();
+    }
+
     global.BpwExperimentLayout = {
         MODES,
         getMode,
@@ -465,7 +475,9 @@
         initUnifiedReplay,
         initToggleButtons,
         initWorkspaceDeck,
+        initSectionNav,
         initPanelFocusButtons,
+        initAfterRunRender,
         resizeCharts
     };
 

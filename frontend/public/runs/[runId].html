@@ -1130,10 +1130,17 @@
             if (btnRssHeapSvg) btnRssHeapSvg.onclick = () => downloadRssHeapRatioChart('svg');
 
             if (window.BpwExperimentLayout) {
-                BpwExperimentLayout.initToggleButtons();
-                BpwExperimentLayout.applyMode(BpwExperimentLayout.getMode());
-                BpwExperimentLayout.initWorkspaceDeck();
-                BpwExperimentLayout.initPanelFocusButtons();
+                if (typeof BpwExperimentLayout.initAfterRunRender === 'function') {
+                    BpwExperimentLayout.initAfterRunRender();
+                } else {
+                    BpwExperimentLayout.initToggleButtons?.();
+                    if (typeof BpwExperimentLayout.applyMode === 'function') {
+                        BpwExperimentLayout.applyMode(BpwExperimentLayout.getMode());
+                    }
+                    const initDeck = BpwExperimentLayout.initWorkspaceDeck || BpwExperimentLayout.initSectionNav;
+                    if (typeof initDeck === 'function') initDeck();
+                    BpwExperimentLayout.initPanelFocusButtons?.();
+                }
             }
         }
 
