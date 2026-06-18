@@ -1,6 +1,37 @@
 (function (global) {
     const STORAGE_KEY = 'bpwLayoutMode';
+    const PANEL_STORAGE_KEY = 'bpwPanelVisibility';
+    const PRESET_STORAGE_KEY = 'bpwLayoutPreset';
     const MODES = { classic: 'classic', experiment: 'experiment' };
+
+    const PANEL_META = {
+        memory: { label: 'Memory', group: 'memory' },
+        gc: { label: 'GC time', group: 'memory' },
+        ratio: { label: 'Heap/RSS', group: 'memory' },
+        'jit-time': { label: 'JIT time', group: 'runtime' },
+        'jit-rate': { label: 'JIT rate', group: 'runtime' },
+        'classes-loaded': { label: 'Classes loaded', group: 'runtime' },
+        'class-rate': { label: 'Class rate', group: 'runtime' }
+    };
+
+    const PRESETS = {
+        overview: {
+            label: 'Overview',
+            panels: ['memory', 'gc', 'ratio', 'jit-time', 'jit-rate', 'classes-loaded', 'class-rate']
+        },
+        memory: {
+            label: 'Memory',
+            panels: ['memory', 'gc', 'ratio']
+        },
+        runtime: {
+            label: 'Runtime',
+            panels: ['jit-time', 'jit-rate', 'classes-loaded', 'class-rate']
+        },
+        custom: {
+            label: 'Custom',
+            panels: null
+        }
+    };
 
     const replayPanels = [];
     let unifiedTimer = null;
@@ -9,6 +40,7 @@
     let unifiedSpeed = 15;
     let unifiedTimestamps = [];
     let unifiedElapsedByTimestamp = null;
+    let focusPanelId = null;
 
     function getMode() {
         return localStorage.getItem(STORAGE_KEY) === MODES.experiment ? MODES.experiment : MODES.classic;
@@ -27,6 +59,170 @@
         setMode(isExperiment() ? MODES.classic : MODES.experiment);
     }
 
+    function getAvailablePanels() {
+        return Array.from(document.querySelectorAll('[data-bpw-panel]'))
+            .map((el) => el.getAttribute('data-bpw-panel'))
+            .filter(Boolean);
+    }
+
+    function readPanelVisibility() {
+        try {
+            const raw = localStorage.getItem(PANEL_STORAGE_KEY);
+            if (!raw) return null;
+            return JSON.parse(raw);
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function writePanelVisibility(map) {
+        localStorage.setItem(PANEL_STORAGE_KEY, JSON.stringify(map));
+    }
+
+    function getActivePreset() {
+        const stored = localStorage.getItem(PRESET_STORAGE_KEY);
+        return stored && PRESETS[stored] ? stored : 'overview';
+    }
+
+    function setActivePreset(presetId) {
+        localStorage.setItem(PRESET_STORAGE_KEY, presetId);
+    }
+
+    function buildVisibilityMap(available, presetId) {
+        const preset = PRESETS[presetId];
+        const stored = readPanelVisibility();
+        const map = {};
+
+        available.forEach((id) => {
+            if (presetId === 'custom' && stored && typeof stored[id] === 'boolean') {
+                map[id] = stored[id];
+            } else if (preset && preset.panels) {
+                map[id] = preset.panels.includes(id);
+            } else {
+                map[id] = true;
+            }
+        });
+        return map;
+    }
+
+    function applyPanelVisibility(map) {
+        document.querySelectorAll('[data-bpw-panel]').forEach((el) => {
+            const id = el.getAttribute('data-bpw-panel');
+            const visible = map[id] !== false;
+            el.classList.toggle('bpw-panel-hidden', !visible);
+        });
+        writePanelVisibility(map);
+        resizeCharts();
+    }
+
+    function applyFocusMode(panelId) {
+        focusPanelId = panelId || null;
+        document.body.classList.toggle('bpw-focus-mode', Boolean(panelId));
+        document.querySelectorAll('[data-bpw-panel]').forEach((el) => {
+            const id = el.getAttribute('data-bpw-panel');
+            el.classList.toggle('bpw-panel-focus-active', panelId === id);
+        });
+        document.querySelectorAll('.bpw-panel-focus-btn').forEach((btn) => {
+            const target = btn.getAttribute('data-bpw-focus');
+            btn.setAttribute('aria-pressed', target === panelId ? 'true' : 'false');
+            btn.textContent = target === panelId ? 'Exit focus' : 'Focus';
+        });
+        resizeCharts();
+    }
+
+    function initWorkspaceDeck() {
+        const deck = document.getElementById('bpw-workspace-deck');
+        if (!deck) return;
+
+        const available = getAvailablePanels();
+        if (!available.length) {
+            deck.innerHTML = '';
+            return;
+        }
+
+        const presetId = getActivePreset();
+        const visibility = buildVisibilityMap(available, presetId);
+
+        deck.innerHTML = `
+            <div class="bpw-deck-row">
+                <span class="bpw-deck-label">Layout</span>
+                <div class="bpw-deck-presets">
+                    ${Object.entries(PRESETS).map(([id, preset]) => `
+                        <button type="button" class="bpw-preset-btn" data-bpw-preset="${id}" aria-pressed="${id === presetId ? 'true' : 'false'}">${preset.label}</button>
+                    `).join('')}
+                </div>
+            </div>
+            <div class="bpw-deck-row">
+                <span class="bpw-deck-label">Panels</span>
+                <div class="bpw-deck-toggles" id="bpw-deck-toggles"></div>
+            </div>
+            <div class="bpw-deck-hint">Pick a layout preset or toggle panels to build your own mosaic. Use <strong>Focus</strong> on a card to expand it full width.</div>
+        `;
+
+        const toggles = deck.querySelector('#bpw-deck-toggles');
+        available.forEach((id) => {
+            const meta = PANEL_META[id] || { label: id };
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'bpw-panel-chip';
+            chip.setAttribute('data-bpw-panel-toggle', id);
+            chip.setAttribute('aria-pressed', visibility[id] ? 'true' : 'false');
+            chip.innerHTML = `<span class="bpw-chip-dot"></span>${meta.label}`;
+            toggles.appendChild(chip);
+        });
+
+        deck.querySelectorAll('[data-bpw-preset]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const id = btn.getAttribute('data-bpw-preset');
+                setActivePreset(id);
+                deck.querySelectorAll('[data-bpw-preset]').forEach((b) => {
+                    b.setAttribute('aria-pressed', b.getAttribute('data-bpw-preset') === id ? 'true' : 'false');
+                });
+                const nextVisibility = buildVisibilityMap(getAvailablePanels(), id);
+                applyPanelVisibility(nextVisibility);
+                toggles.querySelectorAll('[data-bpw-panel-toggle]').forEach((chip) => {
+                    const panelId = chip.getAttribute('data-bpw-panel-toggle');
+                    chip.setAttribute('aria-pressed', nextVisibility[panelId] ? 'true' : 'false');
+                });
+                if (id !== 'custom') {
+                    applyFocusMode(null);
+                }
+            });
+        });
+
+        toggles.querySelectorAll('[data-bpw-panel-toggle]').forEach((chip) => {
+            chip.addEventListener('click', () => {
+                setActivePreset('custom');
+                deck.querySelectorAll('[data-bpw-preset]').forEach((b) => {
+                    b.setAttribute('aria-pressed', b.getAttribute('data-bpw-preset') === 'custom' ? 'true' : 'false');
+                });
+                const panelId = chip.getAttribute('data-bpw-panel-toggle');
+                const next = { ...readPanelVisibility(), ...buildVisibilityMap(getAvailablePanels(), 'custom') };
+                next[panelId] = chip.getAttribute('aria-pressed') !== 'true';
+                chip.setAttribute('aria-pressed', next[panelId] ? 'true' : 'false');
+                applyPanelVisibility(next);
+            });
+        });
+
+        applyPanelVisibility(visibility);
+        initPanelFocusButtons();
+    }
+
+    function initPanelFocusButtons() {
+        document.querySelectorAll('.bpw-panel-focus-btn').forEach((btn) => {
+            if (btn.dataset.bpwFocusBound === 'true') return;
+            btn.dataset.bpwFocusBound = 'true';
+            btn.addEventListener('click', () => {
+                const target = btn.getAttribute('data-bpw-focus');
+                if (focusPanelId === target) {
+                    applyFocusMode(null);
+                } else {
+                    applyFocusMode(target);
+                }
+            });
+        });
+    }
+
     function updateToggleButtons() {
         const experimentActive = isExperiment();
         document.querySelectorAll('[data-bpw-layout-toggle]').forEach((btn) => {
@@ -34,7 +230,28 @@
             btn.setAttribute('aria-pressed', experimentActive ? 'true' : 'false');
             btn.title = experimentActive
                 ? 'Switch back to the classic stacked chart layout'
-                : 'Try the experimental dashboard grid with unified replay';
+                : 'Try the workspace mosaic with combinable panels';
+        });
+    }
+
+    function compactChartLegends() {
+        if (!isExperiment() || typeof Plotly === 'undefined') return;
+        document.querySelectorAll('.js-plotly-plot').forEach((el) => {
+            try {
+                Plotly.relayout(el, {
+                    showlegend: true,
+                    legend: {
+                        orientation: 'h',
+                        x: 0,
+                        y: -0.22,
+                        xanchor: 'left',
+                        yanchor: 'top'
+                    },
+                    margin: { r: 24, t: 28, b: 88 }
+                });
+            } catch (_) {
+                /* ignore */
+            }
         });
     }
 
@@ -48,7 +265,10 @@
                     /* ignore */
                 }
             });
-        }, 160);
+            if (isExperiment()) {
+                compactChartLegends();
+            }
+        }, 180);
     }
 
     function applyMode(mode) {
@@ -56,12 +276,23 @@
         document.body.classList.toggle('bpw-layout-experiment', experiment);
         document.body.classList.toggle('bpw-layout-classic', !experiment);
 
-        const nav = document.getElementById('bpw-section-nav');
+        const deck = document.getElementById('bpw-workspace-deck');
         const unified = document.getElementById('bpw-unified-replay');
-        if (nav) nav.hidden = !experiment;
+        if (deck) deck.hidden = !experiment;
         if (unified) unified.hidden = !experiment;
 
         updateToggleButtons();
+
+        if (experiment) {
+            initWorkspaceDeck();
+            compactChartLegends();
+        } else {
+            applyFocusMode(null);
+            document.querySelectorAll('[data-bpw-panel]').forEach((el) => {
+                el.classList.remove('bpw-panel-hidden', 'bpw-panel-focus-active');
+            });
+        }
+
         resizeCharts();
 
         if (!experiment) {
@@ -211,26 +442,9 @@
         updateToggleButtons();
     }
 
-    function initSectionNav() {
-        const nav = document.getElementById('bpw-section-nav');
-        if (!nav || nav.dataset.bpwNavBound === 'true') return;
-        nav.dataset.bpwNavBound = 'true';
-        nav.addEventListener('click', (event) => {
-            const link = event.target.closest('a[href^="#"]');
-            if (!link) return;
-            const id = link.getAttribute('href').slice(1);
-            const target = document.getElementById(id);
-            if (target) {
-                event.preventDefault();
-                target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }
-        });
-    }
-
     function bootstrap() {
         applyMode(getMode());
         initToggleButtons();
-        initSectionNav();
     }
 
     global.BpwExperimentLayout = {
@@ -244,7 +458,8 @@
         registerReplayPanel,
         initUnifiedReplay,
         initToggleButtons,
-        initSectionNav,
+        initWorkspaceDeck,
+        initPanelFocusButtons,
         resizeCharts
     };
 

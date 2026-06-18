@@ -66,12 +66,7 @@
                     </div>
                 </div>
             </div>
-            <nav id="bpw-section-nav" class="bpw-section-nav" hidden aria-label="Chart sections">
-                <a href="#section-memory">Memory</a>
-                ${showGC ? '<a href="#section-gc">GC</a>' : ''}
-                ${showJIT ? '<a href="#section-jit">JIT</a>' : ''}
-                ${showClasses ? '<a href="#section-classes">Classes</a>' : ''}
-            </nav>
+            <div id="bpw-workspace-deck" class="bpw-workspace-deck" hidden aria-label="Workspace layout"></div>
             <div class="replay-controls" id="single-replay-controls">
                 <div class="buttons">
                     <button class="btn" id="btn-single-play">Play</button>
@@ -105,47 +100,99 @@
                 <label><input type="checkbox" id="filter-single-heap" checked> Heap</label>
             </div>
             <div id="bpw-charts-grid" class="bpw-charts-grid">
-            <section class="bpw-chart-section bpw-span-full bpw-panel-memory" id="section-memory">
+            <section class="bpw-chart-panel" data-bpw-panel="memory" id="section-memory">
+            <div class="bpw-panel-card">
+                <div class="bpw-panel-card-head">
+                    <div>
+                        <span class="bpw-panel-badge">Memory</span>
+                        <h4>Memory Usage Over Time</h4>
+                    </div>
+                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="memory">Focus</button>
+                </div>
+                <div class="bpw-panel-card-body">
             <div class="chart-container">
-                <h4>Memory Usage Over Time</h4>
                 <div class="chart-wrapper">
                     <div id="single-rss" style="width: 100%; height: 460px;"></div>
                 </div>
             </div>
+                </div>
+            </div>
             </section>
             ${showGC ? `
-            <section class="bpw-chart-section bpw-span-full bpw-panel-gc" id="section-gc">
+            <section class="bpw-chart-panel" data-bpw-panel="gc" id="section-gc">
+            <div class="bpw-panel-card">
+                <div class="bpw-panel-card-head">
+                    <div>
+                        <span class="bpw-panel-badge">GC</span>
+                        <h4>Garbage Collection Time</h4>
+                    </div>
+                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="gc">Focus</button>
+                </div>
+                <div class="bpw-panel-card-body">
             <div class="chart-container">
-                <h4>Garbage Collection Time Over Time</h4>
                 <div class="chart-wrapper">
                     <div id="single-gc" style="width: 100%; height: 460px;"></div>
+                </div>
+            </div>
                 </div>
             </div>
             </section>
             ` : ''}
             ${showJIT ? `
-            <section class="bpw-chart-section bpw-panel-jit" id="section-jit">
-            <div class="chart-container"><h4>JIT Compilation</h4>
-                <div class="bpw-subchart">
-                    <div class="bpw-subchart-label">Cumulative compilation time</div>
-                    <div id="single-jit-time" class="bpw-chart-slot" style="width:100%;height:400px"></div>
+            <section class="bpw-chart-panel" data-bpw-panel="jit-time" id="section-jit-time">
+            <div class="bpw-panel-card">
+                <div class="bpw-panel-card-head">
+                    <div>
+                        <span class="bpw-panel-badge">JIT</span>
+                        <h4>Cumulative Compilation Time</h4>
+                    </div>
+                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="jit-time">Focus</button>
                 </div>
-                <div class="bpw-subchart">
-                    <div class="bpw-subchart-label">Compilation activity</div>
-                    <div id="single-jit-rate" class="bpw-chart-slot" style="width:100%;height:400px"></div>
+                <div class="bpw-panel-card-body">
+                    <div id="single-jit-time" class="bpw-chart-plot" style="width:100%;height:400px"></div>
+                </div>
+            </div>
+            </section>
+            <section class="bpw-chart-panel" data-bpw-panel="jit-rate" id="section-jit-rate">
+            <div class="bpw-panel-card">
+                <div class="bpw-panel-card-head">
+                    <div>
+                        <span class="bpw-panel-badge">JIT</span>
+                        <h4>Compilation Activity</h4>
+                    </div>
+                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="jit-rate">Focus</button>
+                </div>
+                <div class="bpw-panel-card-body">
+                    <div id="single-jit-rate" class="bpw-chart-plot" style="width:100%;height:400px"></div>
                 </div>
             </div>
             </section>` : ''}
             ${showClasses ? `
-            <section class="bpw-chart-section bpw-panel-classes" id="section-classes">
-            <div class="chart-container"><h4>Class Loading</h4>
-                <div class="bpw-subchart">
-                    <div class="bpw-subchart-label">Cumulative classes loaded</div>
-                    <div id="single-classes-loaded" class="bpw-chart-slot" style="width:100%;height:400px"></div>
+            <section class="bpw-chart-panel" data-bpw-panel="classes-loaded" id="section-classes-loaded">
+            <div class="bpw-panel-card">
+                <div class="bpw-panel-card-head">
+                    <div>
+                        <span class="bpw-panel-badge">Classes</span>
+                        <h4>Cumulative Classes Loaded</h4>
+                    </div>
+                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="classes-loaded">Focus</button>
                 </div>
-                <div class="bpw-subchart">
-                    <div class="bpw-subchart-label">Loading activity</div>
-                    <div id="single-class-rate" class="bpw-chart-slot" style="width:100%;height:400px"></div>
+                <div class="bpw-panel-card-body">
+                    <div id="single-classes-loaded" class="bpw-chart-plot" style="width:100%;height:400px"></div>
+                </div>
+            </div>
+            </section>
+            <section class="bpw-chart-panel" data-bpw-panel="class-rate" id="section-class-rate">
+            <div class="bpw-panel-card">
+                <div class="bpw-panel-card-head">
+                    <div>
+                        <span class="bpw-panel-badge">Classes</span>
+                        <h4>Class Loading Activity</h4>
+                    </div>
+                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="class-rate">Focus</button>
+                </div>
+                <div class="bpw-panel-card-body">
+                    <div id="single-class-rate" class="bpw-chart-plot" style="width:100%;height:400px"></div>
                 </div>
             </div>
             </section>` : ''}
@@ -158,7 +205,8 @@
             BpwExperimentLayout.clearReplayPanels();
             BpwExperimentLayout.initToggleButtons();
             BpwExperimentLayout.applyMode(BpwExperimentLayout.getMode());
-            BpwExperimentLayout.initSectionNav();
+            BpwExperimentLayout.initWorkspaceDeck();
+            BpwExperimentLayout.initPanelFocusButtons();
         }
 
         const timeline = document.getElementById('single-replay-timeline');
@@ -330,6 +378,9 @@
                 }
                 ['single-jit-time', 'single-jit-rate', 'single-classes-loaded', 'single-class-rate']
                     .forEach(id => { if (document.getElementById(id)) attachLegendVisibilityHandlers(id); });
+                if (window.BpwExperimentLayout) {
+                    BpwExperimentLayout.resizeCharts();
+                }
             });
         }
 

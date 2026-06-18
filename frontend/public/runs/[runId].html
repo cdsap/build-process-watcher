@@ -753,13 +753,7 @@
 
                 <!-- Compare runs hidden until ready -->
 
-                <nav id="bpw-section-nav" class="bpw-section-nav" hidden aria-label="Chart sections">
-                    <a href="#section-memory">Memory</a>
-                    ${hasGCData(samples) ? '<a href="#section-gc">GC</a>' : ''}
-                    ${shouldShowRssHeapRatioChart(samples) ? '<a href="#section-ratio">Heap/RSS</a>' : ''}
-                    ${hasJITData(samples) ? '<a href="#section-jit">JIT</a>' : ''}
-                    ${hasClassLoadingData(samples) ? '<a href="#section-classes">Classes</a>' : ''}
-                </nav>
+                <div id="bpw-workspace-deck" class="bpw-workspace-deck" hidden aria-label="Workspace layout"></div>
 
                 ${isFinished === true && samples.length ? `
                 <div id="bpw-unified-replay" class="bpw-unified-replay" hidden>
@@ -794,8 +788,72 @@
                 </div>
                 ` : ''}
 
+                ${isFinished === true && (hasJITData(samples) || hasClassLoadingData(samples)) ? `
+                <div class="bpw-replay-host" aria-hidden="true">
+                    ${hasJITData(samples) ? `
+                        <div class="replay-controls" id="jit-replay-controls">
+                            <div class="buttons">
+                                <button class="btn" id="btn-jit-replay-play">Play</button>
+                                <button class="btn secondary" id="btn-jit-replay-pause">Pause</button>
+                                <button class="btn secondary" id="btn-jit-replay-reset">Reset</button>
+                            </div>
+                            <div class="meta" id="jit-replay-meta">Frame 0 / 0</div>
+                            <div class="timeline">
+                                <input type="range" id="jit-replay-timeline" min="0" max="0" value="0">
+                                <div class="meta" id="jit-replay-time-label">Elapsed: 0s</div>
+                                <div class="meta">
+                                    Speed:
+                                    <select id="jit-replay-speed">
+                                        <option value="5">5x</option>
+                                        <option value="10">10x</option>
+                                        <option value="15" selected>15x</option>
+                                        <option value="20">20x</option>
+                                        <option value="25">25x</option>
+                                        <option value="30">30x</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    ` : ''}
+                    ${hasClassLoadingData(samples) ? `
+                        <div class="replay-controls" id="classes-replay-controls">
+                            <div class="buttons">
+                                <button class="btn" id="btn-classes-replay-play">Play</button>
+                                <button class="btn secondary" id="btn-classes-replay-pause">Pause</button>
+                                <button class="btn secondary" id="btn-classes-replay-reset">Reset</button>
+                            </div>
+                            <div class="meta" id="classes-replay-meta">Frame 0 / 0</div>
+                            <div class="timeline">
+                                <input type="range" id="classes-replay-timeline" min="0" max="0" value="0">
+                                <div class="meta" id="classes-replay-time-label">Elapsed: 0s</div>
+                                <div class="meta">
+                                    Speed:
+                                    <select id="classes-replay-speed">
+                                        <option value="5">5x</option>
+                                        <option value="10">10x</option>
+                                        <option value="15" selected>15x</option>
+                                        <option value="20">20x</option>
+                                        <option value="25">25x</option>
+                                        <option value="30">30x</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+                ` : ''}
+
                 <div id="bpw-charts-grid" class="bpw-charts-grid">
-                <section class="bpw-chart-section bpw-span-full bpw-panel-memory" id="section-memory">
+                <section class="bpw-chart-panel" data-bpw-panel="memory" id="section-memory">
+                <div class="bpw-panel-card">
+                    <div class="bpw-panel-card-head">
+                        <div>
+                            <span class="bpw-panel-badge">Memory</span>
+                            <h3>Memory Usage Over Time</h3>
+                        </div>
+                        <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="memory">Focus</button>
+                    </div>
+                    <div class="bpw-panel-card-body">
                 <div class="chart-container">
                     <div class="downloads-toolbar">
                         <button class="btn" id="btn-download-png">Download PNG</button>
@@ -837,15 +895,25 @@
                             <label><input type="checkbox" id="filter-heap" checked> Heap</label>
                         </div>
                     ` : ''}
-                    <h3>Memory Usage Over Time</h3>
                     <div class="chart-wrapper">
                         <div id="chart" style="width: 100%; height: 500px;"></div>
+                    </div>
+                </div>
                     </div>
                 </div>
                 </section>
 
                 ${hasGCData(samples) ? `
-                <section class="bpw-chart-section bpw-panel-gc" id="section-gc">
+                <section class="bpw-chart-panel" data-bpw-panel="gc" id="section-gc">
+                <div class="bpw-panel-card">
+                    <div class="bpw-panel-card-head">
+                        <div>
+                            <span class="bpw-panel-badge">GC</span>
+                            <h3>Garbage Collection Time</h3>
+                        </div>
+                        <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="gc">Focus</button>
+                    </div>
+                    <div class="bpw-panel-card-body">
                 <div class="chart-container">
                     <div class="downloads-toolbar">
                         <button class="btn" id="btn-download-gc-png">Download GC PNG</button>
@@ -880,15 +948,25 @@
                             </div>
                         </div>
                     ` : ''}
-                    <h3>Garbage Collection Time Over Time</h3>
                     <div class="chart-wrapper">
                         <div id="gc-chart" style="width: 100%; height: 500px;"></div>
+                    </div>
+                </div>
                     </div>
                 </div>
                 </section>
                 ` : ''}
                 ${shouldShowRssHeapRatioChart(samples) ? `
-                <section class="bpw-chart-section bpw-panel-ratio" id="section-ratio">
+                <section class="bpw-chart-panel" data-bpw-panel="ratio" id="section-ratio">
+                <div class="bpw-panel-card">
+                    <div class="bpw-panel-card-head">
+                        <div>
+                            <span class="bpw-panel-badge">Heap</span>
+                            <h3>Heap/RSS Ratio</h3>
+                        </div>
+                        <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="ratio">Focus</button>
+                    </div>
+                    <div class="bpw-panel-card-body">
                 <div class="chart-container">
                     <div class="downloads-toolbar">
                         <button class="btn" id="btn-download-rss-heap-png">Download Heap/RSS PNG</button>
@@ -923,96 +1001,69 @@
                             </div>
                         </div>
                     ` : ''}
-                    <h3>Heap/RSS Ratio Over Time</h3>
                     <div class="chart-wrapper">
                         <div id="rss-heap-chart" style="width: 100%; height: 500px;"></div>
+                    </div>
+                </div>
                     </div>
                 </div>
                 </section>
                 ` : ''}
                 ${hasJITData(samples) ? `
-                <section class="bpw-chart-section bpw-panel-jit" id="section-jit">
-                <div class="chart-container">
-                    ${isFinished === true ? `
-                        <div class="replay-controls" id="jit-replay-controls">
-                            <div class="buttons">
-                                <button class="btn" id="btn-jit-replay-play">Play</button>
-                                <button class="btn secondary" id="btn-jit-replay-pause">Pause</button>
-                                <button class="btn secondary" id="btn-jit-replay-reset">Reset</button>
-                            </div>
-                            <div class="meta" id="jit-replay-meta">Frame 0 / 0</div>
-                            <div class="timeline">
-                                <input type="range" id="jit-replay-timeline" min="0" max="0" value="0">
-                                <div class="meta" id="jit-replay-time-label">Elapsed: 0s</div>
-                                <div class="meta">
-                                    Speed:
-                                    <select id="jit-replay-speed">
-                                        <option value="5">5x</option>
-                                        <option value="10">10x</option>
-                                        <option value="15" selected>15x</option>
-                                        <option value="20">20x</option>
-                                        <option value="25">25x</option>
-                                        <option value="30">30x</option>
-                                        <option value="35">35x</option>
-                                        <option value="40">40x</option>
-                                        <option value="45">45x</option>
-                                        <option value="50">50x</option>
-                                    </select>
-                                </div>
-                            </div>
+                <section class="bpw-chart-panel" data-bpw-panel="jit-time" id="section-jit-time">
+                <div class="bpw-panel-card">
+                    <div class="bpw-panel-card-head">
+                        <div>
+                            <span class="bpw-panel-badge">JIT</span>
+                            <h3>Cumulative Compilation Time</h3>
                         </div>
-                    ` : ''}
-                    <h3>JIT Compilation</h3>
-                    <div class="bpw-subchart">
-                        <div class="bpw-subchart-label">Cumulative compilation time</div>
-                        <div id="jit-time-chart" class="bpw-chart-slot" style="width:100%;height:450px"></div>
+                        <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="jit-time">Focus</button>
                     </div>
-                    <div class="bpw-subchart">
-                        <div class="bpw-subchart-label">Compilation activity</div>
-                        <div id="jit-rate-chart" class="bpw-chart-slot" style="width:100%;height:450px"></div>
+                    <div class="bpw-panel-card-body">
+                        <div id="jit-time-chart" class="bpw-chart-plot" style="width:100%;height:450px"></div>
+                    </div>
+                </div>
+                </section>
+                <section class="bpw-chart-panel" data-bpw-panel="jit-rate" id="section-jit-rate">
+                <div class="bpw-panel-card">
+                    <div class="bpw-panel-card-head">
+                        <div>
+                            <span class="bpw-panel-badge">JIT</span>
+                            <h3>Compilation Activity</h3>
+                        </div>
+                        <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="jit-rate">Focus</button>
+                    </div>
+                    <div class="bpw-panel-card-body">
+                        <div id="jit-rate-chart" class="bpw-chart-plot" style="width:100%;height:450px"></div>
                     </div>
                 </div>
                 </section>` : ''}
                 ${hasClassLoadingData(samples) ? `
-                <section class="bpw-chart-section bpw-panel-classes" id="section-classes">
-                <div class="chart-container">
-                    ${isFinished === true ? `
-                        <div class="replay-controls" id="classes-replay-controls">
-                            <div class="buttons">
-                                <button class="btn" id="btn-classes-replay-play">Play</button>
-                                <button class="btn secondary" id="btn-classes-replay-pause">Pause</button>
-                                <button class="btn secondary" id="btn-classes-replay-reset">Reset</button>
-                            </div>
-                            <div class="meta" id="classes-replay-meta">Frame 0 / 0</div>
-                            <div class="timeline">
-                                <input type="range" id="classes-replay-timeline" min="0" max="0" value="0">
-                                <div class="meta" id="classes-replay-time-label">Elapsed: 0s</div>
-                                <div class="meta">
-                                    Speed:
-                                    <select id="classes-replay-speed">
-                                        <option value="5">5x</option>
-                                        <option value="10">10x</option>
-                                        <option value="15" selected>15x</option>
-                                        <option value="20">20x</option>
-                                        <option value="25">25x</option>
-                                        <option value="30">30x</option>
-                                        <option value="35">35x</option>
-                                        <option value="40">40x</option>
-                                        <option value="45">45x</option>
-                                        <option value="50">50x</option>
-                                    </select>
-                                </div>
-                            </div>
+                <section class="bpw-chart-panel" data-bpw-panel="classes-loaded" id="section-classes-loaded">
+                <div class="bpw-panel-card">
+                    <div class="bpw-panel-card-head">
+                        <div>
+                            <span class="bpw-panel-badge">Classes</span>
+                            <h3>Cumulative Classes Loaded</h3>
                         </div>
-                    ` : ''}
-                    <h3>Class Loading</h3>
-                    <div class="bpw-subchart">
-                        <div class="bpw-subchart-label">Cumulative classes loaded</div>
-                        <div id="classes-loaded-chart" class="bpw-chart-slot" style="width:100%;height:450px"></div>
+                        <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="classes-loaded">Focus</button>
                     </div>
-                    <div class="bpw-subchart">
-                        <div class="bpw-subchart-label">Loading activity</div>
-                        <div id="class-rate-chart" class="bpw-chart-slot" style="width:100%;height:450px"></div>
+                    <div class="bpw-panel-card-body">
+                        <div id="classes-loaded-chart" class="bpw-chart-plot" style="width:100%;height:450px"></div>
+                    </div>
+                </div>
+                </section>
+                <section class="bpw-chart-panel" data-bpw-panel="class-rate" id="section-class-rate">
+                <div class="bpw-panel-card">
+                    <div class="bpw-panel-card-head">
+                        <div>
+                            <span class="bpw-panel-badge">Classes</span>
+                            <h3>Class Loading Activity</h3>
+                        </div>
+                        <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="class-rate">Focus</button>
+                    </div>
+                    <div class="bpw-panel-card-body">
+                        <div id="class-rate-chart" class="bpw-chart-plot" style="width:100%;height:450px"></div>
                     </div>
                 </div>
                 </section>` : ''}
@@ -1070,7 +1121,8 @@
             if (window.BpwExperimentLayout) {
                 BpwExperimentLayout.initToggleButtons();
                 BpwExperimentLayout.applyMode(BpwExperimentLayout.getMode());
-                BpwExperimentLayout.initSectionNav();
+                BpwExperimentLayout.initWorkspaceDeck();
+                BpwExperimentLayout.initPanelFocusButtons();
             }
         }
 
@@ -2331,6 +2383,9 @@
                 Plotly.newPlot(id, applyVisibilityToTraces(id, traces), CompareShared.getCounterLayout(title, yTitle), CompareShared.getCounterConfig(`build-monitor-${metric}-${runId}`));
                 attachLegendVisibilityHandlers(id);
             });
+            if (window.BpwExperimentLayout) {
+                BpwExperimentLayout.resizeCharts();
+            }
         }
 
         async function downloadChart(format) {
