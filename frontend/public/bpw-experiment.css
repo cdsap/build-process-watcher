@@ -143,8 +143,8 @@ body.bpw-layout-experiment .bpw-runtime-stage .bpw-chart-plot {
 }
 
 .bpw-workspace-deck {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 0.75rem;
     margin: 0 0 1rem;
     padding: 0.85rem 1rem;
@@ -153,6 +153,64 @@ body.bpw-layout-experiment .bpw-runtime-stage .bpw-chart-plot {
     background:
         linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(250, 248, 241, 0.92));
     box-shadow: 0 14px 40px rgba(22, 26, 29, 0.07);
+}
+
+.bpw-perspective-switch {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.bpw-perspective-card {
+    display: grid;
+    gap: 0.2rem;
+    min-height: 5.4rem;
+    padding: 0.8rem 0.9rem;
+    border: 1px solid rgba(22, 26, 29, 0.1);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--bpw-ink, #161a1d);
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+
+.bpw-perspective-card:hover {
+    border-color: rgba(8, 127, 140, 0.55);
+    transform: translateY(-1px);
+}
+
+.bpw-perspective-card[aria-pressed="true"] {
+    border-color: var(--bpw-teal, #087f8c);
+    background: linear-gradient(135deg, rgba(8, 127, 140, 0.12), rgba(255, 255, 255, 0.96));
+    box-shadow: 0 8px 22px rgba(8, 127, 140, 0.14);
+}
+
+.bpw-perspective-card span {
+    color: var(--bpw-teal, #087f8c);
+    font-size: 0.72rem;
+    font-weight: 780;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.bpw-perspective-card strong {
+    color: var(--bpw-ink, #161a1d);
+    font-size: 1rem;
+    line-height: 1.15;
+}
+
+.bpw-perspective-card small {
+    color: var(--bpw-muted, #5f6b63);
+    font-size: 0.78rem;
+    line-height: 1.35;
+}
+
+.bpw-studio-controls {
+    display: grid;
+    gap: 0.65rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(22, 26, 29, 0.07);
 }
 
 .bpw-deck-row {
@@ -237,7 +295,7 @@ body.bpw-layout-experiment .bpw-runtime-stage .bpw-chart-plot {
     font-size: 0.78rem;
 }
 
-body.bpw-perspective-story .bpw-workspace-deck .bpw-deck-row:not(.bpw-perspective-row) {
+body.bpw-perspective-story .bpw-studio-controls {
     display: none;
 }
 
@@ -531,10 +589,6 @@ body.bpw-perspective-story .bpw-chart-studio {
     flex-wrap: wrap;
 }
 
-.bpw-replay-host {
-    display: none !important;
-}
-
 /* ── Mosaic grid ── */
 body.bpw-layout-experiment .bpw-charts-grid {
     display: grid;
@@ -738,6 +792,10 @@ body.bpw-layout-experiment.bpw-focus-mode #bpw-workspace-deck .bpw-deck-toggles 
         position: sticky;
         top: 72px;
         z-index: 15;
+    }
+
+    .bpw-perspective-switch {
+        grid-template-columns: 1fr;
     }
 
     body.bpw-layout-experiment #chart,

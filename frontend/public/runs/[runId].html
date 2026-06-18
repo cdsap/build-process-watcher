@@ -793,61 +793,6 @@
                 <div id="bpw-chart-studio" class="bpw-chart-studio" hidden aria-label="Chart overlay studio"></div>
                 <div id="bpw-build-story" class="bpw-build-story" hidden aria-label="Build story timeline"></div>
 
-                ${isFinished === true && (hasJITData(samples) || hasClassLoadingData(samples)) ? `
-                <div class="bpw-replay-host" aria-hidden="true">
-                    ${hasJITData(samples) ? `
-                        <div class="replay-controls" id="jit-replay-controls">
-                            <div class="buttons">
-                                <button class="btn" id="btn-jit-replay-play">Play</button>
-                                <button class="btn secondary" id="btn-jit-replay-pause">Pause</button>
-                                <button class="btn secondary" id="btn-jit-replay-reset">Reset</button>
-                            </div>
-                            <div class="meta" id="jit-replay-meta">Frame 0 / 0</div>
-                            <div class="timeline">
-                                <input type="range" id="jit-replay-timeline" min="0" max="0" value="0">
-                                <div class="meta" id="jit-replay-time-label">Elapsed: 0s</div>
-                                <div class="meta">
-                                    Speed:
-                                    <select id="jit-replay-speed">
-                                        <option value="5">5x</option>
-                                        <option value="10">10x</option>
-                                        <option value="15" selected>15x</option>
-                                        <option value="20">20x</option>
-                                        <option value="25">25x</option>
-                                        <option value="30">30x</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-                    ` : ''}
-                    ${hasClassLoadingData(samples) ? `
-                        <div class="replay-controls" id="classes-replay-controls">
-                            <div class="buttons">
-                                <button class="btn" id="btn-classes-replay-play">Play</button>
-                                <button class="btn secondary" id="btn-classes-replay-pause">Pause</button>
-                                <button class="btn secondary" id="btn-classes-replay-reset">Reset</button>
-                            </div>
-                            <div class="meta" id="classes-replay-meta">Frame 0 / 0</div>
-                            <div class="timeline">
-                                <input type="range" id="classes-replay-timeline" min="0" max="0" value="0">
-                                <div class="meta" id="classes-replay-time-label">Elapsed: 0s</div>
-                                <div class="meta">
-                                    Speed:
-                                    <select id="classes-replay-speed">
-                                        <option value="5">5x</option>
-                                        <option value="10">10x</option>
-                                        <option value="15" selected>15x</option>
-                                        <option value="20">20x</option>
-                                        <option value="25">25x</option>
-                                        <option value="30">30x</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-                    ` : ''}
-                </div>
-                ` : ''}
-
                 <div id="bpw-charts-grid" class="bpw-charts-grid">
                 <section class="bpw-chart-panel" data-bpw-panel="memory" id="section-memory">
                 <div class="bpw-panel-card">
@@ -1026,6 +971,31 @@
                         <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="jit-time">Focus</button>
                     </div>
                     <div class="bpw-panel-card-body">
+                        ${isFinished === true ? `
+                        <div class="replay-controls" id="jit-replay-controls">
+                            <div class="buttons">
+                                <button class="btn" id="btn-jit-replay-play">Play</button>
+                                <button class="btn secondary" id="btn-jit-replay-pause">Pause</button>
+                                <button class="btn secondary" id="btn-jit-replay-reset">Reset</button>
+                            </div>
+                            <div class="meta" id="jit-replay-meta">Frame 0 / 0</div>
+                            <div class="timeline">
+                                <input type="range" id="jit-replay-timeline" min="0" max="0" value="0">
+                                <div class="meta" id="jit-replay-time-label">Elapsed: 0s</div>
+                                <div class="meta">
+                                    Speed:
+                                    <select id="jit-replay-speed">
+                                        <option value="5">5x</option>
+                                        <option value="10">10x</option>
+                                        <option value="15" selected>15x</option>
+                                        <option value="20">20x</option>
+                                        <option value="25">25x</option>
+                                        <option value="30">30x</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        ` : ''}
                         <div id="jit-time-chart" class="bpw-chart-plot" style="width:100%;height:450px"></div>
                     </div>
                 </div>
@@ -1055,6 +1025,31 @@
                         <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="classes-loaded">Focus</button>
                     </div>
                     <div class="bpw-panel-card-body">
+                        ${isFinished === true ? `
+                        <div class="replay-controls" id="classes-replay-controls">
+                            <div class="buttons">
+                                <button class="btn" id="btn-classes-replay-play">Play</button>
+                                <button class="btn secondary" id="btn-classes-replay-pause">Pause</button>
+                                <button class="btn secondary" id="btn-classes-replay-reset">Reset</button>
+                            </div>
+                            <div class="meta" id="classes-replay-meta">Frame 0 / 0</div>
+                            <div class="timeline">
+                                <input type="range" id="classes-replay-timeline" min="0" max="0" value="0">
+                                <div class="meta" id="classes-replay-time-label">Elapsed: 0s</div>
+                                <div class="meta">
+                                    Speed:
+                                    <select id="classes-replay-speed">
+                                        <option value="5">5x</option>
+                                        <option value="10">10x</option>
+                                        <option value="15" selected>15x</option>
+                                        <option value="20">20x</option>
+                                        <option value="25">25x</option>
+                                        <option value="30">30x</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        ` : ''}
                         <div id="classes-loaded-chart" class="bpw-chart-plot" style="width:100%;height:450px"></div>
                     </div>
                 </div>

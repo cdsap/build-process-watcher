@@ -162,25 +162,31 @@
         const visibility = buildVisibilityMap(available, presetId);
 
         deck.innerHTML = `
-            <div class="bpw-deck-row bpw-perspective-row">
-                <span class="bpw-deck-label">View</span>
-                <div class="bpw-deck-presets">
-                    ${Object.entries(PERSPECTIVES).map(([id]) => `
-                        <button type="button" class="bpw-preset-btn" data-bpw-perspective="${id}" aria-pressed="${id === getPerspective() ? 'true' : 'false'}">${id === PERSPECTIVES.story ? 'Build story' : 'Studio'}</button>
-                    `).join('')}
-                </div>
+            <div class="bpw-perspective-switch" aria-label="Experiment perspective">
+                <button type="button" class="bpw-perspective-card" data-bpw-perspective="studio" aria-pressed="${getPerspective() === PERSPECTIVES.studio ? 'true' : 'false'}">
+                    <span>Studio</span>
+                    <strong>Compose metric overlays</strong>
+                    <small>Use dual-axis charts, runtime panels, and custom mosaics.</small>
+                </button>
+                <button type="button" class="bpw-perspective-card" data-bpw-perspective="story" aria-pressed="${getPerspective() === PERSPECTIVES.story ? 'true' : 'false'}">
+                    <span>Build story</span>
+                    <strong>Inspect detected phases</strong>
+                    <small>Navigate warmup, pressure, GC, and runtime activity windows.</small>
+                </button>
             </div>
-            <div class="bpw-deck-row">
-                <span class="bpw-deck-label">Layout</span>
-                <div class="bpw-deck-presets">
-                    ${Object.entries(PRESETS).map(([id, preset]) => `
-                        <button type="button" class="bpw-preset-btn" data-bpw-preset="${id}" aria-pressed="${id === presetId ? 'true' : 'false'}">${preset.label}</button>
-                    `).join('')}
+            <div class="bpw-studio-controls" data-bpw-studio-controls>
+                <div class="bpw-deck-row">
+                    <span class="bpw-deck-label">Layout</span>
+                    <div class="bpw-deck-presets">
+                        ${Object.entries(PRESETS).map(([id, preset]) => `
+                            <button type="button" class="bpw-preset-btn" data-bpw-preset="${id}" aria-pressed="${id === presetId ? 'true' : 'false'}">${preset.label}</button>
+                        `).join('')}
+                    </div>
                 </div>
-            </div>
-            <div class="bpw-deck-row">
-                <span class="bpw-deck-label">Panels</span>
-                <div class="bpw-deck-toggles" id="bpw-deck-toggles"></div>
+                <div class="bpw-deck-row">
+                    <span class="bpw-deck-label">Panels</span>
+                    <div class="bpw-deck-toggles" id="bpw-deck-toggles"></div>
+                </div>
             </div>
             <div class="bpw-deck-hint" data-bpw-deck-hint>Use <strong>Chart studio</strong> above to overlay metrics (e.g. Memory + GC). Toggle runtime panels below or use studio presets for JIT/classes.</div>
         `;
