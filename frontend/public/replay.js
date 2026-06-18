@@ -68,6 +68,7 @@
             </div>
             <div id="bpw-workspace-deck" class="bpw-workspace-deck" hidden aria-label="Workspace layout"></div>
             <div id="bpw-chart-studio" class="bpw-chart-studio" hidden aria-label="Chart overlay studio"></div>
+            <div id="bpw-build-story" class="bpw-build-story" hidden aria-label="Build story timeline"></div>
             <div class="replay-controls" id="single-replay-controls">
                 <div class="buttons">
                     <button class="btn" id="btn-single-play">Play</button>
@@ -436,6 +437,14 @@
 
         if (window.BpwChartStudio) {
             BpwChartStudio.init({
+                samples,
+                runId: 'replay',
+                useElapsedAxis: true,
+                initialFrame: Math.max(0, chartTimestamps.length - 1)
+            });
+        }
+        if (window.BpwBuildStory) {
+            BpwBuildStory.init({
                 samples,
                 runId: 'replay',
                 useElapsedAxis: true,

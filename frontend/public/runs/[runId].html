@@ -440,6 +440,7 @@
     <link rel="stylesheet" href="/bpw-experiment.css">
     <script src="/experiment-layout.js"></script>
     <script src="/chart-studio.js"></script>
+    <script src="/build-story.js"></script>
 </head>
 <body>
     <div class="container">
@@ -790,6 +791,7 @@
                 ` : ''}
 
                 <div id="bpw-chart-studio" class="bpw-chart-studio" hidden aria-label="Chart overlay studio"></div>
+                <div id="bpw-build-story" class="bpw-build-story" hidden aria-label="Build story timeline"></div>
 
                 ${isFinished === true && (hasJITData(samples) || hasClassLoadingData(samples)) ? `
                 <div class="bpw-replay-host" aria-hidden="true">
@@ -1106,6 +1108,14 @@
                         samples,
                         runId,
                         useElapsedAxis: false
+                    });
+                }
+                if (isFinished !== true && window.BpwBuildStory) {
+                    BpwBuildStory.init({
+                        samples,
+                        runId,
+                        useElapsedAxis: false,
+                        initialFrame: samples.length - 1
                     });
                 }
             }
@@ -1745,6 +1755,14 @@
 
             if (window.BpwChartStudio) {
                 BpwChartStudio.init({
+                    samples,
+                    runId,
+                    useElapsedAxis: true,
+                    initialFrame: Math.max(0, chartTimestamps.length - 1)
+                });
+            }
+            if (window.BpwBuildStory) {
+                BpwBuildStory.init({
                     samples,
                     runId,
                     useElapsedAxis: true,

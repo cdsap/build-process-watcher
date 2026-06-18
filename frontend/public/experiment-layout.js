@@ -2,7 +2,9 @@
     const STORAGE_KEY = 'bpwLayoutMode';
     const PANEL_STORAGE_KEY = 'bpwPanelVisibility';
     const PRESET_STORAGE_KEY = 'bpwLayoutPreset';
+    const PERSPECTIVE_STORAGE_KEY = 'bpwExperimentPerspective';
     const MODES = { classic: 'classic', experiment: 'experiment' };
+    const PERSPECTIVES = { studio: 'studio', story: 'story' };
 
     const PANEL_META = {
         memory: { label: 'Memory', group: 'memory' },
@@ -48,6 +50,22 @@
 
     function isExperiment() {
         return getMode() === MODES.experiment;
+    }
+
+    function getPerspective() {
+        return localStorage.getItem(PERSPECTIVE_STORAGE_KEY) === PERSPECTIVES.story
+            ? PERSPECTIVES.story
+            : PERSPECTIVES.studio;
+    }
+
+    function setPerspective(perspective) {
+        const next = perspective === PERSPECTIVES.story ? PERSPECTIVES.story : PERSPECTIVES.studio;
+        localStorage.setItem(PERSPECTIVE_STORAGE_KEY, next);
+        applyPerspective(next);
+    }
+
+    function isStoryPerspective() {
+        return isExperiment() && getPerspective() === PERSPECTIVES.story;
     }
 
     function setMode(mode) {
@@ -144,6 +162,14 @@
         const visibility = buildVisibilityMap(available, presetId);
 
         deck.innerHTML = `
+            <div class="bpw-deck-row bpw-perspective-row">
+                <span class="bpw-deck-label">View</span>
+                <div class="bpw-deck-presets">
+                    ${Object.entries(PERSPECTIVES).map(([id]) => `
+                        <button type="button" class="bpw-preset-btn" data-bpw-perspective="${id}" aria-pressed="${id === getPerspective() ? 'true' : 'false'}">${id === PERSPECTIVES.story ? 'Build story' : 'Studio'}</button>
+                    `).join('')}
+                </div>
+            </div>
             <div class="bpw-deck-row">
                 <span class="bpw-deck-label">Layout</span>
                 <div class="bpw-deck-presets">
@@ -156,10 +182,16 @@
                 <span class="bpw-deck-label">Panels</span>
                 <div class="bpw-deck-toggles" id="bpw-deck-toggles"></div>
             </div>
-            <div class="bpw-deck-hint">Use <strong>Chart studio</strong> above to overlay metrics (e.g. Memory + GC). Toggle runtime panels below or use studio presets for JIT/classes.</div>
+            <div class="bpw-deck-hint" data-bpw-deck-hint>Use <strong>Chart studio</strong> above to overlay metrics (e.g. Memory + GC). Toggle runtime panels below or use studio presets for JIT/classes.</div>
         `;
 
         const toggles = deck.querySelector('#bpw-deck-toggles');
+        deck.querySelectorAll('[data-bpw-perspective]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                setPerspective(btn.getAttribute('data-bpw-perspective'));
+            });
+        });
+
         available.forEach((id) => {
             const meta = PANEL_META[id] || { label: id };
             const chip = document.createElement('button');
@@ -206,6 +238,7 @@
 
         applyPanelVisibility(visibility);
         initPanelFocusButtons();
+        applyPerspective(getPerspective());
     }
 
     function initPanelFocusButtons() {
@@ -268,24 +301,53 @@
             if (global.BpwChartStudio) {
                 global.BpwChartStudio.resize();
             }
+            if (global.BpwBuildStory) {
+                global.BpwBuildStory.resize();
+            }
             if (isExperiment()) {
                 compactChartLegends();
             }
         }, 180);
     }
 
+    function applyPerspective(perspective) {
+        const story = isExperiment() && perspective === PERSPECTIVES.story;
+        document.body.classList.toggle('bpw-perspective-story', story);
+        document.body.classList.toggle('bpw-perspective-studio', isExperiment() && !story);
+
+        document.querySelectorAll('[data-bpw-perspective]').forEach((btn) => {
+            btn.setAttribute('aria-pressed', btn.getAttribute('data-bpw-perspective') === (story ? PERSPECTIVES.story : PERSPECTIVES.studio) ? 'true' : 'false');
+        });
+
+        if (global.BpwChartStudio) {
+            global.BpwChartStudio.setVisible(isExperiment() && !story);
+        }
+        if (global.BpwBuildStory) {
+            global.BpwBuildStory.setVisible(story);
+        }
+
+        const hint = document.querySelector('[data-bpw-deck-hint]');
+        if (hint) {
+            hint.innerHTML = story
+                ? 'Use <strong>Build story</strong> to inspect detected phases, then switch back to Studio for manual overlays.'
+                : 'Use <strong>Chart studio</strong> above to overlay metrics (e.g. Memory + GC). Toggle runtime panels below or use studio presets for JIT/classes.';
+        }
+        resizeCharts();
+    }
+
     function applyMode(mode) {
         const experiment = mode === MODES.experiment;
         document.body.classList.toggle('bpw-layout-experiment', experiment);
         document.body.classList.toggle('bpw-layout-classic', !experiment);
+        if (!experiment) {
+            document.body.classList.remove('bpw-perspective-story', 'bpw-perspective-studio');
+        }
 
         const deck = document.getElementById('bpw-workspace-deck');
         const unified = document.getElementById('bpw-unified-replay');
         if (deck) deck.hidden = !experiment;
         if (unified) unified.hidden = !experiment;
-        if (global.BpwChartStudio) {
-            global.BpwChartStudio.setVisible(experiment);
-        }
+        applyPerspective(experiment ? getPerspective() : PERSPECTIVES.studio);
 
         updateToggleButtons();
 
@@ -325,6 +387,12 @@
         replayPanels.forEach((panel) => {
             if (panel.pause) panel.pause();
         });
+    }
+
+    function selectUnifiedFrame(frameIndex) {
+        pauseUnifiedReplay();
+        const maxFrame = getMaxFrame();
+        return renderUnifiedFrame(Math.max(0, Math.min(Number(frameIndex) || 0, maxFrame)));
     }
 
     function getMaxFrame() {
@@ -465,13 +533,20 @@
 
     global.BpwExperimentLayout = {
         MODES,
+        PERSPECTIVES,
         getMode,
         setMode,
         toggleMode,
         applyMode,
         isExperiment,
+        getPerspective,
+        setPerspective,
+        isStoryPerspective,
+        applyPerspective,
         clearReplayPanels,
         registerReplayPanel,
+        pauseUnifiedReplay,
+        selectUnifiedFrame,
         initUnifiedReplay,
         initToggleButtons,
         initWorkspaceDeck,
