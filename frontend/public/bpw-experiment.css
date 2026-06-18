@@ -1,5 +1,147 @@
 /* Experimental workspace layout — toggled via body.bpw-layout-experiment */
 
+/* Chart studio — overlay composer */
+.bpw-chart-studio {
+    margin-bottom: 1rem;
+}
+
+.bpw-studio-shell {
+    border: 1px solid rgba(22, 26, 29, 0.08);
+    border-radius: 12px;
+    background: linear-gradient(160deg, rgba(255, 255, 255, 0.98), rgba(250, 248, 241, 0.92));
+    box-shadow: 0 18px 48px rgba(22, 26, 29, 0.08);
+    overflow: hidden;
+}
+
+.bpw-studio-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    gap: 1rem;
+    padding: 1rem 1.1rem 0.75rem;
+    border-bottom: 1px solid rgba(22, 26, 29, 0.06);
+}
+
+.bpw-studio-kicker {
+    color: var(--bpw-teal, #087f8c);
+    font-size: 0.72rem;
+    font-weight: 760;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.bpw-studio-title {
+    margin: 0.2rem 0 0;
+    color: var(--bpw-ink, #161a1d);
+    font-size: 1.15rem;
+    font-weight: 780;
+}
+
+.bpw-studio-sub {
+    margin: 0.35rem 0 0;
+    color: var(--bpw-muted, #5f6b63);
+    font-size: 0.84rem;
+    max-width: 36rem;
+}
+
+.bpw-studio-layers {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+    align-items: end;
+}
+
+.bpw-studio-layer {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.bpw-studio-layer select {
+    min-height: 2.2rem;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid var(--bpw-line, #d9ded5);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--bpw-ink, #161a1d);
+    font-size: 0.88rem;
+    font-weight: 650;
+}
+
+.bpw-studio-layer-tag {
+    font-size: 0.72rem;
+    font-weight: 760;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.bpw-layer-a { color: var(--bpw-teal, #087f8c); }
+.bpw-layer-b { color: var(--bpw-coral, #c9513d); }
+
+.bpw-studio-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    padding: 0.65rem 1.1rem;
+    border-bottom: 1px solid rgba(22, 26, 29, 0.05);
+    background: rgba(250, 248, 241, 0.55);
+}
+
+.bpw-studio-preset {
+    min-height: 2rem;
+    padding: 0.35rem 0.75rem;
+    border: 1px solid rgba(22, 26, 29, 0.1);
+    border-radius: 999px;
+    background: #fff;
+    color: var(--bpw-ink, #161a1d);
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.bpw-studio-preset:hover {
+    border-color: var(--bpw-teal, #087f8c);
+    color: var(--bpw-teal, #087f8c);
+}
+
+.bpw-studio-preset[aria-pressed="true"] {
+    border-color: var(--bpw-teal, #087f8c);
+    background: rgba(8, 127, 140, 0.12);
+    color: var(--bpw-teal, #087f8c);
+}
+
+.bpw-studio-canvas {
+    padding: 0.5rem 0.65rem 0.75rem;
+}
+
+.bpw-studio-chart {
+    width: 100%;
+    height: 560px;
+    min-height: 560px;
+}
+
+body.bpw-layout-experiment .bpw-chart-panel[data-bpw-panel="memory"],
+body.bpw-layout-experiment .bpw-chart-panel[data-bpw-panel="gc"],
+body.bpw-layout-experiment .bpw-chart-panel[data-bpw-panel="ratio"] {
+    display: none !important;
+}
+
+body.bpw-layout-experiment .bpw-runtime-stage {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 1rem;
+    grid-column: 1 / -1;
+    width: 100%;
+}
+
+body.bpw-layout-experiment .bpw-runtime-stage .bpw-chart-panel {
+    grid-column: span 6;
+}
+
+body.bpw-layout-experiment .bpw-runtime-stage .bpw-chart-plot {
+    height: 520px !important;
+}
+
 .bpw-workspace-deck {
     display: flex;
     flex-direction: column;
@@ -309,6 +451,18 @@ body.bpw-layout-experiment.bpw-focus-mode #bpw-workspace-deck .bpw-deck-toggles 
 }
 
 @media (max-width: 1100px) {
+    .bpw-studio-header {
+        grid-template-columns: 1fr;
+    }
+
+    .bpw-studio-layers {
+        grid-template-columns: 1fr;
+    }
+
+    body.bpw-layout-experiment .bpw-runtime-stage .bpw-chart-panel {
+        grid-column: span 12;
+    }
+
     body.bpw-layout-experiment .bpw-chart-panel[data-bpw-panel="gc"],
     body.bpw-layout-experiment .bpw-chart-panel[data-bpw-panel="ratio"],
     body.bpw-layout-experiment .bpw-chart-panel[data-bpw-panel="jit-time"],

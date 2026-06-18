@@ -568,6 +568,133 @@
         return traces;
     }
 
+    const METRIC_CATALOG = {
+        rss: { label: 'Memory', yTitle: 'Memory (MB)', color: '#087f8c' },
+        gc: { label: 'GC time', yTitle: 'GC Time (s)', color: '#087f8c' },
+        ratio: { label: 'Heap/RSS', yTitle: 'Heap/RSS Ratio', color: '#087f8c' },
+        jitTime: { label: 'JIT time', yTitle: 'Compilation Time (s)', color: '#b88414' },
+        jitRate: { label: 'JIT rate', yTitle: 'Compiled Methods / s', color: '#b88414' },
+        classesLoaded: { label: 'Classes loaded', yTitle: 'Classes Loaded', color: '#247b5b' },
+        classRate: { label: 'Class rate', yTitle: 'Classes / s', color: '#247b5b' }
+    };
+
+    const OVERLAY_PRESETS = {
+        'memory-gc': { a: 'rss', b: 'gc', label: 'Memory + GC' },
+        'memory-ratio': { a: 'rss', b: 'ratio', label: 'Memory + Heap/RSS' },
+        'jit-duo': { a: 'jitTime', b: 'jitRate', label: 'JIT overlay' },
+        'classes-duo': { a: 'classesLoaded', b: 'classRate', label: 'Classes overlay' },
+        'gc-jit': { a: 'gc', b: 'jitRate', label: 'GC + JIT activity' }
+    };
+
+    function getAvailableOverlayMetrics(samples) {
+        const metrics = ['rss'];
+        if (hasGCData(samples)) metrics.push('gc');
+        if (hasRatioData(samples)) metrics.push('ratio');
+        if (hasJITData(samples)) metrics.push('jitTime', 'jitRate');
+        if (hasClassLoadingData(samples)) metrics.push('classesLoaded', 'classRate');
+        return metrics;
+    }
+
+    function buildOverlayTraces(data, timestamps, frameIndex, metricA, metricB, xValues, styleOverrides) {
+        const x = xValues
+            ? xValues.slice(0, frameIndex + 1)
+            : timestamps.slice(0, frameIndex + 1).map(t => new Date(t));
+        const traces = [];
+        const catA = METRIC_CATALOG[metricA] || { label: metricA, color: '#087f8c' };
+        const catB = METRIC_CATALOG[metricB] || { label: metricB, color: '#c9513d' };
+
+        if (metricA) {
+            const styleA = {
+                lineWidth: 2.5,
+                lineOpacity: 0.95,
+                includeTotalRss: metricA === 'rss',
+                ...styleOverrides?.a
+            };
+            buildMetricTraces(data, timestamps, frameIndex, metricA, styleA, xValues).forEach((trace) => {
+                traces.push({
+                    ...trace,
+                    yaxis: 'y',
+                    legendgroup: 'layer-a',
+                    name: trace.name ? `${catA.label} · ${trace.name}` : catA.label,
+                    line: { ...trace.line, color: trace.line?.color || catA.color }
+                });
+            });
+        }
+
+        if (metricB && metricB !== metricA) {
+            const styleB = {
+                lineWidth: 2,
+                lineDash: 'dot',
+                lineOpacity: 0.88,
+                includeTotalRss: metricB === 'rss',
+                ...styleOverrides?.b
+            };
+            buildMetricTraces(data, timestamps, frameIndex, metricB, styleB, xValues).forEach((trace) => {
+                traces.push({
+                    ...trace,
+                    yaxis: 'y2',
+                    legendgroup: 'layer-b',
+                    name: trace.name ? `${catB.label} · ${trace.name}` : catB.label,
+                    line: { ...trace.line, color: trace.line?.color || catB.color }
+                });
+            });
+        }
+
+        return traces;
+    }
+
+    function getOverlayLayout(metricA, metricB, options) {
+        const catA = METRIC_CATALOG[metricA] || { yTitle: metricA, color: '#087f8c' };
+        const catB = metricB && metricB !== metricA
+            ? (METRIC_CATALOG[metricB] || { yTitle: metricB, color: '#c9513d' })
+            : null;
+        const isMobile = window.innerWidth < 768;
+        const base = getMemoryLayout();
+        const layout = {
+            ...base,
+            title: options?.title || '',
+            showlegend: true,
+            legend: {
+                orientation: 'h',
+                x: 0,
+                y: isMobile ? -0.35 : -0.28,
+                xanchor: 'left',
+                font: { size: isMobile ? 9 : 10 }
+            },
+            margin: {
+                l: isMobile ? 52 : 64,
+                r: catB ? (isMobile ? 56 : 72) : (isMobile ? 24 : 32),
+                t: isMobile ? 28 : 40,
+                b: isMobile ? 100 : 110
+            },
+            yaxis: {
+                ...base.yaxis,
+                title: catA.yTitle,
+                titlefont: { color: catA.color, size: 12 },
+                tickfont: { color: catA.color }
+            }
+        };
+
+        if (catB) {
+            layout.yaxis2 = {
+                title: catB.yTitle,
+                titlefont: { color: catB.color, size: 12 },
+                tickfont: { color: catB.color },
+                overlaying: 'y',
+                side: 'right',
+                showgrid: false,
+                zerolinecolor: '#d8d4c7',
+                linecolor: '#c8cfc5'
+            };
+        }
+
+        return layout;
+    }
+
+    function getOverlayConfig(filenameBase = 'bpw-studio') {
+        return getMemoryConfig(filenameBase);
+    }
+
     function parseCsvText(text) {
         const lines = text.trim().split('\n');
         if (lines.length < 2) return [];
@@ -1490,6 +1617,12 @@
         buildCounterSeries,
         buildReplayData,
         buildMetricTraces,
+        buildOverlayTraces,
+        getAvailableOverlayMetrics,
+        getOverlayLayout,
+        getOverlayConfig,
+        METRIC_CATALOG,
+        OVERLAY_PRESETS,
         parseCsvText,
         parseJsonText,
         buildProcessSummary,

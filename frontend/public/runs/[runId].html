@@ -439,6 +439,7 @@
     <link rel="stylesheet" href="/bpw-ui.css">
     <link rel="stylesheet" href="/bpw-experiment.css">
     <script src="/experiment-layout.js"></script>
+    <script src="/chart-studio.js"></script>
 </head>
 <body>
     <div class="container">
@@ -788,6 +789,8 @@
                 </div>
                 ` : ''}
 
+                <div id="bpw-chart-studio" class="bpw-chart-studio" hidden aria-label="Chart overlay studio"></div>
+
                 ${isFinished === true && (hasJITData(samples) || hasClassLoadingData(samples)) ? `
                 <div class="bpw-replay-host" aria-hidden="true">
                     ${hasJITData(samples) ? `
@@ -1009,6 +1012,7 @@
                 </div>
                 </section>
                 ` : ''}
+                ${(hasJITData(samples) || hasClassLoadingData(samples)) ? `<div class="bpw-runtime-stage">` : ''}
                 ${hasJITData(samples) ? `
                 <section class="bpw-chart-panel" data-bpw-panel="jit-time" id="section-jit-time">
                 <div class="bpw-panel-card">
@@ -1067,6 +1071,7 @@
                     </div>
                 </div>
                 </section>` : ''}
+                ${(hasJITData(samples) || hasClassLoadingData(samples)) ? `</div>` : ''}
                 </div>
 
                 ${processInfoHtml}
@@ -1096,6 +1101,12 @@
                 if (isFinished === true) {
                     setupCompareControls(samples);
                     initReplay(samples);
+                } else if (window.BpwChartStudio) {
+                    BpwChartStudio.init({
+                        samples,
+                        runId,
+                        useElapsedAxis: false
+                    });
                 }
             }
 
@@ -1724,6 +1735,15 @@
                     { id: 'class-rate-chart', metric: 'classRate', title: 'Class Loading Activity', yTitle: 'Classes / s' }
                 ]
             });
+
+            if (window.BpwChartStudio) {
+                BpwChartStudio.init({
+                    samples,
+                    runId,
+                    useElapsedAxis: true,
+                    initialFrame: Math.max(0, chartTimestamps.length - 1)
+                });
+            }
 
             if (window.BpwExperimentLayout) {
                 BpwExperimentLayout.initUnifiedReplay({

@@ -156,7 +156,7 @@
                 <span class="bpw-deck-label">Panels</span>
                 <div class="bpw-deck-toggles" id="bpw-deck-toggles"></div>
             </div>
-            <div class="bpw-deck-hint">Pick a layout preset or toggle panels to build your own mosaic. Use <strong>Focus</strong> on a card to expand it full width.</div>
+            <div class="bpw-deck-hint">Use <strong>Chart studio</strong> above to overlay metrics (e.g. Memory + GC). Toggle runtime panels below or use studio presets for JIT/classes.</div>
         `;
 
         const toggles = deck.querySelector('#bpw-deck-toggles');
@@ -265,6 +265,9 @@
                     /* ignore */
                 }
             });
+            if (global.BpwChartStudio) {
+                global.BpwChartStudio.resize();
+            }
             if (isExperiment()) {
                 compactChartLegends();
             }
@@ -280,6 +283,9 @@
         const unified = document.getElementById('bpw-unified-replay');
         if (deck) deck.hidden = !experiment;
         if (unified) unified.hidden = !experiment;
+        if (global.BpwChartStudio) {
+            global.BpwChartStudio.setVisible(experiment);
+        }
 
         updateToggleButtons();
 

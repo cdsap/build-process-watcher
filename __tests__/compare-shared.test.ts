@@ -53,4 +53,21 @@ describe('JIT and class loading series', () => {
     const result = shared.buildCounterSeries(samples, [0, 1000, 2000, 3000], 'P', '1', (s: any) => s.JITCompiledMethods);
     expect(Array.from(result.rate)).toEqual([null, null, null, 4]);
   });
+
+  it('builds dual-axis overlay traces for two metrics', () => {
+    const timestamps = [0, 1000, 2000];
+    const samples = [
+      { Timestamp: 0, Name: 'P', PID: '1', RSS: 100, HeapUsed: 50, GCTime: 0 },
+      { Timestamp: 1000, Name: 'P', PID: '1', RSS: 200, HeapUsed: 80, GCTime: 500 },
+      { Timestamp: 2000, Name: 'P', PID: '1', RSS: 300, HeapUsed: 120, GCTime: 1500 },
+    ];
+    const data = shared.buildReplayData(samples, timestamps);
+    const traces = shared.buildOverlayTraces(data, timestamps, 2, 'rss', 'gc', [0, 1, 2]);
+    expect(traces.length).toBeGreaterThan(1);
+    expect(traces.some((t: any) => t.yaxis === 'y')).toBe(true);
+    expect(traces.some((t: any) => t.yaxis === 'y2')).toBe(true);
+    const layout = shared.getOverlayLayout('rss', 'gc');
+    expect(layout.yaxis.title).toBe('Memory (MB)');
+    expect(layout.yaxis2.title).toBe('GC Time (s)');
+  });
 });
