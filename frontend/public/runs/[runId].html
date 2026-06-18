@@ -437,6 +437,8 @@
         }
     </style>
     <link rel="stylesheet" href="/bpw-ui.css">
+    <link rel="stylesheet" href="/bpw-experiment.css">
+    <script src="/experiment-layout.js"></script>
 </head>
 <body>
     <div class="container">
@@ -708,19 +710,22 @@
                         ${maxRssAllProcesses > 0 ? `<span class="run-stat">${maxRssAllProcesses.toFixed(0)} MB peak</span>` : ''}
                         ${data.updated_at ? `<span class="run-stat muted">${new Date(data.updated_at).toLocaleString()}</span>` : ''}
                     </div>
-                    ${!isFinished ? `
-                        <div class="run-header-refresh">
-                            <label>Refresh</label>
-                            <select id="refreshInterval" onchange="setRefreshInterval(parseInt(this.value))">
-                                <option value="5" ${refreshInterval === 5 ? 'selected' : ''}>5s</option>
-                                <option value="10" ${refreshInterval === 10 ? 'selected' : ''}>10s</option>
-                                <option value="30" ${refreshInterval === 30 ? 'selected' : ''}>30s</option>
-                                <option value="60" ${refreshInterval === 60 ? 'selected' : ''}>1m</option>
-                                <option value="120" ${refreshInterval === 120 ? 'selected' : ''}>2m</option>
-                                <option value="300" ${refreshInterval === 300 ? 'selected' : ''}>5m</option>
-                            </select>
-                        </div>
-                    ` : ''}
+                    <div class="run-header-actions">
+                        <button type="button" class="btn secondary bpw-layout-toggle" data-bpw-layout-toggle id="btn-layout-toggle">Experiment layout</button>
+                        ${!isFinished ? `
+                            <div class="run-header-refresh">
+                                <label>Refresh</label>
+                                <select id="refreshInterval" onchange="setRefreshInterval(parseInt(this.value))">
+                                    <option value="5" ${refreshInterval === 5 ? 'selected' : ''}>5s</option>
+                                    <option value="10" ${refreshInterval === 10 ? 'selected' : ''}>10s</option>
+                                    <option value="30" ${refreshInterval === 30 ? 'selected' : ''}>30s</option>
+                                    <option value="60" ${refreshInterval === 60 ? 'selected' : ''}>1m</option>
+                                    <option value="120" ${refreshInterval === 120 ? 'selected' : ''}>2m</option>
+                                    <option value="300" ${refreshInterval === 300 ? 'selected' : ''}>5m</option>
+                                </select>
+                            </div>
+                        ` : ''}
+                    </div>
                 </div>
 
                 <div class="run-kpi-strip">
@@ -748,6 +753,49 @@
 
                 <!-- Compare runs hidden until ready -->
 
+                <nav id="bpw-section-nav" class="bpw-section-nav" hidden aria-label="Chart sections">
+                    <a href="#section-memory">Memory</a>
+                    ${hasGCData(samples) ? '<a href="#section-gc">GC</a>' : ''}
+                    ${shouldShowRssHeapRatioChart(samples) ? '<a href="#section-ratio">Heap/RSS</a>' : ''}
+                    ${hasJITData(samples) ? '<a href="#section-jit">JIT</a>' : ''}
+                    ${hasClassLoadingData(samples) ? '<a href="#section-classes">Classes</a>' : ''}
+                </nav>
+
+                ${isFinished === true && samples.length ? `
+                <div id="bpw-unified-replay" class="bpw-unified-replay" hidden>
+                    <div class="bpw-unified-label">Unified replay (all charts)</div>
+                    <div class="replay-controls" id="bpw-unified-replay-controls">
+                        <div class="buttons">
+                            <button class="btn" id="bpw-unified-play" type="button">Play</button>
+                            <button class="btn secondary" id="bpw-unified-pause" type="button">Pause</button>
+                            <button class="btn secondary" id="bpw-unified-reset" type="button">Reset</button>
+                        </div>
+                        <div class="meta" id="bpw-unified-meta">Frame 0 / 0</div>
+                        <div class="timeline">
+                            <input type="range" id="bpw-unified-timeline" min="0" max="0" value="0">
+                            <div class="meta" id="bpw-unified-time-label">Elapsed: 0s</div>
+                            <div class="meta">
+                                Speed:
+                                <select id="bpw-unified-speed">
+                                    <option value="5">5x</option>
+                                    <option value="10">10x</option>
+                                    <option value="15" selected>15x</option>
+                                    <option value="20">20x</option>
+                                    <option value="25">25x</option>
+                                    <option value="30">30x</option>
+                                    <option value="35">35x</option>
+                                    <option value="40">40x</option>
+                                    <option value="45">45x</option>
+                                    <option value="50">50x</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                ` : ''}
+
+                <div id="bpw-charts-grid" class="bpw-charts-grid">
+                <section class="bpw-chart-section bpw-span-full bpw-panel-memory" id="section-memory">
                 <div class="chart-container">
                     <div class="downloads-toolbar">
                         <button class="btn" id="btn-download-png">Download PNG</button>
@@ -794,8 +842,10 @@
                         <div id="chart" style="width: 100%; height: 500px;"></div>
                     </div>
                 </div>
+                </section>
 
                 ${hasGCData(samples) ? `
+                <section class="bpw-chart-section bpw-panel-gc" id="section-gc">
                 <div class="chart-container">
                     <div class="downloads-toolbar">
                         <button class="btn" id="btn-download-gc-png">Download GC PNG</button>
@@ -835,8 +885,10 @@
                         <div id="gc-chart" style="width: 100%; height: 500px;"></div>
                     </div>
                 </div>
+                </section>
                 ` : ''}
                 ${shouldShowRssHeapRatioChart(samples) ? `
+                <section class="bpw-chart-section bpw-panel-ratio" id="section-ratio">
                 <div class="chart-container">
                     <div class="downloads-toolbar">
                         <button class="btn" id="btn-download-rss-heap-png">Download Heap/RSS PNG</button>
@@ -876,8 +928,10 @@
                         <div id="rss-heap-chart" style="width: 100%; height: 500px;"></div>
                     </div>
                 </div>
+                </section>
                 ` : ''}
                 ${hasJITData(samples) ? `
+                <section class="bpw-chart-section bpw-panel-jit" id="section-jit">
                 <div class="chart-container">
                     ${isFinished === true ? `
                         <div class="replay-controls" id="jit-replay-controls">
@@ -909,10 +963,18 @@
                         </div>
                     ` : ''}
                     <h3>JIT Compilation</h3>
-                    <div id="jit-time-chart" style="width:100%;height:450px"></div>
-                    <div id="jit-rate-chart" style="width:100%;height:450px"></div>
-                </div>` : ''}
+                    <div class="bpw-subchart">
+                        <div class="bpw-subchart-label">Cumulative compilation time</div>
+                        <div id="jit-time-chart" class="bpw-chart-slot" style="width:100%;height:450px"></div>
+                    </div>
+                    <div class="bpw-subchart">
+                        <div class="bpw-subchart-label">Compilation activity</div>
+                        <div id="jit-rate-chart" class="bpw-chart-slot" style="width:100%;height:450px"></div>
+                    </div>
+                </div>
+                </section>` : ''}
                 ${hasClassLoadingData(samples) ? `
+                <section class="bpw-chart-section bpw-panel-classes" id="section-classes">
                 <div class="chart-container">
                     ${isFinished === true ? `
                         <div class="replay-controls" id="classes-replay-controls">
@@ -944,9 +1006,17 @@
                         </div>
                     ` : ''}
                     <h3>Class Loading</h3>
-                    <div id="classes-loaded-chart" style="width:100%;height:450px"></div>
-                    <div id="class-rate-chart" style="width:100%;height:450px"></div>
-                </div>` : ''}
+                    <div class="bpw-subchart">
+                        <div class="bpw-subchart-label">Cumulative classes loaded</div>
+                        <div id="classes-loaded-chart" class="bpw-chart-slot" style="width:100%;height:450px"></div>
+                    </div>
+                    <div class="bpw-subchart">
+                        <div class="bpw-subchart-label">Loading activity</div>
+                        <div id="class-rate-chart" class="bpw-chart-slot" style="width:100%;height:450px"></div>
+                    </div>
+                </div>
+                </section>` : ''}
+                </div>
 
                 ${processInfoHtml}
 
@@ -996,6 +1066,12 @@
             if (btnGcSvg) btnGcSvg.onclick = () => downloadGCChart('svg');
             if (btnRssHeapPng) btnRssHeapPng.onclick = () => downloadRssHeapRatioChart('png');
             if (btnRssHeapSvg) btnRssHeapSvg.onclick = () => downloadRssHeapRatioChart('svg');
+
+            if (window.BpwExperimentLayout) {
+                BpwExperimentLayout.initToggleButtons();
+                BpwExperimentLayout.applyMode(BpwExperimentLayout.getMode());
+                BpwExperimentLayout.initSectionNav();
+            }
         }
 
         function shouldShowRssHeapRatioChart(samples) {
@@ -1170,6 +1246,10 @@
         }
 
         function initReplay(samples) {
+            if (window.BpwExperimentLayout) {
+                BpwExperimentLayout.clearReplayPanels();
+            }
+
             const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
             const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
             const elapsedByTimestamp = new Map();
@@ -1417,6 +1497,14 @@
                 renderFrame(initialFrame).then(() => {
                     attachLegendVisibilityHandlers(chartId, onLegendUpdate);
                 });
+
+                if (window.BpwExperimentLayout) {
+                    BpwExperimentLayout.registerReplayPanel({
+                        pause,
+                        renderFrame,
+                        getMaxFrame: () => chartTimestamps.length - 1
+                    });
+                }
             }
 
             function setupCounterReplayPanel(options) {
@@ -1533,6 +1621,14 @@
                 renderFrame(initialFrame).then(() => {
                     availableCharts.forEach(chart => attachLegendVisibilityHandlers(chart.id));
                 });
+
+                if (window.BpwExperimentLayout) {
+                    BpwExperimentLayout.registerReplayPanel({
+                        pause,
+                        renderFrame,
+                        getMaxFrame: () => chartTimestamps.length - 1
+                    });
+                }
             }
 
             setupReplayPanel({
@@ -1576,6 +1672,13 @@
                     { id: 'class-rate-chart', metric: 'classRate', title: 'Class Loading Activity', yTitle: 'Classes / s' }
                 ]
             });
+
+            if (window.BpwExperimentLayout) {
+                BpwExperimentLayout.initUnifiedReplay({
+                    timestamps: chartTimestamps,
+                    elapsedByTimestamp
+                });
+            }
         }
 
         function setupCompareControls(samples) {

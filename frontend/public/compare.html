@@ -200,13 +200,18 @@
         }
     </style>
     <link rel="stylesheet" href="/bpw-ui.css">
+    <link rel="stylesheet" href="/bpw-experiment.css">
+    <script src="/experiment-layout.js"></script>
 </head>
 <body>
     <div class="container">
         <header>
             <h1>Compare JSON Runs</h1>
             <div class="meta">Upload two JSON files to compare memory, GC, JIT, class loading, and process configuration.</div>
-            <a class="back-link back-home-link" href="https://process-watcher.web.app">← Back to Home</a>
+            <div style="display:flex; flex-wrap:wrap; align-items:center; gap:0.75rem; margin-top:0.5rem;">
+                <a class="back-link back-home-link" href="https://process-watcher.web.app">← Back to Home</a>
+                <button type="button" class="btn secondary bpw-layout-toggle" data-bpw-layout-toggle id="btn-layout-toggle">Experiment layout</button>
+            </div>
         </header>
 
         <section class="compare-controls">

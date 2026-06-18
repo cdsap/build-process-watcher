@@ -1,0 +1,203 @@
+/* Experimental dashboard layout — toggled via body.bpw-layout-experiment */
+
+.bpw-section-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin: 0 0 1rem;
+    padding: 0.65rem 0.85rem;
+    border: 1px solid rgba(22, 26, 29, 0.08);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 10px 30px rgba(22, 26, 29, 0.05);
+}
+
+.bpw-section-nav a {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.38rem 0.72rem;
+    border: 1px solid var(--bpw-line, #d9ded5);
+    border-radius: 999px;
+    color: var(--bpw-muted, #5f6b63);
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-decoration: none;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.bpw-section-nav a:hover,
+.bpw-section-nav a:focus-visible {
+    border-color: var(--bpw-teal, #087f8c);
+    color: var(--bpw-teal, #087f8c);
+    background: rgba(8, 127, 140, 0.08);
+}
+
+.bpw-unified-replay {
+    margin-bottom: 1rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid rgba(8, 127, 140, 0.22);
+    border-radius: 8px;
+    background: linear-gradient(135deg, rgba(8, 127, 140, 0.08), rgba(255, 255, 255, 0.95));
+    box-shadow: 0 12px 34px rgba(22, 26, 29, 0.06);
+}
+
+.bpw-unified-replay .bpw-unified-label {
+    margin-bottom: 0.55rem;
+    color: var(--bpw-ink, #161a1d);
+    font-size: 0.78rem;
+    font-weight: 760;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.bpw-unified-replay .replay-controls {
+    margin-bottom: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    grid-template-columns: 1fr !important;
+}
+
+.bpw-layout-toggle {
+    white-space: nowrap;
+}
+
+.bpw-layout-toggle[aria-pressed="true"] {
+    background: var(--bpw-teal, #087f8c) !important;
+    border-color: var(--bpw-teal, #087f8c) !important;
+    color: #fff !important;
+}
+
+.run-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+/* Experiment grid */
+body.bpw-layout-experiment .bpw-charts-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+body.bpw-layout-experiment .bpw-chart-section {
+    min-width: 0;
+}
+
+body.bpw-layout-experiment .bpw-chart-section.bpw-span-full {
+    grid-column: 1 / -1;
+}
+
+body.bpw-layout-experiment .bpw-chart-section .chart-container {
+    margin-bottom: 0 !important;
+    height: 100%;
+}
+
+body.bpw-layout-experiment .bpw-chart-section .chart-container h3,
+body.bpw-layout-experiment .bpw-chart-section .chart-container h4 {
+    font-size: 0.95rem !important;
+    margin-bottom: 0.5rem !important;
+}
+
+body.bpw-layout-experiment .bpw-chart-section .chart-wrapper,
+body.bpw-layout-experiment .bpw-chart-section .bpw-chart-slot {
+    min-width: 0 !important;
+}
+
+body.bpw-layout-experiment #chart,
+body.bpw-layout-experiment #gc-chart,
+body.bpw-layout-experiment #rss-heap-chart,
+body.bpw-layout-experiment #jit-time-chart,
+body.bpw-layout-experiment #jit-rate-chart,
+body.bpw-layout-experiment #classes-loaded-chart,
+body.bpw-layout-experiment #class-rate-chart,
+body.bpw-layout-experiment #single-rss,
+body.bpw-layout-experiment #single-gc,
+body.bpw-layout-experiment #single-jit-time,
+body.bpw-layout-experiment #single-jit-rate,
+body.bpw-layout-experiment #single-classes-loaded,
+body.bpw-layout-experiment #single-class-rate {
+    height: 320px !important;
+}
+
+body.bpw-layout-experiment .bpw-chart-section .replay-controls {
+    display: none !important;
+}
+
+body.bpw-layout-experiment #single-replay-controls {
+    display: none !important;
+}
+
+body.bpw-layout-experiment .downloads-toolbar {
+    margin-bottom: 0.65rem !important;
+}
+
+body.bpw-layout-experiment .bpw-panel-jit .chart-container,
+body.bpw-layout-experiment .bpw-panel-classes .chart-container {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+body.bpw-layout-experiment .bpw-panel-jit .chart-container > h3,
+body.bpw-layout-experiment .bpw-panel-classes .chart-container > h3 {
+    grid-column: 1 / -1;
+}
+
+body.bpw-layout-experiment .bpw-panel-jit .replay-controls,
+body.bpw-layout-experiment .bpw-panel-classes .replay-controls {
+    grid-column: 1 / -1;
+}
+
+body.bpw-layout-experiment .bpw-subchart {
+    min-width: 0;
+    border: 1px solid rgba(22, 26, 29, 0.06);
+    border-radius: 8px;
+    padding: 0.5rem;
+    background: rgba(250, 248, 241, 0.5);
+}
+
+body.bpw-layout-experiment .bpw-subchart-label {
+    margin-bottom: 0.35rem;
+    color: var(--bpw-muted, #5f6b63);
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+@media (max-width: 1024px) {
+    body.bpw-layout-experiment .bpw-charts-grid {
+        grid-template-columns: 1fr;
+    }
+
+    body.bpw-layout-experiment .bpw-panel-jit .chart-container,
+    body.bpw-layout-experiment .bpw-panel-classes .chart-container {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 768px) {
+    .bpw-section-nav {
+        position: sticky;
+        top: 72px;
+        z-index: 15;
+    }
+
+    body.bpw-layout-experiment #chart,
+    body.bpw-layout-experiment #gc-chart,
+    body.bpw-layout-experiment #rss-heap-chart,
+    body.bpw-layout-experiment #jit-time-chart,
+    body.bpw-layout-experiment #jit-rate-chart,
+    body.bpw-layout-experiment #classes-loaded-chart,
+    body.bpw-layout-experiment #class-rate-chart,
+    body.bpw-layout-experiment #single-rss,
+    body.bpw-layout-experiment #single-gc,
+    body.bpw-layout-experiment #single-jit-time,
+    body.bpw-layout-experiment #single-jit-rate,
+    body.bpw-layout-experiment #single-classes-loaded,
+    body.bpw-layout-experiment #single-class-rate {
+        height: 280px !important;
+    }
+}

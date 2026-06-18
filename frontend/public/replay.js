@@ -43,6 +43,35 @@
         const showClasses = hasClassLoadingData(samples);
 
         section.innerHTML = `
+            <div id="bpw-unified-replay" class="bpw-unified-replay" hidden>
+                <div class="bpw-unified-label">Unified replay (all charts)</div>
+                <div class="replay-controls" id="bpw-unified-replay-controls">
+                    <div class="buttons">
+                        <button class="btn" id="bpw-unified-play" type="button">Play</button>
+                        <button class="btn secondary" id="bpw-unified-pause" type="button">Pause</button>
+                        <button class="btn secondary" id="bpw-unified-reset" type="button">Reset</button>
+                    </div>
+                    <div class="meta" id="bpw-unified-meta">Frame 0 / 0</div>
+                    <div class="timeline">
+                        <input type="range" id="bpw-unified-timeline" min="0" max="0" value="0">
+                        <div class="meta" id="bpw-unified-time-label">Elapsed: 0s</div>
+                        <div class="meta">
+                            Speed:
+                            <select id="bpw-unified-speed">
+                                <option value="15" selected>15x</option>
+                                <option value="25">25x</option>
+                                <option value="50">50x</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <nav id="bpw-section-nav" class="bpw-section-nav" hidden aria-label="Chart sections">
+                <a href="#section-memory">Memory</a>
+                ${showGC ? '<a href="#section-gc">GC</a>' : ''}
+                ${showJIT ? '<a href="#section-jit">JIT</a>' : ''}
+                ${showClasses ? '<a href="#section-classes">Classes</a>' : ''}
+            </nav>
             <div class="replay-controls" id="single-replay-controls">
                 <div class="buttons">
                     <button class="btn" id="btn-single-play">Play</button>
@@ -75,33 +104,62 @@
                 <label><input type="checkbox" id="filter-single-rss" checked> RSS</label>
                 <label><input type="checkbox" id="filter-single-heap" checked> Heap</label>
             </div>
+            <div id="bpw-charts-grid" class="bpw-charts-grid">
+            <section class="bpw-chart-section bpw-span-full bpw-panel-memory" id="section-memory">
             <div class="chart-container">
                 <h4>Memory Usage Over Time</h4>
                 <div class="chart-wrapper">
                     <div id="single-rss" style="width: 100%; height: 460px;"></div>
                 </div>
             </div>
+            </section>
             ${showGC ? `
+            <section class="bpw-chart-section bpw-span-full bpw-panel-gc" id="section-gc">
             <div class="chart-container">
                 <h4>Garbage Collection Time Over Time</h4>
                 <div class="chart-wrapper">
                     <div id="single-gc" style="width: 100%; height: 460px;"></div>
                 </div>
             </div>
+            </section>
             ` : ''}
             ${showJIT ? `
+            <section class="bpw-chart-section bpw-panel-jit" id="section-jit">
             <div class="chart-container"><h4>JIT Compilation</h4>
-                <div id="single-jit-time" style="width:100%;height:400px"></div>
-                <div id="single-jit-rate" style="width:100%;height:400px"></div>
-            </div>` : ''}
+                <div class="bpw-subchart">
+                    <div class="bpw-subchart-label">Cumulative compilation time</div>
+                    <div id="single-jit-time" class="bpw-chart-slot" style="width:100%;height:400px"></div>
+                </div>
+                <div class="bpw-subchart">
+                    <div class="bpw-subchart-label">Compilation activity</div>
+                    <div id="single-jit-rate" class="bpw-chart-slot" style="width:100%;height:400px"></div>
+                </div>
+            </div>
+            </section>` : ''}
             ${showClasses ? `
+            <section class="bpw-chart-section bpw-panel-classes" id="section-classes">
             <div class="chart-container"><h4>Class Loading</h4>
-                <div id="single-classes-loaded" style="width:100%;height:400px"></div>
-                <div id="single-class-rate" style="width:100%;height:400px"></div>
-            </div>` : ''}
+                <div class="bpw-subchart">
+                    <div class="bpw-subchart-label">Cumulative classes loaded</div>
+                    <div id="single-classes-loaded" class="bpw-chart-slot" style="width:100%;height:400px"></div>
+                </div>
+                <div class="bpw-subchart">
+                    <div class="bpw-subchart-label">Loading activity</div>
+                    <div id="single-class-rate" class="bpw-chart-slot" style="width:100%;height:400px"></div>
+                </div>
+            </div>
+            </section>` : ''}
+            </div>
         `;
 
         section.style.display = 'block';
+
+        if (window.BpwExperimentLayout) {
+            BpwExperimentLayout.clearReplayPanels();
+            BpwExperimentLayout.initToggleButtons();
+            BpwExperimentLayout.applyMode(BpwExperimentLayout.getMode());
+            BpwExperimentLayout.initSectionNav();
+        }
 
         const timeline = document.getElementById('single-replay-timeline');
         const meta = document.getElementById('single-replay-meta');
@@ -320,6 +378,18 @@
                 speedMultiplier = parsed;
             }
         });
+
+        if (window.BpwExperimentLayout) {
+            BpwExperimentLayout.registerReplayPanel({
+                pause,
+                renderFrame,
+                getMaxFrame: () => chartTimestamps.length - 1
+            });
+            BpwExperimentLayout.initUnifiedReplay({
+                timestamps: chartTimestamps,
+                elapsedByTimestamp
+            });
+        }
 
         renderFrame(0);
     }
