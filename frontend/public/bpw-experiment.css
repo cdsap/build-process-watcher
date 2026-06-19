@@ -7,6 +7,17 @@ body.bpw-layout-classic #bpw-build-story {
     display: none !important;
 }
 
+#bpw-workspace-deck[hidden],
+#bpw-unified-replay[hidden],
+#bpw-chart-studio[hidden],
+#bpw-build-story[hidden] {
+    display: none !important;
+}
+
+body.bpw-layout-classic .bpw-panel-card-head {
+    display: none !important;
+}
+
 /* Chart studio — overlay composer */
 .bpw-chart-studio {
     margin-bottom: 1rem;
