@@ -573,6 +573,8 @@
                 let finalCompiledMethods = null;
                 let finalJITTimeMs = null;
                 let finalClassesLoaded = null;
+                let minTimestamp = Number.POSITIVE_INFINITY;
+                let maxTimestamp = 0;
                 
                 processSamples.forEach(sample => {
                     if (sample.RSS && sample.RSS > maxRss) {
@@ -591,6 +593,8 @@
                     if (Number.isFinite(Number(sample.JITCompiledMethods))) finalCompiledMethods = Number(sample.JITCompiledMethods);
                     if (Number.isFinite(Number(sample.JITCompilationTimeMs))) finalJITTimeMs = Number(sample.JITCompilationTimeMs);
                     if (Number.isFinite(Number(sample.ClassesLoaded))) finalClassesLoaded = Number(sample.ClassesLoaded);
+                    if (sample.Timestamp && sample.Timestamp < minTimestamp) minTimestamp = sample.Timestamp;
+                    if (sample.Timestamp && sample.Timestamp > maxTimestamp) maxTimestamp = sample.Timestamp;
                 });
                 
                 processMetrics[pid] = {
@@ -599,7 +603,11 @@
                     totalGCTime: maxGCTimeSeconds,
                     finalCompiledMethods,
                     finalJITTimeMs,
-                    finalClassesLoaded
+                    finalClassesLoaded,
+                    durationSeconds: Number.isFinite(minTimestamp) && maxTimestamp >= minTimestamp
+                        ? Math.max(0, (maxTimestamp - minTimestamp) / 1000)
+                        : 0,
+                    sampleCount: processSamples.length
                 };
                 if (maxHeap > maxHeapAllProcesses) {
                     maxHeapAllProcesses = maxHeap;
@@ -644,57 +652,105 @@
                 }
             });
             
+            const formatDur = (s) => s < 60 ? s + 's' : (Math.floor(s / 60) + 'm' + (s % 60 ? ' ' + Math.round(s % 60) + 's' : ''));
+
             // Render process info section
             let processInfoHtml = '';
             if (Object.keys(processInfo).length > 0) {
-                processInfoHtml = '<div class="process-info-section">';
-                processInfoHtml += '<h2>Process Information</h2>';
-                for (const [pid, info] of Object.entries(processInfo)) {
+                const formatMetricMb = (value) => value > 0 ? `${value.toFixed(value >= 1000 ? 0 : 1)} MB` : 'N/A';
+                const formatMetricSeconds = (value) => value > 0 ? `${value.toFixed(value >= 10 ? 1 : 3)} s` : 'N/A';
+                const processEntries = Object.entries(processInfo).map(([pid, info]) => {
                     const vmFlags = info.vm_flags || [];
-                    const metrics = processMetrics[pid] || { maxRss: 0, maxHeap: 0, totalGCTime: 0 };
-                    const maxHeapGiB = getMaxHeapGiB(vmFlags);
-                    processInfoHtml += '<div class="process-info-card">';
-                    processInfoHtml += `<h3>${info.name || 'Unknown'}${maxHeapGiB ? ` <span style="font-weight: 500; color: #475569; font-size: 0.95rem;">(Heap Max: ${maxHeapGiB} GiB)</span>` : ''}</h3>`;
-                    processInfoHtml += `<div class="process-meta">PID: ${pid}</div>`;
-                    
-                    // Add metrics
-                    processInfoHtml += '<div class="process-metric-grid">';
-                    processInfoHtml += `<div class="process-metric"><strong>Max RSS</strong><span>${metrics.maxRss > 0 ? metrics.maxRss.toFixed(1) + ' MB' : 'N/A'}</span></div>`;
-                    processInfoHtml += `<div class="process-metric"><strong>Max Heap</strong><span>${metrics.maxHeap > 0 ? metrics.maxHeap.toFixed(1) + ' MB' : 'N/A'}</span></div>`;
-                    processInfoHtml += `<div class="process-metric"><strong>Total GC Time</strong><span>${metrics.totalGCTime > 0 ? metrics.totalGCTime.toFixed(3) + ' s' : 'N/A'}</span></div>`;
-                    processInfoHtml += `<div class="process-metric"><strong>Compiled Methods</strong><span>${metrics.finalCompiledMethods ?? 'N/A'}</span></div>`;
-                    processInfoHtml += `<div class="process-metric"><strong>JIT Time</strong><span>${metrics.finalJITTimeMs !== null ? (metrics.finalJITTimeMs / 1000).toFixed(3) + ' s' : 'N/A'}</span></div>`;
-                    processInfoHtml += `<div class="process-metric"><strong>Classes Loaded</strong><span>${metrics.finalClassesLoaded ?? 'N/A'}</span></div>`;
-                    processInfoHtml += '</div>';
-                    
-                    if (vmFlags.length > 0) {
-                        processInfoHtml += '<div><strong>VM Flags:</strong></div>';
-                        processInfoHtml += '<div class="vm-flags-list">';
-                        vmFlags.forEach(flag => {
-                            processInfoHtml += `<span class="vm-flag">${escapeHtml(flag)}</span>`;
-                        });
-                        processInfoHtml += '</div>';
-                    } else {
-                        processInfoHtml += '<div class="process-meta">No VM flags available</div>';
-                    }
-                    processInfoHtml += '</div>';
-                }
-                
-                // Add summary section for max RSS across all processes
+                    const metrics = processMetrics[pid] || { maxRss: 0, maxHeap: 0, totalGCTime: 0, durationSeconds: 0, sampleCount: 0 };
+                    return {
+                        pid,
+                        info,
+                        vmFlags,
+                        metrics,
+                        maxHeapGiB: getMaxHeapGiB(vmFlags)
+                    };
+                });
+                const peakRssPid = processEntries.reduce((best, entry) => !best || entry.metrics.maxRss > best.metrics.maxRss ? entry : best, null)?.pid;
+                const peakGcPid = processEntries.reduce((best, entry) => !best || entry.metrics.totalGCTime > best.metrics.totalGCTime ? entry : best, null)?.pid;
+                const longestPid = processEntries.reduce((best, entry) => !best || entry.metrics.durationSeconds > best.metrics.durationSeconds ? entry : best, null)?.pid;
+                const groups = {};
+                processEntries.forEach((entry) => {
+                    const name = entry.info.name || 'Unknown';
+                    if (!groups[name]) groups[name] = [];
+                    groups[name].push(entry);
+                });
+
+                processInfoHtml = '<div class="process-info-section">';
+                processInfoHtml += '<div class="process-info-head">';
+                processInfoHtml += '<div><h2>Process Information</h2><p>Compare JVM processes first; expand details only when you need flags or runtime metadata.</p></div>';
                 if (maxRssAllProcesses > 0) {
-                    processInfoHtml += '<div class="process-info-card" style="background: #fef3c7; border-left: 3px solid #f59e0b;">';
-                    processInfoHtml += '<h3>Overall Summary</h3>';
-                    processInfoHtml += `<div style="font-size: 1.125rem; font-weight: 600; color: #92400e;">Max RSS (All Processes): ${maxRssAllProcesses.toFixed(1)} MB</div>`;
-                    processInfoHtml += '</div>';
+                    processInfoHtml += `<div class="process-info-total"><span>All processes peak</span><strong>${formatMetricMb(maxRssAllProcesses)}</strong></div>`;
                 }
-                
+                processInfoHtml += '</div>';
+                processInfoHtml += '<div class="process-groups">';
+                Object.entries(groups).sort(([a], [b]) => a.localeCompare(b)).forEach(([name, entries]) => {
+                    processInfoHtml += '<section class="process-group">';
+                    processInfoHtml += `<div class="process-group-title"><h3>${escapeHtml(name)}</h3><span>${entries.length} PID${entries.length === 1 ? '' : 's'}</span></div>`;
+                    entries.sort((a, b) => b.metrics.maxRss - a.metrics.maxRss).forEach(({ pid, info, vmFlags, metrics, maxHeapGiB }) => {
+                        const badges = [];
+                        if (pid === peakRssPid && metrics.maxRss > 0) badges.push('Peak RSS contributor');
+                        if (pid === peakGcPid && metrics.totalGCTime > 0) badges.push('Most GC time');
+                        if (pid === longestPid && metrics.durationSeconds > 0) badges.push('Longest lived');
+                        if (metrics.finalCompiledMethods !== null || metrics.finalJITTimeMs !== null) badges.push('JIT data');
+                        if (metrics.finalClassesLoaded !== null) badges.push('Class data');
+
+                        processInfoHtml += '<article class="process-info-card">';
+                        processInfoHtml += '<div class="process-card-main">';
+                        processInfoHtml += '<div class="process-card-title">';
+                        processInfoHtml += `<strong>PID ${escapeHtml(pid)}</strong>`;
+                        if (maxHeapGiB) processInfoHtml += `<span>Heap max ${maxHeapGiB} GiB</span>`;
+                        processInfoHtml += '</div>';
+                        if (badges.length) {
+                            processInfoHtml += '<div class="process-badges">';
+                            badges.forEach((badge) => {
+                                processInfoHtml += `<span>${badge}</span>`;
+                            });
+                            processInfoHtml += '</div>';
+                        }
+                        processInfoHtml += '</div>';
+
+                        processInfoHtml += '<div class="process-metric-grid">';
+                        processInfoHtml += `<div class="process-metric"><strong>Max RSS</strong><span>${formatMetricMb(metrics.maxRss)}</span></div>`;
+                        processInfoHtml += `<div class="process-metric"><strong>Max Heap</strong><span>${formatMetricMb(metrics.maxHeap)}</span></div>`;
+                        processInfoHtml += `<div class="process-metric"><strong>GC Time</strong><span>${formatMetricSeconds(metrics.totalGCTime)}</span></div>`;
+                        processInfoHtml += `<div class="process-metric"><strong>Duration</strong><span>${metrics.durationSeconds > 0 ? formatDur(Math.round(metrics.durationSeconds)) : 'N/A'}</span></div>`;
+                        processInfoHtml += `<div class="process-metric"><strong>Compiled</strong><span>${metrics.finalCompiledMethods ?? 'N/A'}</span></div>`;
+                        processInfoHtml += `<div class="process-metric"><strong>Classes</strong><span>${metrics.finalClassesLoaded ?? 'N/A'}</span></div>`;
+                        processInfoHtml += '</div>';
+
+                        processInfoHtml += '<details class="process-details">';
+                        processInfoHtml += '<summary>JVM details</summary>';
+                        processInfoHtml += '<div class="process-detail-grid">';
+                        processInfoHtml += `<div><strong>Samples</strong><span>${metrics.sampleCount || 0}</span></div>`;
+                        processInfoHtml += `<div><strong>JIT time</strong><span>${metrics.finalJITTimeMs !== null ? formatMetricSeconds(metrics.finalJITTimeMs / 1000) : 'N/A'}</span></div>`;
+                        processInfoHtml += `<div><strong>Process name</strong><span>${escapeHtml(info.name || 'Unknown')}</span></div>`;
+                        processInfoHtml += '</div>';
+                        if (vmFlags.length > 0) {
+                            processInfoHtml += '<div class="vm-flags-list">';
+                            vmFlags.forEach(flag => {
+                                processInfoHtml += `<span class="vm-flag">${escapeHtml(flag)}</span>`;
+                            });
+                            processInfoHtml += '</div>';
+                        } else {
+                            processInfoHtml += '<div class="process-meta">No VM flags available</div>';
+                        }
+                        processInfoHtml += '</details>';
+                        processInfoHtml += '</article>';
+                    });
+                    processInfoHtml += '</section>';
+                });
+                processInfoHtml += '</div>';
                 processInfoHtml += '</div>';
             }
             
             const processCount = new Set(samples.map(s => `${s.Name}|${s.PID}`)).size;
             const elapsedTimes = samples.map(s => s.ElapsedTime || 0).filter(t => t > 0);
             const durationSec = elapsedTimes.length >= 2 ? Math.max(...elapsedTimes) - Math.min(...elapsedTimes) : (elapsedTimes[0] || 0);
-            const formatDur = (s) => s < 60 ? s + 's' : (Math.floor(s / 60) + 'm' + (s % 60 ? ' ' + Math.round(s % 60) + 's' : ''));
             const formatMb = (value) => value > 0 ? `${value.toFixed(value >= 1000 ? 0 : 1)} MB` : 'N/A';
             const sampleRate = durationSec > 0 && samples.length > 0 ? (samples.length / Math.max(durationSec, 1)) : 0;
             const pressure = maxRssAllProcesses > 0 && maxHeapAllProcesses > 0

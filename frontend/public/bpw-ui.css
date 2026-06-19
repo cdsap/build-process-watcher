@@ -304,13 +304,130 @@ input[type="file"] {
     border: 1px solid rgba(22, 26, 29, 0.08) !important;
     border-radius: 8px !important;
     background: var(--bpw-panel-soft) !important;
+    padding: 0.9rem;
+    margin-bottom: 0.75rem;
+}
+
+.process-info-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 1rem;
+    align-items: end;
+    margin-bottom: 1rem;
+}
+
+.process-info-head h2 {
+    margin-bottom: 0.25rem !important;
+}
+
+.process-info-head p {
+    margin: 0;
+    color: var(--bpw-muted);
+    font-size: 0.9rem;
+}
+
+.process-info-total {
+    min-width: 12rem;
+    padding: 0.75rem 0.85rem;
+    border: 1px solid rgba(184, 132, 20, 0.25);
+    border-radius: 8px;
+    background: rgba(184, 132, 20, 0.1);
+}
+
+.process-info-total span {
+    display: block;
+    color: var(--bpw-muted);
+    font-size: 0.7rem;
+    font-weight: 760;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.process-info-total strong {
+    display: block;
+    color: var(--bpw-ink);
+    font-size: 1.25rem;
+    line-height: 1.15;
+}
+
+.process-groups {
+    display: grid;
+    gap: 0.9rem;
+}
+
+.process-group {
+    min-width: 0;
+}
+
+.process-group-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.45rem;
+}
+
+.process-group-title h3 {
+    margin: 0;
+    color: var(--bpw-ink);
+    font-size: 1.05rem;
+    font-weight: 780;
+}
+
+.process-group-title span {
+    color: var(--bpw-muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.process-card-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.75rem;
+    align-items: start;
+}
+
+.process-card-title {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    align-items: baseline;
+}
+
+.process-card-title strong {
+    color: var(--bpw-ink);
+    font-size: 1rem;
+}
+
+.process-card-title span {
+    color: var(--bpw-muted);
+    font-size: 0.82rem;
+    font-weight: 650;
+}
+
+.process-badges {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.35rem;
+}
+
+.process-badges span {
+    min-height: 1.55rem;
+    padding: 0.2rem 0.5rem;
+    border: 1px solid rgba(8, 127, 140, 0.24);
+    border-radius: 999px;
+    background: rgba(8, 127, 140, 0.08);
+    color: var(--bpw-teal);
+    font-size: 0.72rem;
+    font-weight: 720;
 }
 
 .process-metric-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
     gap: 0.65rem;
-    margin: 1rem 0;
+    margin: 0.75rem 0;
 }
 
 .process-metric {
@@ -334,6 +451,52 @@ input[type="file"] {
     color: var(--bpw-ink);
     font-size: 1.05rem;
     font-weight: 760;
+}
+
+.process-details {
+    margin-top: 0.75rem;
+    border-top: 1px solid rgba(22, 26, 29, 0.08);
+    padding-top: 0.65rem;
+}
+
+.process-details summary {
+    color: var(--bpw-teal);
+    cursor: pointer;
+    font-weight: 760;
+}
+
+.process-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0.6rem;
+    margin: 0.7rem 0;
+}
+
+.process-detail-grid div {
+    min-width: 0;
+    padding: 0.6rem;
+    border: 1px solid rgba(22, 26, 29, 0.08);
+    border-radius: 8px;
+    background: #fff;
+}
+
+.process-detail-grid strong,
+.process-detail-grid span {
+    display: block;
+}
+
+.process-detail-grid strong {
+    color: var(--bpw-muted);
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.process-detail-grid span {
+    overflow-wrap: anywhere;
+    color: var(--bpw-ink);
+    font-size: 0.88rem;
+    font-weight: 700;
 }
 
 .vm-flag {
@@ -393,6 +556,19 @@ footer {
         margin-left: 0 !important;
         margin-right: 0 !important;
     }
+
+    .process-info-head,
+    .process-card-main {
+        grid-template-columns: 1fr;
+    }
+
+    .process-info-total {
+        min-width: 0;
+    }
+
+    .process-badges {
+        justify-content: flex-start;
+    }
 }
 
 @media (max-width: 560px) {
@@ -403,5 +579,14 @@ footer {
 
     .run-header-main .run-id {
         font-size: 1.25rem;
+    }
+
+    .process-info-section {
+        padding: 1rem !important;
+    }
+
+    .process-metric-grid,
+    .process-detail-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
