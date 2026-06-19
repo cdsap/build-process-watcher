@@ -109,7 +109,7 @@
                         <span class="bpw-panel-badge">Memory</span>
                         <h4>Memory Usage Over Time</h4>
                     </div>
-                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="memory">Focus</button>
+                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="memory" title="Expand this panel">Expand</button>
                 </div>
                 <div class="bpw-panel-card-body">
             <div class="chart-container">
@@ -128,7 +128,7 @@
                         <span class="bpw-panel-badge">GC</span>
                         <h4>Garbage Collection Time</h4>
                     </div>
-                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="gc">Focus</button>
+                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="gc" title="Expand this panel">Expand</button>
                 </div>
                 <div class="bpw-panel-card-body">
             <div class="chart-container">
@@ -149,7 +149,7 @@
                         <span class="bpw-panel-badge">JIT</span>
                         <h4>Cumulative Compilation Time</h4>
                     </div>
-                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="jit-time">Focus</button>
+                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="jit-time" title="Expand this panel">Expand</button>
                 </div>
                 <div class="bpw-panel-card-body">
                     <div id="single-jit-time" class="bpw-chart-plot" style="width:100%;height:400px"></div>
@@ -163,7 +163,7 @@
                         <span class="bpw-panel-badge">JIT</span>
                         <h4>Compilation Activity</h4>
                     </div>
-                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="jit-rate">Focus</button>
+                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="jit-rate" title="Expand this panel">Expand</button>
                 </div>
                 <div class="bpw-panel-card-body">
                     <div id="single-jit-rate" class="bpw-chart-plot" style="width:100%;height:400px"></div>
@@ -178,7 +178,7 @@
                         <span class="bpw-panel-badge">Classes</span>
                         <h4>Cumulative Classes Loaded</h4>
                     </div>
-                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="classes-loaded">Focus</button>
+                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="classes-loaded" title="Expand this panel">Expand</button>
                 </div>
                 <div class="bpw-panel-card-body">
                     <div id="single-classes-loaded" class="bpw-chart-plot" style="width:100%;height:400px"></div>
@@ -192,7 +192,7 @@
                         <span class="bpw-panel-badge">Classes</span>
                         <h4>Class Loading Activity</h4>
                     </div>
-                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="class-rate">Focus</button>
+                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="class-rate" title="Expand this panel">Expand</button>
                 </div>
                 <div class="bpw-panel-card-body">
                     <div id="single-class-rate" class="bpw-chart-plot" style="width:100%;height:400px"></div>

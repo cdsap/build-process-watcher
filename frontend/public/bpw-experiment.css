@@ -155,57 +155,6 @@ body.bpw-layout-experiment .bpw-runtime-stage .bpw-chart-plot {
     box-shadow: 0 14px 40px rgba(22, 26, 29, 0.07);
 }
 
-.bpw-perspective-switch {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.75rem;
-}
-
-.bpw-perspective-card {
-    display: grid;
-    gap: 0.2rem;
-    min-height: 5.4rem;
-    padding: 0.8rem 0.9rem;
-    border: 1px solid rgba(22, 26, 29, 0.1);
-    border-radius: 8px;
-    background: #fff;
-    color: var(--bpw-ink, #161a1d);
-    text-align: left;
-    cursor: pointer;
-    transition: border-color 0.15s, background 0.15s, box-shadow 0.15s, transform 0.15s;
-}
-
-.bpw-perspective-card:hover {
-    border-color: rgba(8, 127, 140, 0.55);
-    transform: translateY(-1px);
-}
-
-.bpw-perspective-card[aria-pressed="true"] {
-    border-color: var(--bpw-teal, #087f8c);
-    background: linear-gradient(135deg, rgba(8, 127, 140, 0.12), rgba(255, 255, 255, 0.96));
-    box-shadow: 0 8px 22px rgba(8, 127, 140, 0.14);
-}
-
-.bpw-perspective-card span {
-    color: var(--bpw-teal, #087f8c);
-    font-size: 0.72rem;
-    font-weight: 780;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-}
-
-.bpw-perspective-card strong {
-    color: var(--bpw-ink, #161a1d);
-    font-size: 1rem;
-    line-height: 1.15;
-}
-
-.bpw-perspective-card small {
-    color: var(--bpw-muted, #5f6b63);
-    font-size: 0.78rem;
-    line-height: 1.35;
-}
-
 .bpw-studio-controls {
     display: grid;
     gap: 0.65rem;
@@ -637,6 +586,63 @@ body.bpw-perspective-story .bpw-chart-studio {
     white-space: nowrap;
 }
 
+.bpw-layout-toggle.bpw-toggle-replaced {
+    display: none !important;
+}
+
+.bpw-mode-switch {
+    display: inline-flex;
+    align-items: stretch;
+    gap: 0.35rem;
+    padding: 0.25rem;
+    border: 1px solid rgba(22, 26, 29, 0.1);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.78);
+    box-shadow: 0 8px 22px rgba(22, 26, 29, 0.06);
+}
+
+.bpw-mode-btn {
+    display: inline-grid;
+    gap: 0.05rem;
+    min-width: 7.2rem;
+    min-height: 2.45rem;
+    padding: 0.38rem 0.62rem;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--bpw-ink, #161a1d);
+    text-align: left;
+    cursor: pointer;
+}
+
+.bpw-mode-btn span {
+    font-size: 0.82rem;
+    font-weight: 760;
+    line-height: 1.1;
+}
+
+.bpw-mode-btn small {
+    color: var(--bpw-muted, #5f6b63);
+    font-size: 0.68rem;
+    font-weight: 650;
+    line-height: 1.15;
+}
+
+.bpw-mode-btn:hover {
+    border-color: rgba(8, 127, 140, 0.35);
+    background: rgba(8, 127, 140, 0.06);
+}
+
+.bpw-mode-btn[aria-pressed="true"] {
+    border-color: var(--bpw-teal, #087f8c);
+    background: rgba(8, 127, 140, 0.12);
+    color: var(--bpw-teal, #087f8c);
+}
+
+.bpw-mode-btn[aria-pressed="true"] small {
+    color: var(--bpw-teal, #087f8c);
+}
+
 .bpw-layout-toggle[aria-pressed="true"] {
     background: var(--bpw-teal, #087f8c) !important;
     border-color: var(--bpw-teal, #087f8c) !important;
@@ -831,7 +837,7 @@ body.bpw-layout-experiment.bpw-focus-mode #bpw-workspace-deck .bpw-deck-toggles 
     }
 
     .bpw-story-evidence-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     body.bpw-layout-experiment .bpw-runtime-stage .bpw-chart-panel {
@@ -850,13 +856,24 @@ body.bpw-layout-experiment.bpw-focus-mode #bpw-workspace-deck .bpw-deck-toggles 
 
 @media (max-width: 768px) {
     .bpw-workspace-deck {
-        position: sticky;
-        top: 72px;
-        z-index: 15;
+        position: relative;
+        top: auto;
+        z-index: auto;
     }
 
-    .bpw-perspective-switch {
-        grid-template-columns: 1fr;
+    .bpw-mode-switch {
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr));
+    }
+
+    .bpw-mode-btn {
+        min-width: 0;
+        text-align: center;
+    }
+
+    .bpw-mode-btn small {
+        display: none;
     }
 
     body.bpw-layout-experiment #chart,
@@ -878,5 +895,22 @@ body.bpw-layout-experiment.bpw-focus-mode #bpw-workspace-deck .bpw-deck-toggles 
     body.bpw-layout-experiment #single-classes-loaded,
     body.bpw-layout-experiment #single-class-rate {
         height: 340px !important;
+    }
+}
+
+@media (max-width: 560px) {
+    .bpw-mode-switch {
+        grid-template-columns: 1fr;
+    }
+
+    .bpw-story-facts,
+    .bpw-story-evidence-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .bpw-story-table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
     }
 }

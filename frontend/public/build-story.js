@@ -552,7 +552,7 @@
             facts.innerHTML = `
                 <div><span>Duration</span><strong>${formatSeconds(phaseDuration(phase))}</strong></div>
                 <div><span>Samples</span><strong>${phase.sampleCount}</strong></div>
-                <div><span>Focus</span><strong>${phase.dominantMetric}</strong></div>
+                <div><span>Main metric</span><strong>${phase.dominantMetric}</strong></div>
                 <div><span>Overlay</span><strong>${metricLabel(overlay.a)}${overlay.b ? ` + ${metricLabel(overlay.b)}` : ''}</strong></div>
             `;
         }

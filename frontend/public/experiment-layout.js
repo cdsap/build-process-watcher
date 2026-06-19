@@ -5,6 +5,7 @@
     const PERSPECTIVE_STORAGE_KEY = 'bpwExperimentPerspective';
     const MODES = { classic: 'classic', experiment: 'experiment' };
     const PERSPECTIVES = { studio: 'studio', story: 'story' };
+    const VIEW_MODES = { classic: 'classic', studio: 'studio', story: 'story' };
 
     const PANEL_META = {
         memory: { label: 'Memory', group: 'memory' },
@@ -66,6 +67,29 @@
 
     function isStoryPerspective() {
         return isExperiment() && getPerspective() === PERSPECTIVES.story;
+    }
+
+    function supportsStoryMode() {
+        return Boolean(global.BpwBuildStory);
+    }
+
+    function getViewMode() {
+        if (!isExperiment()) return VIEW_MODES.classic;
+        return getPerspective() === PERSPECTIVES.story ? VIEW_MODES.story : VIEW_MODES.studio;
+    }
+
+    function setViewMode(viewMode) {
+        if (viewMode === VIEW_MODES.classic) {
+            localStorage.setItem(STORAGE_KEY, MODES.classic);
+            applyMode(MODES.classic);
+            return;
+        }
+        localStorage.setItem(STORAGE_KEY, MODES.experiment);
+        localStorage.setItem(
+            PERSPECTIVE_STORAGE_KEY,
+            viewMode === VIEW_MODES.story && supportsStoryMode() ? PERSPECTIVES.story : PERSPECTIVES.studio
+        );
+        applyMode(MODES.experiment);
     }
 
     function setMode(mode) {
@@ -143,7 +167,8 @@
         document.querySelectorAll('.bpw-panel-focus-btn').forEach((btn) => {
             const target = btn.getAttribute('data-bpw-focus');
             btn.setAttribute('aria-pressed', target === panelId ? 'true' : 'false');
-            btn.textContent = target === panelId ? 'Exit focus' : 'Focus';
+            btn.textContent = target === panelId ? 'Collapse' : 'Expand';
+            btn.title = target === panelId ? 'Return to the full chart grid' : 'Expand this panel';
         });
         resizeCharts();
     }
@@ -162,18 +187,6 @@
         const visibility = buildVisibilityMap(available, presetId);
 
         deck.innerHTML = `
-            <div class="bpw-perspective-switch" aria-label="Experiment perspective">
-                <button type="button" class="bpw-perspective-card" data-bpw-perspective="studio" aria-pressed="${getPerspective() === PERSPECTIVES.studio ? 'true' : 'false'}">
-                    <span>Studio</span>
-                    <strong>Compose metric overlays</strong>
-                    <small>Use dual-axis charts, runtime panels, and custom mosaics.</small>
-                </button>
-                <button type="button" class="bpw-perspective-card" data-bpw-perspective="story" aria-pressed="${getPerspective() === PERSPECTIVES.story ? 'true' : 'false'}">
-                    <span>Build story</span>
-                    <strong>Inspect detected phases</strong>
-                    <small>Navigate warmup, pressure, GC, and runtime activity windows.</small>
-                </button>
-            </div>
             <div class="bpw-studio-controls" data-bpw-studio-controls>
                 <div class="bpw-deck-row">
                     <span class="bpw-deck-label">Layout</span>
@@ -192,12 +205,6 @@
         `;
 
         const toggles = deck.querySelector('#bpw-deck-toggles');
-        deck.querySelectorAll('[data-bpw-perspective]').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                setPerspective(btn.getAttribute('data-bpw-perspective'));
-            });
-        });
-
         available.forEach((id) => {
             const meta = PANEL_META[id] || { label: id };
             const chip = document.createElement('button');
@@ -324,6 +331,7 @@
         document.querySelectorAll('[data-bpw-perspective]').forEach((btn) => {
             btn.setAttribute('aria-pressed', btn.getAttribute('data-bpw-perspective') === (story ? PERSPECTIVES.story : PERSPECTIVES.studio) ? 'true' : 'false');
         });
+        updateModeSwitches();
 
         if (global.BpwChartStudio) {
             global.BpwChartStudio.setVisible(isExperiment() && !story);
@@ -341,6 +349,47 @@
         resizeCharts();
     }
 
+    function buildModeButton(mode, label, description) {
+        return `
+            <button type="button" class="bpw-mode-btn" data-bpw-view-mode="${mode}" aria-pressed="${getViewMode() === mode ? 'true' : 'false'}">
+                <span>${label}</span>
+                <small>${description}</small>
+            </button>
+        `;
+    }
+
+    function ensureModeSwitch(toggleButton) {
+        if (!toggleButton || toggleButton.dataset.bpwModeSwitchReady === 'true') return;
+        toggleButton.dataset.bpwModeSwitchReady = 'true';
+        toggleButton.classList.add('bpw-toggle-replaced');
+        toggleButton.setAttribute('aria-hidden', 'true');
+        toggleButton.tabIndex = -1;
+
+        const switcher = document.createElement('div');
+        switcher.className = 'bpw-mode-switch';
+        switcher.setAttribute('role', 'group');
+        switcher.setAttribute('aria-label', 'Dashboard view mode');
+        const experimentLabel = supportsStoryMode() ? 'Studio' : 'Experiment';
+        const experimentDescription = supportsStoryMode() ? 'Overlay + panels' : 'Alternate layout';
+        switcher.innerHTML = [
+            buildModeButton(VIEW_MODES.classic, 'Classic', 'Stacked charts'),
+            buildModeButton(VIEW_MODES.studio, experimentLabel, experimentDescription),
+            supportsStoryMode() ? buildModeButton(VIEW_MODES.story, 'Story', 'Detected phases') : ''
+        ].join('');
+
+        switcher.querySelectorAll('[data-bpw-view-mode]').forEach((btn) => {
+            btn.addEventListener('click', () => setViewMode(btn.getAttribute('data-bpw-view-mode')));
+        });
+        toggleButton.insertAdjacentElement('afterend', switcher);
+    }
+
+    function updateModeSwitches() {
+        const viewMode = getViewMode();
+        document.querySelectorAll('[data-bpw-view-mode]').forEach((btn) => {
+            btn.setAttribute('aria-pressed', btn.getAttribute('data-bpw-view-mode') === viewMode ? 'true' : 'false');
+        });
+    }
+
     function applyMode(mode) {
         const experiment = mode === MODES.experiment;
         document.body.classList.toggle('bpw-layout-experiment', experiment);
@@ -356,6 +405,7 @@
         applyPerspective(experiment ? getPerspective() : PERSPECTIVES.studio);
 
         updateToggleButtons();
+        updateModeSwitches();
 
         if (experiment) {
             initWorkspaceDeck();
@@ -515,11 +565,13 @@
 
     function initToggleButtons() {
         document.querySelectorAll('[data-bpw-layout-toggle]').forEach((btn) => {
+            ensureModeSwitch(btn);
             if (btn.dataset.bpwToggleBound === 'true') return;
             btn.dataset.bpwToggleBound = 'true';
             btn.addEventListener('click', toggleMode);
         });
         updateToggleButtons();
+        updateModeSwitches();
     }
 
     function bootstrap() {
@@ -540,11 +592,14 @@
     global.BpwExperimentLayout = {
         MODES,
         PERSPECTIVES,
+        VIEW_MODES,
         getMode,
         setMode,
         toggleMode,
         applyMode,
         isExperiment,
+        getViewMode,
+        setViewMode,
         getPerspective,
         setPerspective,
         isStoryPerspective,
