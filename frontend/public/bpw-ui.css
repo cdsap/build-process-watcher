@@ -521,6 +521,169 @@ input[type="file"] {
     min-width: 0;
 }
 
+.compare-process-summary {
+    margin: 1rem 0;
+    padding: 1rem;
+    border: 1px solid rgba(184, 132, 20, 0.24);
+    border-radius: 8px;
+    background: rgba(255, 247, 237, 0.86);
+    box-shadow: var(--bpw-shadow);
+}
+
+.compare-process-summary-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 1rem;
+    align-items: end;
+    margin-bottom: 1rem;
+}
+
+.compare-process-summary-head h3 {
+    margin: 0 0 0.2rem;
+    color: var(--bpw-ink);
+    font-size: 1.15rem;
+}
+
+.compare-process-summary-head p {
+    margin: 0;
+    color: var(--bpw-muted);
+    font-size: 0.9rem;
+}
+
+.compare-process-total {
+    min-width: 11rem;
+    padding: 0.7rem 0.8rem;
+    border: 1px solid rgba(184, 132, 20, 0.28);
+    border-radius: 8px;
+    background: #fff;
+}
+
+.compare-process-total span {
+    display: block;
+    color: var(--bpw-muted);
+    font-size: 0.68rem;
+    font-weight: 760;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.compare-process-total strong {
+    display: block;
+    margin-top: 0.15rem;
+    color: var(--bpw-ink);
+    font-size: 1.15rem;
+}
+
+.compare-process-list {
+    display: grid;
+    gap: 0.85rem;
+}
+
+.compare-process-card {
+    padding: 0.9rem;
+    border: 1px solid rgba(22, 26, 29, 0.08);
+    border-radius: 8px;
+    background: #fff;
+}
+
+.compare-process-title {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.compare-process-title span {
+    color: var(--bpw-teal);
+    font-size: 0.7rem;
+    font-weight: 760;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.compare-process-title h4 {
+    margin: 0.12rem 0 0;
+    color: var(--bpw-ink);
+    font-size: 1rem;
+    overflow-wrap: anywhere;
+}
+
+.compare-process-pids {
+    display: grid;
+    gap: 0.25rem;
+    text-align: right;
+}
+
+.compare-process-pids span {
+    color: var(--bpw-muted);
+    font-size: 0.76rem;
+    font-weight: 650;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.compare-process-grid {
+    display: grid;
+    gap: 0.35rem;
+}
+
+.compare-process-grid-head,
+.compare-process-metric {
+    display: grid;
+    grid-template-columns: minmax(7rem, 1fr) repeat(3, minmax(6rem, 0.8fr));
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.compare-process-grid-head {
+    color: var(--bpw-muted);
+    font-size: 0.68rem;
+    font-weight: 760;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.compare-process-metric {
+    padding: 0.5rem;
+    border: 1px solid rgba(22, 26, 29, 0.06);
+    border-radius: 8px;
+    background: var(--bpw-panel-soft);
+}
+
+.compare-process-metric span {
+    color: var(--bpw-muted);
+    font-size: 0.75rem;
+    font-weight: 720;
+}
+
+.compare-process-metric strong,
+.compare-process-metric em {
+    color: var(--bpw-ink);
+    font-size: 0.84rem;
+    font-style: normal;
+    font-weight: 760;
+}
+
+.compare-process-metric em.up {
+    color: var(--bpw-coral);
+}
+
+.compare-process-metric em.down {
+    color: var(--bpw-green);
+}
+
+.compare-process-details {
+    display: grid;
+    gap: 0.45rem;
+    margin-top: 0.7rem;
+}
+
+.compare-process-flags summary {
+    color: var(--bpw-teal);
+    cursor: pointer;
+    font-weight: 730;
+}
+
 .loading,
 .error,
 .not-found {
@@ -569,6 +732,19 @@ footer {
     .process-badges {
         justify-content: flex-start;
     }
+
+    .compare-process-summary-head,
+    .compare-process-title {
+        grid-template-columns: 1fr;
+    }
+
+    .compare-process-total {
+        min-width: 0;
+    }
+
+    .compare-process-pids {
+        text-align: left;
+    }
 }
 
 @media (max-width: 560px) {
@@ -588,5 +764,16 @@ footer {
     .process-metric-grid,
     .process-detail-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .compare-process-grid {
+        overflow-x: auto;
+        padding-bottom: 0.2rem;
+    }
+
+    .compare-process-grid-head,
+    .compare-process-metric {
+        grid-template-columns: minmax(6rem, 1fr) repeat(3, minmax(4.5rem, 0.8fr));
+        min-width: 34rem;
     }
 }

@@ -953,6 +953,16 @@
         return value.toFixed(digits);
     }
 
+    function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        }[char]));
+    }
+
     function formatDelta(value, digits = 1) {
         if (value === null || value === undefined || Number.isNaN(value)) return 'N/A';
         const sign = value > 0 ? '+' : '';
@@ -970,83 +980,103 @@
     function buildCompareSummaryHtml({ baseLabel, compareLabel, baseProcessSummary, compareProcessSummary }) {
         const baseSummary = baseProcessSummary;
         const compareSummary = compareProcessSummary;
-        if (!baseSummary || !compareSummary) {
-            return '';
-        }
+        if (!baseSummary || !compareSummary) return '';
 
-        const buildTable = (summary, label) => {
-            const entries = Object.values(summary.byName || {});
-            if (!entries.length) return '';
-            const rows = entries
-                .slice()
-                .sort((a, b) => (b.durationSeconds || 0) - (a.durationSeconds || 0))
-                .map(item => {
-                    const flagList = (item.vmFlags || []).length
-                        ? `
-                            <details>
-                                <summary class="meta">View flags (${item.vmFlags.length})</summary>
-                                <div class="vm-flags-list" style="margin-top: 0.35rem;">
-                                    ${item.vmFlags.map(flag => `<span class="vm-flag">${flag}</span>`).join('')}
-                                </div>
-                            </details>
-                        `
-                        : '<span class="meta">No VM flags</span>';
-                    const pidList = (item.pids || []).length ? item.pids.join(', ') : 'N/A';
-                    return `
-                        <tr>
-                            <td style="padding: 0.5rem; font-weight: 600;">${item.name}</td>
-                            <td style="padding: 0.5rem;">${pidList}</td>
-                            <td style="padding: 0.5rem;">${formatValue(item.heapMaxGiB, 2)}</td>
-                            <td style="padding: 0.5rem;">${formatValue(item.maxRss, 1)} MB</td>
-                            <td style="padding: 0.5rem;">${formatValue(item.maxHeap, 1)} MB</td>
-                            <td style="padding: 0.5rem;">${formatValue(item.totalGCTime, 3)} s</td>
-                            <td style="padding: 0.5rem;">${formatValue(item.finalCompiledMethods, 0)}</td>
-                            <td style="padding: 0.5rem;">${item.finalJITTimeMs === null ? 'N/A' : formatValue(item.finalJITTimeMs / 1000, 3) + ' s'}</td>
-                            <td style="padding: 0.5rem;">${formatValue(item.finalClassesLoaded, 0)}</td>
-                            <td style="padding: 0.5rem;">${formatValue(item.durationSeconds, 1)} s</td>
-                            <td style="padding: 0.5rem;">${flagList}</td>
-                        </tr>
-                    `;
-                }).join('');
+        const baseByName = baseSummary.byName || {};
+        const compareByName = compareSummary.byName || {};
+        const names = [...new Set([...Object.keys(baseByName), ...Object.keys(compareByName)])]
+            .sort((a, b) => getProcessType(a).localeCompare(getProcessType(b)) || a.localeCompare(b));
+        if (!names.length) return '';
 
+        const safeBaseLabel = escapeHtml(baseLabel);
+        const safeCompareLabel = escapeHtml(compareLabel);
+        const readMetric = (entry, key) => {
+            if (!entry) return null;
+            if (key === 'jitTimeSeconds') {
+                return entry.finalJITTimeMs === null || entry.finalJITTimeMs === undefined ? null : entry.finalJITTimeMs / 1000;
+            }
+            return entry[key] === undefined ? null : entry[key];
+        };
+        const formatMetric = (value, decimals, suffix) => {
+            if (value === null || value === undefined || Number.isNaN(Number(value))) return 'N/A';
+            return `${formatValue(value, decimals)}${suffix || ''}`;
+        };
+        const deltaClass = (delta) => {
+            if (!Number.isFinite(delta) || delta === 0) return 'neutral';
+            return delta > 0 ? 'up' : 'down';
+        };
+        const renderMetric = (label, key, decimals, suffix, baseEntry, compareEntry) => {
+            const baseValue = readMetric(baseEntry, key);
+            const compareValue = readMetric(compareEntry, key);
+            const delta = baseValue !== null && compareValue !== null ? compareValue - baseValue : null;
             return `
-                <div style="margin-top: 1rem; padding: 1rem; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 0.75rem;">
-                    <h4 style="margin-bottom: 0.75rem;">${label}</h4>
-                    <div style="overflow-x: auto;">
-                        <table style="width: 100%; border-collapse: collapse; min-width: 720px;">
-                            <thead>
-                                <tr style="text-align: left; border-bottom: 1px solid #e5e7eb;">
-                                    <th style="padding: 0.5rem;">Process</th>
-                                    <th style="padding: 0.5rem;">PIDs</th>
-                                    <th style="padding: 0.5rem;">Heap Max (GiB)</th>
-                                    <th style="padding: 0.5rem;">Max RSS (MB)</th>
-                                    <th style="padding: 0.5rem;">Max Heap (MB)</th>
-                                    <th style="padding: 0.5rem;">Total GC (s)</th>
-                                    <th style="padding: 0.5rem;">Compiled Methods</th>
-                                    <th style="padding: 0.5rem;">JIT Time</th>
-                                    <th style="padding: 0.5rem;">Classes Loaded</th>
-                                    <th style="padding: 0.5rem;">Duration (s)</th>
-                                    <th style="padding: 0.5rem;">VM Flags</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${rows}
-                            </tbody>
-                        </table>
-                    </div>
+                <div class="compare-process-metric">
+                    <span>${label}</span>
+                    <strong>${formatMetric(baseValue, decimals, suffix)}</strong>
+                    <strong>${formatMetric(compareValue, decimals, suffix)}</strong>
+                    <em class="${deltaClass(delta)}">${delta === null ? 'N/A' : `${delta > 0 ? '+' : ''}${formatValue(delta, decimals)}${suffix || ''}`}</em>
                 </div>
             `;
         };
+        const renderFlags = (entry, label) => {
+            const flags = entry?.vmFlags || [];
+            if (!flags.length) return `<span class="meta">${label}: no VM flags</span>`;
+            return `
+                <details class="compare-process-flags">
+                    <summary>${label}: VM flags (${flags.length})</summary>
+                    <div class="vm-flags-list">${flags.map(flag => `<span class="vm-flag">${escapeHtml(flag)}</span>`).join('')}</div>
+                </details>
+            `;
+        };
 
-        const baseTable = buildTable(baseSummary, baseLabel);
-        const compareTable = buildTable(compareSummary, compareLabel);
-        if (!baseTable && !compareTable) return '';
+        const cards = names.map((name) => {
+            const baseEntry = baseByName[name] || null;
+            const compareEntry = compareByName[name] || null;
+            const safeName = escapeHtml(name);
+            const safeType = escapeHtml(getProcessType(name));
+            const basePids = baseEntry?.pids?.length ? baseEntry.pids.map(escapeHtml).join(', ') : 'missing';
+            const comparePids = compareEntry?.pids?.length ? compareEntry.pids.map(escapeHtml).join(', ') : 'missing';
+            return `
+                <article class="compare-process-card">
+                    <div class="compare-process-title">
+                        <div>
+                            <span>${safeType}</span>
+                            <h4>${safeName}</h4>
+                        </div>
+                        <div class="compare-process-pids">
+                            <span>${safeBaseLabel}: ${basePids}</span>
+                            <span>${safeCompareLabel}: ${comparePids}</span>
+                        </div>
+                    </div>
+                    <div class="compare-process-grid">
+                        <div class="compare-process-grid-head"><span>Metric</span><strong>${safeBaseLabel}</strong><strong>${safeCompareLabel}</strong><em>Delta</em></div>
+                        ${renderMetric('Max RSS', 'maxRss', 1, ' MB', baseEntry, compareEntry)}
+                        ${renderMetric('Max Heap', 'maxHeap', 1, ' MB', baseEntry, compareEntry)}
+                        ${renderMetric('GC time', 'totalGCTime', 3, ' s', baseEntry, compareEntry)}
+                        ${renderMetric('Duration', 'durationSeconds', 1, ' s', baseEntry, compareEntry)}
+                        ${renderMetric('Compiled', 'finalCompiledMethods', 0, '', baseEntry, compareEntry)}
+                        ${renderMetric('JIT time', 'jitTimeSeconds', 3, ' s', baseEntry, compareEntry)}
+                        ${renderMetric('Classes', 'finalClassesLoaded', 0, '', baseEntry, compareEntry)}
+                    </div>
+                    <div class="compare-process-details">
+                        ${renderFlags(baseEntry, safeBaseLabel)}
+                        ${renderFlags(compareEntry, safeCompareLabel)}
+                    </div>
+                </article>
+            `;
+        }).join('');
 
+        const peakDelta = (compareSummary.overallMaxRss || 0) - (baseSummary.overallMaxRss || 0);
         return `
-            <div style="margin: 1rem 0; padding: 1rem; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 0.75rem;">
-                <h3 style="margin-bottom: 0.5rem;">Process Summary</h3>
-                ${baseTable}
-                ${compareTable}
+            <div class="compare-process-summary">
+                <div class="compare-process-summary-head">
+                    <div>
+                        <h3>Process Comparison</h3>
+                        <p>Grouped by process name, with ${safeCompareLabel} deltas against ${safeBaseLabel}.</p>
+                    </div>
+                    <div class="compare-process-total"><span>Peak RSS delta</span><strong>${peakDelta > 0 ? '+' : ''}${formatValue(peakDelta, 1)} MB</strong></div>
+                </div>
+                <div class="compare-process-list">${cards}</div>
             </div>
         `;
     }

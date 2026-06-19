@@ -44,10 +44,6 @@
             compareProcessSummary: summaryB
         });
         updateHint('Comparison rendered below. Use the replay controls to inspect changes over time.');
-        if (window.BpwExperimentLayout) {
-            BpwExperimentLayout.initToggleButtons();
-            BpwExperimentLayout.applyMode(BpwExperimentLayout.getMode());
-        }
     }
 
     function handleFileChange(input, setSamples, setSummary, setName) {
