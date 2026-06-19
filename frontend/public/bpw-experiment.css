@@ -1,5 +1,12 @@
 /* Experimental workspace layout — toggled via body.bpw-layout-experiment */
 
+body.bpw-layout-classic #bpw-workspace-deck,
+body.bpw-layout-classic #bpw-unified-replay,
+body.bpw-layout-classic #bpw-chart-studio,
+body.bpw-layout-classic #bpw-build-story {
+    display: none !important;
+}
+
 /* Chart studio — overlay composer */
 .bpw-chart-studio {
     margin-bottom: 1rem;
