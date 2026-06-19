@@ -977,6 +977,48 @@
         return 'Other';
     }
 
+    const GC_COLLECTOR_FLAGS = [
+        { flag: 'UseG1GC', label: 'G1' },
+        { flag: 'UseZGC', label: 'ZGC' },
+        { flag: 'UseShenandoahGC', label: 'Shenandoah' },
+        { flag: 'UseParallelGC', label: 'Parallel' },
+        { flag: 'UseSerialGC', label: 'Serial' },
+        { flag: 'UseConcMarkSweepGC', label: 'CMS' },
+        { flag: 'UseEpsilonGC', label: 'Epsilon' }
+    ];
+
+    const GC_FLAG_PATTERN = /(?:^-(?:Xlog:gc|verbose:gc)|(?:GC|G1|ZGC|ZCollection|Shenandoah|MaxGCPauseMillis|InitiatingHeapOccupancyPercent|ConcGCThreads|ParallelGCThreads|SurvivorRatio|TenuringThreshold|ExplicitGC))/i;
+
+    function normalizeFlags(vmFlags) {
+        if (!Array.isArray(vmFlags)) return [];
+        return [...new Set(vmFlags.filter(Boolean).map(flag => String(flag)))].sort((a, b) => a.localeCompare(b));
+    }
+
+    function getGcType(vmFlags) {
+        const flags = normalizeFlags(vmFlags);
+        const disabledCollectors = new Set(flags
+            .map(flag => flag.match(/^-XX:-([A-Za-z0-9]+GC)$/)?.[1])
+            .filter(Boolean));
+        const enabled = GC_COLLECTOR_FLAGS
+            .filter(({ flag }) => !disabledCollectors.has(flag) && flags.some(entry => entry.includes(`+${flag}`)))
+            .map(({ label }) => label);
+        return enabled.length ? enabled.join(' + ') : 'Default';
+    }
+
+    function getGcFlags(vmFlags) {
+        return normalizeFlags(vmFlags).filter(flag => GC_FLAG_PATTERN.test(flag));
+    }
+
+    function diffFlags(baseFlags, compareFlags) {
+        const baseSet = new Set(baseFlags);
+        const compareSet = new Set(compareFlags);
+        return {
+            added: compareFlags.filter(flag => !baseSet.has(flag)),
+            removed: baseFlags.filter(flag => !compareSet.has(flag)),
+            shared: compareFlags.filter(flag => baseSet.has(flag))
+        };
+    }
+
     function buildCompareSummaryHtml({ baseLabel, compareLabel, baseProcessSummary, compareProcessSummary }) {
         const baseSummary = baseProcessSummary;
         const compareSummary = compareProcessSummary;
@@ -1018,6 +1060,19 @@
                 </div>
             `;
         };
+        const renderTextMetric = (label, baseValue, compareValue) => {
+            const safeBaseValue = escapeHtml(baseValue);
+            const safeCompareValue = escapeHtml(compareValue);
+            const changed = baseValue !== compareValue;
+            return `
+                <div class="compare-process-metric">
+                    <span>${label}</span>
+                    <strong>${safeBaseValue}</strong>
+                    <strong>${safeCompareValue}</strong>
+                    <em class="${changed ? 'changed' : 'neutral'}">${changed ? 'Changed' : 'Same'}</em>
+                </div>
+            `;
+        };
         const renderFlags = (entry, label) => {
             const flags = entry?.vmFlags || [];
             if (!flags.length) return `<span class="meta">${label}: no VM flags</span>`;
@@ -1028,6 +1083,36 @@
                 </details>
             `;
         };
+        const renderGcFlagDiff = (baseEntry, compareEntry) => {
+            const diff = diffFlags(getGcFlags(baseEntry?.vmFlags), getGcFlags(compareEntry?.vmFlags));
+            const renderGroup = (label, flags, className) => {
+                if (!flags.length) return '';
+                return `
+                    <div class="compare-process-flag-group ${className}">
+                        <span>${label}</span>
+                        <div class="vm-flags-list">${flags.map(flag => `<span class="vm-flag">${escapeHtml(flag)}</span>`).join('')}</div>
+                    </div>
+                `;
+            };
+            if (!diff.added.length && !diff.removed.length) {
+                const sharedText = diff.shared.length
+                    ? `${diff.shared.length} shared GC flag${diff.shared.length === 1 ? '' : 's'}`
+                    : 'No explicit GC flags in either run';
+                return `
+                    <div class="compare-process-flag-diff">
+                        <strong>GC flag differences</strong>
+                        <span class="meta">${sharedText}; no changes detected.</span>
+                    </div>
+                `;
+            }
+            return `
+                <div class="compare-process-flag-diff">
+                    <strong>GC flag differences</strong>
+                    ${renderGroup(`Added in ${safeCompareLabel}`, diff.added, 'added')}
+                    ${renderGroup(`Removed from ${safeBaseLabel}`, diff.removed, 'removed')}
+                </div>
+            `;
+        };
 
         const cards = names.map((name) => {
             const baseEntry = baseByName[name] || null;
@@ -1036,6 +1121,8 @@
             const safeType = escapeHtml(getProcessType(name));
             const basePids = baseEntry?.pids?.length ? baseEntry.pids.map(escapeHtml).join(', ') : 'missing';
             const comparePids = compareEntry?.pids?.length ? compareEntry.pids.map(escapeHtml).join(', ') : 'missing';
+            const baseGcType = baseEntry ? getGcType(baseEntry.vmFlags) : 'N/A';
+            const compareGcType = compareEntry ? getGcType(compareEntry.vmFlags) : 'N/A';
             return `
                 <article class="compare-process-card">
                     <div class="compare-process-title">
@@ -1052,6 +1139,7 @@
                         <div class="compare-process-grid-head"><span>Metric</span><strong>${safeBaseLabel}</strong><strong>${safeCompareLabel}</strong><em>Delta</em></div>
                         ${renderMetric('Max RSS', 'maxRss', 1, ' MB', baseEntry, compareEntry)}
                         ${renderMetric('Max Heap', 'maxHeap', 1, ' MB', baseEntry, compareEntry)}
+                        ${renderTextMetric('GC type', baseGcType, compareGcType)}
                         ${renderMetric('GC time', 'totalGCTime', 3, ' s', baseEntry, compareEntry)}
                         ${renderMetric('Duration', 'durationSeconds', 1, ' s', baseEntry, compareEntry)}
                         ${renderMetric('Compiled', 'finalCompiledMethods', 0, '', baseEntry, compareEntry)}
@@ -1059,6 +1147,7 @@
                         ${renderMetric('Classes', 'finalClassesLoaded', 0, '', baseEntry, compareEntry)}
                     </div>
                     <div class="compare-process-details">
+                        ${renderGcFlagDiff(baseEntry, compareEntry)}
                         ${renderFlags(baseEntry, safeBaseLabel)}
                         ${renderFlags(compareEntry, safeCompareLabel)}
                     </div>
@@ -1653,6 +1742,9 @@
         getOverlayConfig,
         METRIC_CATALOG,
         OVERLAY_PRESETS,
+        getGcType,
+        getGcFlags,
+        diffFlags,
         parseCsvText,
         parseJsonText,
         buildProcessSummary,

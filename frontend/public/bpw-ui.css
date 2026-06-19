@@ -672,10 +672,51 @@ input[type="file"] {
     color: var(--bpw-green);
 }
 
+.compare-process-metric em.changed {
+    color: var(--bpw-coral);
+}
+
 .compare-process-details {
     display: grid;
     gap: 0.45rem;
     margin-top: 0.7rem;
+}
+
+.compare-process-flag-diff {
+    display: grid;
+    gap: 0.45rem;
+    padding: 0.65rem;
+    border: 1px solid rgba(8, 127, 140, 0.16);
+    border-radius: 8px;
+    background: rgba(233, 246, 247, 0.58);
+}
+
+.compare-process-flag-diff > strong {
+    color: var(--bpw-ink);
+    font-size: 0.82rem;
+}
+
+.compare-process-flag-group {
+    display: grid;
+    gap: 0.3rem;
+}
+
+.compare-process-flag-group > span {
+    color: var(--bpw-muted);
+    font-size: 0.72rem;
+    font-weight: 760;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.compare-process-flag-group.added .vm-flag {
+    border-color: rgba(36, 123, 91, 0.28);
+    background: rgba(36, 123, 91, 0.08) !important;
+}
+
+.compare-process-flag-group.removed .vm-flag {
+    border-color: rgba(201, 81, 61, 0.28);
+    background: rgba(201, 81, 61, 0.08) !important;
 }
 
 .compare-process-flags summary {

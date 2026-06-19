@@ -70,4 +70,22 @@ describe('JIT and class loading series', () => {
     expect(layout.yaxis.title).toBe('Memory (MB)');
     expect(layout.yaxis2.title).toBe('GC Time (s)');
   });
+
+  it('derives GC collector type from VM flags', () => {
+    expect(shared.getGcType(['-XX:+UseG1GC', '-XX:MaxGCPauseMillis=200'])).toBe('G1');
+    expect(shared.getGcType(['-XX:+UseZGC'])).toBe('ZGC');
+    expect(shared.getGcType(['-Xmx2g'])).toBe('Default');
+  });
+
+  it('isolates GC-related flag differences', () => {
+    const baseFlags = shared.getGcFlags(['-XX:+UseG1GC', '-XX:MaxGCPauseMillis=200', '-Xmx2g']);
+    const compareFlags = shared.getGcFlags(['-XX:+UseZGC', '-XX:MaxGCPauseMillis=200', '-XX:+DisableExplicitGC']);
+    expect(baseFlags).toEqual(['-XX:+UseG1GC', '-XX:MaxGCPauseMillis=200']);
+    expect(compareFlags).toEqual(['-XX:+DisableExplicitGC', '-XX:+UseZGC', '-XX:MaxGCPauseMillis=200']);
+    expect(shared.diffFlags(baseFlags, compareFlags)).toEqual({
+      added: ['-XX:+DisableExplicitGC', '-XX:+UseZGC'],
+      removed: ['-XX:+UseG1GC'],
+      shared: ['-XX:MaxGCPauseMillis=200'],
+    });
+  });
 });
