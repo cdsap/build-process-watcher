@@ -97,6 +97,10 @@ act -W .github/workflows/test-action-local.yml -j local-mode
 - `build_process_watcher.log` - Raw memory data
 - `memory_usage.svg` - SVG chart
 - `gc_time.svg` - GC time chart
+- `jit_compilation.svg` - JIT compiled methods chart when JIT metrics are available
+- `class_loading.svg` - Classes loaded chart when class-loading metrics are available
+- `build_process_watcher.json` - Replay/Compare-compatible data export
+- `build_process_watcher.csv` - Tabular metrics export
 - GitHub Actions job summary with Mermaid chart
 
 ### Remote Mode
