@@ -694,7 +694,9 @@ async function markProcessAsFinished(runId: string): Promise<void> {
     try {
         let backendUrl = '';
         const workspaceDir = process.env.GITHUB_WORKSPACE;
-        const candidateDirs = [process.cwd(), workspaceDir].filter(Boolean) as string[];
+        const runnerTempDir = process.env.RUNNER_TEMP;
+        const runIdTempDir = runnerTempDir && runId ? path.join(runnerTempDir, 'build-process-watcher', runId) : '';
+        const candidateDirs = [process.cwd(), workspaceDir, runIdTempDir].filter(Boolean) as string[];
         for (const dir of candidateDirs) {
             const backendFile = path.join(dir, '.build-process-watcher-backend-url');
             if (fs.existsSync(backendFile)) {
@@ -834,6 +836,43 @@ function releaseLock(): void {
     }
 }
 
+function removeIfExists(filePath: string, debugMode: boolean): void {
+    try {
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+            if (debugMode) {
+                console.log(`🧹 Removed temporary file: ${filePath}`);
+            }
+        }
+    } catch (error) {
+        if (debugMode) {
+            console.log(`⚠️  Could not remove temporary file ${filePath}: ${error instanceof Error ? error.message : error}`);
+        }
+    }
+}
+
+function cleanupWorkspaceLeftovers(logFile: string | null, debugMode: boolean): void {
+    const workspaceDir = process.env.GITHUB_WORKSPACE;
+    const runnerTempDir = process.env.RUNNER_TEMP;
+    const runId = process.env.RUN_ID;
+    const runTempDir = runnerTempDir && runId ? path.join(runnerTempDir, 'build-process-watcher', runId) : '';
+    const candidateDirs = [process.cwd(), workspaceDir, runnerTempDir, runTempDir].filter((dir): dir is string => Boolean(dir));
+    const stateFiles = [
+        '.build-process-watcher-backend-url',
+        '.build-process-watcher-frontend-url',
+        '.build-process-watcher-run-id'
+    ];
+
+    candidateDirs.forEach(dir => {
+        stateFiles.forEach(file => removeIfExists(path.join(dir, file), debugMode));
+    });
+
+    if (logFile) {
+        removeIfExists(logFile, debugMode);
+        removeIfExists(logFile.replace(/\.log$/, '.process_info'), debugMode);
+    }
+}
+
 async function run() {
     // Prevent multiple cleanup executions using file-based lock
     if (!acquireLock()) {
@@ -843,11 +882,13 @@ async function run() {
         }
         return;
     }
+    const debugMode = process.env.DEBUG_MODE === 'true';
+    const isTrapHandler = process.env.CLEANUP_FROM_TRAP === 'true';
+    let resolvedLogFile: string | null = null;
     
     try {
         
         // Check debug mode from environment variable
-        const debugMode = process.env.DEBUG_MODE === 'true';
         
         // Kill the monitor process if it's still running
         try {
@@ -875,10 +916,16 @@ async function run() {
             try {
                 const cwdRunIdFile = path.join(process.cwd(), '.build-process-watcher-run-id');
                 const workspaceDir = process.env.GITHUB_WORKSPACE;
+                const runnerTempDir = process.env.RUNNER_TEMP;
+                const tempRunIdDir = runnerTempDir ? path.join(runnerTempDir, 'build-process-watcher') : '';
                 const workspaceRunIdFile = workspaceDir
                     ? path.join(workspaceDir, '.build-process-watcher-run-id')
                     : '';
-                const candidateFiles = [cwdRunIdFile, workspaceRunIdFile].filter(Boolean);
+                const tempRunIdFiles = tempRunIdDir && fs.existsSync(tempRunIdDir)
+                    ? fs.readdirSync(tempRunIdDir)
+                        .map(entry => path.join(tempRunIdDir, entry, '.build-process-watcher-run-id'))
+                    : [];
+                const candidateFiles = [cwdRunIdFile, workspaceRunIdFile, ...tempRunIdFiles].filter(Boolean);
 
                 for (const runIdFile of candidateFiles) {
                     if (fs.existsSync(runIdFile)) {
@@ -1016,12 +1063,16 @@ async function run() {
         let logFile = logFileName;
         if (!path.isAbsolute(logFileName)) {
             const workspaceDir = process.env.GITHUB_WORKSPACE;
+            const runnerTempDir = process.env.RUNNER_TEMP;
+            const runTempDir = runnerTempDir && runId ? path.join(runnerTempDir, 'build-process-watcher', runId) : '';
             const candidates = [
+                runTempDir ? path.join(runTempDir, logFileName) : '',
                 path.join(actionDir, '..', logFileName),
                 workspaceDir ? path.join(workspaceDir, logFileName) : ''
             ].filter(Boolean);
             logFile = candidates.find(candidate => fs.existsSync(candidate)) || candidates[0];
         }
+        resolvedLogFile = logFile;
         const backendMode = process.env.ENABLE_BACKEND === 'true';
         
         if (debugMode) {
@@ -1046,7 +1097,9 @@ async function run() {
                 let frontendUrl = '';
                 let explicitFrontendUrl = '';
                 const workspaceDir = process.env.GITHUB_WORKSPACE;
-                const candidateDirs = [process.cwd(), workspaceDir].filter(Boolean) as string[];
+                const runnerTempDir = process.env.RUNNER_TEMP;
+                const runTempDir = runnerTempDir && runId ? path.join(runnerTempDir, 'build-process-watcher', runId) : '';
+                const candidateDirs = [process.cwd(), workspaceDir, runTempDir].filter(Boolean) as string[];
                 for (const dir of candidateDirs) {
                     const frontendFile = path.join(dir, '.build-process-watcher-frontend-url');
                     if (fs.existsSync(frontendFile)) {
@@ -1147,7 +1200,6 @@ async function run() {
         
         // Check if we're being called from a trap handler (they set a marker env var)
         // or if we're the first cleanup (post action) - only upload once
-        const isTrapHandler = process.env.CLEANUP_FROM_TRAP === 'true';
         const shouldUpload = !isTrapHandler && isGitHubActions && hasRuntimeToken;
         
         if (shouldUpload) {
@@ -1356,6 +1408,9 @@ ${hasClassData ? `\n> Class loading chart is available in the artifacts as \`${c
         console.error('Error during cleanup:', error);
         process.exit(1);
     } finally {
+        if (!isTrapHandler) {
+            cleanupWorkspaceLeftovers(resolvedLogFile, debugMode);
+        }
         // Always release the lock
         releaseLock();
     }
