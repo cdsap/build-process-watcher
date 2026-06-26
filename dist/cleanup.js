@@ -214638,10 +214638,29 @@ function removeIfExists(filePath, debugMode) {
         }
     }
 }
+function copyIfExists(sourcePath, destinationDir, debugMode) {
+    try {
+        if (!fs.existsSync(sourcePath))
+            return;
+        const destinationPath = path.join(destinationDir, path.basename(sourcePath));
+        if (path.resolve(sourcePath) === path.resolve(destinationPath))
+            return;
+        fs.copyFileSync(sourcePath, destinationPath);
+        if (debugMode) {
+            console.log(`📦 Copied artifact to workspace: ${destinationPath}`);
+        }
+    }
+    catch (error) {
+        if (debugMode) {
+            console.log(`⚠️  Could not copy artifact ${sourcePath}: ${error instanceof Error ? error.message : error}`);
+        }
+    }
+}
 function cleanupWorkspaceLeftovers(logFile, debugMode) {
     const workspaceDir = process.env.GITHUB_WORKSPACE;
     const runnerTempDir = process.env.RUNNER_TEMP;
     const runId = process.env.RUN_ID;
+    const defaultLogFile = process.env.BPW_LOG_FILE_DEFAULT !== 'false';
     const runTempDir = runnerTempDir && runId ? path.join(runnerTempDir, 'build-process-watcher', runId) : '';
     const candidateDirs = [process.cwd(), workspaceDir, runnerTempDir, runTempDir].filter((dir) => Boolean(dir));
     const stateFiles = [
@@ -214652,9 +214671,22 @@ function cleanupWorkspaceLeftovers(logFile, debugMode) {
     candidateDirs.forEach(dir => {
         stateFiles.forEach(file => removeIfExists(path.join(dir, file), debugMode));
     });
-    if (logFile) {
+    if (logFile && defaultLogFile) {
         removeIfExists(logFile, debugMode);
         removeIfExists(logFile.replace(/\.log$/, '.process_info'), debugMode);
+    }
+    if (workspaceDir && runId && defaultLogFile) {
+        const outputSuffix = `-${runId}`;
+        [
+            'build_process_watcher.log',
+            'build_process_watcher.process_info',
+            `memory_usage${outputSuffix}.svg`,
+            `gc_time${outputSuffix}.svg`,
+            `jit_compilation${outputSuffix}.svg`,
+            `class_loading${outputSuffix}.svg`,
+            `build_process_watcher${outputSuffix}.csv`,
+            `build_process_watcher${outputSuffix}.json`
+        ].forEach(file => removeIfExists(path.join(workspaceDir, file), debugMode));
     }
 }
 async function run() {
@@ -214952,6 +214984,19 @@ async function run() {
         }
         generateCsvReport(logFile, path.join(outputDir, csvFile), hasGcData);
         (0, report_1.generateJsonReport)(logFile, path.join(outputDir, jsonFile), hasGcData);
+        const workspaceDir = process.env.GITHUB_WORKSPACE;
+        if (workspaceDir && path.resolve(outputDir) !== path.resolve(workspaceDir)) {
+            [
+                logFile,
+                logFile.replace(/\.log$/, '.process_info'),
+                path.join(outputDir, memorySvgFile),
+                path.join(outputDir, gcSvgFile),
+                path.join(outputDir, jitSvgFile),
+                path.join(outputDir, classSvgFile),
+                path.join(outputDir, csvFile),
+                path.join(outputDir, jsonFile)
+            ].forEach(file => copyIfExists(file, workspaceDir, debugMode));
+        }
         // Upload artifacts (only if files exist)
         // Only upload artifacts if we're in a GitHub Actions context and have runtime token
         // When called from script trap, we might not have the token, so skip upload

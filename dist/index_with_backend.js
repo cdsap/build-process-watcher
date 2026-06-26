@@ -25763,6 +25763,7 @@ async function run() {
         core.exportVariable('ENABLE_BACKEND', enableBackend.toString());
         core.exportVariable('RUN_ID', runId);
         core.exportVariable('LOG_FILE', logFilePath);
+        core.exportVariable('BPW_LOG_FILE_DEFAULT', defaultLogFile.toString());
         core.exportVariable('DISABLE_SUMMARY_OUTPUT', disableSummaryOutput.toString());
         core.exportVariable('EXPORT_TO_BIGQUERY', exportToBigquery ? 'true' : 'false');
         // Also write RUN_ID to a file as a backup for the post step
@@ -25863,6 +25864,7 @@ async function run() {
             ...process.env,
             RUN_ID: runId,
             LOG_FILE: logFilePath,
+            BPW_LOG_FILE_DEFAULT: defaultLogFile.toString(),
             DEBUG_MODE: debugMode.toString(),
             REMOTE_MONITORING: (enableBackend && backendUrl) ? 'true' : 'false',
             EXPORT_TO_BIGQUERY: exportToBigquery ? 'true' : 'false',
