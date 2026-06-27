@@ -15,12 +15,16 @@ interface ProcessData {
     heapUsed: number[];
     heapCap: number[];
     gcTime?: number[]; // GC time in seconds, optional
+    jitCompiledMethods: Array<number | null>;
+    classesLoaded: Array<number | null>;
 }
 
-function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, timestamps: string[], hasGcData: boolean } {
+function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, timestamps: string[], hasGcData: boolean, hasJitData: boolean, hasClassData: boolean } {
     const processes = new Map<string, ProcessData>();
     const timestamps = new Set<string>();
     let hasGcData = false;
+    let hasJitData = false;
+    let hasClassData = false;
 
     const lines = fs.readFileSync(logFile, 'utf8').split('\n');
     // Skip header lines
@@ -29,14 +33,27 @@ function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, t
         // Support historical 6/7-column records and extended JVM metric records.
         if (parts.length !== 6 && parts.length !== 7 && parts.length !== 14) return;
 
-        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime] = parts;
+        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime, jitCompiled, , , , classesLoaded] = parts;
         const rssValue = parseFloat(rss.replace('MB', ''));
         const heapUsedValue = parseFloat(heapUsed.replace('MB', ''));
         const heapCapValue = parseFloat(heapCap.replace('MB', ''));
         const processKey = `${pid}-${name}`;
+        const parseOptionalMetric = (value: string | undefined): number | null => {
+            if (!value || value === 'N/A') return null;
+            const parsed = Number(value.replace(/s$/, ''));
+            return Number.isFinite(parsed) ? parsed : null;
+        };
 
         if (!processes.has(processKey)) {
-            processes.set(processKey, { timestamps: [], rss: [], heapUsed: [], heapCap: [], gcTime: [] });
+            processes.set(processKey, {
+                timestamps: [],
+                rss: [],
+                heapUsed: [],
+                heapCap: [],
+                gcTime: [],
+                jitCompiledMethods: [],
+                classesLoaded: []
+            });
         }
 
         const processData = processes.get(processKey)!;
@@ -45,6 +62,17 @@ function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, t
         timestamps.add(timestamp);
         processData.heapUsed.push(heapUsedValue);
         processData.heapCap.push(heapCapValue);
+
+        const jitCompiledValue = parseOptionalMetric(jitCompiled);
+        const classesLoadedValue = parseOptionalMetric(classesLoaded);
+        processData.jitCompiledMethods.push(jitCompiledValue);
+        processData.classesLoaded.push(classesLoadedValue);
+        if (jitCompiledValue !== null) {
+            hasJitData = true;
+        }
+        if (classesLoadedValue !== null) {
+            hasClassData = true;
+        }
         
         // Parse GC time if available (7th column)
         if (parts.length >= 7 && gcTime) {
@@ -64,7 +92,7 @@ function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, t
 
     const orderedTimestamps = Array.from(timestamps)
         .sort((a, b) => parseTimestampSeconds(a) - parseTimestampSeconds(b));
-    return { processes, timestamps: orderedTimestamps, hasGcData };
+    return { processes, timestamps: orderedTimestamps, hasGcData, hasJitData, hasClassData };
 }
 
 function generateCsvReport(logFile: string, outputFile: string, hasGcData: boolean): void {
@@ -240,6 +268,132 @@ function lightenHexColor(hex: string, amount: number): string {
     const g = Math.min(255, ((num >> 8) & 0xff) + amount);
     const b = Math.min(255, (num & 0xff) + amount);
     return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+}
+
+function escapeSvgText(value: string): string {
+    return value.replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&apos;'
+    }[char] || char));
+}
+
+function lastNonNull(values: Array<number | null>): number | null {
+    for (let i = values.length - 1; i >= 0; i -= 1) {
+        if (values[i] !== null) {
+            return values[i];
+        }
+    }
+    return null;
+}
+
+function generateMetricSvg(
+    processes: Map<string, ProcessData>,
+    timestamps: string[],
+    options: {
+        title: string;
+        yAxisLabel: string;
+        valueSuffix?: string;
+        noDataMessage: string;
+        metric: (process: ProcessData) => Array<number | null>;
+    }
+): string {
+    const width = 1400;
+    const height = 800;
+    const margin = {
+        top: 60,
+        right: 300,
+        bottom: 100,
+        left: 100
+    };
+    const timestampSeconds = timestamps.map(parseTimestampSeconds);
+    const deltas = timestampSeconds.slice(1).map((value, index) => value - timestampSeconds[index]).filter(delta => delta > 0);
+    const maxGapSeconds = (median(deltas) || 1) * 2;
+    const processColors = [
+        '#E4572E',
+        '#29335C',
+        '#A8C686',
+        '#669BBC',
+        '#F3A712',
+        '#6A4C93',
+        '#43AA8B',
+        '#B370B0',
+    ];
+
+    const seriesByProcess = Array.from(processes.values()).map(process => {
+        const valuesByTimestamp = new Map<string, number>();
+        const values = options.metric(process);
+        process.timestamps.forEach((timestamp, index) => {
+            const value = values[index];
+            if (value !== null && Number.isFinite(value)) {
+                valuesByTimestamp.set(timestamp, value);
+            }
+        });
+        return buildForwardFilledSeries(timestamps, timestampSeconds, valuesByTimestamp, maxGapSeconds);
+    });
+
+    const values = seriesByProcess.flatMap(series => series.filter((value): value is number => value !== null));
+    const maxValue = values.length > 0 ? Math.max(...values) : 0;
+    const yAxisMax = Math.max(1, Math.ceil(maxValue * 1.1));
+    const xScale = (width - margin.left - margin.right) / (timestamps.length - 1) || 1;
+    const yScale = (height - margin.top - margin.bottom) / yAxisMax;
+
+    let svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">\n`;
+    svg += `<rect width="100%" height="100%" fill="#fff"/>\n`;
+    svg += `<text x="${width/2}" y="40" text-anchor="middle" font-size="24" font-weight="bold">${escapeSvgText(options.title)}</text>\n`;
+
+    let gridInterval = 1;
+    if (yAxisMax > 10000) {
+        gridInterval = 5000;
+    } else if (yAxisMax > 1000) {
+        gridInterval = 500;
+    } else if (yAxisMax > 100) {
+        gridInterval = 50;
+    } else if (yAxisMax > 20) {
+        gridInterval = 10;
+    } else if (yAxisMax > 10) {
+        gridInterval = 5;
+    }
+
+    for (let i = 0; i <= yAxisMax; i += gridInterval) {
+        const y = height - margin.bottom - (i * yScale);
+        svg += `<line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" stroke="#e0e0e0" stroke-width="1" stroke-dasharray="5,5"/>\n`;
+        svg += `<text x="${margin.left - 10}" y="${y + 5}" text-anchor="end" font-size="12" fill="#333">${i}${options.valueSuffix || ''}</text>\n`;
+    }
+
+    svg += `<line x1="${margin.left}" y1="${height - margin.bottom}" x2="${width - margin.right}" y2="${height - margin.bottom}" stroke="#333" stroke-width="2"/>\n`;
+    svg += `<line x1="${margin.left}" y1="${height - margin.bottom}" x2="${margin.left}" y2="${margin.top}" stroke="#333" stroke-width="2"/>\n`;
+
+    const labelInterval = Math.ceil(timestamps.length / 15);
+    for (let i = 0; i < timestamps.length; i += labelInterval) {
+        const x = margin.left + (i * xScale);
+        svg += `<text x="${x}" y="${height - margin.bottom + 20}" transform="rotate(45 ${x},${height - margin.bottom + 20})" text-anchor="start" font-size="12" fill="#333">${escapeSvgText(timestamps[i])}</text>\n`;
+    }
+
+    if (maxValue <= 0) {
+        svg += `<text x="${width/2}" y="${height/2}" text-anchor="middle" font-size="18" fill="#64748b">${escapeSvgText(options.noDataMessage)}</text>\n`;
+        svg += '</svg>';
+        return svg;
+    }
+
+    let legendY = margin.top + 30;
+    Array.from(processes.entries()).forEach(([key], idx) => {
+        const series = seriesByProcess[idx];
+        const path = buildPathFromSeries(series, xScale, yScale, height, { left: margin.left, bottom: margin.bottom });
+        if (!path) return;
+        const color = processColors[idx % processColors.length];
+        svg += `<path d="${path}" stroke="${color}" stroke-width="2.5" fill="none" opacity="0.95"/>\n`;
+        svg += `<rect x="${width - margin.right + 40}" y="${legendY - 10}" width="20" height="6" fill="${color}" opacity="0.95"/>\n`;
+        svg += `<text x="${width - margin.right + 70}" y="${legendY - 2}" font-size="14" fill="#333">${escapeSvgText(key)}</text>\n`;
+        legendY += 30;
+    });
+
+    svg += `<text x="${width/2}" y="${height - 10}" text-anchor="middle" font-size="16" fill="#333">Time</text>\n`;
+    svg += `<text x="${margin.left - 60}" y="${height/2}" text-anchor="middle" transform="rotate(-90 ${margin.left - 60},${height/2})" font-size="16" fill="#333">${escapeSvgText(options.yAxisLabel)}</text>\n`;
+    svg += '</svg>';
+    return svg;
 }
 
 function generateSvg(processes: Map<string, ProcessData>, timestamps: string[]): string {
@@ -540,7 +694,9 @@ async function markProcessAsFinished(runId: string): Promise<void> {
     try {
         let backendUrl = '';
         const workspaceDir = process.env.GITHUB_WORKSPACE;
-        const candidateDirs = [process.cwd(), workspaceDir].filter(Boolean) as string[];
+        const runnerTempDir = process.env.RUNNER_TEMP;
+        const runIdTempDir = runnerTempDir && runId ? path.join(runnerTempDir, 'build-process-watcher', runId) : '';
+        const candidateDirs = [process.cwd(), workspaceDir, runIdTempDir].filter(Boolean) as string[];
         for (const dir of candidateDirs) {
             const backendFile = path.join(dir, '.build-process-watcher-backend-url');
             if (fs.existsSync(backendFile)) {
@@ -680,6 +836,74 @@ function releaseLock(): void {
     }
 }
 
+function removeIfExists(filePath: string, debugMode: boolean): void {
+    try {
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+            if (debugMode) {
+                console.log(`🧹 Removed temporary file: ${filePath}`);
+            }
+        }
+    } catch (error) {
+        if (debugMode) {
+            console.log(`⚠️  Could not remove temporary file ${filePath}: ${error instanceof Error ? error.message : error}`);
+        }
+    }
+}
+
+function copyIfExists(sourcePath: string, destinationDir: string, debugMode: boolean): void {
+    try {
+        if (!fs.existsSync(sourcePath)) return;
+        const destinationPath = path.join(destinationDir, path.basename(sourcePath));
+        if (path.resolve(sourcePath) === path.resolve(destinationPath)) return;
+        fs.copyFileSync(sourcePath, destinationPath);
+        if (debugMode) {
+            console.log(`📦 Copied artifact to workspace: ${destinationPath}`);
+        }
+    } catch (error) {
+        if (debugMode) {
+            console.log(`⚠️  Could not copy artifact ${sourcePath}: ${error instanceof Error ? error.message : error}`);
+        }
+    }
+}
+
+function cleanupWorkspaceLeftovers(logFile: string | null, debugMode: boolean): void {
+    const workspaceDir = process.env.GITHUB_WORKSPACE;
+    const runnerTempDir = process.env.RUNNER_TEMP;
+    const runId = process.env.RUN_ID;
+    const defaultLogFile = process.env.BPW_LOG_FILE_DEFAULT !== 'false';
+    const runTempDir = runnerTempDir && runId ? path.join(runnerTempDir, 'build-process-watcher', runId) : '';
+    const candidateDirs = [process.cwd(), workspaceDir, runnerTempDir, runTempDir].filter((dir): dir is string => Boolean(dir));
+    const stateFiles = [
+        '.build-process-watcher-backend-url',
+        '.build-process-watcher-frontend-url',
+        '.build-process-watcher-run-id'
+    ];
+
+    candidateDirs.forEach(dir => {
+        stateFiles.forEach(file => removeIfExists(path.join(dir, file), debugMode));
+    });
+
+    if (logFile && defaultLogFile) {
+        removeIfExists(logFile, debugMode);
+        removeIfExists(logFile.replace(/\.log$/, '.process_info'), debugMode);
+    }
+
+    if (workspaceDir && runId && defaultLogFile) {
+        const outputSuffix = `-${runId}`;
+        [
+            'build_process_watcher.log',
+            'build_process_watcher.process_info',
+            `memory_usage${outputSuffix}.svg`,
+            `gc_time${outputSuffix}.svg`,
+            `jit_compilation${outputSuffix}.svg`,
+            `class_loading${outputSuffix}.svg`,
+            `build_process_watcher${outputSuffix}.csv`,
+            `build_process_watcher${outputSuffix}.json`
+        ].forEach(file => removeIfExists(path.join(workspaceDir, file), debugMode));
+    }
+}
+
 async function run() {
     // Prevent multiple cleanup executions using file-based lock
     if (!acquireLock()) {
@@ -689,11 +913,13 @@ async function run() {
         }
         return;
     }
+    const debugMode = process.env.DEBUG_MODE === 'true';
+    const isTrapHandler = process.env.CLEANUP_FROM_TRAP === 'true';
+    let resolvedLogFile: string | null = null;
     
     try {
         
         // Check debug mode from environment variable
-        const debugMode = process.env.DEBUG_MODE === 'true';
         
         // Kill the monitor process if it's still running
         try {
@@ -721,10 +947,16 @@ async function run() {
             try {
                 const cwdRunIdFile = path.join(process.cwd(), '.build-process-watcher-run-id');
                 const workspaceDir = process.env.GITHUB_WORKSPACE;
+                const runnerTempDir = process.env.RUNNER_TEMP;
+                const tempRunIdDir = runnerTempDir ? path.join(runnerTempDir, 'build-process-watcher') : '';
                 const workspaceRunIdFile = workspaceDir
                     ? path.join(workspaceDir, '.build-process-watcher-run-id')
                     : '';
-                const candidateFiles = [cwdRunIdFile, workspaceRunIdFile].filter(Boolean);
+                const tempRunIdFiles = tempRunIdDir && fs.existsSync(tempRunIdDir)
+                    ? fs.readdirSync(tempRunIdDir)
+                        .map(entry => path.join(tempRunIdDir, entry, '.build-process-watcher-run-id'))
+                    : [];
+                const candidateFiles = [cwdRunIdFile, workspaceRunIdFile, ...tempRunIdFiles].filter(Boolean);
 
                 for (const runIdFile of candidateFiles) {
                     if (fs.existsSync(runIdFile)) {
@@ -862,12 +1094,16 @@ async function run() {
         let logFile = logFileName;
         if (!path.isAbsolute(logFileName)) {
             const workspaceDir = process.env.GITHUB_WORKSPACE;
+            const runnerTempDir = process.env.RUNNER_TEMP;
+            const runTempDir = runnerTempDir && runId ? path.join(runnerTempDir, 'build-process-watcher', runId) : '';
             const candidates = [
+                runTempDir ? path.join(runTempDir, logFileName) : '',
                 path.join(actionDir, '..', logFileName),
                 workspaceDir ? path.join(workspaceDir, logFileName) : ''
             ].filter(Boolean);
             logFile = candidates.find(candidate => fs.existsSync(candidate)) || candidates[0];
         }
+        resolvedLogFile = logFile;
         const backendMode = process.env.ENABLE_BACKEND === 'true';
         
         if (debugMode) {
@@ -892,7 +1128,9 @@ async function run() {
                 let frontendUrl = '';
                 let explicitFrontendUrl = '';
                 const workspaceDir = process.env.GITHUB_WORKSPACE;
-                const candidateDirs = [process.cwd(), workspaceDir].filter(Boolean) as string[];
+                const runnerTempDir = process.env.RUNNER_TEMP;
+                const runTempDir = runnerTempDir && runId ? path.join(runnerTempDir, 'build-process-watcher', runId) : '';
+                const candidateDirs = [process.cwd(), workspaceDir, runTempDir].filter(Boolean) as string[];
                 for (const dir of candidateDirs) {
                     const frontendFile = path.join(dir, '.build-process-watcher-frontend-url');
                     if (fs.existsSync(frontendFile)) {
@@ -930,7 +1168,7 @@ async function run() {
         if (debugMode) {
             console.log('Generating memory usage graph...');
         }
-        const { processes, timestamps, hasGcData } = parseLogFile(logFile);
+        const { processes, timestamps, hasGcData, hasJitData, hasClassData } = parseLogFile(logFile);
         
         // Generate both charts
         const mermaidChart = generateMermaidChart(processes, timestamps);
@@ -940,6 +1178,8 @@ async function run() {
         const outputSuffix = runId ? `-${runId}` : '';
         const memorySvgFile = `memory_usage${outputSuffix}.svg`;
         const gcSvgFile = `gc_time${outputSuffix}.svg`;
+        const jitSvgFile = `jit_compilation${outputSuffix}.svg`;
+        const classSvgFile = `class_loading${outputSuffix}.svg`;
         const csvFile = `build_process_watcher${outputSuffix}.csv`;
         const jsonFile = `build_process_watcher${outputSuffix}.json`;
 
@@ -953,8 +1193,48 @@ async function run() {
         const gcSvgContent = generateGcSvg(processes, timestamps);
         fs.writeFileSync(path.join(outputDir, gcSvgFile), gcSvgContent);
 
+        if (hasJitData) {
+            if (debugMode) {
+                console.log('Generating JIT compilation graph...');
+            }
+            const jitSvgContent = generateMetricSvg(processes, timestamps, {
+                title: 'Build Process JIT Compiled Methods Over Time',
+                yAxisLabel: 'Compiled Methods',
+                noDataMessage: 'No JIT compilation data available',
+                metric: process => process.jitCompiledMethods
+            });
+            fs.writeFileSync(path.join(outputDir, jitSvgFile), jitSvgContent);
+        }
+
+        if (hasClassData) {
+            if (debugMode) {
+                console.log('Generating class loading graph...');
+            }
+            const classSvgContent = generateMetricSvg(processes, timestamps, {
+                title: 'Build Process Classes Loaded Over Time',
+                yAxisLabel: 'Classes Loaded',
+                noDataMessage: 'No class loading data available',
+                metric: process => process.classesLoaded
+            });
+            fs.writeFileSync(path.join(outputDir, classSvgFile), classSvgContent);
+        }
+
         generateCsvReport(logFile, path.join(outputDir, csvFile), hasGcData);
         generateJsonReport(logFile, path.join(outputDir, jsonFile), hasGcData);
+
+        const workspaceDir = process.env.GITHUB_WORKSPACE;
+        if (workspaceDir && path.resolve(outputDir) !== path.resolve(workspaceDir)) {
+            [
+                logFile,
+                logFile.replace(/\.log$/, '.process_info'),
+                path.join(outputDir, memorySvgFile),
+                path.join(outputDir, gcSvgFile),
+                path.join(outputDir, jitSvgFile),
+                path.join(outputDir, classSvgFile),
+                path.join(outputDir, csvFile),
+                path.join(outputDir, jsonFile)
+            ].forEach(file => copyIfExists(file, workspaceDir, debugMode));
+        }
 
         // Upload artifacts (only if files exist)
         // Only upload artifacts if we're in a GitHub Actions context and have runtime token
@@ -965,7 +1245,6 @@ async function run() {
         
         // Check if we're being called from a trap handler (they set a marker env var)
         // or if we're the first cleanup (post action) - only upload once
-        const isTrapHandler = process.env.CLEANUP_FROM_TRAP === 'true';
         const shouldUpload = !isTrapHandler && isGitHubActions && hasRuntimeToken;
         
         if (shouldUpload) {
@@ -991,6 +1270,12 @@ async function run() {
                 }
                 if (fs.existsSync(path.join(outputDir, gcSvgFile))) {
                     files.push(gcSvgFile);
+                }
+                if (fs.existsSync(path.join(outputDir, jitSvgFile))) {
+                    files.push(jitSvgFile);
+                }
+                if (fs.existsSync(path.join(outputDir, classSvgFile))) {
+                    files.push(classSvgFile);
                 }
                 if (fs.existsSync(path.join(outputDir, csvFile))) {
                     files.push(csvFile);
@@ -1091,14 +1376,20 @@ ${Array.from(processes.entries()).map(([key, data]) => {
     const maxProcessRss = Math.max(...data.rss);
     const avgProcessRss = data.rss.reduce((a, b) => a + b, 0) / data.rss.length;
     const lastRss = data.rss[data.rss.length - 1];
+    const jitStats = hasJitData && data.jitCompiledMethods.some(value => value !== null)
+        ? `\n- Last JIT compiled methods: ${lastNonNull(data.jitCompiledMethods) ?? 'N/A'}`
+        : '';
+    const classStats = hasClassData && data.classesLoaded.some(value => value !== null)
+        ? `\n- Last classes loaded: ${lastNonNull(data.classesLoaded) ?? 'N/A'}`
+        : '';
     return `#### ${key}
 - Maximum RSS: ${maxProcessRss.toFixed(2)} MB
 - Average RSS: ${avgProcessRss.toFixed(2)} MB
 - Number of measurements: ${data.rss.length}
-- Last measurement: ${lastRss.toFixed(2)} MB`;
+- Last measurement: ${lastRss.toFixed(2)} MB${jitStats}${classStats}`;
 }).join('\n\n')}
 
-                > Note: A detailed SVG graph and log file are available in the artifacts of this workflow run.`;
+                > Note: Detailed SVG graphs and the log file are available in the artifacts of this workflow run.`;
                 }
 
                 fs.writeFileSync(process.env.GITHUB_STEP_SUMMARY, newSummary);
@@ -1137,15 +1428,23 @@ ${Array.from(processes.entries()).map(([key, data]) => {
             return `\n- Max GC time: ${maxGc.toFixed(3)} s\n- Last GC time: ${lastGc.toFixed(3)} s`;
         })()
         : '';
+    const jitStats = hasJitData && data.jitCompiledMethods.some(value => value !== null)
+        ? `\n- Last JIT compiled methods: ${lastNonNull(data.jitCompiledMethods) ?? 'N/A'}`
+        : '';
+    const classStats = hasClassData && data.classesLoaded.some(value => value !== null)
+        ? `\n- Last classes loaded: ${lastNonNull(data.classesLoaded) ?? 'N/A'}`
+        : '';
     return `#### ${key}
 - Maximum RSS: ${maxProcessRss.toFixed(2)} MB
 - Average RSS: ${avgProcessRss.toFixed(2)} MB
 - Number of measurements: ${data.rss.length}
-- Last measurement: ${lastRss.toFixed(2)} MB${gcStats}`;
+- Last measurement: ${lastRss.toFixed(2)} MB${gcStats}${jitStats}${classStats}`;
 }).join('\n\n')}
 
 ${hasGcData ? `\n> GC chart is available in the artifacts as \`${gcSvgFile}\`.` : ''}
-                > Note: A detailed SVG graph, CSV report, and log file are available in the artifacts of this workflow run.`;
+${hasJitData ? `\n> JIT compilation chart is available in the artifacts as \`${jitSvgFile}\`.` : ''}
+${hasClassData ? `\n> Class loading chart is available in the artifacts as \`${classSvgFile}\`.` : ''}
+                > Note: Detailed SVG graphs, CSV report, JSON report, and log file are available in the artifacts of this workflow run.`;
 
                 fs.writeFileSync(process.env.GITHUB_STEP_SUMMARY, newSummary);
             }
@@ -1154,6 +1453,9 @@ ${hasGcData ? `\n> GC chart is available in the artifacts as \`${gcSvgFile}\`.` 
         console.error('Error during cleanup:', error);
         process.exit(1);
     } finally {
+        if (!isTrapHandler) {
+            cleanupWorkspaceLeftovers(resolvedLogFile, debugMode);
+        }
         // Always release the lock
         releaseLock();
     }

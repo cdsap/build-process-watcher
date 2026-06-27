@@ -25687,6 +25687,7 @@ const exec = __importStar(__nccwpck_require__(5236));
 const child_process_1 = __nccwpck_require__(5317);
 const fs = __importStar(__nccwpck_require__(9896));
 const path = __importStar(__nccwpck_require__(6928));
+const os = __importStar(__nccwpck_require__(857));
 async function run() {
     try {
         let backendUrl = process.env.BACKEND_URL || '';
@@ -25695,9 +25696,15 @@ async function run() {
         const debugMode = core.getInput('debug') === 'true';
         const logFileInput = core.getInput('log_file') || 'build_process_watcher.log';
         const workspaceDir = process.env.GITHUB_WORKSPACE;
-        let logFilePath = !path.isAbsolute(logFileInput) && workspaceDir
-            ? path.join(workspaceDir, logFileInput)
-            : logFileInput;
+        const runnerTempRoot = process.env.RUNNER_TEMP || os.tmpdir();
+        const runnerTempDir = path.join(runnerTempRoot, 'build-process-watcher', runId);
+        fs.mkdirSync(runnerTempDir, { recursive: true });
+        const defaultLogFile = logFileInput === 'build_process_watcher.log';
+        let logFilePath = defaultLogFile
+            ? path.join(runnerTempDir, logFileInput)
+            : !path.isAbsolute(logFileInput) && workspaceDir
+                ? path.join(workspaceDir, logFileInput)
+                : logFileInput;
         if (logFileInput === 'build_process_watcher.log' && fs.existsSync(logFilePath)) {
             const logDir = path.dirname(logFilePath);
             logFilePath = path.join(logDir, `build_process_watcher-${runId}.log`);
@@ -25756,22 +25763,16 @@ async function run() {
         core.exportVariable('ENABLE_BACKEND', enableBackend.toString());
         core.exportVariable('RUN_ID', runId);
         core.exportVariable('LOG_FILE', logFilePath);
+        core.exportVariable('BPW_LOG_FILE_DEFAULT', defaultLogFile.toString());
         core.exportVariable('DISABLE_SUMMARY_OUTPUT', disableSummaryOutput.toString());
         core.exportVariable('EXPORT_TO_BIGQUERY', exportToBigquery ? 'true' : 'false');
         // Also write RUN_ID to a file as a backup for the post step
         // This ensures the post step can always find the RUN_ID even if env vars aren't available
         try {
-            const runIdFile = path.join(process.cwd(), '.build-process-watcher-run-id');
+            const runIdFile = path.join(runnerTempDir, '.build-process-watcher-run-id');
             fs.writeFileSync(runIdFile, runId, 'utf8');
             if (debugMode) {
                 core.info(`💾 Saved RUN_ID to file: ${runIdFile}`);
-            }
-            if (workspaceDir) {
-                const workspaceRunIdFile = path.join(workspaceDir, '.build-process-watcher-run-id');
-                fs.writeFileSync(workspaceRunIdFile, runId, 'utf8');
-                if (debugMode) {
-                    core.info(`💾 Saved RUN_ID to workspace file: ${workspaceRunIdFile}`);
-                }
             }
         }
         catch (error) {
@@ -25782,13 +25783,12 @@ async function run() {
         }
         if (frontendUrl || backendUrl) {
             try {
-                const baseDir = workspaceDir || process.cwd();
                 if (backendUrl) {
-                    fs.writeFileSync(path.join(baseDir, '.build-process-watcher-backend-url'), backendUrl, 'utf8');
+                    fs.writeFileSync(path.join(runnerTempDir, '.build-process-watcher-backend-url'), backendUrl, 'utf8');
                 }
                 if (frontendUrl) {
                     const baseFrontendUrl = frontendUrl.replace(/\/runs\/.*$/, '');
-                    fs.writeFileSync(path.join(baseDir, '.build-process-watcher-frontend-url'), baseFrontendUrl, 'utf8');
+                    fs.writeFileSync(path.join(runnerTempDir, '.build-process-watcher-frontend-url'), baseFrontendUrl, 'utf8');
                 }
             }
             catch (error) {
@@ -25864,6 +25864,7 @@ async function run() {
             ...process.env,
             RUN_ID: runId,
             LOG_FILE: logFilePath,
+            BPW_LOG_FILE_DEFAULT: defaultLogFile.toString(),
             DEBUG_MODE: debugMode.toString(),
             REMOTE_MONITORING: (enableBackend && backendUrl) ? 'true' : 'false',
             EXPORT_TO_BIGQUERY: exportToBigquery ? 'true' : 'false',
