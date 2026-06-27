@@ -105,12 +105,24 @@
         `;
     }
 
+    function ensureStudioMounted(host) {
+        if (!host) return false;
+        if (document.getElementById('bpw-studio-chart')) return true;
+
+        host.innerHTML = buildStudioMarkup(getAvailableMetrics());
+        bindStudioControls();
+        state.bound = true;
+        return Boolean(document.getElementById('bpw-studio-chart'));
+    }
+
     function renderStudio() {
         const host = document.getElementById('bpw-chart-studio');
         if (!host || host.hidden) return Promise.resolve();
+        if (!ensureStudioMounted(host)) return Promise.resolve();
 
         const shared = getShared();
         if (!shared.buildOverlayTraces || !state.replayData) return Promise.resolve();
+        if (typeof Plotly === 'undefined') return Promise.resolve();
 
         const xValues = state.useElapsedAxis ? state.elapsedSeconds : null;
         const traces = shared.applyVisibilityToTraces(
@@ -240,12 +252,10 @@
         const host = document.getElementById('bpw-chart-studio');
         if (!host) return;
 
-        const available = getAvailableMetrics();
         if (!state.bound) {
-            host.innerHTML = buildStudioMarkup(available);
-            bindStudioControls();
-            state.bound = true;
+            ensureStudioMounted(host);
         } else {
+            ensureStudioMounted(host);
             const selectA = document.getElementById('bpw-studio-layer-a');
             const selectB = document.getElementById('bpw-studio-layer-b');
             if (selectA) selectA.value = state.metricA;
