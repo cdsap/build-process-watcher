@@ -12,8 +12,8 @@ function htmlFiles(directory: string): string[] {
 }
 
 describe('frontend script assets', () => {
-  it('includes every local script referenced by an HTML page', () => {
-    const missing: string[] = [];
+  it('serves JavaScript for every local script referenced by an HTML page', () => {
+    const invalid: string[] = [];
 
     for (const htmlFile of htmlFiles(publicDir)) {
       const html = fs.readFileSync(htmlFile, 'utf8');
@@ -24,12 +24,19 @@ describe('frontend script assets', () => {
         const assetPath = source.startsWith('/')
           ? path.join(publicDir, source.slice(1))
           : path.resolve(path.dirname(htmlFile), source);
-        if (!fs.existsSync(assetPath)) {
-          missing.push(`${path.relative(publicDir, htmlFile)}: ${source}`);
+        const reference = `${path.relative(publicDir, htmlFile)}: ${source}`;
+        if (!fs.existsSync(assetPath) || !fs.statSync(assetPath).isFile()) {
+          invalid.push(`${reference} (missing)`);
+          continue;
+        }
+
+        const contents = fs.readFileSync(assetPath, 'utf8').trimStart();
+        if (/^(?:<!doctype\s+html|<html\b)/i.test(contents)) {
+          invalid.push(`${reference} (contains HTML)`);
         }
       }
     }
 
-    expect(missing).toEqual([]);
+    expect(invalid).toEqual([]);
   });
 });
