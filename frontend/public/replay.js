@@ -53,11 +53,11 @@
                     </div>
                     <div class="meta" id="bpw-unified-meta">Frame 0 / 0</div>
                     <div class="timeline">
-                        <input type="range" id="bpw-unified-timeline" min="0" max="0" value="0">
+                        <input type="range" id="bpw-unified-timeline" aria-label="Replay position" min="0" max="0" value="0">
                         <div class="meta" id="bpw-unified-time-label">Elapsed: 0s</div>
                         <div class="meta">
                             Speed:
-                            <select id="bpw-unified-speed">
+                            <select id="bpw-unified-speed" aria-label="Playback speed">
                                 <option value="15" selected>15x</option>
                                 <option value="25">25x</option>
                                 <option value="50">50x</option>
@@ -77,11 +77,11 @@
                 </div>
                 <div class="meta" id="single-replay-meta">Frame 0 / 0</div>
                 <div class="timeline">
-                    <input type="range" id="single-replay-timeline" min="0" max="0" value="0">
+                    <input type="range" id="single-replay-timeline" aria-label="Replay position" min="0" max="0" value="0">
                     <div class="meta" id="single-replay-time-label">Elapsed: 0s</div>
                     <div class="meta">
                         Speed:
-                        <select id="single-replay-speed">
+                        <select id="single-replay-speed" aria-label="Playback speed">
                             <option value="5">5x</option>
                             <option value="10">10x</option>
                             <option value="15" selected>15x</option>
