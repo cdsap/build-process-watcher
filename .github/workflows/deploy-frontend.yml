@@ -77,3 +77,40 @@ jobs:
       run: |
         echo "🌐 Frontend deployed successfully!"
         echo "🔗 Frontend URL: ${FRONTEND_URL}"
+
+    - name: Verify crawler endpoints
+      run: |
+        set -euo pipefail
+
+        verify_endpoint() {
+          path="$1"
+          expected_type="$2"
+          expected_content="$3"
+          headers_file="$(mktemp)"
+          body_file="$(mktemp)"
+          trap 'rm -f "${headers_file}" "${body_file}"' RETURN
+
+          curl --fail --silent --show-error \
+            --dump-header "${headers_file}" \
+            --output "${body_file}" \
+            "https://process-watcher.web.app${path}"
+
+          content_type="$(grep -i '^content-type:' "${headers_file}" | tail -n 1 | tr -d '\r')"
+          case "${content_type}" in
+            *"${expected_type}"*) ;;
+            *)
+              echo "Unexpected Content-Type for ${path}: ${content_type}"
+              exit 1
+              ;;
+          esac
+
+          if ! grep -Fq "${expected_content}" "${body_file}"; then
+            echo "Expected content was not found at ${path}"
+            exit 1
+          fi
+        }
+
+        verify_endpoint "/robots.txt" "text/plain" \
+          "Sitemap: https://process-watcher.web.app/sitemap.xml"
+        verify_endpoint "/sitemap.xml" "application/xml" \
+          "<loc>https://process-watcher.web.app/</loc>"

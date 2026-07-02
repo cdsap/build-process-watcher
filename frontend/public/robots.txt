@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /runs/
+Disallow: /replay.html
+Disallow: /compare.html
+
+Sitemap: https://process-watcher.web.app/sitemap.xml
