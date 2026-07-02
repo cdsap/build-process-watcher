@@ -5,11 +5,19 @@ on:
     branches: [ main, develop ]
     paths:
       - 'frontend/**'
+      - 'tests/browser/**'
+      - 'playwright.config.ts'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/test-frontend.yml'
   push:
     branches: [ main, develop ]
     paths:
       - 'frontend/**'
+      - 'tests/browser/**'
+      - 'playwright.config.ts'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/test-frontend.yml'
   workflow_dispatch:
   workflow_call:
@@ -27,6 +35,12 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '20'
+
+    - name: Install project dependencies
+      run: npm ci
+
+    - name: Install Playwright browser
+      run: npx playwright install --with-deps chromium
 
     - name: Install HTML validation tools
       run: |
@@ -142,6 +156,9 @@ jobs:
           exit 1
         fi
 
+    - name: Test responsive layout
+      run: npm run test:browser
+
     - name: Frontend validation summary
       run: |
         echo "✅ Frontend validation completed successfully!"
@@ -151,4 +168,3 @@ jobs:
         echo "  - Config injection tested"
         echo "  - JavaScript syntax checked"
         echo "  - Static assets verified"
-
