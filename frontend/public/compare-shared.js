@@ -1233,11 +1233,11 @@
                 </div>
                 <div class="meta" id="compare-replay-meta">Frame 0 / 0</div>
                 <div class="timeline">
-                    <input type="range" id="compare-replay-timeline" min="0" max="0" value="0">
+                    <input type="range" id="compare-replay-timeline" aria-label="Replay position" min="0" max="0" value="0">
                     <div class="meta" id="compare-replay-time-label">Elapsed: 0s</div>
                     <div class="meta">
                         Speed:
-                        <select id="compare-replay-speed">
+                        <select id="compare-replay-speed" aria-label="Playback speed">
                             <option value="5">5x</option>
                             <option value="10">10x</option>
                             <option value="15" selected>15x</option>
