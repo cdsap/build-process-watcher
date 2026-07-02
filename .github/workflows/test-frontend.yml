@@ -28,6 +28,14 @@ jobs:
       with:
         node-version: '20'
 
+    - name: Install browser test dependencies
+      run: |
+        npm ci
+        npx playwright install --with-deps chromium
+
+    - name: Test unavailable run states
+      run: npm run test:browser
+
     - name: Install HTML validation tools
       run: |
         echo "📦 Installing validation tools..."
@@ -151,4 +159,3 @@ jobs:
         echo "  - Config injection tested"
         echo "  - JavaScript syntax checked"
         echo "  - Static assets verified"
-
