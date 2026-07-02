@@ -11,10 +11,6 @@
       {
         "source": "/runs/**",
         "destination": "/runs/[runId].html"
-      },
-      {
-        "source": "**",
-        "destination": "/index.html"
       }
     ],
     "headers": [
