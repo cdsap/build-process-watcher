@@ -1,0 +1,9 @@
+{
+  "samples": [
+    {"Timestamp": 1000, "ElapsedTime": 0, "PID": "101", "Name": "GradleDaemon", "RSS": 300, "HeapUsed": 180, "GCTimeSeconds": 0.1},
+    {"Timestamp": 2000, "ElapsedTime": 1, "PID": "101", "Name": "GradleDaemon", "RSS": 340, "HeapUsed": 210, "GCTimeSeconds": 0.2}
+  ],
+  "process_info": {
+    "101": {"name": "GradleDaemon", "vm_flags": ["-XX:+UseG1GC", "-XX:MaxGCPauseMillis=200"]}
+  }
+}

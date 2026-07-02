@@ -1,0 +1,9 @@
+{
+  "samples": [
+    {"Timestamp": 5000, "ElapsedTime": 0, "PID": "202", "Name": "GradleDaemon", "RSS": 320, "HeapUsed": 190, "GCTimeSeconds": 0.1},
+    {"Timestamp": 6000, "ElapsedTime": 1, "PID": "202", "Name": "GradleDaemon", "RSS": 390, "HeapUsed": 230, "GCTimeSeconds": 0.3}
+  ],
+  "process_info": {
+    "202": {"name": "GradleDaemon", "vm_flags": ["-XX:+UseZGC", "-XX:+DisableExplicitGC"]}
+  }
+}

@@ -33,6 +33,8 @@
         }
 
         .container {
+            width: 100%;
+            min-width: 0;
             max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
@@ -84,6 +86,7 @@
         }
 
         .compare-controls input[type="file"] {
+            max-width: 100%;
             border: 1px solid #e5e7eb;
             border-radius: 0.5rem;
             padding: 0.4rem 0.6rem;
@@ -91,6 +94,8 @@
         }
 
         .compare-section {
+            width: 100%;
+            min-width: 0;
             display: none;
             background: #f9fafb;
             border: 1px solid #e5e7eb;
@@ -109,8 +114,17 @@
 
         .compare-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
             gap: 2rem;
+        }
+
+        .compare-column,
+        .chart-container,
+        .chart-wrapper,
+        .js-plotly-plot,
+        .plot-container {
+            min-width: 0;
+            max-width: 100%;
         }
 
         .compare-column h3 {
@@ -157,6 +171,12 @@
             flex-wrap: wrap;
         }
 
+        .replay-controls .timeline input[type="range"] {
+            flex: 1 1 12rem;
+            min-width: 0;
+            max-width: 100%;
+        }
+
         .btn {
             background: #2563eb;
             color: white;
@@ -195,7 +215,12 @@
 
         @media (max-width: 768px) {
             .compare-grid {
-                grid-template-columns: 1fr;
+                grid-template-columns: minmax(0, 1fr);
+            }
+
+            .compare-controls,
+            .chart-container {
+                padding: 0.75rem !important;
             }
         }
     </style>
