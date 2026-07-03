@@ -215293,9 +215293,9 @@ function generateCombinedMermaidChart(processes, timestamps) {
         const cleanKey = key.replace(/[^a-zA-Z0-9]/g, '_');
         return sampledTimestamps.flatMap((timestamp, index) => data.timestamps.includes(timestamp) ? [`${cleanKey}_${index}`] : []);
     });
-    return `%%{init: {'theme': 'base', 'themeVariables': {'primaryTextColor': '#0F172A', 'lineColor': '#475569', 'clusterBkg': '#F8FAFC', 'clusterBorder': '#94A3B8', 'titleColor': '#0F172A'}}}%%
+    return `%%{init: {'theme': 'dark'}}%%
 flowchart LR
-    subgraph Time["JVM Telemetry Over Time"]
+    subgraph Time[" "]
         direction TB
         ${sampledTimestamps.map((timestamp, checkpointIndex) => {
         const processNodes = Array.from(processes.entries()).map(([key, data]) => {
@@ -215331,8 +215331,8 @@ flowchart LR
         ? ''
         : `    Agg_${checkpointIndex - 1} --> Agg_${checkpointIndex}`).filter(Boolean).join('\n    ')}
 
-    classDef process fill:#D8F3F0,stroke:#0F766E,color:#0F172A,stroke-width:2px
-    classDef aggregated fill:#FEE2E2,stroke:#B91C1C,color:#0F172A,stroke-width:2px
+    classDef process fill:#4ECDC4,stroke:#333,stroke-width:2px
+    classDef aggregated fill:#FF6B6B,stroke:#333,stroke-width:2px
     ${processNodeIds.length > 0 ? `class ${processNodeIds.join(',')} process` : ''}
     ${sampledTimestamps.length > 0 ? `class ${sampledTimestamps.map((_, index) => `Agg_${index}`).join(',')} aggregated` : ''}`;
 }
