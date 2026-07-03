@@ -26,7 +26,7 @@ describe('generateCombinedMermaidChart', () => {
     expect(chart).toContain("'theme': 'dark'");
     expect(chart).toContain('subgraph Time[" "]');
     expect(chart).not.toContain('JVM Telemetry Over Time');
-    expect(chart).toContain('classDef process fill:#4ECDC4,stroke:#333,stroke-width:2px');
+    expect(chart).toContain('classDef process fill:#1D4ED8,stroke:#93C5FD,color:#FFFFFF,stroke-width:2px');
     expect(chart).toContain('classDef aggregated fill:#FF6B6B,stroke:#333,stroke-width:2px');
   });
 

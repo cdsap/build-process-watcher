@@ -215331,7 +215331,7 @@ flowchart LR
         ? ''
         : `    Agg_${checkpointIndex - 1} --> Agg_${checkpointIndex}`).filter(Boolean).join('\n    ')}
 
-    classDef process fill:#4ECDC4,stroke:#333,stroke-width:2px
+    classDef process fill:#1D4ED8,stroke:#93C5FD,color:#FFFFFF,stroke-width:2px
     classDef aggregated fill:#FF6B6B,stroke:#333,stroke-width:2px
     ${processNodeIds.length > 0 ? `class ${processNodeIds.join(',')} process` : ''}
     ${sampledTimestamps.length > 0 ? `class ${sampledTimestamps.map((_, index) => `Agg_${index}`).join(',')} aggregated` : ''}`;
