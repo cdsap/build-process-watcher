@@ -36,11 +36,13 @@ jobs:
       with:
         node-version: '20'
 
-    - name: Install project dependencies
-      run: npm ci
+    - name: Install browser test dependencies
+      run: |
+        npm ci
+        npx playwright install --with-deps chromium
 
-    - name: Install Playwright browser
-      run: npx playwright install --with-deps chromium
+    - name: Test browser regressions
+      run: npm run test:browser
 
     - name: Install HTML validation tools
       run: |

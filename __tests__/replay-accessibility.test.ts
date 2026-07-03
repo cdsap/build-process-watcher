@@ -22,3 +22,20 @@ describe('completed-run replay controls', () => {
     );
   });
 });
+
+describe('production replay controls', () => {
+  test.each([
+    ['Replay', '../frontend/public/replay.js', 'single-replay'],
+    ['Replay unified view', '../frontend/public/replay.js', 'bpw-unified'],
+    ['Compare', '../frontend/public/compare-shared.js', 'compare-replay'],
+  ])('%s exposes a named slider and combobox', (_page, relativePath, controlPrefix) => {
+    const source = fs.readFileSync(path.join(__dirname, relativePath), 'utf8');
+
+    expect(source).toContain(
+      `type="range" id="${controlPrefix}-timeline" aria-label="Replay position"`
+    );
+    expect(source).toContain(
+      `id="${controlPrefix}-speed" aria-label="Playback speed"`
+    );
+  });
+});
