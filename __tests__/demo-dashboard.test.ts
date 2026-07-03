@@ -17,6 +17,11 @@ describe('demo dashboard', () => {
     const data = JSON.parse(fs.readFileSync(demoData, 'utf8'));
     expect(data.samples).toHaveLength(730);
     expect(data.finished).toBe(true);
-    expect(Object.keys(data.process_info)).toHaveLength(8);
+    const sampledPids = [...new Set(data.samples.map((sample: { PID: string }) => sample.PID))].sort();
+    const processInfoPids = Object.keys(data.process_info).sort();
+
+    expect(processInfoPids).toEqual(sampledPids);
+    expect(Object.keys(data.process_summary.byPid).sort()).toEqual(sampledPids);
+    expect(data.process_summary.byName.GradleWorkerMain.pids).toEqual(['6769']);
   });
 });
