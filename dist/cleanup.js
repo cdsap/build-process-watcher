@@ -213888,6 +213888,7 @@ const app_1 = __nccwpck_require__(75919);
 const firestore_1 = __nccwpck_require__(27157);
 const report_1 = __nccwpck_require__(47185);
 const mermaid_1 = __nccwpck_require__(71588);
+const artifacts_1 = __nccwpck_require__(42480);
 const execAsync = (0, util_1.promisify)(child_process_1.exec);
 function parseLogFile(logFile) {
     const processes = new Map();
@@ -214953,6 +214954,7 @@ async function run() {
         const isGitHubActions = process.env.GITHUB_ACTIONS === 'true';
         const hasRuntimeToken = process.env.ACTIONS_RUNTIME_TOKEN !== undefined ||
             process.env.GITHUB_TOKEN !== undefined;
+        let uploadedArtifact = null;
         // Check if we're being called from a trap handler (they set a marker env var)
         // or if we're the first cleanup (post action) - only upload once
         const shouldUpload = !isTrapHandler && isGitHubActions && hasRuntimeToken;
@@ -214965,30 +214967,15 @@ async function run() {
                 const runAttempt = process.env.GITHUB_RUN_ATTEMPT || '1';
                 // Use job name in artifact name (run attempt avoids duplicates on re-runs)
                 const artifactName = `build_process_watcher-${jobName}-${runAttempt}`;
-                const files = [];
-                // Only include files that exist
-                const logFileBase = path.basename(logFile);
-                if (fs.existsSync(logFile)) {
-                    files.push(logFileBase);
-                }
-                if (fs.existsSync(path.join(outputDir, memorySvgFile))) {
-                    files.push(memorySvgFile);
-                }
-                if (fs.existsSync(path.join(outputDir, gcSvgFile))) {
-                    files.push(gcSvgFile);
-                }
-                if (fs.existsSync(path.join(outputDir, jitSvgFile))) {
-                    files.push(jitSvgFile);
-                }
-                if (fs.existsSync(path.join(outputDir, classSvgFile))) {
-                    files.push(classSvgFile);
-                }
-                if (fs.existsSync(path.join(outputDir, csvFile))) {
-                    files.push(csvFile);
-                }
-                if (fs.existsSync(path.join(outputDir, jsonFile))) {
-                    files.push(jsonFile);
-                }
+                const artifactCandidates = [
+                    logFile,
+                    path.join(outputDir, memorySvgFile),
+                    path.join(outputDir, gcSvgFile),
+                    path.join(outputDir, jitSvgFile),
+                    path.join(outputDir, classSvgFile),
+                    path.join(outputDir, csvFile),
+                    path.join(outputDir, jsonFile)
+                ];
                 if (debugMode) {
                     const backendDebugLog = path.join(actionDir, '..', 'backend_debug.log');
                     if (fs.existsSync(backendDebugLog)) {
@@ -214996,7 +214983,7 @@ async function run() {
                         if (!fs.existsSync(debugCopy)) {
                             fs.copyFileSync(backendDebugLog, debugCopy);
                         }
-                        files.push(path.basename(debugCopy));
+                        artifactCandidates.push(debugCopy);
                     }
                     const scriptDebugLog = path.join(actionDir, '..', 'script_debug.log');
                     if (fs.existsSync(scriptDebugLog)) {
@@ -215004,14 +214991,16 @@ async function run() {
                         if (!fs.existsSync(debugCopy)) {
                             fs.copyFileSync(scriptDebugLog, debugCopy);
                         }
-                        files.push(path.basename(debugCopy));
+                        artifactCandidates.push(debugCopy);
                     }
                 }
+                const files = (0, artifacts_1.existingArtifactPaths)(artifactCandidates);
                 if (files.length > 0) {
                     if (debugMode) {
                         console.log('Uploading artifacts...');
                     }
-                    await artifactClient.uploadArtifact(artifactName, files, outputDir);
+                    await artifactClient.uploadArtifact(artifactName, files, path.resolve(outputDir));
+                    uploadedArtifact = { name: artifactName, files };
                     if (debugMode) {
                         console.log('Successfully uploaded artifacts');
                     }
@@ -215023,10 +215012,7 @@ async function run() {
                 }
             }
             catch (error) {
-                // Silently skip artifact upload if it fails (e.g., missing runtime token)
-                if (debugMode) {
-                    console.log(`⚠️  Skipping artifact upload: ${error instanceof Error ? error.message : 'unknown error'}`);
-                }
+                console.log(`⚠️  Artifact upload failed: ${error instanceof Error ? error.message : 'unknown error'}`);
             }
         }
         else {
@@ -215105,6 +215091,9 @@ ${Array.from(processes.entries()).map(([key, data]) => {
                     `from ${timestamps[0]} to ${timestamps[timestamps.length - 1]}` :
                     'N/A';
                 const summarySubtitle = process.env.GITHUB_JOB || runId || '';
+                const artifactStatus = uploadedArtifact
+                    ? (0, artifacts_1.artifactSummary)(uploadedArtifact.name, uploadedArtifact.files)
+                    : '> ⚠️ Result artifacts were not archived by Build Process Watcher.';
                 const newSummary = `${summary}
 
 ## Build Process Watcher${summarySubtitle ? ` (${summarySubtitle})` : ''}
@@ -215145,10 +215134,7 @@ ${Array.from(processes.entries()).map(([key, data]) => {
 - Last measurement: ${lastRss.toFixed(2)} MB${gcStats}${jitStats}${classStats}`;
                 }).join('\n\n')}
 
-${hasGcData ? `\n> GC chart is available in the artifacts as \`${gcSvgFile}\`.` : ''}
-${hasJitData ? `\n> JIT compilation chart is available in the artifacts as \`${jitSvgFile}\`.` : ''}
-${hasClassData ? `\n> Class loading chart is available in the artifacts as \`${classSvgFile}\`.` : ''}
-                > Note: Detailed SVG graphs, CSV report, JSON report, and log file are available in the artifacts of this workflow run.`;
+${artifactStatus}`;
                 fs.writeFileSync(process.env.GITHUB_STEP_SUMMARY, newSummary);
             }
         }
@@ -215166,6 +215152,65 @@ ${hasClassData ? `\n> Class loading chart is available in the artifacts as \`${c
     }
 }
 run();
+
+
+/***/ }),
+
+/***/ 42480:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.existingArtifactPaths = existingArtifactPaths;
+exports.artifactSummary = artifactSummary;
+const fs = __importStar(__nccwpck_require__(79896));
+const path = __importStar(__nccwpck_require__(16928));
+function existingArtifactPaths(candidates) {
+    return candidates
+        .map(candidate => path.resolve(candidate))
+        .filter(candidate => fs.existsSync(candidate));
+}
+function artifactSummary(name, files) {
+    const charts = files
+        .filter(file => path.extname(file) === '.svg')
+        .map(file => `\`${path.basename(file)}\``);
+    const chartDetails = charts.length > 0 ? ` Charts: ${charts.join(', ')}.` : '';
+    return `> Archived ${files.length} result files in artifact \`${name}\`.${chartDetails}`;
+}
 
 
 /***/ }),
