@@ -7,6 +7,7 @@ import { initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { parseTimestampSeconds, generateJsonReport } from './lib/report';
 import { generateCombinedMermaidChart, MermaidProcessData } from './lib/mermaid';
+import { artifactSummary, existingArtifactPaths } from './lib/artifacts';
 
 const execAsync = promisify(exec);
 
@@ -1185,6 +1186,7 @@ async function run() {
         const isGitHubActions = process.env.GITHUB_ACTIONS === 'true';
         const hasRuntimeToken = process.env.ACTIONS_RUNTIME_TOKEN !== undefined || 
                                process.env.GITHUB_TOKEN !== undefined;
+        let uploadedArtifact: { name: string, files: string[] } | null = null;
         
         // Check if we're being called from a trap handler (they set a marker env var)
         // or if we're the first cleanup (post action) - only upload once
@@ -1201,31 +1203,15 @@ async function run() {
                 // Use job name in artifact name (run attempt avoids duplicates on re-runs)
                 const artifactName = `build_process_watcher-${jobName}-${runAttempt}`;
                 
-                const files: string[] = [];
-                
-                // Only include files that exist
-                const logFileBase = path.basename(logFile);
-                if (fs.existsSync(logFile)) {
-                    files.push(logFileBase);
-                }
-                if (fs.existsSync(path.join(outputDir, memorySvgFile))) {
-                    files.push(memorySvgFile);
-                }
-                if (fs.existsSync(path.join(outputDir, gcSvgFile))) {
-                    files.push(gcSvgFile);
-                }
-                if (fs.existsSync(path.join(outputDir, jitSvgFile))) {
-                    files.push(jitSvgFile);
-                }
-                if (fs.existsSync(path.join(outputDir, classSvgFile))) {
-                    files.push(classSvgFile);
-                }
-                if (fs.existsSync(path.join(outputDir, csvFile))) {
-                    files.push(csvFile);
-                }
-                if (fs.existsSync(path.join(outputDir, jsonFile))) {
-                    files.push(jsonFile);
-                }
+                const artifactCandidates = [
+                    logFile,
+                    path.join(outputDir, memorySvgFile),
+                    path.join(outputDir, gcSvgFile),
+                    path.join(outputDir, jitSvgFile),
+                    path.join(outputDir, classSvgFile),
+                    path.join(outputDir, csvFile),
+                    path.join(outputDir, jsonFile)
+                ];
                 if (debugMode) {
                     const backendDebugLog = path.join(actionDir, '..', 'backend_debug.log');
                     if (fs.existsSync(backendDebugLog)) {
@@ -1233,7 +1219,7 @@ async function run() {
                         if (!fs.existsSync(debugCopy)) {
                             fs.copyFileSync(backendDebugLog, debugCopy);
                         }
-                        files.push(path.basename(debugCopy));
+                        artifactCandidates.push(debugCopy);
                     }
                     const scriptDebugLog = path.join(actionDir, '..', 'script_debug.log');
                     if (fs.existsSync(scriptDebugLog)) {
@@ -1241,15 +1227,17 @@ async function run() {
                         if (!fs.existsSync(debugCopy)) {
                             fs.copyFileSync(scriptDebugLog, debugCopy);
                         }
-                        files.push(path.basename(debugCopy));
+                        artifactCandidates.push(debugCopy);
                     }
                 }
+                const files = existingArtifactPaths(artifactCandidates);
                 
                 if (files.length > 0) {
                     if (debugMode) {
                         console.log('Uploading artifacts...');
                     }
-                    await artifactClient.uploadArtifact(artifactName, files, outputDir);
+                    await artifactClient.uploadArtifact(artifactName, files, path.resolve(outputDir));
+                    uploadedArtifact = { name: artifactName, files };
                     if (debugMode) {
                         console.log('Successfully uploaded artifacts');
                     }
@@ -1259,10 +1247,7 @@ async function run() {
                     }
                 }
             } catch (error) {
-                // Silently skip artifact upload if it fails (e.g., missing runtime token)
-                if (debugMode) {
-                    console.log(`⚠️  Skipping artifact upload: ${error instanceof Error ? error.message : 'unknown error'}`);
-                }
+                console.log(`⚠️  Artifact upload failed: ${error instanceof Error ? error.message : 'unknown error'}`);
             }
         } else {
             if (debugMode) {
@@ -1345,6 +1330,10 @@ ${Array.from(processes.entries()).map(([key, data]) => {
                     'N/A';
                 const summarySubtitle = process.env.GITHUB_JOB || runId || '';
 
+                const artifactStatus = uploadedArtifact
+                    ? artifactSummary(uploadedArtifact.name, uploadedArtifact.files)
+                    : '> ⚠️ Result artifacts were not archived by Build Process Watcher.';
+
                 const newSummary = `${summary}
 
 ## Build Process Watcher${summarySubtitle ? ` (${summarySubtitle})` : ''}
@@ -1384,10 +1373,7 @@ ${Array.from(processes.entries()).map(([key, data]) => {
 - Last measurement: ${lastRss.toFixed(2)} MB${gcStats}${jitStats}${classStats}`;
 }).join('\n\n')}
 
-${hasGcData ? `\n> GC chart is available in the artifacts as \`${gcSvgFile}\`.` : ''}
-${hasJitData ? `\n> JIT compilation chart is available in the artifacts as \`${jitSvgFile}\`.` : ''}
-${hasClassData ? `\n> Class loading chart is available in the artifacts as \`${classSvgFile}\`.` : ''}
-                > Note: Detailed SVG graphs, CSV report, JSON report, and log file are available in the artifacts of this workflow run.`;
+${artifactStatus}`;
 
                 fs.writeFileSync(process.env.GITHUB_STEP_SUMMARY, newSummary);
             }
