@@ -136,7 +136,8 @@ The watcher calls the JDK's external `jstat` tool at the normal monitoring inter
 ![Mermaid Diagram Example](frontend/public/mermaid-diagram-example.png)
 
 The job summary includes:
-- Mermaid flowchart showing process memory progression
+- Combined Mermaid flowchart showing RSS, heap, GC, JIT compilation, and class-loading progression at representative checkpoints
+- Aggregated RSS and GC totals at each checkpoint
 - Per-process statistics (max, average, final measurements)
 - Timeline of monitoring session
 

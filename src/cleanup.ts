@@ -6,18 +6,11 @@ import * as core from '@actions/core';
 import { initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { parseTimestampSeconds, generateJsonReport } from './lib/report';
+import { generateCombinedMermaidChart, MermaidProcessData } from './lib/mermaid';
 
 const execAsync = promisify(exec);
 
-interface ProcessData {
-    timestamps: string[];
-    rss: number[];
-    heapUsed: number[];
-    heapCap: number[];
-    gcTime?: number[]; // GC time in seconds, optional
-    jitCompiledMethods: Array<number | null>;
-    classesLoaded: Array<number | null>;
-}
+type ProcessData = MermaidProcessData;
 
 function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, timestamps: string[], hasGcData: boolean, hasJitData: boolean, hasClassData: boolean } {
     const processes = new Map<string, ProcessData>();
@@ -33,7 +26,7 @@ function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, t
         // Support historical 6/7-column records and extended JVM metric records.
         if (parts.length !== 6 && parts.length !== 7 && parts.length !== 14) return;
 
-        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime, jitCompiled, , , , classesLoaded] = parts;
+        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime, jitCompiled, jitFailed, , , classesLoaded, classesUnloaded] = parts;
         const rssValue = parseFloat(rss.replace('MB', ''));
         const heapUsedValue = parseFloat(heapUsed.replace('MB', ''));
         const heapCapValue = parseFloat(heapCap.replace('MB', ''));
@@ -51,8 +44,11 @@ function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, t
                 heapUsed: [],
                 heapCap: [],
                 gcTime: [],
+                gcAvailable: [],
                 jitCompiledMethods: [],
-                classesLoaded: []
+                jitFailedCompilations: [],
+                classesLoaded: [],
+                classesUnloaded: []
             });
         }
 
@@ -64,9 +60,13 @@ function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, t
         processData.heapCap.push(heapCapValue);
 
         const jitCompiledValue = parseOptionalMetric(jitCompiled);
+        const jitFailedValue = parseOptionalMetric(jitFailed);
         const classesLoadedValue = parseOptionalMetric(classesLoaded);
+        const classesUnloadedValue = parseOptionalMetric(classesUnloaded);
         processData.jitCompiledMethods.push(jitCompiledValue);
+        processData.jitFailedCompilations.push(jitFailedValue);
         processData.classesLoaded.push(classesLoadedValue);
+        processData.classesUnloaded.push(classesUnloadedValue);
         if (jitCompiledValue !== null) {
             hasJitData = true;
         }
@@ -76,17 +76,20 @@ function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, t
         
         // Parse GC time if available (7th column)
         if (parts.length >= 7 && gcTime) {
-            hasGcData = true;
             // Remove 's' suffix if present and parse as float
             const gcTimeValue = parseFloat(gcTime.replace('s', ''));
             if (!isNaN(gcTimeValue)) {
+                hasGcData = true;
                 processData.gcTime!.push(gcTimeValue);
+                processData.gcAvailable!.push(true);
             } else {
                 processData.gcTime!.push(0);
+                processData.gcAvailable!.push(false);
             }
         } else if (processData.gcTime) {
             // If GC data was expected but missing, push 0
             processData.gcTime.push(0);
+            processData.gcAvailable!.push(false);
         }
         });
 
@@ -119,66 +122,6 @@ function generateCsvReport(logFile: string, outputFile: string, hasGcData: boole
     });
 
     fs.writeFileSync(outputFile, rows.join('\n'));
-}
-
-function generateMermaidChart(processes: Map<string, ProcessData>, timestamps: string[]): string {
-    // Sample points based on data length:
-    // - For short logs (< 30 points): show all points
-    // - For medium logs (30-100 points): show ~20 points
-    // - For long logs (> 100 points): show ~30 points
-    const targetPoints = timestamps.length < 30 ? timestamps.length : 
-                        timestamps.length < 100 ? 20 : 30;
-    const interval = Math.ceil(timestamps.length / targetPoints);
-    const sampledTimestamps = timestamps.filter((_, i) => i % interval === 0);
-    
-    // Calculate aggregated RSS for each timestamp
-    const aggregatedRss = sampledTimestamps.map(timestamp => {
-        return Array.from(processes.values())
-            .filter(p => p.timestamps.includes(timestamp))
-            .reduce((sum, p) => sum + p.rss[p.timestamps.indexOf(timestamp)], 0);
-    });
-    
-    return `%%{init: {'theme': 'dark'}}%%
-flowchart LR
-    subgraph Time["Memory Usage Over Time"]
-        direction TB
-        ${sampledTimestamps.map((timestamp, i) => {
-            return `    subgraph T${i}["${timestamp}"]
-            ${Array.from(processes.entries()).map(([key, data]) => {
-                const idx = data.timestamps.indexOf(timestamp);
-                if (idx === -1) return '';
-                const rss = data.rss[idx];
-                const cleanKey = key.replace(/[^a-zA-Z0-9]/g, '_');
-                return `        ${cleanKey}_${i}["${key}<br/>${rss.toFixed(0)}MB"]`;
-            }).filter(Boolean).join('\n        ')}
-            ${`        Agg_${i}["Aggregated<br/>${aggregatedRss[i].toFixed(0)}MB"]`}
-        end`;
-        }).join('\n        ')}
-    end
-
-    ${Array.from(processes.entries()).map(([key, data]) => {
-        const cleanKey = key.replace(/[^a-zA-Z0-9]/g, '_');
-        return sampledTimestamps.map((timestamp, i) => {
-            if (i === 0) return '';
-            const prevIdx = data.timestamps.indexOf(sampledTimestamps[i-1]);
-            const currIdx = data.timestamps.indexOf(timestamp);
-            if (prevIdx === -1 || currIdx === -1) return '';
-            return `    ${cleanKey}_${i-1} --> ${cleanKey}_${i}`;
-        }).filter(Boolean).join('\n    ');
-    }).join('\n    ')}
-
-    ${sampledTimestamps.map((_, i) => {
-        if (i === 0) return '';
-        return `    Agg_${i-1} --> Agg_${i}`;
-    }).filter(Boolean).join('\n    ')}
-    
-    classDef process fill:#4ECDC4,stroke:#333,stroke-width:2px
-    classDef aggregated fill:#FF6B6B,stroke:#333,stroke-width:2px
-    ${Array.from(processes.keys()).map(key => {
-        const cleanKey = key.replace(/[^a-zA-Z0-9]/g, '_');
-        return `class ${cleanKey} process`;
-    }).join('\n    ')}
-    ${sampledTimestamps.map((_, i) => `class Agg_${i} aggregated`).join('\n    ')}`;
 }
 
 function median(values: number[]): number {
@@ -1171,7 +1114,7 @@ async function run() {
         const { processes, timestamps, hasGcData, hasJitData, hasClassData } = parseLogFile(logFile);
         
         // Generate both charts
-        const mermaidChart = generateMermaidChart(processes, timestamps);
+        const mermaidChart = generateCombinedMermaidChart(processes, timestamps);
         const svgContent = generateSvg(processes, timestamps);
 
         const outputDir = path.dirname(logFile);
