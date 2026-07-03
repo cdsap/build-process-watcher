@@ -89,3 +89,33 @@ describe('JIT and class loading series', () => {
     });
   });
 });
+
+describe('compact JSON samples', () => {
+  const shared = loadShared();
+
+  it('expands field-indexed rows while preserving legacy object samples', () => {
+    const compact = shared.parseJsonText(JSON.stringify({
+      sample_fields: ['Timestamp', 'PID', 'RSS'],
+      samples: [[1000, '42', 128], [2000, '42', null]],
+      process_info: { '42': { name: 'GradleDaemon' } },
+    }));
+
+    expect(compact.samples).toEqual([
+      { Timestamp: 1000, PID: '42', RSS: 128 },
+      { Timestamp: 2000, PID: '42', RSS: null },
+    ]);
+
+    const legacy = shared.parseJsonText(JSON.stringify({ samples: [{ Timestamp: 1000, PID: '42' }] }));
+    expect(legacy.samples).toEqual([{ Timestamp: 1000, PID: '42' }]);
+  });
+
+  it('compacts object samples using one shared field list', () => {
+    expect(shared.compactSamples([
+      { Timestamp: 1000, PID: '42', RSS: 128 },
+      { Timestamp: 2000, PID: '42', RSS: 256 },
+    ])).toEqual({
+      sample_fields: ['Timestamp', 'PID', 'RSS'],
+      samples: [[1000, '42', 128], [2000, '42', 256]],
+    });
+  });
+});

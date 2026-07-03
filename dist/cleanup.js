@@ -215383,6 +215383,12 @@ exports.parseTimestampSeconds = parseTimestampSeconds;
 exports.loadProcessInfoFromFile = loadProcessInfoFromFile;
 exports.generateJsonReport = generateJsonReport;
 const fs = __importStar(__nccwpck_require__(79896));
+const SAMPLE_FIELDS = [
+    'Timestamp', 'ElapsedTime', 'PID', 'Name', 'RSS', 'HeapUsed', 'HeapCap',
+    'GCTime', 'GCTimeSeconds', 'JITCompiledMethods', 'JITFailedCompilations',
+    'JITInvalidatedCompilations', 'JITCompilationTimeMs', 'ClassesLoaded',
+    'ClassesUnloaded', 'ClassLoadTimeMs'
+];
 /**
  * Parse timestamp string (HH:MM:SS or seconds number) to seconds.
  */
@@ -215500,7 +215506,8 @@ function generateJsonReport(logFile, outputFile, hasGcData) {
         }
     });
     const payload = {
-        samples,
+        sample_fields: SAMPLE_FIELDS,
+        samples: samples.map(sample => SAMPLE_FIELDS.map(field => sample[field])),
         process_info: processInfo,
         finished: true
     };

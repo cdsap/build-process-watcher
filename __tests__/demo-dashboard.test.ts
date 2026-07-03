@@ -15,7 +15,10 @@ describe('demo dashboard', () => {
     expect(html).not.toContain('/runs/${runId}');
 
     const data = JSON.parse(fs.readFileSync(demoData, 'utf8'));
+    expect(data.sample_fields).toContain('Timestamp');
+    expect(data.sample_fields).toContain('PID');
     expect(data.samples).toHaveLength(730);
+    expect(data.samples.every((sample: unknown) => Array.isArray(sample))).toBe(true);
     expect(data.finished).toBe(true);
     expect(Object.keys(data.process_info)).toHaveLength(8);
   });

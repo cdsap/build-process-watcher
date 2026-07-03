@@ -1,5 +1,12 @@
 import * as fs from 'fs';
 
+const SAMPLE_FIELDS = [
+    'Timestamp', 'ElapsedTime', 'PID', 'Name', 'RSS', 'HeapUsed', 'HeapCap',
+    'GCTime', 'GCTimeSeconds', 'JITCompiledMethods', 'JITFailedCompilations',
+    'JITInvalidatedCompilations', 'JITCompilationTimeMs', 'ClassesLoaded',
+    'ClassesUnloaded', 'ClassLoadTimeMs'
+] as const;
+
 /**
  * Parse timestamp string (HH:MM:SS or seconds number) to seconds.
  */
@@ -130,7 +137,8 @@ export function generateJsonReport(logFile: string, outputFile: string, hasGcDat
     });
 
     const payload = {
-        samples,
+        sample_fields: SAMPLE_FIELDS,
+        samples: samples.map(sample => SAMPLE_FIELDS.map(field => sample[field])),
         process_info: processInfo,
         finished: true
     };
