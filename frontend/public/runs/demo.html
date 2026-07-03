@@ -549,7 +549,7 @@
                     return;
                 }
 
-                const data = await response.json();
+                const data = CompareShared.normalizeReportData(await response.json());
                 lastRefreshTime = new Date();
                 renderDashboard(runId, data);
                 window.currentRunData = data;
@@ -2577,10 +2577,10 @@
                 const samples = Array.isArray(data.samples) ? data.samples : [];
                 const processInfo = data.process_info || {};
                 const processSummary = CompareShared.buildProcessSummary(samples, processInfo);
-                const payload = {
+                const payload = CompareShared.compactReportData({
                     ...data,
                     process_summary: processSummary
-                };
+                });
                 const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');

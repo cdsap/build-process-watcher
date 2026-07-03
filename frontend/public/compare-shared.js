@@ -736,9 +736,49 @@
         return parsed;
     }
 
+    function expandSamples(raw) {
+        const samples = Array.isArray(raw?.samples) ? raw.samples : [];
+        if (!samples.length || !Array.isArray(samples[0])) return samples;
+        const fields = Array.isArray(raw?.sample_fields) ? raw.sample_fields : [];
+        if (!fields.length) return [];
+        return samples.map(row => Object.fromEntries(fields.map((field, index) => [field, row[index]])));
+    }
+
+    function compactSamples(samples) {
+        const fields = [];
+        const seen = new Set();
+        samples.forEach(sample => {
+            Object.keys(sample || {}).forEach(field => {
+                if (!seen.has(field)) {
+                    seen.add(field);
+                    fields.push(field);
+                }
+            });
+        });
+        return {
+            sample_fields: fields,
+            samples: samples.map(sample => fields.map(field => sample[field] ?? null))
+        };
+    }
+
+    function normalizeReportData(raw) {
+        return {
+            ...(raw || {}),
+            samples: expandSamples(raw)
+        };
+    }
+
+    function compactReportData(raw) {
+        const compact = compactSamples(Array.isArray(raw?.samples) ? raw.samples : []);
+        return {
+            ...(raw || {}),
+            ...compact
+        };
+    }
+
     function parseJsonText(text) {
         const raw = JSON.parse(text);
-        const samples = Array.isArray(raw?.samples) ? raw.samples : [];
+        const samples = expandSamples(raw);
         const processInfo = raw?.process_info && typeof raw.process_info === 'object' ? raw.process_info : {};
         const processSummary = raw?.process_summary || buildProcessSummary(samples, processInfo);
         return {
@@ -1747,6 +1787,10 @@
         diffFlags,
         parseCsvText,
         parseJsonText,
+        expandSamples,
+        compactSamples,
+        normalizeReportData,
+        compactReportData,
         buildProcessSummary,
         normalizeCompareSamples,
         getGcLayout,

@@ -15,9 +15,13 @@ describe('demo dashboard', () => {
     expect(html).not.toContain('/runs/${runId}');
 
     const data = JSON.parse(fs.readFileSync(demoData, 'utf8'));
+    expect(data.sample_fields).toContain('Timestamp');
+    expect(data.sample_fields).toContain('PID');
     expect(data.samples).toHaveLength(730);
+    expect(data.samples.every((sample: unknown) => Array.isArray(sample))).toBe(true);
     expect(data.finished).toBe(true);
-    const sampledPids = [...new Set(data.samples.map((sample: { PID: string }) => sample.PID))].sort();
+    const pidIndex = data.sample_fields.indexOf('PID');
+    const sampledPids = [...new Set(data.samples.map((sample: unknown[]) => sample[pidIndex]))].sort();
     const processInfoPids = Object.keys(data.process_info).sort();
 
     expect(processInfoPids).toEqual(sampledPids);
