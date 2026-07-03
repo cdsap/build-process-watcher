@@ -17,6 +17,19 @@ function processData(overrides: Partial<MermaidProcessData> = {}): MermaidProces
 }
 
 describe('generateCombinedMermaidChart', () => {
+  it('uses a neutral theme and explicit high-contrast node colors', () => {
+    const chart = generateCombinedMermaidChart(
+      new Map([['123-GradleDaemon', processData()]]),
+      ['00:00:00', '00:00:05'],
+    );
+
+    expect(chart).toContain("'theme': 'base'");
+    expect(chart).toContain("'primaryTextColor': '#0F172A'");
+    expect(chart).toContain('classDef process fill:#D8F3F0,stroke:#0F766E,color:#0F172A');
+    expect(chart).toContain('classDef aggregated fill:#FEE2E2,stroke:#B91C1C,color:#0F172A');
+    expect(chart).not.toContain("'theme': 'dark'");
+  });
+
   it('shows all available JVM metrics in each process node', () => {
     const processes = new Map([['123-GradleDaemon', processData()]]);
 

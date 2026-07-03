@@ -94,7 +94,7 @@ export function generateCombinedMermaidChart(
         );
     });
 
-    return `%%{init: {'theme': 'dark'}}%%
+    return `%%{init: {'theme': 'base', 'themeVariables': {'primaryTextColor': '#0F172A', 'lineColor': '#475569', 'clusterBkg': '#F8FAFC', 'clusterBorder': '#94A3B8', 'titleColor': '#0F172A'}}}%%
 flowchart LR
     subgraph Time["JVM Telemetry Over Time"]
         direction TB
@@ -130,8 +130,8 @@ flowchart LR
         : `    Agg_${checkpointIndex - 1} --> Agg_${checkpointIndex}`
     ).filter(Boolean).join('\n    ')}
 
-    classDef process fill:#4ECDC4,stroke:#333,stroke-width:2px
-    classDef aggregated fill:#FF6B6B,stroke:#333,stroke-width:2px
+    classDef process fill:#D8F3F0,stroke:#0F766E,color:#0F172A,stroke-width:2px
+    classDef aggregated fill:#FEE2E2,stroke:#B91C1C,color:#0F172A,stroke-width:2px
     ${processNodeIds.length > 0 ? `class ${processNodeIds.join(',')} process` : ''}
     ${sampledTimestamps.length > 0 ? `class ${sampledTimestamps.map((_, index) => `Agg_${index}`).join(',')} aggregated` : ''}`;
 }
