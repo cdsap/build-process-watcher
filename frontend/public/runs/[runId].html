@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Build Process Watcher - Run Dashboard</title>
+    <meta name="robots" content="noindex, follow">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
     <script src="/config.js"></script>
@@ -521,15 +522,21 @@
 
         async function loadRunData(runId) {
             const backendUrl = window.BUILD_PROCESS_WATCHER_CONFIG?.backendUrl || 'https://build-process-watcher-backend-685615422311.us-central1.run.app';
+            let response;
             
             try {
-                const response = await fetch(`${backendUrl}/runs/${runId}`);
+                response = await fetch(`${backendUrl}/runs/${runId}`);
                 
                 if (!response.ok) {
-                    if (response.status === 404) {
-                        showNotFound(runId);
+                    console.error('Run data request failed:', {
+                        runId,
+                        status: response.status,
+                        statusText: response.statusText
+                    });
+                    if (response.status === 404 || response.status === 410) {
+                        showUnavailableRun('not-found');
                     } else {
-                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        showUnavailableRun('server');
                     }
                     return;
                 }
@@ -546,8 +553,8 @@
                 }
                 
             } catch (error) {
-                console.error('Error loading run data:', error);
-                showError(error.message);
+                console.error('Run data request could not be completed:', { runId, error });
+                showUnavailableRun(response ? 'server' : 'connectivity');
             }
         }
 
@@ -2639,30 +2646,33 @@
             return CompareShared.getMemoryConfig(`build-monitor-${runId}`);
         }
 
-        function showNotFound(runId) {
-            document.getElementById('content').innerHTML = `
-                <div class="not-found">
-                    <h2>Run Not Found</h2>
-                    <p>The build run with ID <code>${runId}</code> could not be found.</p>
-                    <p>This might be because:</p>
-                    <ul style="text-align: left; max-width: 400px; margin: 0 auto;">
-                        <li>The memory report has expired (available for 24 hours)</li>
-                        <li>The run ID is incorrect</li>
-                        <li>The build is still in progress</li>
-                    </ul>
-                    <a href="https://process-watcher.web.app" style="color: #2563eb; text-decoration: none;">Back to Home</a>
-                </div>
-            `;
-        }
+        function showUnavailableRun(reason) {
+            const unavailableCopy = reason === 'not-found'
+                ? {
+                    title: 'Run Unavailable',
+                    message: 'This run could not be found. The link may be incorrect, or the run may have expired.'
+                }
+                : reason === 'server'
+                    ? {
+                        title: 'Run Temporarily Unavailable',
+                        message: 'The service could not load this run right now. Please try again.'
+                    }
+                    : {
+                        title: 'Unable to Connect',
+                        message: 'Check your connection, then try loading this run again.'
+                    };
 
-        function showError(message) {
             document.getElementById('content').innerHTML = `
                 <div class="error">
-                    <h2>Error Loading Data</h2>
-                    <p>Failed to load run data: ${message}</p>
-                    <a href="https://process-watcher.web.app" style="color: #2563eb; text-decoration: none;">Back to Home</a>
+                    <h2>${unavailableCopy.title}</h2>
+                    <p>${unavailableCopy.message}</p>
+                    <div style="display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;">
+                        <button type="button" id="retry-run-load">Retry</button>
+                        <a href="https://process-watcher.web.app" style="color: #2563eb; text-decoration: none; align-self: center;">Back to Home</a>
+                    </div>
                 </div>
             `;
+            document.getElementById('retry-run-load').addEventListener('click', () => loadRunData(runId));
         }
     </script>
 

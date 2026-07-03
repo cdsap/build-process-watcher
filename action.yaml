@@ -48,6 +48,6 @@ branding:
   color: "gray-dark"
 
 runs:
-  using: 'node20'
+  using: 'node24'
   main: 'dist/index_with_backend.js'
   post: 'dist/cleanup.js'

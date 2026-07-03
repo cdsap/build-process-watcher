@@ -6,8 +6,8 @@
   "scripts": {
     "build": "./build.sh",
     "test": "jest",
-    "test:e2e": "playwright test",
-    "test:ci": "jest --ci --coverage"
+    "test:ci": "jest --ci --coverage",
+    "test:browser": "playwright test"
   },
   "keywords": [],
   "author": "",
