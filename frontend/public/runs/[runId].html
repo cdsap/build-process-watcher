@@ -969,59 +969,6 @@
                 </div>
                 </section>
                 ` : ''}
-                ${shouldShowRssHeapRatioChart(samples) ? `
-                <section class="bpw-chart-panel" data-bpw-panel="ratio" id="section-ratio">
-                <div class="bpw-panel-card">
-                    <div class="bpw-panel-card-head">
-                        <div>
-                            <span class="bpw-panel-badge">Heap</span>
-                            <h3>Heap/RSS Ratio</h3>
-                        </div>
-                        <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="ratio" title="Expand this panel">Expand</button>
-                    </div>
-                    <div class="bpw-panel-card-body">
-                <div class="chart-container">
-                    <div class="downloads-toolbar">
-                        <button class="btn" id="btn-download-rss-heap-png">Download Heap/RSS PNG</button>
-                        <button class="btn" id="btn-download-rss-heap-svg">Download Heap/RSS SVG</button>
-                    </div>
-                    ${isFinished === true ? `
-                        <div class="replay-controls" id="ratio-replay-controls">
-                            <div class="buttons">
-                                <button class="btn" id="btn-ratio-replay-play">Play</button>
-                                <button class="btn secondary" id="btn-ratio-replay-pause">Pause</button>
-                                <button class="btn secondary" id="btn-ratio-replay-reset">Reset</button>
-                            </div>
-                            <div class="meta" id="ratio-replay-meta">Frame 0 / 0</div>
-                            <div class="timeline">
-                                <input type="range" id="ratio-replay-timeline" aria-label="Heap/RSS ratio replay timeline" min="0" max="0" value="0">
-                                <div class="meta" id="ratio-replay-time-label">Elapsed: 0s</div>
-                                <div class="meta">
-                                    Speed:
-                                    <select id="ratio-replay-speed" aria-label="Heap/RSS ratio replay speed">
-                                        <option value="5">5x</option>
-                                        <option value="10">10x</option>
-                                        <option value="15" selected>15x</option>
-                                        <option value="20">20x</option>
-                                        <option value="25">25x</option>
-                                        <option value="30">30x</option>
-                                        <option value="35">35x</option>
-                                        <option value="40">40x</option>
-                                        <option value="45">45x</option>
-                                        <option value="50">50x</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-                    ` : ''}
-                    <div class="chart-wrapper">
-                        <div id="rss-heap-chart" style="width: 100%; height: 500px;"></div>
-                    </div>
-                </div>
-                    </div>
-                </div>
-                </section>
-                ` : ''}
                 ${(hasJITData(samples) || hasClassLoadingData(samples)) ? `<div class="bpw-runtime-stage">` : ''}
                 ${hasJITData(samples) ? `
                 <section class="bpw-chart-panel" data-bpw-panel="jit-time" id="section-jit-time">
@@ -1154,9 +1101,6 @@
                 if (hasGCData(samples)) {
                     renderGCChart(samples);
                 }
-                if (shouldShowRssHeapRatioChart(samples)) {
-                    renderRssHeapRatioChart(samples);
-                }
                 renderJvmCounterCharts(samples);
                 if (isFinished === true) {
                     setupCompareControls(samples);
@@ -1185,8 +1129,6 @@
             const btnCsv = document.getElementById('btn-download-csv');
             const btnGcPng = document.getElementById('btn-download-gc-png');
             const btnGcSvg = document.getElementById('btn-download-gc-svg');
-            const btnRssHeapPng = document.getElementById('btn-download-rss-heap-png');
-            const btnRssHeapSvg = document.getElementById('btn-download-rss-heap-svg');
 
             if (btnPng) btnPng.onclick = () => downloadChart('png');
             if (btnSvg) btnSvg.onclick = () => downloadChart('svg');
@@ -1194,8 +1136,6 @@
             if (btnCsv) btnCsv.onclick = () => downloadCsv(runId);
             if (btnGcPng) btnGcPng.onclick = () => downloadGCChart('png');
             if (btnGcSvg) btnGcSvg.onclick = () => downloadGCChart('svg');
-            if (btnRssHeapPng) btnRssHeapPng.onclick = () => downloadRssHeapRatioChart('png');
-            if (btnRssHeapSvg) btnRssHeapSvg.onclick = () => downloadRssHeapRatioChart('svg');
 
             if (window.BpwExperimentLayout) {
                 if (typeof BpwExperimentLayout.initAfterRunRender === 'function') {
@@ -1785,14 +1725,6 @@
                 buildTraces: buildGCTraces,
                 layoutGetter: getGcLayout,
                 configGetter: getGcConfig
-            });
-            setupReplayPanel({
-                panelKey: 'ratio',
-                chartId: 'rss-heap-chart',
-                controlsId: 'ratio-replay-controls',
-                buildTraces: buildRatioTraces,
-                layoutGetter: getRatioLayout,
-                configGetter: getRatioConfig
             });
             setupCounterReplayPanel({
                 panelKey: 'jit',
