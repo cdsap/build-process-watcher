@@ -20,6 +20,12 @@ describe('demo dashboard', () => {
     expect(data.samples).toHaveLength(730);
     expect(data.samples.every((sample: unknown) => Array.isArray(sample))).toBe(true);
     expect(data.finished).toBe(true);
-    expect(Object.keys(data.process_info)).toHaveLength(8);
+    const pidIndex = data.sample_fields.indexOf('PID');
+    const sampledPids = [...new Set(data.samples.map((sample: unknown[]) => sample[pidIndex]))].sort();
+    const processInfoPids = Object.keys(data.process_info).sort();
+
+    expect(processInfoPids).toEqual(sampledPids);
+    expect(Object.keys(data.process_summary.byPid).sort()).toEqual(sampledPids);
+    expect(data.process_summary.byName.GradleWorkerMain.pids).toEqual(['6769']);
   });
 });
