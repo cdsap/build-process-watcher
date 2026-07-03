@@ -213887,6 +213887,7 @@ const path = __importStar(__nccwpck_require__(16928));
 const app_1 = __nccwpck_require__(75919);
 const firestore_1 = __nccwpck_require__(27157);
 const report_1 = __nccwpck_require__(47185);
+const mermaid_1 = __nccwpck_require__(71588);
 const execAsync = (0, util_1.promisify)(child_process_1.exec);
 function parseLogFile(logFile) {
     const processes = new Map();
@@ -213901,7 +213902,7 @@ function parseLogFile(logFile) {
         // Support historical 6/7-column records and extended JVM metric records.
         if (parts.length !== 6 && parts.length !== 7 && parts.length !== 14)
             return;
-        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime, jitCompiled, , , , classesLoaded] = parts;
+        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime, jitCompiled, jitFailed, , , classesLoaded, classesUnloaded] = parts;
         const rssValue = parseFloat(rss.replace('MB', ''));
         const heapUsedValue = parseFloat(heapUsed.replace('MB', ''));
         const heapCapValue = parseFloat(heapCap.replace('MB', ''));
@@ -213919,8 +213920,11 @@ function parseLogFile(logFile) {
                 heapUsed: [],
                 heapCap: [],
                 gcTime: [],
+                gcAvailable: [],
                 jitCompiledMethods: [],
-                classesLoaded: []
+                jitFailedCompilations: [],
+                classesLoaded: [],
+                classesUnloaded: []
             });
         }
         const processData = processes.get(processKey);
@@ -213930,9 +213934,13 @@ function parseLogFile(logFile) {
         processData.heapUsed.push(heapUsedValue);
         processData.heapCap.push(heapCapValue);
         const jitCompiledValue = parseOptionalMetric(jitCompiled);
+        const jitFailedValue = parseOptionalMetric(jitFailed);
         const classesLoadedValue = parseOptionalMetric(classesLoaded);
+        const classesUnloadedValue = parseOptionalMetric(classesUnloaded);
         processData.jitCompiledMethods.push(jitCompiledValue);
+        processData.jitFailedCompilations.push(jitFailedValue);
         processData.classesLoaded.push(classesLoadedValue);
+        processData.classesUnloaded.push(classesUnloadedValue);
         if (jitCompiledValue !== null) {
             hasJitData = true;
         }
@@ -213941,19 +213949,22 @@ function parseLogFile(logFile) {
         }
         // Parse GC time if available (7th column)
         if (parts.length >= 7 && gcTime) {
-            hasGcData = true;
             // Remove 's' suffix if present and parse as float
             const gcTimeValue = parseFloat(gcTime.replace('s', ''));
             if (!isNaN(gcTimeValue)) {
+                hasGcData = true;
                 processData.gcTime.push(gcTimeValue);
+                processData.gcAvailable.push(true);
             }
             else {
                 processData.gcTime.push(0);
+                processData.gcAvailable.push(false);
             }
         }
         else if (processData.gcTime) {
             // If GC data was expected but missing, push 0
             processData.gcTime.push(0);
+            processData.gcAvailable.push(false);
         }
     });
     const orderedTimestamps = Array.from(timestamps)
@@ -213983,67 +213994,6 @@ function generateCsvReport(logFile, outputFile, hasGcData) {
         rows.push(baseRow.join(','));
     });
     fs.writeFileSync(outputFile, rows.join('\n'));
-}
-function generateMermaidChart(processes, timestamps) {
-    // Sample points based on data length:
-    // - For short logs (< 30 points): show all points
-    // - For medium logs (30-100 points): show ~20 points
-    // - For long logs (> 100 points): show ~30 points
-    const targetPoints = timestamps.length < 30 ? timestamps.length :
-        timestamps.length < 100 ? 20 : 30;
-    const interval = Math.ceil(timestamps.length / targetPoints);
-    const sampledTimestamps = timestamps.filter((_, i) => i % interval === 0);
-    // Calculate aggregated RSS for each timestamp
-    const aggregatedRss = sampledTimestamps.map(timestamp => {
-        return Array.from(processes.values())
-            .filter(p => p.timestamps.includes(timestamp))
-            .reduce((sum, p) => sum + p.rss[p.timestamps.indexOf(timestamp)], 0);
-    });
-    return `%%{init: {'theme': 'dark'}}%%
-flowchart LR
-    subgraph Time["Memory Usage Over Time"]
-        direction TB
-        ${sampledTimestamps.map((timestamp, i) => {
-        return `    subgraph T${i}["${timestamp}"]
-            ${Array.from(processes.entries()).map(([key, data]) => {
-            const idx = data.timestamps.indexOf(timestamp);
-            if (idx === -1)
-                return '';
-            const rss = data.rss[idx];
-            const cleanKey = key.replace(/[^a-zA-Z0-9]/g, '_');
-            return `        ${cleanKey}_${i}["${key}<br/>${rss.toFixed(0)}MB"]`;
-        }).filter(Boolean).join('\n        ')}
-            ${`        Agg_${i}["Aggregated<br/>${aggregatedRss[i].toFixed(0)}MB"]`}
-        end`;
-    }).join('\n        ')}
-    end
-
-    ${Array.from(processes.entries()).map(([key, data]) => {
-        const cleanKey = key.replace(/[^a-zA-Z0-9]/g, '_');
-        return sampledTimestamps.map((timestamp, i) => {
-            if (i === 0)
-                return '';
-            const prevIdx = data.timestamps.indexOf(sampledTimestamps[i - 1]);
-            const currIdx = data.timestamps.indexOf(timestamp);
-            if (prevIdx === -1 || currIdx === -1)
-                return '';
-            return `    ${cleanKey}_${i - 1} --> ${cleanKey}_${i}`;
-        }).filter(Boolean).join('\n    ');
-    }).join('\n    ')}
-
-    ${sampledTimestamps.map((_, i) => {
-        if (i === 0)
-            return '';
-        return `    Agg_${i - 1} --> Agg_${i}`;
-    }).filter(Boolean).join('\n    ')}
-    
-    classDef process fill:#4ECDC4,stroke:#333,stroke-width:2px
-    classDef aggregated fill:#FF6B6B,stroke:#333,stroke-width:2px
-    ${Array.from(processes.keys()).map(key => {
-        const cleanKey = key.replace(/[^a-zA-Z0-9]/g, '_');
-        return `class ${cleanKey} process`;
-    }).join('\n    ')}
-    ${sampledTimestamps.map((_, i) => `class Agg_${i} aggregated`).join('\n    ')}`;
 }
 function median(values) {
     if (values.length === 0)
@@ -214940,7 +214890,7 @@ async function run() {
         }
         const { processes, timestamps, hasGcData, hasJitData, hasClassData } = parseLogFile(logFile);
         // Generate both charts
-        const mermaidChart = generateMermaidChart(processes, timestamps);
+        const mermaidChart = (0, mermaid_1.generateCombinedMermaidChart)(processes, timestamps);
         const svgContent = generateSvg(processes, timestamps);
         const outputDir = path.dirname(logFile);
         const outputSuffix = runId ? `-${runId}` : '';
@@ -215216,6 +215166,131 @@ ${hasClassData ? `\n> Class loading chart is available in the artifacts as \`${c
     }
 }
 run();
+
+
+/***/ }),
+
+/***/ 71588:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.generateCombinedMermaidChart = generateCombinedMermaidChart;
+const MAX_CHECKPOINTS = 6;
+function escapeLabel(value) {
+    return value.replace(/[&<>\"]/g, character => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;'
+    }[character] || character));
+}
+function selectRepresentativeTimestamps(timestamps) {
+    if (timestamps.length <= MAX_CHECKPOINTS)
+        return timestamps;
+    return Array.from({ length: MAX_CHECKPOINTS }, (_, index) => {
+        const sourceIndex = Math.round(index * (timestamps.length - 1) / (MAX_CHECKPOINTS - 1));
+        return timestamps[sourceIndex];
+    });
+}
+function finiteValue(values, index) {
+    const value = values === null || values === void 0 ? void 0 : values[index];
+    return value !== null && value !== undefined && Number.isFinite(value) ? value : null;
+}
+function gcValue(data, index) {
+    var _a;
+    if (((_a = data.gcAvailable) === null || _a === void 0 ? void 0 : _a[index]) === false)
+        return null;
+    return finiteValue(data.gcTime, index);
+}
+function processNodeLabel(key, data, index) {
+    const lines = [
+        escapeLabel(key),
+        `RSS ${data.rss[index].toFixed(0)}MB`,
+        `Heap ${data.heapUsed[index].toFixed(0)}/${data.heapCap[index].toFixed(0)}MB`
+    ];
+    const gcTime = gcValue(data, index);
+    const jitCompiled = finiteValue(data.jitCompiledMethods, index);
+    const jitFailed = finiteValue(data.jitFailedCompilations, index);
+    const classesLoaded = finiteValue(data.classesLoaded, index);
+    const classesUnloaded = finiteValue(data.classesUnloaded, index);
+    if (gcTime !== null)
+        lines.push(`GC ${gcTime.toFixed(3)}s`);
+    if (jitCompiled !== null) {
+        lines.push(`JIT ${jitCompiled.toFixed(0)} compiled${jitFailed !== null ? ` / ${jitFailed.toFixed(0)} failed` : ''}`);
+    }
+    if (classesLoaded !== null) {
+        lines.push(`Classes ${classesLoaded.toFixed(0)} loaded${classesUnloaded !== null ? ` / ${classesUnloaded.toFixed(0)} unloaded` : ''}`);
+    }
+    return lines.join('<br/>');
+}
+function generateCombinedMermaidChart(processes, timestamps) {
+    const sampledTimestamps = selectRepresentativeTimestamps(timestamps);
+    const aggregates = sampledTimestamps.map(timestamp => {
+        let rss = 0;
+        let gcTime = 0;
+        let hasGcTime = false;
+        for (const data of processes.values()) {
+            const index = data.timestamps.indexOf(timestamp);
+            if (index === -1)
+                continue;
+            rss += data.rss[index];
+            const processGcTime = gcValue(data, index);
+            if (processGcTime !== null) {
+                gcTime += processGcTime;
+                hasGcTime = true;
+            }
+        }
+        return { rss, gcTime: hasGcTime ? gcTime : null };
+    });
+    const processNodeIds = Array.from(processes.entries()).flatMap(([key, data]) => {
+        const cleanKey = key.replace(/[^a-zA-Z0-9]/g, '_');
+        return sampledTimestamps.flatMap((timestamp, index) => data.timestamps.includes(timestamp) ? [`${cleanKey}_${index}`] : []);
+    });
+    return `%%{init: {'theme': 'dark'}}%%
+flowchart LR
+    subgraph Time["JVM Telemetry Over Time"]
+        direction TB
+        ${sampledTimestamps.map((timestamp, checkpointIndex) => {
+        const processNodes = Array.from(processes.entries()).map(([key, data]) => {
+            const dataIndex = data.timestamps.indexOf(timestamp);
+            if (dataIndex === -1)
+                return '';
+            const cleanKey = key.replace(/[^a-zA-Z0-9]/g, '_');
+            return `        ${cleanKey}_${checkpointIndex}["${processNodeLabel(key, data, dataIndex)}"]`;
+        }).filter(Boolean).join('\n        ');
+        const aggregate = aggregates[checkpointIndex];
+        const aggregateGc = aggregate.gcTime !== null ? `<br/>GC ${aggregate.gcTime.toFixed(3)}s` : '';
+        return `    subgraph T${checkpointIndex}["${timestamp}"]
+            ${processNodes}
+            Agg_${checkpointIndex}["Aggregated<br/>RSS ${aggregate.rss.toFixed(0)}MB${aggregateGc}"]
+        end`;
+    }).join('\n        ')}
+    end
+
+    ${Array.from(processes.entries()).map(([key, data]) => {
+        const cleanKey = key.replace(/[^a-zA-Z0-9]/g, '_');
+        return sampledTimestamps.map((timestamp, checkpointIndex) => {
+            if (checkpointIndex === 0)
+                return '';
+            const previousIndex = data.timestamps.indexOf(sampledTimestamps[checkpointIndex - 1]);
+            const currentIndex = data.timestamps.indexOf(timestamp);
+            if (previousIndex === -1 || currentIndex === -1)
+                return '';
+            return `    ${cleanKey}_${checkpointIndex - 1} --> ${cleanKey}_${checkpointIndex}`;
+        }).filter(Boolean).join('\n    ');
+    }).join('\n    ')}
+
+    ${sampledTimestamps.map((_, checkpointIndex) => checkpointIndex === 0
+        ? ''
+        : `    Agg_${checkpointIndex - 1} --> Agg_${checkpointIndex}`).filter(Boolean).join('\n    ')}
+
+    classDef process fill:#4ECDC4,stroke:#333,stroke-width:2px
+    classDef aggregated fill:#FF6B6B,stroke:#333,stroke-width:2px
+    ${processNodeIds.length > 0 ? `class ${processNodeIds.join(',')} process` : ''}
+    ${sampledTimestamps.length > 0 ? `class ${sampledTimestamps.map((_, index) => `Agg_${index}`).join(',')} aggregated` : ''}`;
+}
 
 
 /***/ }),
