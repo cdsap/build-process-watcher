@@ -1,0 +1,21 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "handlers",
+    srcs = ["handlers.go"],
+    importpath = "github.com/cdsap/build-process-watcher/backend/internal/handlers",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/auth",
+        "//internal/exportqueue",
+        "//internal/models",
+        "//internal/storage",
+    ],
+)
+
+go_test(
+    name = "handlers_test",
+    srcs = ["handlers_test.go"],
+    embed = [":handlers"],
+    deps = ["//internal/models"],
+)

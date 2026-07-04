@@ -1,0 +1,9 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "auth",
+    srcs = ["auth.go"],
+    importpath = "github.com/cdsap/build-process-watcher/backend/internal/auth",
+    visibility = ["//:__subpackages__"],
+    deps = ["//internal/models"],
+)

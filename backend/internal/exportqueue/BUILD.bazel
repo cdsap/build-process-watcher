@@ -1,0 +1,16 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "exportqueue",
+    srcs = ["queue.go"],
+    importpath = "github.com/cdsap/build-process-watcher/backend/internal/exportqueue",
+    visibility = ["//:__subpackages__"],
+    deps = ["//internal/models"],
+)
+
+go_test(
+    name = "exportqueue_test",
+    srcs = ["queue_test.go"],
+    embed = [":exportqueue"],
+    deps = ["//internal/models"],
+)
