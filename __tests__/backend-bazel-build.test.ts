@@ -20,6 +20,9 @@ describe('backend Bazel build integration', () => {
     ].map(read);
 
     expect(moduleFile).toContain('go_deps.from_file(go_mod = "//:go.mod")');
+    expect(moduleFile).toContain('go_sdk.download(version = "1.24.12")');
+    expect(moduleFile).not.toContain('go_sdk.from_file');
+    expect(read('backend/.bazelversion').trim()).toBe('latest');
     expect(buildFiles.join('\n')).toContain('name = "server"');
     expect(buildFiles.filter((contents) => contents.includes('go_test('))).toHaveLength(6);
   });
