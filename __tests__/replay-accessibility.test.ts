@@ -10,7 +10,6 @@ describe('completed-run replay controls', () => {
   test.each([
     ['rss', 'Memory'],
     ['gc', 'GC'],
-    ['ratio', 'Heap/RSS ratio'],
     ['jit', 'JIT'],
     ['classes', 'Class loading'],
   ])('gives the %s timeline and speed controls unique accessible names', (panel, name) => {
@@ -20,6 +19,18 @@ describe('completed-run replay controls', () => {
     expect(source).toContain(
       `<select id="${panel}-replay-speed" aria-label="${name} replay speed">`
     );
+  });
+});
+
+describe('remote run dashboard panels', () => {
+  test.each([
+    '../frontend/public/runs/[runId].html',
+    '../frontend/public/runs/demo.html',
+  ])('%s omits the Heap/RSS ratio panel', relativePath => {
+    const source = fs.readFileSync(path.join(__dirname, relativePath), 'utf8');
+
+    expect(source).not.toContain('data-bpw-panel="ratio"');
+    expect(source).not.toContain('id="rss-heap-chart"');
   });
 });
 
