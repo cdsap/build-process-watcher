@@ -1,0 +1,43 @@
+load("@gazelle//:def.bzl", "gazelle")
+load("@rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+
+# gazelle:prefix github.com/cdsap/build-process-watcher/backend
+gazelle(name = "gazelle")
+
+go_library(
+    name = "backend_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/cdsap/build-process-watcher/backend",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//internal/auth",
+        "//internal/bigqueryexport",
+        "//internal/cleanup",
+        "//internal/exportqueue",
+        "//internal/handlers",
+        "//internal/storage",
+    ],
+)
+
+go_binary(
+    name = "server",
+    embed = [":backend_lib"],
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "backend_test",
+    srcs = [
+        "export_test.go",
+        "integration_test.go",
+        "main_test.go",
+    ],
+    embed = [":backend_lib"],
+    deps = [
+        "//internal/auth",
+        "//internal/cleanup",
+        "//internal/handlers",
+        "//internal/models",
+        "//internal/storage",
+    ],
+)

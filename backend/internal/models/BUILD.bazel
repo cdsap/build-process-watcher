@@ -1,0 +1,14 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "models",
+    srcs = ["models.go"],
+    importpath = "github.com/cdsap/build-process-watcher/backend/internal/models",
+    visibility = ["//:__subpackages__"],
+)
+
+go_test(
+    name = "models_test",
+    srcs = ["models_test.go"],
+    embed = [":models"],
+)

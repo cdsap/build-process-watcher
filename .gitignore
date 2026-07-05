@@ -6,6 +6,8 @@ yarn-error.log*
 
 # Build output
 dist/
+backend/bazel-*
+backend/bin/
 
 # IDE files
 .idea/
@@ -15,4 +17,4 @@ dist/
 
 # OS files
 .DS_Store
-Thumbs.db 
+Thumbs.db

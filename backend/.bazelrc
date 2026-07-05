@@ -1,0 +1,7 @@
+build --enable_bzlmod
+test --enable_bzlmod
+
+# The backend does not use cgo. Keeping it disabled makes local and CI builds
+# use the same pure-Go dependency graph as the Linux release image.
+build --@rules_go//go/config:pure
+test --@rules_go//go/config:pure
