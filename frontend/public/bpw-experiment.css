@@ -153,7 +153,7 @@ body.bpw-layout-experiment .bpw-runtime-stage {
 }
 
 body.bpw-layout-experiment .bpw-runtime-stage .bpw-chart-panel {
-    grid-column: span 6;
+    grid-column: span 12;
 }
 
 body.bpw-layout-experiment .bpw-runtime-stage .bpw-chart-plot {
@@ -702,7 +702,7 @@ body.bpw-layout-experiment .bpw-chart-panel[data-bpw-panel="jit-time"],
 body.bpw-layout-experiment .bpw-chart-panel[data-bpw-panel="jit-rate"],
 body.bpw-layout-experiment .bpw-chart-panel[data-bpw-panel="classes-loaded"],
 body.bpw-layout-experiment .bpw-chart-panel[data-bpw-panel="class-rate"] {
-    grid-column: span 6;
+    grid-column: span 12;
 }
 
 body.bpw-layout-experiment.bpw-focus-mode .bpw-chart-panel:not(.bpw-panel-focus-active) {
