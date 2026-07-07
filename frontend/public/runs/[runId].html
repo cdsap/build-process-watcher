@@ -981,6 +981,10 @@
                         <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="jit-time" title="Expand this panel">Expand</button>
                     </div>
                     <div class="bpw-panel-card-body">
+                        <div class="downloads-toolbar">
+                            <button class="btn" id="btn-download-jit-png">Download JIT PNG</button>
+                            <button class="btn" id="btn-download-jit-svg">Download JIT SVG</button>
+                        </div>
                         ${isFinished === true ? `
                         <div class="replay-controls" id="jit-replay-controls">
                             <div class="buttons">
@@ -1035,6 +1039,10 @@
                         <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="classes-loaded" title="Expand this panel">Expand</button>
                     </div>
                     <div class="bpw-panel-card-body">
+                        <div class="downloads-toolbar">
+                            <button class="btn" id="btn-download-classes-png">Download Classes PNG</button>
+                            <button class="btn" id="btn-download-classes-svg">Download Classes SVG</button>
+                        </div>
                         ${isFinished === true ? `
                         <div class="replay-controls" id="classes-replay-controls">
                             <div class="buttons">
@@ -1129,6 +1137,10 @@
             const btnCsv = document.getElementById('btn-download-csv');
             const btnGcPng = document.getElementById('btn-download-gc-png');
             const btnGcSvg = document.getElementById('btn-download-gc-svg');
+            const btnJitPng = document.getElementById('btn-download-jit-png');
+            const btnJitSvg = document.getElementById('btn-download-jit-svg');
+            const btnClassesPng = document.getElementById('btn-download-classes-png');
+            const btnClassesSvg = document.getElementById('btn-download-classes-svg');
 
             if (btnPng) btnPng.onclick = () => downloadChart('png');
             if (btnSvg) btnSvg.onclick = () => downloadChart('svg');
@@ -1136,6 +1148,10 @@
             if (btnCsv) btnCsv.onclick = () => downloadCsv(runId);
             if (btnGcPng) btnGcPng.onclick = () => downloadGCChart('png');
             if (btnGcSvg) btnGcSvg.onclick = () => downloadGCChart('svg');
+            if (btnJitPng) btnJitPng.onclick = () => downloadRuntimeChart('jit-time-chart', 'jit', 'png');
+            if (btnJitSvg) btnJitSvg.onclick = () => downloadRuntimeChart('jit-time-chart', 'jit', 'svg');
+            if (btnClassesPng) btnClassesPng.onclick = () => downloadRuntimeChart('classes-loaded-chart', 'classes', 'png');
+            if (btnClassesSvg) btnClassesSvg.onclick = () => downloadRuntimeChart('classes-loaded-chart', 'classes', 'svg');
 
             if (window.BpwExperimentLayout) {
                 if (typeof BpwExperimentLayout.initAfterRunRender === 'function') {
@@ -2468,6 +2484,30 @@
                 a.remove();
             } catch (e) {
                 console.error('Failed to export GC chart:', e);
+            }
+        }
+
+        async function downloadRuntimeChart(chartId, metric, format) {
+            try {
+                const chart = document.getElementById(chartId);
+                const isMobile = window.innerWidth < 768;
+                const filename = `build-monitor-${metric}-${runId}`;
+                const opts = {
+                    format: format,
+                    filename: filename,
+                    height: isMobile ? 400 : 500,
+                    width: isMobile ? 800 : 1000,
+                    scale: 2
+                };
+                const url = await Plotly.toImage(chart, opts);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${filename}.${format}`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            } catch (e) {
+                console.error(`Failed to export ${metric} chart:`, e);
             }
         }
 
