@@ -152,7 +152,11 @@
                     <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="jit-time" title="Expand this panel">Expand</button>
                 </div>
                 <div class="bpw-panel-card-body">
-                    <div id="single-jit-time" class="bpw-chart-plot" style="width:100%;height:400px"></div>
+                    <div class="chart-container">
+                        <div class="chart-wrapper">
+                            <div id="single-jit-time" class="bpw-chart-plot" style="width:100%;height:400px"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
             </section>
@@ -166,7 +170,11 @@
                     <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="jit-rate" title="Expand this panel">Expand</button>
                 </div>
                 <div class="bpw-panel-card-body">
-                    <div id="single-jit-rate" class="bpw-chart-plot" style="width:100%;height:400px"></div>
+                    <div class="chart-container">
+                        <div class="chart-wrapper">
+                            <div id="single-jit-rate" class="bpw-chart-plot" style="width:100%;height:400px"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
             </section>` : ''}
@@ -181,7 +189,11 @@
                     <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="classes-loaded" title="Expand this panel">Expand</button>
                 </div>
                 <div class="bpw-panel-card-body">
-                    <div id="single-classes-loaded" class="bpw-chart-plot" style="width:100%;height:400px"></div>
+                    <div class="chart-container">
+                        <div class="chart-wrapper">
+                            <div id="single-classes-loaded" class="bpw-chart-plot" style="width:100%;height:400px"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
             </section>
@@ -195,7 +207,11 @@
                     <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="class-rate" title="Expand this panel">Expand</button>
                 </div>
                 <div class="bpw-panel-card-body">
-                    <div id="single-class-rate" class="bpw-chart-plot" style="width:100%;height:400px"></div>
+                    <div class="chart-container">
+                        <div class="chart-wrapper">
+                            <div id="single-class-rate" class="bpw-chart-plot" style="width:100%;height:400px"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
             </section>` : ''}

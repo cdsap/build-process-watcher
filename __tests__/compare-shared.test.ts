@@ -19,6 +19,12 @@ describe('JIT and class loading series', () => {
     expect(shared.hasClassLoadingData([{ ClassesLoaded: 0 }])).toBe(true);
   });
 
+  it('uses an opaque export background for every chart layout', () => {
+    expect(shared.getMemoryLayout().paper_bgcolor).toBe('#ffffff');
+    expect(shared.getGcLayout().paper_bgcolor).toBe('#ffffff');
+    expect(shared.getCounterLayout('Counter', 'Value').paper_bgcolor).toBe('#ffffff');
+  });
+
   it('calculates rates across actual sparse observations', () => {
     const timestamps = [0, 1000, 2000, 5000];
     const samples = [
