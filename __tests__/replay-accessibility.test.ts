@@ -34,6 +34,36 @@ describe('remote run dashboard panels', () => {
   });
 });
 
+describe('remote run dashboard metric tools', () => {
+  test.each([
+    '../frontend/public/runs/[runId].html',
+    '../frontend/public/runs/demo.html',
+  ])('%s gives all four metric groups downloads followed by replay', relativePath => {
+    const source = fs.readFileSync(path.join(__dirname, relativePath), 'utf8');
+    const groups = [
+      ['rss', 'btn-download-png', 'btn-download-svg'],
+      ['gc', 'btn-download-gc-png', 'btn-download-gc-svg'],
+      ['jit', 'btn-download-jit-png', 'btn-download-jit-svg'],
+      ['classes', 'btn-download-classes-png', 'btn-download-classes-svg'],
+    ];
+
+    groups.forEach(([panel, pngButton, svgButton]) => {
+      const pngIndex = source.indexOf(`id="${pngButton}"`);
+      const svgIndex = source.indexOf(`id="${svgButton}"`);
+      const replayIndex = source.indexOf(`id="${panel}-replay-controls"`);
+
+      expect(pngIndex).toBeGreaterThan(-1);
+      expect(svgIndex).toBeGreaterThan(pngIndex);
+      expect(replayIndex).toBeGreaterThan(svgIndex);
+    });
+
+    expect(source).toContain("downloadRuntimeChart('jit-time-chart', 'jit', 'png')");
+    expect(source).toContain("downloadRuntimeChart('jit-time-chart', 'jit', 'svg')");
+    expect(source).toContain("downloadRuntimeChart('classes-loaded-chart', 'classes', 'png')");
+    expect(source).toContain("downloadRuntimeChart('classes-loaded-chart', 'classes', 'svg')");
+  });
+});
+
 describe('production replay controls', () => {
   test.each([
     ['Replay', '../frontend/public/replay.js', 'single-replay'],
