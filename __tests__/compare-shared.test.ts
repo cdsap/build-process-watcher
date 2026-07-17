@@ -2,12 +2,57 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vm from 'vm';
 
-function loadShared(): any {
+function loadShared(overrides: Record<string, any> = {}): any {
   const window: any = { innerWidth: 1200 };
-  const context = vm.createContext({ window, document: {}, localStorage: { getItem: () => null } });
+  const context = vm.createContext({
+    window,
+    document: {},
+    localStorage: { getItem: () => null },
+    ...overrides,
+  });
   const source = fs.readFileSync(path.join(__dirname, '../frontend/public/compare-shared.js'), 'utf8');
   vm.runInContext(source, context);
   return window.BpwCompareShared;
+}
+
+function createFakeDocument() {
+  const elements = new Map<string, any>();
+  const registerElement = (id: string) => {
+    if (!elements.has(id)) {
+      const element: any = {
+        id,
+        style: {},
+        checked: true,
+        value: id === 'compare-replay-speed' ? '15' : '',
+        max: '',
+        textContent: '',
+        data: [],
+        listeners: {},
+        addEventListener: jest.fn((eventName: string, handler: Function) => {
+          element.listeners[eventName] = handler;
+        }),
+        appendChild: jest.fn(),
+        on: jest.fn(),
+      };
+      Object.defineProperty(element, 'innerHTML', {
+        get: () => element.__innerHTML || '',
+        set: (value: string) => {
+          element.__innerHTML = value;
+          for (const match of value.matchAll(/id="([^"]+)"/g)) {
+            registerElement(match[1]);
+          }
+        },
+      });
+      elements.set(id, element);
+    }
+    return elements.get(id);
+  };
+
+  return {
+    registerElement,
+    getElementById: jest.fn((id: string) => elements.get(id) || null),
+    createElement: jest.fn(() => registerElement(`created-${elements.size}`)),
+  };
 }
 
 describe('JIT and class loading series', () => {
@@ -75,6 +120,66 @@ describe('JIT and class loading series', () => {
     const layout = shared.getOverlayLayout('rss', 'gc');
     expect(layout.yaxis.title).toBe('Memory (MB)');
     expect(layout.yaxis2.title).toBe('GC Time (s)');
+  });
+
+  it('uses the split elapsed axis for JIT and class loading compare charts', async () => {
+    const document = createFakeDocument();
+    document.registerElement('compare-section');
+    const plotCalls: any[] = [];
+    const shared = loadShared({
+      document,
+      localStorage: {
+        getItem: () => 'split',
+        setItem: jest.fn(),
+      },
+      Plotly: {
+        react: jest.fn((chartId: string, traces: any[], layout: any, config: any) => {
+          const chart = document.registerElement(chartId);
+          chart.data = traces;
+          plotCalls.push({ chartId, traces, layout, config });
+          return Promise.resolve();
+        }),
+        restyle: jest.fn(),
+      },
+    });
+
+    const baseSamples = [
+      { Timestamp: 1000, ElapsedTime: 0, Name: 'GradleDaemon', PID: '1', RSS: 100, HeapUsed: 50, JITCompilationTimeMs: 100, JITCompiledMethods: 10, ClassesLoaded: 1000 },
+      { Timestamp: 2000, ElapsedTime: 1, Name: 'GradleDaemon', PID: '1', RSS: 110, HeapUsed: 55, JITCompilationTimeMs: 300, JITCompiledMethods: 30, ClassesLoaded: 1200 },
+      { Timestamp: 3000, ElapsedTime: 2, Name: 'GradleDaemon', PID: '1', RSS: 120, HeapUsed: 60, JITCompilationTimeMs: 600, JITCompiledMethods: 60, ClassesLoaded: 1600 },
+    ];
+    const compareSamples = [
+      { Timestamp: 9000, ElapsedTime: 0, Name: 'GradleDaemon', PID: '2', RSS: 100, HeapUsed: 50, JITCompilationTimeMs: 200, JITCompiledMethods: 20, ClassesLoaded: 1100 },
+      { Timestamp: 10000, ElapsedTime: 1, Name: 'GradleDaemon', PID: '2', RSS: 110, HeapUsed: 55, JITCompilationTimeMs: 500, JITCompiledMethods: 50, ClassesLoaded: 1400 },
+      { Timestamp: 11000, ElapsedTime: 2, Name: 'GradleDaemon', PID: '2', RSS: 120, HeapUsed: 60, JITCompilationTimeMs: 900, JITCompiledMethods: 90, ClassesLoaded: 1900 },
+    ];
+
+    shared.renderCompareSection({
+      baseSamples,
+      compareSamplesRaw: compareSamples,
+      compareSectionId: 'compare-section',
+      baseLabel: 'Baseline',
+      compareLabel: 'Candidate',
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const jitTime = plotCalls.find(call => call.chartId === 'compare-jit-time');
+    const classRate = plotCalls.find(call => call.chartId === 'compare-class-rate');
+    expect(jitTime).toBeTruthy();
+    expect(classRate).toBeTruthy();
+    expect(jitTime.layout.xaxis.tickvals).toEqual([0, 2, 1, 3, 2, 4]);
+    expect(jitTime.layout.shapes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'line', x0: 2, x1: 2 }),
+    ]));
+    expect(jitTime.traces.find((trace: any) => trace.name.startsWith('Candidate:'))?.x).toEqual([2]);
+    expect(classRate.layout.xaxis.tickvals).toEqual([0, 2, 1, 3, 2, 4]);
+
+    document.getElementById('compare-replay-timeline').listeners.input({ target: { value: '1' } });
+    await Promise.resolve();
+
+    const updatedClassRate = plotCalls.filter(call => call.chartId === 'compare-class-rate').at(-1);
+    expect(updatedClassRate.traces.find((trace: any) => trace.name.startsWith('Candidate:'))?.x).toEqual([2, 3]);
   });
 
   it('derives GC collector type from VM flags', () => {
