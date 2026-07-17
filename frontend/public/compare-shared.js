@@ -1625,8 +1625,32 @@
                     ...layout.xaxis,
                     title: 'Elapsed (s)',
                     tickformat: null,
-                    type: 'linear'
+                    type: 'linear',
+                    tickvals: isSplitMode ? tickVals : undefined,
+                    ticktext: isSplitMode ? tickText : undefined
                 };
+                layout.legend = {
+                    x: 0.5,
+                    y: -0.25,
+                    xanchor: 'center',
+                    orientation: 'h'
+                };
+                layout.margin = {
+                    ...layout.margin,
+                    b: 110
+                };
+                layout.shapes = isSplitMode ? [
+                    {
+                        type: 'line',
+                        x0: maxElapsed,
+                        x1: maxElapsed,
+                        y0: 0,
+                        y1: 1,
+                        xref: 'x',
+                        yref: 'paper',
+                        line: { color: '#94a3b8', width: 1, dash: 'dot' }
+                    }
+                ] : [];
                 const labelTraces = (traces, label) => traces.map(trace => ({
                     ...trace,
                     name: `${label}: ${trace.name}`
@@ -1634,7 +1658,7 @@
                 if (isSplitMode) {
                     const traces = [
                         ...labelTraces(buildMetricTraces(baseData, timestamps, frameIndex, metric, baseStyle, elapsedSeconds), baseLabel),
-                        ...labelTraces(buildMetricTraces(compareData, timestamps, frameIndex, metric, compareStyle, elapsedSeconds), compareLabel)
+                        ...labelTraces(buildMetricTraces(compareData, timestamps, frameIndex, metric, compareStyle, compareElapsed), compareLabel)
                     ];
                     tasks.push(Plotly.react(`compare-${id}`, applyVisibilityToTraces(`compare-${id}`, traces), layout, getCounterConfig(`compare-${metric}`)));
                 } else {
