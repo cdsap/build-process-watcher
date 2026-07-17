@@ -43,4 +43,15 @@ describe('backend Bazel build integration', () => {
       'uses: bazel-contrib/setup-bazel@',
     );
   });
+
+  it('documents the backend Bazel workflow in the agent instructions', () => {
+    const agentInstructions = read('AGENTS.md');
+
+    expect(agentInstructions).toContain('backend/`: Go backend built with Bazel');
+    expect(agentInstructions).toContain('cd backend && bazel test //...');
+    expect(agentInstructions).toContain('cd backend && bazel build //:server');
+    expect(agentInstructions).toContain('cd backend && bazel coverage //... --combined_report=lcov');
+    expect(agentInstructions).toContain('backend/BUILD.bazel');
+    expect(agentInstructions).toContain('backend/MODULE.bazel');
+  });
 });
