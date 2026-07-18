@@ -9,7 +9,7 @@ The project collects heap, RSS, GC, JIT compilation, class loading, process meta
 ## Repository Shape
 
 - `src/`: TypeScript GitHub Action and report generation code.
-- `backend/`: backend service code and schema-related files.
+- `backend/`: Go backend built with Bazel; keep `BUILD.bazel` files and `MODULE.bazel` in sync with package or dependency changes.
 - `frontend/public/`: static dashboard, replay, compare, and experiment UI assets.
 - `__tests__/`: Jest tests for reports, metrics, and shared frontend logic.
 - `scripts/`: helper scripts.
@@ -34,6 +34,26 @@ For action bundle changes:
 ```bash
 npm run build
 ```
+
+For backend changes, run Bazel commands from the backend module:
+
+```bash
+cd backend && bazel test //...
+```
+
+For backend build-path changes, also verify the server target:
+
+```bash
+cd backend && bazel build //:server
+```
+
+For backend coverage changes:
+
+```bash
+cd backend && bazel coverage //... --combined_report=lcov
+```
+
+When adding or moving Go packages under `backend/`, update the relevant `backend/BUILD.bazel` files and `backend/MODULE.bazel` rather than falling back to direct `go build` or `go test` commands.
 
 ## Frontend Guidance
 
