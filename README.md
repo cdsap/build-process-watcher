@@ -20,7 +20,11 @@ The current provider is a deterministic bootstrap smoke implementation. It prove
 
 ## Configuration
 
-The backend uses the public environment variables from Build Process Watcher, including `GOOGLE_CLOUD_PROJECT`, `PORT`, and `PREDICTIVE_RELIABILITY_CHECKPOINTS`.
+The backend uses the public environment variables from Build Process Watcher, including:
+
+- `GOOGLE_CLOUD_PROJECT`
+- `PORT`
+- `PREDICTIVE_RELIABILITY_CHECKPOINTS`
 
 Private provider metadata can be set with:
 
@@ -35,3 +39,19 @@ go build ./cmd/predictive-backend
 ```
 
 The local `go.mod` uses a `replace` directive to point at a sibling checkout of `github.com/cdsap/build-process-watcher/backend` while the public provider contract is being prepared.
+
+## Container Build
+
+The Dockerfile builds the private backend binary and runs it on port `8080` for Cloud Run-compatible environments:
+
+```bash
+docker build -t bpw-predictive-backend .
+docker run --rm -p 8080:8080 \
+  -e GOOGLE_CLOUD_PROJECT=your-project \
+  -e PREDICTIVE_RELIABILITY_CHECKPOINTS=30,60,180 \
+  -e PREDICTIVE_PROVIDER_ID=private-provider \
+  -e PREDICTIVE_MODEL_VERSION=bootstrap-v0 \
+  bpw-predictive-backend
+```
+
+The container build expects `go.mod` to resolve the public backend module without a local filesystem `replace`. After the public server/predictor contract lands in the public repository, remove the local `replace`, run `go mod tidy`, and then build the image.
