@@ -19,6 +19,12 @@ describe('JIT and class loading series', () => {
     expect(shared.hasClassLoadingData([{ ClassesLoaded: 0 }])).toBe(true);
   });
 
+  it('uses an opaque export background for every chart layout', () => {
+    expect(shared.getMemoryLayout().paper_bgcolor).toBe('#ffffff');
+    expect(shared.getGcLayout().paper_bgcolor).toBe('#ffffff');
+    expect(shared.getCounterLayout('Counter', 'Value').paper_bgcolor).toBe('#ffffff');
+  });
+
   it('calculates rates across actual sparse observations', () => {
     const timestamps = [0, 1000, 2000, 5000];
     const samples = [
@@ -86,6 +92,36 @@ describe('JIT and class loading series', () => {
       added: ['-XX:+DisableExplicitGC', '-XX:+UseZGC'],
       removed: ['-XX:+UseG1GC'],
       shared: ['-XX:MaxGCPauseMillis=200'],
+    });
+  });
+});
+
+describe('compact JSON samples', () => {
+  const shared = loadShared();
+
+  it('expands field-indexed rows while preserving legacy object samples', () => {
+    const compact = shared.parseJsonText(JSON.stringify({
+      sample_fields: ['Timestamp', 'PID', 'RSS'],
+      samples: [[1000, '42', 128], [2000, '42', null]],
+      process_info: { '42': { name: 'GradleDaemon' } },
+    }));
+
+    expect(compact.samples).toEqual([
+      { Timestamp: 1000, PID: '42', RSS: 128 },
+      { Timestamp: 2000, PID: '42', RSS: null },
+    ]);
+
+    const legacy = shared.parseJsonText(JSON.stringify({ samples: [{ Timestamp: 1000, PID: '42' }] }));
+    expect(legacy.samples).toEqual([{ Timestamp: 1000, PID: '42' }]);
+  });
+
+  it('compacts object samples using one shared field list', () => {
+    expect(shared.compactSamples([
+      { Timestamp: 1000, PID: '42', RSS: 128 },
+      { Timestamp: 2000, PID: '42', RSS: 256 },
+    ])).toEqual({
+      sample_fields: ['Timestamp', 'PID', 'RSS'],
+      samples: [[1000, '42', 128], [2000, '42', 256]],
     });
   });
 });

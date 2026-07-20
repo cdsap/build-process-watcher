@@ -541,7 +541,7 @@
                     return;
                 }
 
-                const data = await response.json();
+                const data = CompareShared.normalizeReportData(await response.json());
                 lastRefreshTime = new Date();
                 renderDashboard(runId, data);
                 window.currentRunData = data;
@@ -660,6 +660,39 @@
             });
             
             const formatDur = (s) => s < 60 ? s + 's' : (Math.floor(s / 60) + 'm' + (s % 60 ? ' ' + Math.round(s % 60) + 's' : ''));
+            const formatPredictionValue = (value, unit) => Number.isFinite(Number(value)) ? `${Number(value).toFixed(Number(value) >= 1000 ? 0 : 1)} ${unit}` : 'N/A';
+            const predictionRiskClass = (riskLevel) => ['low', 'elevated', 'high'].includes(riskLevel) ? riskLevel : 'unknown';
+            const predictionEnabled = window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true;
+            const predictionCheckpoints = Array.isArray(data.prediction_checkpoints)
+                ? [...data.prediction_checkpoints].sort((a, b) => Number(a.observation_window_s || 0) - Number(b.observation_window_s || 0))
+                : [];
+            const predictionHtml = predictionEnabled && predictionCheckpoints.length ? `
+                <section class="prediction-panel" aria-label="Predictive reliability">
+                    <div class="prediction-panel-head">
+                        <div>
+                            <span class="bpw-panel-badge">Prediction</span>
+                            <h2>Reliability Checkpoints</h2>
+                        </div>
+                    </div>
+                    <div class="prediction-grid">
+                        ${predictionCheckpoints.map(checkpoint => `
+                            <article class="prediction-card ${predictionRiskClass(checkpoint.risk_level)}">
+                                <div class="prediction-card-top">
+                                    <strong>${escapeHtml(String(checkpoint.observation_window_s || 'N/A'))}s</strong>
+                                    <span>${escapeHtml(checkpoint.status || 'unknown')}</span>
+                                </div>
+                                <div class="prediction-risk">${escapeHtml(checkpoint.risk_level || 'unknown')}</div>
+                                <div class="prediction-metrics">
+                                    <div><span>Confidence</span><strong>${escapeHtml(checkpoint.confidence || 'N/A')}</strong></div>
+                                    <div><span>Peak RSS</span><strong>${formatPredictionValue(checkpoint.predicted_peak_rss_mb, 'MB')}</strong></div>
+                                    <div><span>Duration</span><strong>${formatPredictionValue(checkpoint.predicted_duration_s, 's')}</strong></div>
+                                </div>
+                                ${Array.isArray(checkpoint.signals) && checkpoint.signals.length ? `<div class="prediction-signals">${checkpoint.signals.slice(0, 3).map(signal => `<span>${escapeHtml(signal)}</span>`).join('')}</div>` : ''}
+                            </article>
+                        `).join('')}
+                    </div>
+                </section>
+            ` : '';
 
             // Render process info section
             let processInfoHtml = '';
@@ -816,6 +849,8 @@
                     </div>
                 </div>
 
+                ${predictionHtml}
+
                 <!-- Compare runs hidden until ready -->
 
                 <div id="bpw-workspace-deck" class="bpw-workspace-deck" hidden aria-label="Workspace layout"></div>
@@ -969,59 +1004,6 @@
                 </div>
                 </section>
                 ` : ''}
-                ${shouldShowRssHeapRatioChart(samples) ? `
-                <section class="bpw-chart-panel" data-bpw-panel="ratio" id="section-ratio">
-                <div class="bpw-panel-card">
-                    <div class="bpw-panel-card-head">
-                        <div>
-                            <span class="bpw-panel-badge">Heap</span>
-                            <h3>Heap/RSS Ratio</h3>
-                        </div>
-                        <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="ratio" title="Expand this panel">Expand</button>
-                    </div>
-                    <div class="bpw-panel-card-body">
-                <div class="chart-container">
-                    <div class="downloads-toolbar">
-                        <button class="btn" id="btn-download-rss-heap-png">Download Heap/RSS PNG</button>
-                        <button class="btn" id="btn-download-rss-heap-svg">Download Heap/RSS SVG</button>
-                    </div>
-                    ${isFinished === true ? `
-                        <div class="replay-controls" id="ratio-replay-controls">
-                            <div class="buttons">
-                                <button class="btn" id="btn-ratio-replay-play">Play</button>
-                                <button class="btn secondary" id="btn-ratio-replay-pause">Pause</button>
-                                <button class="btn secondary" id="btn-ratio-replay-reset">Reset</button>
-                            </div>
-                            <div class="meta" id="ratio-replay-meta">Frame 0 / 0</div>
-                            <div class="timeline">
-                                <input type="range" id="ratio-replay-timeline" aria-label="Heap/RSS ratio replay timeline" min="0" max="0" value="0">
-                                <div class="meta" id="ratio-replay-time-label">Elapsed: 0s</div>
-                                <div class="meta">
-                                    Speed:
-                                    <select id="ratio-replay-speed" aria-label="Heap/RSS ratio replay speed">
-                                        <option value="5">5x</option>
-                                        <option value="10">10x</option>
-                                        <option value="15" selected>15x</option>
-                                        <option value="20">20x</option>
-                                        <option value="25">25x</option>
-                                        <option value="30">30x</option>
-                                        <option value="35">35x</option>
-                                        <option value="40">40x</option>
-                                        <option value="45">45x</option>
-                                        <option value="50">50x</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-                    ` : ''}
-                    <div class="chart-wrapper">
-                        <div id="rss-heap-chart" style="width: 100%; height: 500px;"></div>
-                    </div>
-                </div>
-                    </div>
-                </div>
-                </section>
-                ` : ''}
                 ${(hasJITData(samples) || hasClassLoadingData(samples)) ? `<div class="bpw-runtime-stage">` : ''}
                 ${hasJITData(samples) ? `
                 <section class="bpw-chart-panel" data-bpw-panel="jit-time" id="section-jit-time">
@@ -1034,6 +1016,10 @@
                         <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="jit-time" title="Expand this panel">Expand</button>
                     </div>
                     <div class="bpw-panel-card-body">
+                        <div class="downloads-toolbar">
+                            <button class="btn" id="btn-download-jit-png">Download JIT PNG</button>
+                            <button class="btn" id="btn-download-jit-svg">Download JIT SVG</button>
+                        </div>
                         ${isFinished === true ? `
                         <div class="replay-controls" id="jit-replay-controls">
                             <div class="buttons">
@@ -1059,7 +1045,11 @@
                             </div>
                         </div>
                         ` : ''}
-                        <div id="jit-time-chart" class="bpw-chart-plot" style="width:100%;height:450px"></div>
+                        <div class="chart-container">
+                            <div class="chart-wrapper">
+                                <div id="jit-time-chart" class="bpw-chart-plot" style="width:100%;height:450px"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 </section>
@@ -1073,7 +1063,11 @@
                         <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="jit-rate" title="Expand this panel">Expand</button>
                     </div>
                     <div class="bpw-panel-card-body">
-                        <div id="jit-rate-chart" class="bpw-chart-plot" style="width:100%;height:450px"></div>
+                        <div class="chart-container">
+                            <div class="chart-wrapper">
+                                <div id="jit-rate-chart" class="bpw-chart-plot" style="width:100%;height:450px"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 </section>` : ''}
@@ -1088,6 +1082,10 @@
                         <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="classes-loaded" title="Expand this panel">Expand</button>
                     </div>
                     <div class="bpw-panel-card-body">
+                        <div class="downloads-toolbar">
+                            <button class="btn" id="btn-download-classes-png">Download Classes PNG</button>
+                            <button class="btn" id="btn-download-classes-svg">Download Classes SVG</button>
+                        </div>
                         ${isFinished === true ? `
                         <div class="replay-controls" id="classes-replay-controls">
                             <div class="buttons">
@@ -1113,7 +1111,11 @@
                             </div>
                         </div>
                         ` : ''}
-                        <div id="classes-loaded-chart" class="bpw-chart-plot" style="width:100%;height:450px"></div>
+                        <div class="chart-container">
+                            <div class="chart-wrapper">
+                                <div id="classes-loaded-chart" class="bpw-chart-plot" style="width:100%;height:450px"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 </section>
@@ -1127,7 +1129,11 @@
                         <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="class-rate" title="Expand this panel">Expand</button>
                     </div>
                     <div class="bpw-panel-card-body">
-                        <div id="class-rate-chart" class="bpw-chart-plot" style="width:100%;height:450px"></div>
+                        <div class="chart-container">
+                            <div class="chart-wrapper">
+                                <div id="class-rate-chart" class="bpw-chart-plot" style="width:100%;height:450px"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 </section>` : ''}
@@ -1153,9 +1159,6 @@
                 setupMainChartFilters();
                 if (hasGCData(samples)) {
                     renderGCChart(samples);
-                }
-                if (shouldShowRssHeapRatioChart(samples)) {
-                    renderRssHeapRatioChart(samples);
                 }
                 renderJvmCounterCharts(samples);
                 if (isFinished === true) {
@@ -1185,8 +1188,10 @@
             const btnCsv = document.getElementById('btn-download-csv');
             const btnGcPng = document.getElementById('btn-download-gc-png');
             const btnGcSvg = document.getElementById('btn-download-gc-svg');
-            const btnRssHeapPng = document.getElementById('btn-download-rss-heap-png');
-            const btnRssHeapSvg = document.getElementById('btn-download-rss-heap-svg');
+            const btnJitPng = document.getElementById('btn-download-jit-png');
+            const btnJitSvg = document.getElementById('btn-download-jit-svg');
+            const btnClassesPng = document.getElementById('btn-download-classes-png');
+            const btnClassesSvg = document.getElementById('btn-download-classes-svg');
 
             if (btnPng) btnPng.onclick = () => downloadChart('png');
             if (btnSvg) btnSvg.onclick = () => downloadChart('svg');
@@ -1194,8 +1199,10 @@
             if (btnCsv) btnCsv.onclick = () => downloadCsv(runId);
             if (btnGcPng) btnGcPng.onclick = () => downloadGCChart('png');
             if (btnGcSvg) btnGcSvg.onclick = () => downloadGCChart('svg');
-            if (btnRssHeapPng) btnRssHeapPng.onclick = () => downloadRssHeapRatioChart('png');
-            if (btnRssHeapSvg) btnRssHeapSvg.onclick = () => downloadRssHeapRatioChart('svg');
+            if (btnJitPng) btnJitPng.onclick = () => downloadRuntimeChart('jit-time-chart', 'jit', 'png');
+            if (btnJitSvg) btnJitSvg.onclick = () => downloadRuntimeChart('jit-time-chart', 'jit', 'svg');
+            if (btnClassesPng) btnClassesPng.onclick = () => downloadRuntimeChart('classes-loaded-chart', 'classes', 'png');
+            if (btnClassesSvg) btnClassesSvg.onclick = () => downloadRuntimeChart('classes-loaded-chart', 'classes', 'svg');
 
             if (window.BpwExperimentLayout) {
                 if (typeof BpwExperimentLayout.initAfterRunRender === 'function') {
@@ -1785,14 +1792,6 @@
                 buildTraces: buildGCTraces,
                 layoutGetter: getGcLayout,
                 configGetter: getGcConfig
-            });
-            setupReplayPanel({
-                panelKey: 'ratio',
-                chartId: 'rss-heap-chart',
-                controlsId: 'ratio-replay-controls',
-                buildTraces: buildRatioTraces,
-                layoutGetter: getRatioLayout,
-                configGetter: getRatioConfig
             });
             setupCounterReplayPanel({
                 panelKey: 'jit',
@@ -2539,6 +2538,30 @@
             }
         }
 
+        async function downloadRuntimeChart(chartId, metric, format) {
+            try {
+                const chart = document.getElementById(chartId);
+                const isMobile = window.innerWidth < 768;
+                const filename = `build-monitor-${metric}-${runId}`;
+                const opts = {
+                    format: format,
+                    filename: filename,
+                    height: isMobile ? 400 : 500,
+                    width: isMobile ? 800 : 1000,
+                    scale: 2
+                };
+                const url = await Plotly.toImage(chart, opts);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${filename}.${format}`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            } catch (e) {
+                console.error(`Failed to export ${metric} chart:`, e);
+            }
+        }
+
         async function downloadRssHeapRatioChart(format) {
             try {
                 const chart = document.getElementById('rss-heap-chart');
@@ -2569,10 +2592,10 @@
                 const samples = Array.isArray(data.samples) ? data.samples : [];
                 const processInfo = data.process_info || {};
                 const processSummary = CompareShared.buildProcessSummary(samples, processInfo);
-                const payload = {
+                const payload = CompareShared.compactReportData({
                     ...data,
                     process_summary: processSummary
-                };
+                });
                 const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');

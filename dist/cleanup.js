@@ -213887,6 +213887,8 @@ const path = __importStar(__nccwpck_require__(16928));
 const app_1 = __nccwpck_require__(75919);
 const firestore_1 = __nccwpck_require__(27157);
 const report_1 = __nccwpck_require__(47185);
+const mermaid_1 = __nccwpck_require__(71588);
+const artifacts_1 = __nccwpck_require__(42480);
 const execAsync = (0, util_1.promisify)(child_process_1.exec);
 function parseLogFile(logFile) {
     const processes = new Map();
@@ -213901,7 +213903,7 @@ function parseLogFile(logFile) {
         // Support historical 6/7-column records and extended JVM metric records.
         if (parts.length !== 6 && parts.length !== 7 && parts.length !== 14)
             return;
-        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime, jitCompiled, , , , classesLoaded] = parts;
+        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime, jitCompiled, jitFailed, , , classesLoaded, classesUnloaded] = parts;
         const rssValue = parseFloat(rss.replace('MB', ''));
         const heapUsedValue = parseFloat(heapUsed.replace('MB', ''));
         const heapCapValue = parseFloat(heapCap.replace('MB', ''));
@@ -213919,8 +213921,11 @@ function parseLogFile(logFile) {
                 heapUsed: [],
                 heapCap: [],
                 gcTime: [],
+                gcAvailable: [],
                 jitCompiledMethods: [],
-                classesLoaded: []
+                jitFailedCompilations: [],
+                classesLoaded: [],
+                classesUnloaded: []
             });
         }
         const processData = processes.get(processKey);
@@ -213930,9 +213935,13 @@ function parseLogFile(logFile) {
         processData.heapUsed.push(heapUsedValue);
         processData.heapCap.push(heapCapValue);
         const jitCompiledValue = parseOptionalMetric(jitCompiled);
+        const jitFailedValue = parseOptionalMetric(jitFailed);
         const classesLoadedValue = parseOptionalMetric(classesLoaded);
+        const classesUnloadedValue = parseOptionalMetric(classesUnloaded);
         processData.jitCompiledMethods.push(jitCompiledValue);
+        processData.jitFailedCompilations.push(jitFailedValue);
         processData.classesLoaded.push(classesLoadedValue);
+        processData.classesUnloaded.push(classesUnloadedValue);
         if (jitCompiledValue !== null) {
             hasJitData = true;
         }
@@ -213941,19 +213950,22 @@ function parseLogFile(logFile) {
         }
         // Parse GC time if available (7th column)
         if (parts.length >= 7 && gcTime) {
-            hasGcData = true;
             // Remove 's' suffix if present and parse as float
             const gcTimeValue = parseFloat(gcTime.replace('s', ''));
             if (!isNaN(gcTimeValue)) {
+                hasGcData = true;
                 processData.gcTime.push(gcTimeValue);
+                processData.gcAvailable.push(true);
             }
             else {
                 processData.gcTime.push(0);
+                processData.gcAvailable.push(false);
             }
         }
         else if (processData.gcTime) {
             // If GC data was expected but missing, push 0
             processData.gcTime.push(0);
+            processData.gcAvailable.push(false);
         }
     });
     const orderedTimestamps = Array.from(timestamps)
@@ -213983,67 +213995,6 @@ function generateCsvReport(logFile, outputFile, hasGcData) {
         rows.push(baseRow.join(','));
     });
     fs.writeFileSync(outputFile, rows.join('\n'));
-}
-function generateMermaidChart(processes, timestamps) {
-    // Sample points based on data length:
-    // - For short logs (< 30 points): show all points
-    // - For medium logs (30-100 points): show ~20 points
-    // - For long logs (> 100 points): show ~30 points
-    const targetPoints = timestamps.length < 30 ? timestamps.length :
-        timestamps.length < 100 ? 20 : 30;
-    const interval = Math.ceil(timestamps.length / targetPoints);
-    const sampledTimestamps = timestamps.filter((_, i) => i % interval === 0);
-    // Calculate aggregated RSS for each timestamp
-    const aggregatedRss = sampledTimestamps.map(timestamp => {
-        return Array.from(processes.values())
-            .filter(p => p.timestamps.includes(timestamp))
-            .reduce((sum, p) => sum + p.rss[p.timestamps.indexOf(timestamp)], 0);
-    });
-    return `%%{init: {'theme': 'dark'}}%%
-flowchart LR
-    subgraph Time["Memory Usage Over Time"]
-        direction TB
-        ${sampledTimestamps.map((timestamp, i) => {
-        return `    subgraph T${i}["${timestamp}"]
-            ${Array.from(processes.entries()).map(([key, data]) => {
-            const idx = data.timestamps.indexOf(timestamp);
-            if (idx === -1)
-                return '';
-            const rss = data.rss[idx];
-            const cleanKey = key.replace(/[^a-zA-Z0-9]/g, '_');
-            return `        ${cleanKey}_${i}["${key}<br/>${rss.toFixed(0)}MB"]`;
-        }).filter(Boolean).join('\n        ')}
-            ${`        Agg_${i}["Aggregated<br/>${aggregatedRss[i].toFixed(0)}MB"]`}
-        end`;
-    }).join('\n        ')}
-    end
-
-    ${Array.from(processes.entries()).map(([key, data]) => {
-        const cleanKey = key.replace(/[^a-zA-Z0-9]/g, '_');
-        return sampledTimestamps.map((timestamp, i) => {
-            if (i === 0)
-                return '';
-            const prevIdx = data.timestamps.indexOf(sampledTimestamps[i - 1]);
-            const currIdx = data.timestamps.indexOf(timestamp);
-            if (prevIdx === -1 || currIdx === -1)
-                return '';
-            return `    ${cleanKey}_${i - 1} --> ${cleanKey}_${i}`;
-        }).filter(Boolean).join('\n    ');
-    }).join('\n    ')}
-
-    ${sampledTimestamps.map((_, i) => {
-        if (i === 0)
-            return '';
-        return `    Agg_${i - 1} --> Agg_${i}`;
-    }).filter(Boolean).join('\n    ')}
-    
-    classDef process fill:#4ECDC4,stroke:#333,stroke-width:2px
-    classDef aggregated fill:#FF6B6B,stroke:#333,stroke-width:2px
-    ${Array.from(processes.keys()).map(key => {
-        const cleanKey = key.replace(/[^a-zA-Z0-9]/g, '_');
-        return `class ${cleanKey} process`;
-    }).join('\n    ')}
-    ${sampledTimestamps.map((_, i) => `class Agg_${i} aggregated`).join('\n    ')}`;
 }
 function median(values) {
     if (values.length === 0)
@@ -214940,7 +214891,7 @@ async function run() {
         }
         const { processes, timestamps, hasGcData, hasJitData, hasClassData } = parseLogFile(logFile);
         // Generate both charts
-        const mermaidChart = generateMermaidChart(processes, timestamps);
+        const mermaidChart = (0, mermaid_1.generateCombinedMermaidChart)(processes, timestamps);
         const svgContent = generateSvg(processes, timestamps);
         const outputDir = path.dirname(logFile);
         const outputSuffix = runId ? `-${runId}` : '';
@@ -215003,6 +214954,7 @@ async function run() {
         const isGitHubActions = process.env.GITHUB_ACTIONS === 'true';
         const hasRuntimeToken = process.env.ACTIONS_RUNTIME_TOKEN !== undefined ||
             process.env.GITHUB_TOKEN !== undefined;
+        let uploadedArtifact = null;
         // Check if we're being called from a trap handler (they set a marker env var)
         // or if we're the first cleanup (post action) - only upload once
         const shouldUpload = !isTrapHandler && isGitHubActions && hasRuntimeToken;
@@ -215015,30 +214967,15 @@ async function run() {
                 const runAttempt = process.env.GITHUB_RUN_ATTEMPT || '1';
                 // Use job name in artifact name (run attempt avoids duplicates on re-runs)
                 const artifactName = `build_process_watcher-${jobName}-${runAttempt}`;
-                const files = [];
-                // Only include files that exist
-                const logFileBase = path.basename(logFile);
-                if (fs.existsSync(logFile)) {
-                    files.push(logFileBase);
-                }
-                if (fs.existsSync(path.join(outputDir, memorySvgFile))) {
-                    files.push(memorySvgFile);
-                }
-                if (fs.existsSync(path.join(outputDir, gcSvgFile))) {
-                    files.push(gcSvgFile);
-                }
-                if (fs.existsSync(path.join(outputDir, jitSvgFile))) {
-                    files.push(jitSvgFile);
-                }
-                if (fs.existsSync(path.join(outputDir, classSvgFile))) {
-                    files.push(classSvgFile);
-                }
-                if (fs.existsSync(path.join(outputDir, csvFile))) {
-                    files.push(csvFile);
-                }
-                if (fs.existsSync(path.join(outputDir, jsonFile))) {
-                    files.push(jsonFile);
-                }
+                const artifactCandidates = [
+                    logFile,
+                    path.join(outputDir, memorySvgFile),
+                    path.join(outputDir, gcSvgFile),
+                    path.join(outputDir, jitSvgFile),
+                    path.join(outputDir, classSvgFile),
+                    path.join(outputDir, csvFile),
+                    path.join(outputDir, jsonFile)
+                ];
                 if (debugMode) {
                     const backendDebugLog = path.join(actionDir, '..', 'backend_debug.log');
                     if (fs.existsSync(backendDebugLog)) {
@@ -215046,7 +214983,7 @@ async function run() {
                         if (!fs.existsSync(debugCopy)) {
                             fs.copyFileSync(backendDebugLog, debugCopy);
                         }
-                        files.push(path.basename(debugCopy));
+                        artifactCandidates.push(debugCopy);
                     }
                     const scriptDebugLog = path.join(actionDir, '..', 'script_debug.log');
                     if (fs.existsSync(scriptDebugLog)) {
@@ -215054,14 +214991,16 @@ async function run() {
                         if (!fs.existsSync(debugCopy)) {
                             fs.copyFileSync(scriptDebugLog, debugCopy);
                         }
-                        files.push(path.basename(debugCopy));
+                        artifactCandidates.push(debugCopy);
                     }
                 }
+                const files = (0, artifacts_1.existingArtifactPaths)(artifactCandidates);
                 if (files.length > 0) {
                     if (debugMode) {
                         console.log('Uploading artifacts...');
                     }
-                    await artifactClient.uploadArtifact(artifactName, files, outputDir);
+                    await artifactClient.uploadArtifact(artifactName, files, path.resolve(outputDir));
+                    uploadedArtifact = { name: artifactName, files };
                     if (debugMode) {
                         console.log('Successfully uploaded artifacts');
                     }
@@ -215073,10 +215012,7 @@ async function run() {
                 }
             }
             catch (error) {
-                // Silently skip artifact upload if it fails (e.g., missing runtime token)
-                if (debugMode) {
-                    console.log(`⚠️  Skipping artifact upload: ${error instanceof Error ? error.message : 'unknown error'}`);
-                }
+                console.log(`⚠️  Artifact upload failed: ${error instanceof Error ? error.message : 'unknown error'}`);
             }
         }
         else {
@@ -215155,6 +215091,9 @@ ${Array.from(processes.entries()).map(([key, data]) => {
                     `from ${timestamps[0]} to ${timestamps[timestamps.length - 1]}` :
                     'N/A';
                 const summarySubtitle = process.env.GITHUB_JOB || runId || '';
+                const artifactStatus = uploadedArtifact
+                    ? (0, artifacts_1.artifactSummary)(uploadedArtifact.name, uploadedArtifact.files)
+                    : '> ⚠️ Result artifacts were not archived by Build Process Watcher.';
                 const newSummary = `${summary}
 
 ## Build Process Watcher${summarySubtitle ? ` (${summarySubtitle})` : ''}
@@ -215195,10 +215134,7 @@ ${Array.from(processes.entries()).map(([key, data]) => {
 - Last measurement: ${lastRss.toFixed(2)} MB${gcStats}${jitStats}${classStats}`;
                 }).join('\n\n')}
 
-${hasGcData ? `\n> GC chart is available in the artifacts as \`${gcSvgFile}\`.` : ''}
-${hasJitData ? `\n> JIT compilation chart is available in the artifacts as \`${jitSvgFile}\`.` : ''}
-${hasClassData ? `\n> Class loading chart is available in the artifacts as \`${classSvgFile}\`.` : ''}
-                > Note: Detailed SVG graphs, CSV report, JSON report, and log file are available in the artifacts of this workflow run.`;
+${artifactStatus}`;
                 fs.writeFileSync(process.env.GITHUB_STEP_SUMMARY, newSummary);
             }
         }
@@ -215216,6 +215152,190 @@ ${hasClassData ? `\n> Class loading chart is available in the artifacts as \`${c
     }
 }
 run();
+
+
+/***/ }),
+
+/***/ 42480:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.existingArtifactPaths = existingArtifactPaths;
+exports.artifactSummary = artifactSummary;
+const fs = __importStar(__nccwpck_require__(79896));
+const path = __importStar(__nccwpck_require__(16928));
+function existingArtifactPaths(candidates) {
+    return candidates
+        .map(candidate => path.resolve(candidate))
+        .filter(candidate => fs.existsSync(candidate));
+}
+function artifactSummary(name, files) {
+    const charts = files
+        .filter(file => path.extname(file) === '.svg')
+        .map(file => `\`${path.basename(file)}\``);
+    const chartDetails = charts.length > 0 ? ` Charts: ${charts.join(', ')}.` : '';
+    return `> Archived ${files.length} result files in artifact \`${name}\`.${chartDetails}`;
+}
+
+
+/***/ }),
+
+/***/ 71588:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.generateCombinedMermaidChart = generateCombinedMermaidChart;
+const MAX_CHECKPOINTS = 6;
+function escapeLabel(value) {
+    return value.replace(/[&<>\"]/g, character => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;'
+    }[character] || character));
+}
+function selectRepresentativeTimestamps(timestamps) {
+    if (timestamps.length <= MAX_CHECKPOINTS)
+        return timestamps;
+    return Array.from({ length: MAX_CHECKPOINTS }, (_, index) => {
+        const sourceIndex = Math.round(index * (timestamps.length - 1) / (MAX_CHECKPOINTS - 1));
+        return timestamps[sourceIndex];
+    });
+}
+function finiteValue(values, index) {
+    const value = values === null || values === void 0 ? void 0 : values[index];
+    return value !== null && value !== undefined && Number.isFinite(value) ? value : null;
+}
+function gcValue(data, index) {
+    var _a;
+    if (((_a = data.gcAvailable) === null || _a === void 0 ? void 0 : _a[index]) === false)
+        return null;
+    return finiteValue(data.gcTime, index);
+}
+function processNodeLabel(key, data, index) {
+    const lines = [
+        escapeLabel(key),
+        `RSS ${data.rss[index].toFixed(0)}MB`,
+        `Heap ${data.heapUsed[index].toFixed(0)}/${data.heapCap[index].toFixed(0)}MB`
+    ];
+    const gcTime = gcValue(data, index);
+    const jitCompiled = finiteValue(data.jitCompiledMethods, index);
+    const jitFailed = finiteValue(data.jitFailedCompilations, index);
+    const classesLoaded = finiteValue(data.classesLoaded, index);
+    const classesUnloaded = finiteValue(data.classesUnloaded, index);
+    if (gcTime !== null)
+        lines.push(`GC ${gcTime.toFixed(3)}s`);
+    if (jitCompiled !== null) {
+        lines.push(`JIT ${jitCompiled.toFixed(0)} compiled${jitFailed !== null ? ` / ${jitFailed.toFixed(0)} failed` : ''}`);
+    }
+    if (classesLoaded !== null) {
+        lines.push(`Classes ${classesLoaded.toFixed(0)} loaded${classesUnloaded !== null ? ` / ${classesUnloaded.toFixed(0)} unloaded` : ''}`);
+    }
+    return lines.join('<br/>');
+}
+function generateCombinedMermaidChart(processes, timestamps) {
+    const sampledTimestamps = selectRepresentativeTimestamps(timestamps);
+    const aggregates = sampledTimestamps.map(timestamp => {
+        let rss = 0;
+        let gcTime = 0;
+        let hasGcTime = false;
+        for (const data of processes.values()) {
+            const index = data.timestamps.indexOf(timestamp);
+            if (index === -1)
+                continue;
+            rss += data.rss[index];
+            const processGcTime = gcValue(data, index);
+            if (processGcTime !== null) {
+                gcTime += processGcTime;
+                hasGcTime = true;
+            }
+        }
+        return { rss, gcTime: hasGcTime ? gcTime : null };
+    });
+    const processNodeIds = Array.from(processes.entries()).flatMap(([key, data]) => {
+        const cleanKey = key.replace(/[^a-zA-Z0-9]/g, '_');
+        return sampledTimestamps.flatMap((timestamp, index) => data.timestamps.includes(timestamp) ? [`${cleanKey}_${index}`] : []);
+    });
+    return `%%{init: {'theme': 'dark'}}%%
+flowchart LR
+    subgraph Time[" "]
+        direction TB
+        ${sampledTimestamps.map((timestamp, checkpointIndex) => {
+        const processNodes = Array.from(processes.entries()).map(([key, data]) => {
+            const dataIndex = data.timestamps.indexOf(timestamp);
+            if (dataIndex === -1)
+                return '';
+            const cleanKey = key.replace(/[^a-zA-Z0-9]/g, '_');
+            return `        ${cleanKey}_${checkpointIndex}["${processNodeLabel(key, data, dataIndex)}"]`;
+        }).filter(Boolean).join('\n        ');
+        const aggregate = aggregates[checkpointIndex];
+        const aggregateGc = aggregate.gcTime !== null ? `<br/>GC ${aggregate.gcTime.toFixed(3)}s` : '';
+        return `    subgraph T${checkpointIndex}["${timestamp}"]
+            ${processNodes}
+            Agg_${checkpointIndex}["Aggregated<br/>RSS ${aggregate.rss.toFixed(0)}MB${aggregateGc}"]
+        end`;
+    }).join('\n        ')}
+    end
+
+    ${Array.from(processes.entries()).map(([key, data]) => {
+        const cleanKey = key.replace(/[^a-zA-Z0-9]/g, '_');
+        return sampledTimestamps.map((timestamp, checkpointIndex) => {
+            if (checkpointIndex === 0)
+                return '';
+            const previousIndex = data.timestamps.indexOf(sampledTimestamps[checkpointIndex - 1]);
+            const currentIndex = data.timestamps.indexOf(timestamp);
+            if (previousIndex === -1 || currentIndex === -1)
+                return '';
+            return `    ${cleanKey}_${checkpointIndex - 1} --> ${cleanKey}_${checkpointIndex}`;
+        }).filter(Boolean).join('\n    ');
+    }).join('\n    ')}
+
+    ${sampledTimestamps.map((_, checkpointIndex) => checkpointIndex === 0
+        ? ''
+        : `    Agg_${checkpointIndex - 1} --> Agg_${checkpointIndex}`).filter(Boolean).join('\n    ')}
+
+    classDef process fill:#1D4ED8,stroke:#93C5FD,color:#FFFFFF,stroke-width:2px
+    classDef aggregated fill:#FF6B6B,stroke:#333,stroke-width:2px
+    ${processNodeIds.length > 0 ? `class ${processNodeIds.join(',')} process` : ''}
+    ${sampledTimestamps.length > 0 ? `class ${sampledTimestamps.map((_, index) => `Agg_${index}`).join(',')} aggregated` : ''}`;
+}
 
 
 /***/ }),
@@ -215263,6 +215383,12 @@ exports.parseTimestampSeconds = parseTimestampSeconds;
 exports.loadProcessInfoFromFile = loadProcessInfoFromFile;
 exports.generateJsonReport = generateJsonReport;
 const fs = __importStar(__nccwpck_require__(79896));
+const SAMPLE_FIELDS = [
+    'Timestamp', 'ElapsedTime', 'PID', 'Name', 'RSS', 'HeapUsed', 'HeapCap',
+    'GCTime', 'GCTimeSeconds', 'JITCompiledMethods', 'JITFailedCompilations',
+    'JITInvalidatedCompilations', 'JITCompilationTimeMs', 'ClassesLoaded',
+    'ClassesUnloaded', 'ClassLoadTimeMs'
+];
 /**
  * Parse timestamp string (HH:MM:SS or seconds number) to seconds.
  */
@@ -215380,7 +215506,8 @@ function generateJsonReport(logFile, outputFile, hasGcData) {
         }
     });
     const payload = {
-        samples,
+        sample_fields: SAMPLE_FIELDS,
+        samples: samples.map(sample => SAMPLE_FIELDS.map(field => sample[field])),
         process_info: processInfo,
         finished: true
     };

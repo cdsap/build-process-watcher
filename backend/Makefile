@@ -1,4 +1,4 @@
-.PHONY: run run-emulator build deploy clean
+.PHONY: run run-emulator build deploy clean test test-race test-coverage test-integration test-all benchmark
 
 # Environment variables (provided by GitHub Action)
 # SERVICE_NAME - Cloud Run service name
@@ -11,7 +11,7 @@ all: build
 # Run the application locally
 run:
 	@echo "Running backend application..."
-	@go run .
+	@bazel run //:server
 
 # Run with Firestore emulator
 run-emulator:
@@ -21,7 +21,9 @@ run-emulator:
 # Build the application
 build:
 	@echo "Building backend application..."
-	@go build -o bin/main .
+	@bazel build //:server
+	@mkdir -p bin
+	@cp -f bazel-bin/server bin/main
 
 # Deploy to Google Cloud Run
 # Optional: BIGQUERY_EXPORT_DATASET, BIGQUERY_EXPORT_TABLE, BIGQUERY_EXPORT_PROCESSES_TABLE — BigQuery export
@@ -41,31 +43,37 @@ deploy:
 # Run tests
 test:
 	@echo "Running unit tests..."
-	@go test -v -race ./...
+	@bazel test //...
+
+# Run tests with the race detector. Race mode requires cgo, so it overrides the
+# pure-Go default used by release builds.
+test-race:
+	@echo "Running tests with the race detector..."
+	@bazel test //... --@rules_go//go/config:pure=false --@rules_go//go/config:race
 
 # Run tests with coverage
 test-coverage:
 	@echo "Running tests with coverage..."
-	@go test -v -race -coverprofile=coverage.out ./...
-	@go tool cover -html=coverage.out -o coverage.html
-	@echo "Coverage report generated: coverage.html"
+	@bazel coverage //... --combined_report=lcov
+	@cp -f bazel-out/_coverage/_coverage_report.dat coverage.dat
+	@echo "Coverage report generated: coverage.dat"
 
 # Run integration tests
 test-integration:
 	@echo "Running integration tests..."
-	@go test -v -run TestFullAPIIntegration ./...
+	@bazel test //:backend_test --test_filter=TestFullAPIIntegration
 
 # Run all tests (unit + integration)
-test-all: test test-integration
+test-all: test test-race test-integration
 
 # Run benchmarks
 benchmark:
 	@echo "Running benchmarks..."
-	@go test -bench=. -benchmem ./...
+	@bazel test //... --test_arg=-test.run=^$$ --test_arg=-test.bench=. --test_arg=-test.benchmem
 
 # Clean build artifacts
 clean:
 	@echo "Cleaning build artifacts..."
+	@bazel clean
 	@rm -rf bin/
-	@rm -f coverage.out coverage.html
-
+	@rm -f coverage.dat

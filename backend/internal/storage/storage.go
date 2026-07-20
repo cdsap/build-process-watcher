@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -138,6 +139,57 @@ func (c *Client) StoreSamples(runID string, samples []models.Sample) error {
 
 	log.Printf("✅ Successfully stored %d samples for run ID: %s", len(samples), runID)
 	return nil
+}
+
+// StorePredictionCheckpoint stores or replaces one prediction checkpoint for a run.
+func (c *Client) StorePredictionCheckpoint(runID string, checkpoint models.PredictionCheckpoint) error {
+	doc := c.firestore.Collection("runs").Doc(runID)
+	snapshot, err := doc.Get(c.ctx)
+	if err != nil && !strings.Contains(err.Error(), "not found") {
+		return err
+	}
+
+	var existing []models.PredictionCheckpoint
+	if snapshot != nil && snapshot.Exists() {
+		var runDoc models.RunDoc
+		if err := snapshot.DataTo(&runDoc); err != nil {
+			return err
+		}
+		existing = runDoc.PredictionCheckpoints
+	}
+
+	now := time.Now()
+	_, err = doc.Set(c.ctx, map[string]interface{}{
+		"run_id":                 runID,
+		"prediction_checkpoints": MergePredictionCheckpoint(existing, checkpoint),
+		"updated_at":             now,
+		"updated_at_timestamp":   ToMillis(now),
+	}, firestore.MergeAll)
+	if err != nil {
+		return fmt.Errorf("store prediction checkpoint for run %s: %w", runID, err)
+	}
+	return nil
+}
+
+// MergePredictionCheckpoint returns checkpoints sorted by window with one record per window.
+func MergePredictionCheckpoint(existing []models.PredictionCheckpoint, checkpoint models.PredictionCheckpoint) []models.PredictionCheckpoint {
+	merged := make([]models.PredictionCheckpoint, 0, len(existing)+1)
+	replaced := false
+	for _, item := range existing {
+		if item.ObservationWindowS == checkpoint.ObservationWindowS {
+			merged = append(merged, checkpoint)
+			replaced = true
+			continue
+		}
+		merged = append(merged, item)
+	}
+	if !replaced {
+		merged = append(merged, checkpoint)
+	}
+	sort.SliceStable(merged, func(i, j int) bool {
+		return merged[i].ObservationWindowS < merged[j].ObservationWindowS
+	})
+	return merged
 }
 
 // StoreProcessInfo stores or updates process information (VM flags) for a process in the processes collection

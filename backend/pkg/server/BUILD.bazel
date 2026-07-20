@@ -1,0 +1,28 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "server",
+    srcs = ["server.go"],
+    importpath = "github.com/cdsap/build-process-watcher/backend/pkg/server",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//internal/auth",
+        "//internal/bigqueryexport",
+        "//internal/cleanup",
+        "//internal/exportqueue",
+        "//internal/handlers",
+        "//internal/storage",
+        "//pkg/predictor",
+    ],
+)
+
+go_test(
+    name = "server_test",
+    srcs = ["server_test.go"],
+    embed = [":server"],
+    deps = [
+        "//internal/cleanup",
+        "//internal/handlers",
+        "//pkg/predictor",
+    ],
+)

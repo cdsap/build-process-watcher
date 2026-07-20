@@ -38,7 +38,8 @@ jobs:
         FE_URL=${FRONTEND_URL}
         echo "window.BUILD_PROCESS_WATCHER_CONFIG = {" > frontend/public/config.js
         echo "  backendUrl: '${BE_URL}'," >> frontend/public/config.js
-        echo "  frontendUrl: '${FE_URL}'" >> frontend/public/config.js
+        echo "  frontendUrl: '${FE_URL}'," >> frontend/public/config.js
+        echo "  predictiveReliability: false" >> frontend/public/config.js
         echo "};" >> frontend/public/config.js
 
     - name: Configure Firebase credentials

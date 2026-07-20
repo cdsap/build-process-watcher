@@ -82,7 +82,8 @@ jobs:
         
         echo "window.BUILD_PROCESS_WATCHER_CONFIG = {" > frontend/public/config.js
         echo "  backendUrl: '${BACKEND_URL}'," >> frontend/public/config.js
-        echo "  frontendUrl: '${FRONTEND_URL}'" >> frontend/public/config.js
+        echo "  frontendUrl: '${FRONTEND_URL}'," >> frontend/public/config.js
+        echo "  predictiveReliability: false" >> frontend/public/config.js
         echo "};" >> frontend/public/config.js
         
         echo "✅ Config file generated:"

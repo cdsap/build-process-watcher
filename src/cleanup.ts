@@ -6,18 +6,12 @@ import * as core from '@actions/core';
 import { initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { parseTimestampSeconds, generateJsonReport } from './lib/report';
+import { generateCombinedMermaidChart, MermaidProcessData } from './lib/mermaid';
+import { artifactSummary, existingArtifactPaths } from './lib/artifacts';
 
 const execAsync = promisify(exec);
 
-interface ProcessData {
-    timestamps: string[];
-    rss: number[];
-    heapUsed: number[];
-    heapCap: number[];
-    gcTime?: number[]; // GC time in seconds, optional
-    jitCompiledMethods: Array<number | null>;
-    classesLoaded: Array<number | null>;
-}
+type ProcessData = MermaidProcessData;
 
 function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, timestamps: string[], hasGcData: boolean, hasJitData: boolean, hasClassData: boolean } {
     const processes = new Map<string, ProcessData>();
@@ -33,7 +27,7 @@ function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, t
         // Support historical 6/7-column records and extended JVM metric records.
         if (parts.length !== 6 && parts.length !== 7 && parts.length !== 14) return;
 
-        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime, jitCompiled, , , , classesLoaded] = parts;
+        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime, jitCompiled, jitFailed, , , classesLoaded, classesUnloaded] = parts;
         const rssValue = parseFloat(rss.replace('MB', ''));
         const heapUsedValue = parseFloat(heapUsed.replace('MB', ''));
         const heapCapValue = parseFloat(heapCap.replace('MB', ''));
@@ -51,8 +45,11 @@ function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, t
                 heapUsed: [],
                 heapCap: [],
                 gcTime: [],
+                gcAvailable: [],
                 jitCompiledMethods: [],
-                classesLoaded: []
+                jitFailedCompilations: [],
+                classesLoaded: [],
+                classesUnloaded: []
             });
         }
 
@@ -64,9 +61,13 @@ function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, t
         processData.heapCap.push(heapCapValue);
 
         const jitCompiledValue = parseOptionalMetric(jitCompiled);
+        const jitFailedValue = parseOptionalMetric(jitFailed);
         const classesLoadedValue = parseOptionalMetric(classesLoaded);
+        const classesUnloadedValue = parseOptionalMetric(classesUnloaded);
         processData.jitCompiledMethods.push(jitCompiledValue);
+        processData.jitFailedCompilations.push(jitFailedValue);
         processData.classesLoaded.push(classesLoadedValue);
+        processData.classesUnloaded.push(classesUnloadedValue);
         if (jitCompiledValue !== null) {
             hasJitData = true;
         }
@@ -76,17 +77,20 @@ function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, t
         
         // Parse GC time if available (7th column)
         if (parts.length >= 7 && gcTime) {
-            hasGcData = true;
             // Remove 's' suffix if present and parse as float
             const gcTimeValue = parseFloat(gcTime.replace('s', ''));
             if (!isNaN(gcTimeValue)) {
+                hasGcData = true;
                 processData.gcTime!.push(gcTimeValue);
+                processData.gcAvailable!.push(true);
             } else {
                 processData.gcTime!.push(0);
+                processData.gcAvailable!.push(false);
             }
         } else if (processData.gcTime) {
             // If GC data was expected but missing, push 0
             processData.gcTime.push(0);
+            processData.gcAvailable!.push(false);
         }
         });
 
@@ -119,66 +123,6 @@ function generateCsvReport(logFile: string, outputFile: string, hasGcData: boole
     });
 
     fs.writeFileSync(outputFile, rows.join('\n'));
-}
-
-function generateMermaidChart(processes: Map<string, ProcessData>, timestamps: string[]): string {
-    // Sample points based on data length:
-    // - For short logs (< 30 points): show all points
-    // - For medium logs (30-100 points): show ~20 points
-    // - For long logs (> 100 points): show ~30 points
-    const targetPoints = timestamps.length < 30 ? timestamps.length : 
-                        timestamps.length < 100 ? 20 : 30;
-    const interval = Math.ceil(timestamps.length / targetPoints);
-    const sampledTimestamps = timestamps.filter((_, i) => i % interval === 0);
-    
-    // Calculate aggregated RSS for each timestamp
-    const aggregatedRss = sampledTimestamps.map(timestamp => {
-        return Array.from(processes.values())
-            .filter(p => p.timestamps.includes(timestamp))
-            .reduce((sum, p) => sum + p.rss[p.timestamps.indexOf(timestamp)], 0);
-    });
-    
-    return `%%{init: {'theme': 'dark'}}%%
-flowchart LR
-    subgraph Time["Memory Usage Over Time"]
-        direction TB
-        ${sampledTimestamps.map((timestamp, i) => {
-            return `    subgraph T${i}["${timestamp}"]
-            ${Array.from(processes.entries()).map(([key, data]) => {
-                const idx = data.timestamps.indexOf(timestamp);
-                if (idx === -1) return '';
-                const rss = data.rss[idx];
-                const cleanKey = key.replace(/[^a-zA-Z0-9]/g, '_');
-                return `        ${cleanKey}_${i}["${key}<br/>${rss.toFixed(0)}MB"]`;
-            }).filter(Boolean).join('\n        ')}
-            ${`        Agg_${i}["Aggregated<br/>${aggregatedRss[i].toFixed(0)}MB"]`}
-        end`;
-        }).join('\n        ')}
-    end
-
-    ${Array.from(processes.entries()).map(([key, data]) => {
-        const cleanKey = key.replace(/[^a-zA-Z0-9]/g, '_');
-        return sampledTimestamps.map((timestamp, i) => {
-            if (i === 0) return '';
-            const prevIdx = data.timestamps.indexOf(sampledTimestamps[i-1]);
-            const currIdx = data.timestamps.indexOf(timestamp);
-            if (prevIdx === -1 || currIdx === -1) return '';
-            return `    ${cleanKey}_${i-1} --> ${cleanKey}_${i}`;
-        }).filter(Boolean).join('\n    ');
-    }).join('\n    ')}
-
-    ${sampledTimestamps.map((_, i) => {
-        if (i === 0) return '';
-        return `    Agg_${i-1} --> Agg_${i}`;
-    }).filter(Boolean).join('\n    ')}
-    
-    classDef process fill:#4ECDC4,stroke:#333,stroke-width:2px
-    classDef aggregated fill:#FF6B6B,stroke:#333,stroke-width:2px
-    ${Array.from(processes.keys()).map(key => {
-        const cleanKey = key.replace(/[^a-zA-Z0-9]/g, '_');
-        return `class ${cleanKey} process`;
-    }).join('\n    ')}
-    ${sampledTimestamps.map((_, i) => `class Agg_${i} aggregated`).join('\n    ')}`;
 }
 
 function median(values: number[]): number {
@@ -1171,7 +1115,7 @@ async function run() {
         const { processes, timestamps, hasGcData, hasJitData, hasClassData } = parseLogFile(logFile);
         
         // Generate both charts
-        const mermaidChart = generateMermaidChart(processes, timestamps);
+        const mermaidChart = generateCombinedMermaidChart(processes, timestamps);
         const svgContent = generateSvg(processes, timestamps);
 
         const outputDir = path.dirname(logFile);
@@ -1242,6 +1186,7 @@ async function run() {
         const isGitHubActions = process.env.GITHUB_ACTIONS === 'true';
         const hasRuntimeToken = process.env.ACTIONS_RUNTIME_TOKEN !== undefined || 
                                process.env.GITHUB_TOKEN !== undefined;
+        let uploadedArtifact: { name: string, files: string[] } | null = null;
         
         // Check if we're being called from a trap handler (they set a marker env var)
         // or if we're the first cleanup (post action) - only upload once
@@ -1258,31 +1203,15 @@ async function run() {
                 // Use job name in artifact name (run attempt avoids duplicates on re-runs)
                 const artifactName = `build_process_watcher-${jobName}-${runAttempt}`;
                 
-                const files: string[] = [];
-                
-                // Only include files that exist
-                const logFileBase = path.basename(logFile);
-                if (fs.existsSync(logFile)) {
-                    files.push(logFileBase);
-                }
-                if (fs.existsSync(path.join(outputDir, memorySvgFile))) {
-                    files.push(memorySvgFile);
-                }
-                if (fs.existsSync(path.join(outputDir, gcSvgFile))) {
-                    files.push(gcSvgFile);
-                }
-                if (fs.existsSync(path.join(outputDir, jitSvgFile))) {
-                    files.push(jitSvgFile);
-                }
-                if (fs.existsSync(path.join(outputDir, classSvgFile))) {
-                    files.push(classSvgFile);
-                }
-                if (fs.existsSync(path.join(outputDir, csvFile))) {
-                    files.push(csvFile);
-                }
-                if (fs.existsSync(path.join(outputDir, jsonFile))) {
-                    files.push(jsonFile);
-                }
+                const artifactCandidates = [
+                    logFile,
+                    path.join(outputDir, memorySvgFile),
+                    path.join(outputDir, gcSvgFile),
+                    path.join(outputDir, jitSvgFile),
+                    path.join(outputDir, classSvgFile),
+                    path.join(outputDir, csvFile),
+                    path.join(outputDir, jsonFile)
+                ];
                 if (debugMode) {
                     const backendDebugLog = path.join(actionDir, '..', 'backend_debug.log');
                     if (fs.existsSync(backendDebugLog)) {
@@ -1290,7 +1219,7 @@ async function run() {
                         if (!fs.existsSync(debugCopy)) {
                             fs.copyFileSync(backendDebugLog, debugCopy);
                         }
-                        files.push(path.basename(debugCopy));
+                        artifactCandidates.push(debugCopy);
                     }
                     const scriptDebugLog = path.join(actionDir, '..', 'script_debug.log');
                     if (fs.existsSync(scriptDebugLog)) {
@@ -1298,15 +1227,17 @@ async function run() {
                         if (!fs.existsSync(debugCopy)) {
                             fs.copyFileSync(scriptDebugLog, debugCopy);
                         }
-                        files.push(path.basename(debugCopy));
+                        artifactCandidates.push(debugCopy);
                     }
                 }
+                const files = existingArtifactPaths(artifactCandidates);
                 
                 if (files.length > 0) {
                     if (debugMode) {
                         console.log('Uploading artifacts...');
                     }
-                    await artifactClient.uploadArtifact(artifactName, files, outputDir);
+                    await artifactClient.uploadArtifact(artifactName, files, path.resolve(outputDir));
+                    uploadedArtifact = { name: artifactName, files };
                     if (debugMode) {
                         console.log('Successfully uploaded artifacts');
                     }
@@ -1316,10 +1247,7 @@ async function run() {
                     }
                 }
             } catch (error) {
-                // Silently skip artifact upload if it fails (e.g., missing runtime token)
-                if (debugMode) {
-                    console.log(`⚠️  Skipping artifact upload: ${error instanceof Error ? error.message : 'unknown error'}`);
-                }
+                console.log(`⚠️  Artifact upload failed: ${error instanceof Error ? error.message : 'unknown error'}`);
             }
         } else {
             if (debugMode) {
@@ -1402,6 +1330,10 @@ ${Array.from(processes.entries()).map(([key, data]) => {
                     'N/A';
                 const summarySubtitle = process.env.GITHUB_JOB || runId || '';
 
+                const artifactStatus = uploadedArtifact
+                    ? artifactSummary(uploadedArtifact.name, uploadedArtifact.files)
+                    : '> ⚠️ Result artifacts were not archived by Build Process Watcher.';
+
                 const newSummary = `${summary}
 
 ## Build Process Watcher${summarySubtitle ? ` (${summarySubtitle})` : ''}
@@ -1441,10 +1373,7 @@ ${Array.from(processes.entries()).map(([key, data]) => {
 - Last measurement: ${lastRss.toFixed(2)} MB${gcStats}${jitStats}${classStats}`;
 }).join('\n\n')}
 
-${hasGcData ? `\n> GC chart is available in the artifacts as \`${gcSvgFile}\`.` : ''}
-${hasJitData ? `\n> JIT compilation chart is available in the artifacts as \`${jitSvgFile}\`.` : ''}
-${hasClassData ? `\n> Class loading chart is available in the artifacts as \`${classSvgFile}\`.` : ''}
-                > Note: Detailed SVG graphs, CSV report, JSON report, and log file are available in the artifacts of this workflow run.`;
+${artifactStatus}`;
 
                 fs.writeFileSync(process.env.GITHUB_STEP_SUMMARY, newSummary);
             }

@@ -1,0 +1,15 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "predictor",
+    srcs = ["predictor.go"],
+    importpath = "github.com/cdsap/build-process-watcher/backend/pkg/predictor",
+    visibility = ["//visibility:public"],
+    deps = ["//internal/models"],
+)
+
+go_test(
+    name = "predictor_test",
+    srcs = ["predictor_test.go"],
+    embed = [":predictor"],
+)

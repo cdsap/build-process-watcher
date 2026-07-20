@@ -736,9 +736,49 @@
         return parsed;
     }
 
+    function expandSamples(raw) {
+        const samples = Array.isArray(raw?.samples) ? raw.samples : [];
+        if (!samples.length || !Array.isArray(samples[0])) return samples;
+        const fields = Array.isArray(raw?.sample_fields) ? raw.sample_fields : [];
+        if (!fields.length) return [];
+        return samples.map(row => Object.fromEntries(fields.map((field, index) => [field, row[index]])));
+    }
+
+    function compactSamples(samples) {
+        const fields = [];
+        const seen = new Set();
+        samples.forEach(sample => {
+            Object.keys(sample || {}).forEach(field => {
+                if (!seen.has(field)) {
+                    seen.add(field);
+                    fields.push(field);
+                }
+            });
+        });
+        return {
+            sample_fields: fields,
+            samples: samples.map(sample => fields.map(field => sample[field] ?? null))
+        };
+    }
+
+    function normalizeReportData(raw) {
+        return {
+            ...(raw || {}),
+            samples: expandSamples(raw)
+        };
+    }
+
+    function compactReportData(raw) {
+        const compact = compactSamples(Array.isArray(raw?.samples) ? raw.samples : []);
+        return {
+            ...(raw || {}),
+            ...compact
+        };
+    }
+
     function parseJsonText(text) {
         const raw = JSON.parse(text);
-        const samples = Array.isArray(raw?.samples) ? raw.samples : [];
+        const samples = expandSamples(raw);
         const processInfo = raw?.process_info && typeof raw.process_info === 'object' ? raw.process_info : {};
         const processSummary = raw?.process_summary || buildProcessSummary(samples, processInfo);
         return {
@@ -765,7 +805,7 @@
         const isMobile = window.innerWidth < 768;
         return {
             title: isMobile ? '' : 'Garbage Collection Time Over Time',
-            paper_bgcolor: 'rgba(0,0,0,0)',
+            paper_bgcolor: '#ffffff',
             plot_bgcolor: '#fbfaf6',
             hovermode: 'x unified',
             xaxis: {
@@ -833,7 +873,7 @@
         const isMobile = window.innerWidth < 768;
         return {
             title: isMobile ? '' : 'Heap/RSS Ratio Over Time',
-            paper_bgcolor: 'rgba(0,0,0,0)',
+            paper_bgcolor: '#ffffff',
             plot_bgcolor: '#fbfaf6',
             hovermode: 'x unified',
             xaxis: {
@@ -892,7 +932,7 @@
         const isMobile = window.innerWidth < 768;
         return {
             title: isMobile ? '' : 'Memory Usage Over Time',
-            paper_bgcolor: 'rgba(0,0,0,0)',
+            paper_bgcolor: '#ffffff',
             plot_bgcolor: '#fbfaf6',
             hovermode: 'x unified',
             xaxis: {
@@ -1209,9 +1249,9 @@
         const compareMode = storedMode === 'side' ? 'side' : 'split';
         const isSplitMode = compareMode === 'split';
         const splitLabel = `${baseLabel} vs ${compareLabel} (Split View)`;
-        const counterPanel = (title, metrics) => isSplitMode
-            ? `<div class="chart-container"><h4>${title}</h4>${metrics.map(([id]) => `<div id="compare-${id}" style="width:100%;height:400px"></div>`).join('')}</div>`
-            : `<div class="compare-grid">${[baseLabel, compareLabel].map((label, index) => `<div class="chart-container"><h4>${title}: ${label}</h4>${metrics.map(([id]) => `<div id="compare-${index === 0 ? 'current' : 'other'}-${id}" style="width:100%;height:400px"></div>`).join('')}</div>`).join('')}</div>`;
+        const counterPanel = (metrics) => isSplitMode
+            ? metrics.map(([id, metricTitle]) => `<div class="chart-container"><h4>${metricTitle}</h4><div class="chart-wrapper"><div id="compare-${id}" style="width:100%;height:400px"></div></div></div>`).join('')
+            : metrics.map(([id, metricTitle]) => `<div class="compare-grid">${[baseLabel, compareLabel].map((label, index) => `<div class="chart-container"><h4>${metricTitle}: ${label}</h4><div class="chart-wrapper"><div id="compare-${index === 0 ? 'current' : 'other'}-${id}" style="width:100%;height:400px"></div></div></div>`).join('')}</div>`).join('');
 
         compareSection.innerHTML = `
             <div class="compare-header">
@@ -1326,8 +1366,14 @@
                 </div>
                 `}
             </div>
-            ${showJIT ? counterPanel('JIT Compilation', [['jit-time'], ['jit-rate']]) : ''}
-            ${showClasses ? counterPanel('Class Loading', [['classes-loaded'], ['class-rate']]) : ''}
+            ${showJIT ? counterPanel([
+                ['jit-time', 'Cumulative JIT Compilation Time'],
+                ['jit-rate', 'JIT Compilation Activity']
+            ]) : ''}
+            ${showClasses ? counterPanel([
+                ['classes-loaded', 'Cumulative Classes Loaded'],
+                ['class-rate', 'Class Loading Activity']
+            ]) : ''}
         `;
 
         compareSection.style.display = 'block';
@@ -1747,6 +1793,10 @@
         diffFlags,
         parseCsvText,
         parseJsonText,
+        expandSamples,
+        compactSamples,
+        normalizeReportData,
+        compactReportData,
         buildProcessSummary,
         normalizeCompareSamples,
         getGcLayout,

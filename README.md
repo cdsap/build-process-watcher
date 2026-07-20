@@ -60,6 +60,8 @@ This is not required for normal local or remote monitoring. Use it only when you
 
 **BigQuery export is optional:** It is only for collecting metrics in BigQuery. Set `export_to_bigquery: 'true'` together with `remote_monitoring: 'true'` when you want that export. The backend service must be configured with `BIGQUERY_EXPORT_DATASET`; optional table overrides are `BIGQUERY_EXPORT_TABLE` and `BIGQUERY_EXPORT_PROCESSES_TABLE`.
 
+**Predictive reliability is private-provider only:** Public builds keep prediction disabled by default. The backend can carry public-safe `prediction_checkpoints` returned by an injected provider, and the dashboard only renders them when `predictiveReliability` is enabled in `config.js`. Production providers, scoring logic, evaluation artifacts, and customer-specific tuning live outside this public repository.
+
 ---
 
 ## 🧭 Behavior Matrix
@@ -136,7 +138,8 @@ The watcher calls the JDK's external `jstat` tool at the normal monitoring inter
 ![Mermaid Diagram Example](frontend/public/mermaid-diagram-example.png)
 
 The job summary includes:
-- Mermaid flowchart showing process memory progression
+- Combined Mermaid flowchart showing RSS, heap, GC, JIT compilation, and class-loading progression at representative checkpoints
+- Aggregated RSS and GC totals at each checkpoint
 - Per-process statistics (max, average, final measurements)
 - Timeline of monitoring session
 

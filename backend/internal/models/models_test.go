@@ -3,6 +3,7 @@ package models
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func TestProcessInfo_MarshalJSON(t *testing.T) {
@@ -195,6 +196,83 @@ func TestRunResponse_ProcessInfo(t *testing.T) {
 
 	if stored.PID != processInfo.PID {
 		t.Errorf("Stored PID mismatch: expected %s, got %s", processInfo.PID, stored.PID)
+	}
+}
+
+func TestRunResponse_OmitsPredictionCheckpointsWhenAbsent(t *testing.T) {
+	response := RunResponse{
+		Samples:  []Sample{},
+		Finished: false,
+	}
+
+	jsonData, err := json.Marshal(response)
+	if err != nil {
+		t.Fatalf("Failed to marshal RunResponse: %v", err)
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(jsonData, &raw); err != nil {
+		t.Fatalf("Failed to unmarshal RunResponse map: %v", err)
+	}
+	if _, ok := raw["prediction_checkpoints"]; ok {
+		t.Fatalf("prediction_checkpoints should be omitted when absent: %s", jsonData)
+	}
+}
+
+func TestRunResponse_PredictionCheckpointsRoundTrip(t *testing.T) {
+	riskScore := 42.5
+	peakRSS := 2048.0
+	duration := 300.0
+	createdAt := time.Unix(123, 0).UTC()
+	response := RunResponse{
+		Samples: []Sample{},
+		PredictionCheckpoints: []PredictionCheckpoint{
+			{
+				ObservationWindowS: 30,
+				Status:             "ready",
+				RiskLevel:          "elevated",
+				RiskScore:          &riskScore,
+				Confidence:         "low",
+				PredictedPeakRSSMB: &peakRSS,
+				PredictedDurationS: &duration,
+				Signals:            []string{"memory pressure"},
+				ProviderID:         "private",
+				ModelVersion:       "opaque-v1",
+				CreatedAt:          createdAt,
+			},
+			{
+				ObservationWindowS: 60,
+				Status:             "error",
+				ProviderID:         "private",
+				ModelVersion:       "opaque-v1",
+				CreatedAt:          createdAt,
+				Message:            "provider unavailable",
+			},
+		},
+		Finished: false,
+	}
+
+	jsonData, err := json.Marshal(response)
+	if err != nil {
+		t.Fatalf("Failed to marshal RunResponse: %v", err)
+	}
+
+	var unmarshaled RunResponse
+	if err := json.Unmarshal(jsonData, &unmarshaled); err != nil {
+		t.Fatalf("Failed to unmarshal RunResponse: %v", err)
+	}
+
+	if len(unmarshaled.PredictionCheckpoints) != 2 {
+		t.Fatalf("PredictionCheckpoints length = %d, want 2", len(unmarshaled.PredictionCheckpoints))
+	}
+	if unmarshaled.PredictionCheckpoints[0].ObservationWindowS != 30 {
+		t.Fatalf("first checkpoint window = %d, want 30", unmarshaled.PredictionCheckpoints[0].ObservationWindowS)
+	}
+	if unmarshaled.PredictionCheckpoints[0].RiskScore == nil || *unmarshaled.PredictionCheckpoints[0].RiskScore != riskScore {
+		t.Fatalf("risk score did not round trip: %s", jsonData)
+	}
+	if unmarshaled.PredictionCheckpoints[1].Status != "error" {
+		t.Fatalf("second checkpoint status = %q, want error", unmarshaled.PredictionCheckpoints[1].Status)
 	}
 }
 

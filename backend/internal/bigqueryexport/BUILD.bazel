@@ -1,0 +1,22 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "bigqueryexport",
+    srcs = ["export.go"],
+    importpath = "github.com/cdsap/build-process-watcher/backend/internal/bigqueryexport",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/models",
+        "@com_google_cloud_go_bigquery//:bigquery",
+    ],
+)
+
+go_test(
+    name = "bigqueryexport_test",
+    srcs = ["export_test.go"],
+    embed = [":bigqueryexport"],
+    deps = [
+        "//internal/models",
+        "@com_google_cloud_go_bigquery//:bigquery",
+    ],
+)

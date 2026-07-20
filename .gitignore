@@ -6,6 +6,15 @@ yarn-error.log*
 
 # Build output
 dist/
+backend/bazel-*
+backend/bin/
+
+# Private predictive reliability artifacts
+backend/schema/predictive_reliability/
+PREDICTIVE_RELIABILITY_IMPLEMENTATION.md
+docs/plans/predictive-reliability-n-second-checkpoints.md
+scripts/generate-predictive-reliability-window.js
+requirements.md
 
 # IDE files
 .idea/
@@ -15,4 +24,4 @@ dist/
 
 # OS files
 .DS_Store
-Thumbs.db 
+Thumbs.db

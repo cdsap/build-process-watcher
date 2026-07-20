@@ -14,4 +14,10 @@ describe('run dashboard responsive layout', () => {
     expect(mobileRules?.[1]).toMatch(/\.chart-wrapper\s*{[^}]*min-width:\s*0\s*;/);
     expect(mobileRules?.[1]).not.toMatch(/\.chart-wrapper\s*{[^}]*min-width:\s*[1-9]\d*px\s*;/);
   });
+
+  it('keeps predictive reliability hidden behind config and data gates', () => {
+    expect(source).toContain('window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true');
+    expect(source).toContain('prediction_checkpoints');
+    expect(source).toContain('predictionEnabled && predictionCheckpoints.length');
+  });
 });

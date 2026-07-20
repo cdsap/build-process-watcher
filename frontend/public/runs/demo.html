@@ -3,9 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Expires" content="0">
     <title>Build Process Watcher - Example Dashboard</title>
     <meta name="description" content="Explore an example Build Process Watcher dashboard with Gradle daemon memory and performance metrics.">
     <meta name="robots" content="index, follow">
@@ -19,8 +16,33 @@
     <meta name="twitter:title" content="Build Process Watcher - Example Dashboard">
     <meta name="twitter:description" content="Explore an example Build Process Watcher dashboard with Gradle daemon memory and performance metrics.">
     <meta name="twitter:image" content="https://process-watcher.web.app/gha_log.png">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
     <script src="/config.js"></script>
+    <script src="/compare-shared.js"></script>
+    <script>
+        // Set all links dynamically based on config
+        (function() {
+            const frontendUrl = window.BUILD_PROCESS_WATCHER_CONFIG?.frontendUrl || 'https://process-watcher.web.app';
+            document.addEventListener('DOMContentLoaded', function() {
+                // Set all "back home" links
+                document.querySelectorAll('.back-home-link, a[href="https://process-watcher.web.app"]').forEach(link => {
+                    link.href = frontendUrl;
+                });
+            });
+            // Also set immediately for elements that might exist before DOMContentLoaded
+            const setLinks = function() {
+                document.querySelectorAll('a[href="https://process-watcher.web.app"]').forEach(link => {
+                    link.href = frontendUrl;
+                });
+            };
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', setLinks);
+            } else {
+                setLinks();
+            }
+        })();
+    </script>
     <style>
         * {
             box-sizing: border-box;
@@ -52,7 +74,6 @@
             font-weight: 600;
             color: #111827;
         }
-
 
         .run-info {
             background: #f9fafb;
@@ -90,6 +111,58 @@
             color: #111827;
         }
 
+        .process-info-section {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .process-info-section h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #111827;
+            margin-bottom: 1.5rem;
+        }
+
+        .process-info-card {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .process-info-card h3 {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: #111827;
+            margin-bottom: 0.5rem;
+        }
+
+        .process-info-card .process-meta {
+            font-size: 0.875rem;
+            color: #6b7280;
+            margin-bottom: 1rem;
+        }
+
+        .vm-flags-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+
+        .vm-flag {
+            background: #e5e7eb;
+            color: #374151;
+            padding: 0.25rem 0.75rem;
+            border-radius: 0.375rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+        }
+
         .status-in-progress {
             color: #2563eb;
         }
@@ -105,6 +178,48 @@
             padding: 1.5rem;
             margin-bottom: 2rem;
             overflow-x: auto;
+        }
+
+        .downloads-toolbar {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin: 0 0 1rem 0;
+        }
+
+        .chart-filters {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            align-items: center;
+            margin: 0 0 1rem 0;
+            font-size: 0.875rem;
+            color: #475569;
+        }
+
+        .chart-filters label {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.5rem 0.8rem;
+            background: #2563eb;
+            color: #fff;
+            border: 1px solid #1d4ed8;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .btn.secondary {
+            background: #6b7280;
+            border-color: #4b5563;
         }
 
         .chart-wrapper {
@@ -136,55 +251,208 @@
             text-align: center;
         }
 
-        .refresh-info {
+        .run-header-bar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 0.75rem 1rem;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .run-header-main {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 1rem;
+            font-size: 0.875rem;
+        }
+
+        .run-header-main .run-id {
+            font-family: ui-monospace, monospace;
+            font-weight: 600;
+            color: #0f172a;
+        }
+
+        .run-header-main .run-status {
+            padding: 0.2rem 0.5rem;
+            border-radius: 0.25rem;
+            font-weight: 600;
+            font-size: 0.8rem;
+        }
+
+        .run-header-main .run-status.done {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .run-header-main .run-status.live {
+            background: #dbeafe;
+            color: #1d4ed8;
+        }
+
+        .run-header-main .run-stat {
+            color: #475569;
+        }
+
+        .run-header-main .run-stat.muted {
+            color: #94a3b8;
+            font-size: 0.8rem;
+        }
+
+        .run-header-refresh {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .run-header-refresh label {
+            font-size: 0.875rem;
+            color: #64748b;
+        }
+
+        .run-header-refresh select {
+            padding: 0.3rem 0.5rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 0.25rem;
+            font-size: 0.8rem;
+        }
+
+        .compare-controls {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 2rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .compare-controls .meta {
+            font-size: 0.875rem;
+            color: #334155;
+        }
+
+        .compare-controls input[type="file"] {
+            font-size: 0.875rem;
+        }
+
+        .compare-section {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .compare-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            flex-wrap: wrap;
+            margin-bottom: 1rem;
+        }
+
+        .compare-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+            gap: 2rem;
+        }
+
+        .compare-column h3 {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: #0f172a;
+            margin-bottom: 0.75rem;
+        }
+
+        .replay-controls {
             background: #f0f9ff;
             border: 1px solid #bae6fd;
             border-radius: 0.5rem;
             padding: 1rem;
-            color: #0369a1;
+            margin-bottom: 2rem;
+            display: grid;
+            grid-template-columns: auto auto 1fr;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .replay-controls .buttons {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .replay-controls .meta {
             font-size: 0.875rem;
-            margin-bottom: 1rem;
+            color: #0369a1;
+        }
+
+        .replay-controls .timeline {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .replay-controls input[type="range"] {
+            width: 100%;
         }
 
         @media (max-width: 768px) {
             .status-grid {
                 grid-template-columns: repeat(2, 1fr);
             }
-            
+
             .chart-container {
                 padding: 1rem;
                 margin: 0 -10px 2rem -10px;
                 border-radius: 0;
             }
-            
+
             .chart-wrapper {
                 min-width: 500px;
             }
-            
+
+            .replay-controls {
+                grid-template-columns: 1fr;
+            }
+
             .container {
                 padding: 10px;
             }
-            
+
             h1 {
                 font-size: 1.5rem;
             }
-            
+
             .run-info h2 {
                 font-size: 1.25rem;
             }
         }
-        
+
         @media (max-width: 480px) {
             .status-grid {
                 grid-template-columns: 1fr;
             }
-            
+
             .chart-wrapper {
-                min-width: 400px;
+                min-width: 0;
             }
         }
     </style>
     <link rel="stylesheet" href="/bpw-ui.css">
+    <link rel="stylesheet" href="/bpw-experiment.css">
+    <script src="/experiment-layout.js"></script>
+    <script src="/chart-studio.js"></script>
+    <script src="/build-story.js"></script>
 </head>
 <body>
     <div class="container">
@@ -200,1949 +468,2243 @@
     </div>
 
     <script>
-        // Static example data from real run 18236843825 (311 samples)
-        // IMPORTANT: Define this BEFORE any code that uses it
-        const exampleData = {
-  "samples": [
-    {
-      "Timestamp": 1759978532068,
-      "ElapsedTime": 11,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 485,
-      "HeapUsed": 95,
-      "HeapCap": 4090,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978538129,
-      "ElapsedTime": 17,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 2801,
-      "HeapUsed": 125,
-      "HeapCap": 4068,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978543129,
-      "ElapsedTime": 22,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 2838,
-      "HeapUsed": 445,
-      "HeapCap": 4082,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978549129,
-      "ElapsedTime": 28,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 2952,
-      "HeapUsed": 842,
-      "HeapCap": 4032,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978555129,
-      "ElapsedTime": 34,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3013,
-      "HeapUsed": 1466,
-      "HeapCap": 4032,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978560129,
-      "ElapsedTime": 39,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3038,
-      "HeapUsed": 1550,
-      "HeapCap": 4032,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978566129,
-      "ElapsedTime": 45,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3061,
-      "HeapUsed": 34,
-      "HeapCap": 4050,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978571129,
-      "ElapsedTime": 50,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3094,
-      "HeapUsed": 1668,
-      "HeapCap": 4050,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978578129,
-      "ElapsedTime": 57,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3186,
-      "HeapUsed": 875,
-      "HeapCap": 3992,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978584129,
-      "ElapsedTime": 63,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3244,
-      "HeapUsed": 1905,
-      "HeapCap": 3988,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978590129,
-      "ElapsedTime": 69,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3297,
-      "HeapUsed": 454,
-      "HeapCap": 3908,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978595129,
-      "ElapsedTime": 74,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3337,
-      "HeapUsed": 1578,
-      "HeapCap": 3908,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978601129,
-      "ElapsedTime": 80,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3357,
-      "HeapUsed": 1720,
-      "HeapCap": 3908,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978606129,
-      "ElapsedTime": 85,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3495,
-      "HeapUsed": 1499,
-      "HeapCap": 4014,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978612129,
-      "ElapsedTime": 91,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 212,
-      "HeapUsed": 20,
-      "HeapCap": 230,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978612129,
-      "ElapsedTime": 91,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3514,
-      "HeapUsed": 1299,
-      "HeapCap": 3988,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978619129,
-      "ElapsedTime": 98,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 539,
-      "HeapUsed": 237,
-      "HeapCap": 415,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978619129,
-      "ElapsedTime": 98,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3514,
-      "HeapUsed": 1363,
-      "HeapCap": 3988,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978625129,
-      "ElapsedTime": 104,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 777,
-      "HeapUsed": 436,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978625129,
-      "ElapsedTime": 104,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3516,
-      "HeapUsed": 1445,
-      "HeapCap": 3988,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978631129,
-      "ElapsedTime": 110,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 779,
-      "HeapUsed": 441,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978631129,
-      "ElapsedTime": 110,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3516,
-      "HeapUsed": 1583,
-      "HeapCap": 3988,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978637129,
-      "ElapsedTime": 116,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 779,
-      "HeapUsed": 441,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978637129,
-      "ElapsedTime": 116,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3528,
-      "HeapUsed": 421,
-      "HeapCap": 3994,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978643129,
-      "ElapsedTime": 122,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 783,
-      "HeapUsed": 450,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978643129,
-      "ElapsedTime": 122,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3578,
-      "HeapUsed": 1685,
-      "HeapCap": 3980,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978650129,
-      "ElapsedTime": 129,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 783,
-      "HeapUsed": 450,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978650129,
-      "ElapsedTime": 129,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3644,
-      "HeapUsed": 1691,
-      "HeapCap": 3924,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978656129,
-      "ElapsedTime": 135,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 783,
-      "HeapUsed": 450,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978656129,
-      "ElapsedTime": 135,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3758,
-      "HeapUsed": 879,
-      "HeapCap": 4014,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978662129,
-      "ElapsedTime": 141,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 783,
-      "HeapUsed": 450,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978662129,
-      "ElapsedTime": 141,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3776,
-      "HeapUsed": 1391,
-      "HeapCap": 3928,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978668129,
-      "ElapsedTime": 147,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 783,
-      "HeapUsed": 450,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978668129,
-      "ElapsedTime": 147,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3806,
-      "HeapUsed": 686,
-      "HeapCap": 3990,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978675129,
-      "ElapsedTime": 154,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 783,
-      "HeapUsed": 450,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978675129,
-      "ElapsedTime": 154,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3830,
-      "HeapUsed": 1844,
-      "HeapCap": 3966,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978681129,
-      "ElapsedTime": 160,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978681129,
-      "ElapsedTime": 160,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3840,
-      "HeapUsed": 2190,
-      "HeapCap": 3966,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978687129,
-      "ElapsedTime": 166,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978687129,
-      "ElapsedTime": 166,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3840,
-      "HeapUsed": 2272,
-      "HeapCap": 3966,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978692129,
-      "ElapsedTime": 171,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978692129,
-      "ElapsedTime": 171,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3841,
-      "HeapUsed": 2380,
-      "HeapCap": 3966,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978698129,
-      "ElapsedTime": 177,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978698129,
-      "ElapsedTime": 177,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3843,
-      "HeapUsed": 2512,
-      "HeapCap": 3966,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978704129,
-      "ElapsedTime": 183,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978704129,
-      "ElapsedTime": 183,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3933,
-      "HeapUsed": 314,
-      "HeapCap": 3884,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978710129,
-      "ElapsedTime": 189,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978710129,
-      "ElapsedTime": 189,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3935,
-      "HeapUsed": 460,
-      "HeapCap": 3884,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978716129,
-      "ElapsedTime": 195,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978716129,
-      "ElapsedTime": 195,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3979,
-      "HeapUsed": 413,
-      "HeapCap": 3938,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978721129,
-      "ElapsedTime": 200,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978721129,
-      "ElapsedTime": 200,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3979,
-      "HeapUsed": 521,
-      "HeapCap": 3938,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978727129,
-      "ElapsedTime": 206,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978727129,
-      "ElapsedTime": 206,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3982,
-      "HeapUsed": 669,
-      "HeapCap": 3938,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978733129,
-      "ElapsedTime": 212,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978733129,
-      "ElapsedTime": 212,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 3982,
-      "HeapUsed": 767,
-      "HeapCap": 3938,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978739129,
-      "ElapsedTime": 218,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978739129,
-      "ElapsedTime": 218,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4005,
-      "HeapUsed": 975,
-      "HeapCap": 3938,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978745129,
-      "ElapsedTime": 224,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978745129,
-      "ElapsedTime": 224,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4006,
-      "HeapUsed": 1197,
-      "HeapCap": 3938,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978750129,
-      "ElapsedTime": 229,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978750129,
-      "ElapsedTime": 229,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4015,
-      "HeapUsed": 1745,
-      "HeapCap": 3938,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978756129,
-      "ElapsedTime": 235,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978756129,
-      "ElapsedTime": 235,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4054,
-      "HeapUsed": 754,
-      "HeapCap": 3918,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978763129,
-      "ElapsedTime": 242,
-      "PID": "7841",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 91,
-      "HeapUsed": 17,
-      "HeapCap": 4096,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978763129,
-      "ElapsedTime": 242,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978763129,
-      "ElapsedTime": 242,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4139,
-      "HeapUsed": 1635,
-      "HeapCap": 3958,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978769129,
-      "ElapsedTime": 248,
-      "PID": "7841",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 604,
-      "HeapUsed": 43,
-      "HeapCap": 4076,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978769129,
-      "ElapsedTime": 248,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978769129,
-      "ElapsedTime": 248,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4178,
-      "HeapUsed": 725,
-      "HeapCap": 3948,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978779129,
-      "ElapsedTime": 258,
-      "PID": "7841",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 720,
-      "HeapUsed": 131,
-      "HeapCap": 4070,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978779129,
-      "ElapsedTime": 258,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978779129,
-      "ElapsedTime": 258,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4319,
-      "HeapUsed": 1862,
-      "HeapCap": 4090,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978787129,
-      "ElapsedTime": 266,
-      "PID": "7841",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 929,
-      "HeapUsed": 274,
-      "HeapCap": 4072,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978787129,
-      "ElapsedTime": 266,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978787129,
-      "ElapsedTime": 266,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4332,
-      "HeapUsed": 2990,
-      "HeapCap": 4090,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978795129,
-      "ElapsedTime": 274,
-      "PID": "7841",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 1090,
-      "HeapUsed": 236,
-      "HeapCap": 4058,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978795129,
-      "ElapsedTime": 274,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978795129,
-      "ElapsedTime": 274,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4351,
-      "HeapUsed": 1922,
-      "HeapCap": 4082,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978804129,
-      "ElapsedTime": 283,
-      "PID": "7841",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 1156,
-      "HeapUsed": 370,
-      "HeapCap": 4058,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978804129,
-      "ElapsedTime": 283,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978804129,
-      "ElapsedTime": 283,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4393,
-      "HeapUsed": 1296,
-      "HeapCap": 4058,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978812129,
-      "ElapsedTime": 291,
-      "PID": "7841",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 2317,
-      "HeapUsed": 444,
-      "HeapCap": 4060,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978812129,
-      "ElapsedTime": 291,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978812129,
-      "ElapsedTime": 291,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4378,
-      "HeapUsed": 1192,
-      "HeapCap": 4052,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978821129,
-      "ElapsedTime": 300,
-      "PID": "7841",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 2340,
-      "HeapUsed": 558,
-      "HeapCap": 4032,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978821129,
-      "ElapsedTime": 300,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978821129,
-      "ElapsedTime": 300,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4394,
-      "HeapUsed": 2566,
-      "HeapCap": 4052,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978830129,
-      "ElapsedTime": 309,
-      "PID": "7841",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 2512,
-      "HeapUsed": 831,
-      "HeapCap": 4002,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978830129,
-      "ElapsedTime": 309,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978830129,
-      "ElapsedTime": 309,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4420,
-      "HeapUsed": 1778,
-      "HeapCap": 4038,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978838129,
-      "ElapsedTime": 317,
-      "PID": "7841",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 2706,
-      "HeapUsed": 746,
-      "HeapCap": 4040,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978838129,
-      "ElapsedTime": 317,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978838129,
-      "ElapsedTime": 317,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4418,
-      "HeapUsed": 1278,
-      "HeapCap": 4032,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978846129,
-      "ElapsedTime": 325,
-      "PID": "7841",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 2687,
-      "HeapUsed": 756,
-      "HeapCap": 4040,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978846129,
-      "ElapsedTime": 325,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978846129,
-      "ElapsedTime": 325,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4422,
-      "HeapUsed": 658,
-      "HeapCap": 3996,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978852129,
-      "ElapsedTime": 331,
-      "PID": "7841",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 2787,
-      "HeapUsed": 1146,
-      "HeapCap": 4044,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978852129,
-      "ElapsedTime": 331,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978852129,
-      "ElapsedTime": 331,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4430,
-      "HeapUsed": 2746,
-      "HeapCap": 4022,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978860129,
-      "ElapsedTime": 339,
-      "PID": "7841",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 2873,
-      "HeapUsed": 891,
-      "HeapCap": 4018,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978860129,
-      "ElapsedTime": 339,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978860129,
-      "ElapsedTime": 339,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4464,
-      "HeapUsed": 764,
-      "HeapCap": 3992,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978868129,
-      "ElapsedTime": 347,
-      "PID": "7841",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 2900,
-      "HeapUsed": 1490,
-      "HeapCap": 4016,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978868129,
-      "ElapsedTime": 347,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978868129,
-      "ElapsedTime": 347,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4451,
-      "HeapUsed": 1714,
-      "HeapCap": 3992,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978868129,
-      "ElapsedTime": 347,
-      "PID": "11229",
-      "Name": "GradleWorkerMain",
-      "RSS": 309,
-      "HeapUsed": 29,
-      "HeapCap": 247,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978879129,
-      "ElapsedTime": 358,
-      "PID": "7841",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 2937,
-      "HeapUsed": 903,
-      "HeapCap": 4048,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978879129,
-      "ElapsedTime": 358,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978879129,
-      "ElapsedTime": 358,
-      "PID": "11624",
-      "Name": "GradleWorkerMain",
-      "RSS": 189,
-      "HeapUsed": 74,
-      "HeapCap": 249,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978879129,
-      "ElapsedTime": 358,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4465,
-      "HeapUsed": 2906,
-      "HeapCap": 3994,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978888129,
-      "ElapsedTime": 367,
-      "PID": "7841",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 2941,
-      "HeapUsed": 1141,
-      "HeapCap": 4048,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978888129,
-      "ElapsedTime": 367,
-      "PID": "11955",
-      "Name": "GradleWorkerMain",
-      "RSS": 204,
-      "HeapUsed": 79,
-      "HeapCap": 248,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978888129,
-      "ElapsedTime": 367,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978888129,
-      "ElapsedTime": 367,
-      "PID": "11624",
-      "Name": "GradleWorkerMain",
-      "RSS": 265,
-      "HeapUsed": 32,
-      "HeapCap": 115,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978888129,
-      "ElapsedTime": 367,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4617,
-      "HeapUsed": 2228,
-      "HeapCap": 4092,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978899129,
-      "ElapsedTime": 378,
-      "PID": "7841",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 3059,
-      "HeapUsed": 926,
-      "HeapCap": 4048,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978899129,
-      "ElapsedTime": 378,
-      "PID": "12386",
-      "Name": "GradleWorkerMain",
-      "RSS": 192,
-      "HeapUsed": 75,
-      "HeapCap": 249,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978899129,
-      "ElapsedTime": 378,
-      "PID": "12359",
-      "Name": "GradleWorkerMain",
-      "RSS": 257,
-      "HeapUsed": 120,
-      "HeapCap": 249,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978899129,
-      "ElapsedTime": 378,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 785,
-      "HeapUsed": 451,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978899129,
-      "ElapsedTime": 378,
-      "PID": "11624",
-      "Name": "GradleWorkerMain",
-      "RSS": 393,
-      "HeapUsed": 80,
-      "HeapCap": 132,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978899129,
-      "ElapsedTime": 378,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4619,
-      "HeapUsed": 2956,
-      "HeapCap": 4092,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978910129,
-      "ElapsedTime": 389,
-      "PID": "7841",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 3059,
-      "HeapUsed": 978,
-      "HeapCap": 4048,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978910129,
-      "ElapsedTime": 389,
-      "PID": "12386",
-      "Name": "GradleWorkerMain",
-      "RSS": 270,
-      "HeapUsed": 90,
-      "HeapCap": 109,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978910129,
-      "ElapsedTime": 389,
-      "PID": "12359",
-      "Name": "GradleWorkerMain",
-      "RSS": 292,
-      "HeapUsed": 96,
-      "HeapCap": 107,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978910129,
-      "ElapsedTime": 389,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 786,
-      "HeapUsed": 456,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978910129,
-      "ElapsedTime": 389,
-      "PID": "11624",
-      "Name": "GradleWorkerMain",
-      "RSS": 590,
-      "HeapUsed": 137,
-      "HeapCap": 174,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978910129,
-      "ElapsedTime": 389,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4641,
-      "HeapUsed": 1953,
-      "HeapCap": 4024,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978923129,
-      "ElapsedTime": 402,
-      "PID": "7841",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 3063,
-      "HeapUsed": 962,
-      "HeapCap": 4090,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978923129,
-      "ElapsedTime": 402,
-      "PID": "12386",
-      "Name": "GradleWorkerMain",
-      "RSS": 414,
-      "HeapUsed": 112,
-      "HeapCap": 145,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978923129,
-      "ElapsedTime": 402,
-      "PID": "13267",
-      "Name": "GradleWorkerMain",
-      "RSS": 310,
-      "HeapUsed": 61,
-      "HeapCap": 242,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978923129,
-      "ElapsedTime": 402,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 786,
-      "HeapUsed": 456,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978923129,
-      "ElapsedTime": 402,
-      "PID": "11624",
-      "Name": "GradleWorkerMain",
-      "RSS": 852,
-      "HeapUsed": 161,
-      "HeapCap": 178,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978923129,
-      "ElapsedTime": 402,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4642,
-      "HeapUsed": 2541,
-      "HeapCap": 4024,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978935129,
-      "ElapsedTime": 414,
-      "PID": "7841",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 3063,
-      "HeapUsed": 1510,
-      "HeapCap": 4090,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978935129,
-      "ElapsedTime": 414,
-      "PID": "12386",
-      "Name": "GradleWorkerMain",
-      "RSS": 540,
-      "HeapUsed": 127,
-      "HeapCap": 182,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978935129,
-      "ElapsedTime": 414,
-      "PID": "13267",
-      "Name": "GradleWorkerMain",
-      "RSS": 340,
-      "HeapUsed": 95,
-      "HeapCap": 129,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978935129,
-      "ElapsedTime": 414,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 786,
-      "HeapUsed": 456,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978935129,
-      "ElapsedTime": 414,
-      "PID": "11624",
-      "Name": "GradleWorkerMain",
-      "RSS": 916,
-      "HeapUsed": 144,
-      "HeapCap": 214,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978935129,
-      "ElapsedTime": 414,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4642,
-      "HeapUsed": 2883,
-      "HeapCap": 4024,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978947129,
-      "ElapsedTime": 426,
-      "PID": "7841",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 3063,
-      "HeapUsed": 1514,
-      "HeapCap": 4090,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978947129,
-      "ElapsedTime": 426,
-      "PID": "12386",
-      "Name": "GradleWorkerMain",
-      "RSS": 819,
-      "HeapUsed": 113,
-      "HeapCap": 327,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978947129,
-      "ElapsedTime": 426,
-      "PID": "13267",
-      "Name": "GradleWorkerMain",
-      "RSS": 425,
-      "HeapUsed": 118,
-      "HeapCap": 154,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978947129,
-      "ElapsedTime": 426,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 786,
-      "HeapUsed": 456,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978947129,
-      "ElapsedTime": 426,
-      "PID": "11624",
-      "Name": "GradleWorkerMain",
-      "RSS": 1012,
-      "HeapUsed": 183,
-      "HeapCap": 261,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978947129,
-      "ElapsedTime": 426,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4641,
-      "HeapUsed": 2767,
-      "HeapCap": 4024,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978959129,
-      "ElapsedTime": 438,
-      "PID": "7841",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 3064,
-      "HeapUsed": 1074,
-      "HeapCap": 4072,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978959129,
-      "ElapsedTime": 438,
-      "PID": "12386",
-      "Name": "GradleWorkerMain",
-      "RSS": 911,
-      "HeapUsed": 108,
-      "HeapCap": 347,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978959129,
-      "ElapsedTime": 438,
-      "PID": "13267",
-      "Name": "GradleWorkerMain",
-      "RSS": 543,
-      "HeapUsed": 111,
-      "HeapCap": 191,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978959129,
-      "ElapsedTime": 438,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 786,
-      "HeapUsed": 456,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978959129,
-      "ElapsedTime": 438,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4673,
-      "HeapUsed": 1913,
-      "HeapCap": 4020,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978969129,
-      "ElapsedTime": 448,
-      "PID": "7841",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 3070,
-      "HeapUsed": 1258,
-      "HeapCap": 4072,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978969129,
-      "ElapsedTime": 448,
-      "PID": "13267",
-      "Name": "GradleWorkerMain",
-      "RSS": 634,
-      "HeapUsed": 144,
-      "HeapCap": 197,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978969129,
-      "ElapsedTime": 448,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 786,
-      "HeapUsed": 456,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978969129,
-      "ElapsedTime": 448,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4631,
-      "HeapUsed": 775,
-      "HeapCap": 4040,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978969129,
-      "ElapsedTime": 448,
-      "PID": "15083",
-      "Name": "GradleWorkerMain",
-      "RSS": 235,
-      "HeapUsed": 70,
-      "HeapCap": 85,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978978129,
-      "ElapsedTime": 457,
-      "PID": "7841",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 3070,
-      "HeapUsed": 1260,
-      "HeapCap": 4072,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978978129,
-      "ElapsedTime": 457,
-      "PID": "13267",
-      "Name": "GradleWorkerMain",
-      "RSS": 745,
-      "HeapUsed": 186,
-      "HeapCap": 216,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978978129,
-      "ElapsedTime": 457,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 786,
-      "HeapUsed": 456,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978978129,
-      "ElapsedTime": 457,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4631,
-      "HeapUsed": 867,
-      "HeapCap": 4040,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978978129,
-      "ElapsedTime": 457,
-      "PID": "15083",
-      "Name": "GradleWorkerMain",
-      "RSS": 620,
-      "HeapUsed": 253,
-      "HeapCap": 352,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978987129,
-      "ElapsedTime": 466,
-      "PID": "7841",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 3070,
-      "HeapUsed": 1260,
-      "HeapCap": 4072,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978987129,
-      "ElapsedTime": 466,
-      "PID": "13267",
-      "Name": "GradleWorkerMain",
-      "RSS": 1337,
-      "HeapUsed": 272,
-      "HeapCap": 506,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978987129,
-      "ElapsedTime": 466,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 786,
-      "HeapUsed": 456,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978987129,
-      "ElapsedTime": 466,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4631,
-      "HeapUsed": 959,
-      "HeapCap": 4040,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978987129,
-      "ElapsedTime": 466,
-      "PID": "15083",
-      "Name": "GradleWorkerMain",
-      "RSS": 678,
-      "HeapUsed": 204,
-      "HeapCap": 374,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978995129,
-      "ElapsedTime": 474,
-      "PID": "7841",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 3070,
-      "HeapUsed": 1260,
-      "HeapCap": 4072,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978995129,
-      "ElapsedTime": 474,
-      "PID": "13267",
-      "Name": "GradleWorkerMain",
-      "RSS": 1490,
-      "HeapUsed": 262,
-      "HeapCap": 511,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978995129,
-      "ElapsedTime": 474,
-      "PID": "3735",
-      "Name": "KotlinCompileDaemon",
-      "RSS": 786,
-      "HeapUsed": 456,
-      "HeapCap": 660,
-      "RunID": ""
-    },
-    {
-      "Timestamp": 1759978995129,
-      "ElapsedTime": 474,
-      "PID": "2217",
-      "Name": "GradleDaemon",
-      "RSS": 4629,
-      "HeapUsed": 1053,
-      "HeapCap": 4040,
-      "RunID": ""
-    }
-  ],
-  "finished": true,
-  "finished_at": "2025-10-09T03:03:16.129Z",
-  "updated_at": "2025-10-09T03:03:16.129Z"
-};
+        const runId = 'run-1783046073708';
+
+        const CompareShared = window.BpwCompareShared || {};
+        const {
+            COLOR_PALETTE,
+            visibilityStore,
+            applyVisibilityToTraces,
+            attachLegendVisibilityHandlers,
+            hasGCData,
+            hasRatioData,
+            hasJITData,
+            hasClassLoadingData,
+            buildColorMap,
+            buildTotalRssSeries,
+            buildForwardFilledSeries,
+            buildExactSeries,
+            buildReplayData,
+            buildMetricTraces,
+            parseCsvText,
+            normalizeCompareSamples
+        } = CompareShared;
+        const traceVisibility = visibilityStore || {};
+
+        // Refresh interval management
+        let refreshInterval = parseInt(localStorage.getItem('refreshInterval')) || 60; // Default 60 seconds
+        let refreshTimer = null;
+        let lastRefreshTime = null;
+
+        if (!runId || runId === 'runs' || runId === '') {
+            document.getElementById('content').innerHTML = `
+                <div class="error">
+                    <h2>Invalid Run ID</h2>
+                    <p>No run ID provided in the URL.</p>
+                    <a href="#" class="back-home-link" style="color: #2563eb;">Back to Home</a>
+                </div>
+            `;
+        } else {
+            loadRunData(runId);
+        }
+
+        function setRefreshInterval(seconds) {
+            refreshInterval = seconds;
+            localStorage.setItem('refreshInterval', seconds);
+
+            // Cancel existing timer and restart with new interval
+            if (refreshTimer) {
+                clearTimeout(refreshTimer);
+                refreshTimer = null;
+            }
+
+            // Reload immediately to show the new interval in UI
+            loadRunData(runId);
+        }
+
+        function cancelRefresh() {
+            if (refreshTimer) {
+                clearTimeout(refreshTimer);
+                refreshTimer = null;
+            }
+        }
 
         async function loadRunData(runId) {
+            let response;
+
             try {
-                console.log('📊 Using static example data from real run 18236843825');
-                const data = exampleData;
+                response = await fetch('/demo-run.json');
+
+                if (!response.ok) {
+                    console.error('Run data request failed:', {
+                        runId,
+                        status: response.status,
+                        statusText: response.statusText
+                    });
+                    if (response.status === 404 || response.status === 410) {
+                        showUnavailableRun('not-found');
+                    } else {
+                        showUnavailableRun('server');
+                    }
+                    return;
+                }
+
+                const data = CompareShared.normalizeReportData(await response.json());
+                lastRefreshTime = new Date();
                 renderDashboard(runId, data);
-                
-                // No auto-refresh for example data
-                
+                window.currentRunData = data;
+
+                // Auto-refresh if not finished
+                cancelRefresh(); // Cancel any existing timer
+                if (!data.finished) {
+                    refreshTimer = setTimeout(() => loadRunData(runId), refreshInterval * 1000);
+                }
+
             } catch (error) {
-                console.error('Error loading run data:', error);
-                showError(error.message);
+                console.error('Run data request could not be completed:', { runId, error });
+                showUnavailableRun(response ? 'server' : 'connectivity');
             }
         }
 
         function renderDashboard(runId, data) {
-            const isFinished = data.finished;
+            const isFinished = data.finished === true;
             const samples = data.samples || [];
-            
+            const processInfo = data.process_info || {};
+            window.currentSamples = samples;
+            window.currentProcessSummary = CompareShared.buildProcessSummary(samples, processInfo);
+
+            // Calculate metrics for each process and overall
+            let maxRssAllProcesses = 0;
+            let maxHeapAllProcesses = 0;
+            let maxGcTimeAllProcesses = 0;
+            const processMetrics = {};
+
+            // Calculate metrics per process
+            for (const [pid, info] of Object.entries(processInfo)) {
+                const processSamples = samples.filter(s => s.PID === pid);
+                let maxRss = 0;
+                let maxHeap = 0;
+                let maxGCTimeSeconds = 0;
+                let finalCompiledMethods = null;
+                let finalJITTimeMs = null;
+                let finalClassesLoaded = null;
+                let minTimestamp = Number.POSITIVE_INFINITY;
+                let maxTimestamp = 0;
+
+                processSamples.forEach(sample => {
+                    if (sample.RSS && sample.RSS > maxRss) {
+                        maxRss = sample.RSS;
+                    }
+                    if (sample.HeapUsed && sample.HeapUsed > maxHeap) {
+                        maxHeap = sample.HeapUsed;
+                    }
+                    if (sample.GCTime) {
+                        // GCTime is cumulative in samples; keep the max in seconds.
+                        const gcSeconds = sample.GCTime / 1000;
+                        if (gcSeconds > maxGCTimeSeconds) {
+                            maxGCTimeSeconds = gcSeconds;
+                        }
+                    }
+                    if (Number.isFinite(Number(sample.JITCompiledMethods))) finalCompiledMethods = Number(sample.JITCompiledMethods);
+                    if (Number.isFinite(Number(sample.JITCompilationTimeMs))) finalJITTimeMs = Number(sample.JITCompilationTimeMs);
+                    if (Number.isFinite(Number(sample.ClassesLoaded))) finalClassesLoaded = Number(sample.ClassesLoaded);
+                    if (sample.Timestamp && sample.Timestamp < minTimestamp) minTimestamp = sample.Timestamp;
+                    if (sample.Timestamp && sample.Timestamp > maxTimestamp) maxTimestamp = sample.Timestamp;
+                });
+
+                processMetrics[pid] = {
+                    maxRss: maxRss,
+                    maxHeap: maxHeap,
+                    totalGCTime: maxGCTimeSeconds,
+                    finalCompiledMethods,
+                    finalJITTimeMs,
+                    finalClassesLoaded,
+                    durationSeconds: Number.isFinite(minTimestamp) && maxTimestamp >= minTimestamp
+                        ? Math.max(0, (maxTimestamp - minTimestamp) / 1000)
+                        : 0,
+                    sampleCount: processSamples.length
+                };
+                if (maxHeap > maxHeapAllProcesses) {
+                    maxHeapAllProcesses = maxHeap;
+                }
+                if (maxGCTimeSeconds > maxGcTimeAllProcesses) {
+                    maxGcTimeAllProcesses = maxGCTimeSeconds;
+                }
+
+            }
+
+            // Calculate overall max RSS by summing per-timestamp totals
+            // Use forward-filling to avoid drops when a process skips a sample
+            const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
+            const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
+            const lastKnownRSS = {};
+            processKeys.forEach(processKey => {
+                lastKnownRSS[processKey] = 0;
+            });
+
+            timestamps.forEach(timestamp => {
+                let total = 0;
+                let hasAnyProcess = false;
+
+                processKeys.forEach(processKey => {
+                    const [processName, pid] = processKey.split('|');
+                    const sample = samples
+                        .filter(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp)
+                        [0];
+
+                    if (sample) {
+                        lastKnownRSS[processKey] = sample.RSS;
+                        total += sample.RSS;
+                        hasAnyProcess = true;
+                    } else if (lastKnownRSS[processKey] > 0) {
+                        total += lastKnownRSS[processKey];
+                        hasAnyProcess = true;
+                    }
+                });
+
+                if (hasAnyProcess && total > maxRssAllProcesses) {
+                    maxRssAllProcesses = total;
+                }
+            });
+
+            const formatDur = (s) => s < 60 ? s + 's' : (Math.floor(s / 60) + 'm' + (s % 60 ? ' ' + Math.round(s % 60) + 's' : ''));
+            const formatPredictionValue = (value, unit) => Number.isFinite(Number(value)) ? `${Number(value).toFixed(Number(value) >= 1000 ? 0 : 1)} ${unit}` : 'N/A';
+            const predictionRiskClass = (riskLevel) => ['low', 'elevated', 'high'].includes(riskLevel) ? riskLevel : 'unknown';
+            const predictionEnabled = window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true;
+            const predictionCheckpoints = Array.isArray(data.prediction_checkpoints)
+                ? [...data.prediction_checkpoints].sort((a, b) => Number(a.observation_window_s || 0) - Number(b.observation_window_s || 0))
+                : [];
+            const predictionHtml = predictionEnabled && predictionCheckpoints.length ? `
+                <section class="prediction-panel" aria-label="Predictive reliability">
+                    <div class="prediction-panel-head">
+                        <div>
+                            <span class="bpw-panel-badge">Prediction</span>
+                            <h2>Reliability Checkpoints</h2>
+                        </div>
+                    </div>
+                    <div class="prediction-grid">
+                        ${predictionCheckpoints.map(checkpoint => `
+                            <article class="prediction-card ${predictionRiskClass(checkpoint.risk_level)}">
+                                <div class="prediction-card-top">
+                                    <strong>${escapeHtml(String(checkpoint.observation_window_s || 'N/A'))}s</strong>
+                                    <span>${escapeHtml(checkpoint.status || 'unknown')}</span>
+                                </div>
+                                <div class="prediction-risk">${escapeHtml(checkpoint.risk_level || 'unknown')}</div>
+                                <div class="prediction-metrics">
+                                    <div><span>Confidence</span><strong>${escapeHtml(checkpoint.confidence || 'N/A')}</strong></div>
+                                    <div><span>Peak RSS</span><strong>${formatPredictionValue(checkpoint.predicted_peak_rss_mb, 'MB')}</strong></div>
+                                    <div><span>Duration</span><strong>${formatPredictionValue(checkpoint.predicted_duration_s, 's')}</strong></div>
+                                </div>
+                                ${Array.isArray(checkpoint.signals) && checkpoint.signals.length ? `<div class="prediction-signals">${checkpoint.signals.slice(0, 3).map(signal => `<span>${escapeHtml(signal)}</span>`).join('')}</div>` : ''}
+                            </article>
+                        `).join('')}
+                    </div>
+                </section>
+            ` : '';
+
+            // Render process info section
+            let processInfoHtml = '';
+            if (Object.keys(processInfo).length > 0) {
+                const formatMetricMb = (value) => value > 0 ? `${value.toFixed(value >= 1000 ? 0 : 1)} MB` : 'N/A';
+                const formatMetricSeconds = (value) => value > 0 ? `${value.toFixed(value >= 10 ? 1 : 3)} s` : 'N/A';
+                const processEntries = Object.entries(processInfo).map(([pid, info]) => {
+                    const vmFlags = info.vm_flags || [];
+                    const metrics = processMetrics[pid] || { maxRss: 0, maxHeap: 0, totalGCTime: 0, durationSeconds: 0, sampleCount: 0 };
+                    return {
+                        pid,
+                        info,
+                        vmFlags,
+                        metrics,
+                        maxHeapGiB: getMaxHeapGiB(vmFlags)
+                    };
+                });
+                const peakRssPid = processEntries.reduce((best, entry) => !best || entry.metrics.maxRss > best.metrics.maxRss ? entry : best, null)?.pid;
+                const peakGcPid = processEntries.reduce((best, entry) => !best || entry.metrics.totalGCTime > best.metrics.totalGCTime ? entry : best, null)?.pid;
+                const longestPid = processEntries.reduce((best, entry) => !best || entry.metrics.durationSeconds > best.metrics.durationSeconds ? entry : best, null)?.pid;
+                const groups = {};
+                processEntries.forEach((entry) => {
+                    const name = entry.info.name || 'Unknown';
+                    if (!groups[name]) groups[name] = [];
+                    groups[name].push(entry);
+                });
+
+                processInfoHtml = '<div class="process-info-section">';
+                processInfoHtml += '<div class="process-info-head">';
+                processInfoHtml += '<div><h2>Process Information</h2><p>Compare JVM processes first; expand details only when you need flags or runtime metadata.</p></div>';
+                if (maxRssAllProcesses > 0) {
+                    processInfoHtml += `<div class="process-info-total"><span>All processes peak</span><strong>${formatMetricMb(maxRssAllProcesses)}</strong></div>`;
+                }
+                processInfoHtml += '</div>';
+                processInfoHtml += '<div class="process-groups">';
+                Object.entries(groups).sort(([a], [b]) => a.localeCompare(b)).forEach(([name, entries]) => {
+                    processInfoHtml += '<section class="process-group">';
+                    processInfoHtml += `<div class="process-group-title"><h3>${escapeHtml(name)}</h3><span>${entries.length} PID${entries.length === 1 ? '' : 's'}</span></div>`;
+                    entries.sort((a, b) => b.metrics.maxRss - a.metrics.maxRss).forEach(({ pid, info, vmFlags, metrics, maxHeapGiB }) => {
+                        const badges = [];
+                        if (pid === peakRssPid && metrics.maxRss > 0) badges.push('Peak RSS contributor');
+                        if (pid === peakGcPid && metrics.totalGCTime > 0) badges.push('Most GC time');
+                        if (pid === longestPid && metrics.durationSeconds > 0) badges.push('Longest lived');
+                        if (metrics.finalCompiledMethods !== null || metrics.finalJITTimeMs !== null) badges.push('JIT data');
+                        if (metrics.finalClassesLoaded !== null) badges.push('Class data');
+
+                        processInfoHtml += '<article class="process-info-card">';
+                        processInfoHtml += '<div class="process-card-main">';
+                        processInfoHtml += '<div class="process-card-title">';
+                        processInfoHtml += `<strong>PID ${escapeHtml(pid)}</strong>`;
+                        if (maxHeapGiB) processInfoHtml += `<span>Heap max ${maxHeapGiB} GiB</span>`;
+                        processInfoHtml += '</div>';
+                        if (badges.length) {
+                            processInfoHtml += '<div class="process-badges">';
+                            badges.forEach((badge) => {
+                                processInfoHtml += `<span>${badge}</span>`;
+                            });
+                            processInfoHtml += '</div>';
+                        }
+                        processInfoHtml += '</div>';
+
+                        processInfoHtml += '<div class="process-metric-grid">';
+                        processInfoHtml += `<div class="process-metric"><strong>Max RSS</strong><span>${formatMetricMb(metrics.maxRss)}</span></div>`;
+                        processInfoHtml += `<div class="process-metric"><strong>Max Heap</strong><span>${formatMetricMb(metrics.maxHeap)}</span></div>`;
+                        processInfoHtml += `<div class="process-metric"><strong>GC Time</strong><span>${formatMetricSeconds(metrics.totalGCTime)}</span></div>`;
+                        processInfoHtml += `<div class="process-metric"><strong>Duration</strong><span>${metrics.durationSeconds > 0 ? formatDur(Math.round(metrics.durationSeconds)) : 'N/A'}</span></div>`;
+                        processInfoHtml += `<div class="process-metric"><strong>Compiled</strong><span>${metrics.finalCompiledMethods ?? 'N/A'}</span></div>`;
+                        processInfoHtml += `<div class="process-metric"><strong>Classes</strong><span>${metrics.finalClassesLoaded ?? 'N/A'}</span></div>`;
+                        processInfoHtml += '</div>';
+
+                        processInfoHtml += '<details class="process-details">';
+                        processInfoHtml += '<summary>JVM details</summary>';
+                        processInfoHtml += '<div class="process-detail-grid">';
+                        processInfoHtml += `<div><strong>Samples</strong><span>${metrics.sampleCount || 0}</span></div>`;
+                        processInfoHtml += `<div><strong>JIT time</strong><span>${metrics.finalJITTimeMs !== null ? formatMetricSeconds(metrics.finalJITTimeMs / 1000) : 'N/A'}</span></div>`;
+                        processInfoHtml += `<div><strong>Process name</strong><span>${escapeHtml(info.name || 'Unknown')}</span></div>`;
+                        processInfoHtml += '</div>';
+                        if (vmFlags.length > 0) {
+                            processInfoHtml += '<div class="vm-flags-list">';
+                            vmFlags.forEach(flag => {
+                                processInfoHtml += `<span class="vm-flag">${escapeHtml(flag)}</span>`;
+                            });
+                            processInfoHtml += '</div>';
+                        } else {
+                            processInfoHtml += '<div class="process-meta">No VM flags available</div>';
+                        }
+                        processInfoHtml += '</details>';
+                        processInfoHtml += '</article>';
+                    });
+                    processInfoHtml += '</section>';
+                });
+                processInfoHtml += '</div>';
+                processInfoHtml += '</div>';
+            }
+
+            const processCount = new Set(samples.map(s => `${s.Name}|${s.PID}`)).size;
+            const elapsedTimes = samples.map(s => s.ElapsedTime || 0).filter(t => t > 0);
+            const durationSec = elapsedTimes.length >= 2 ? Math.max(...elapsedTimes) - Math.min(...elapsedTimes) : (elapsedTimes[0] || 0);
+            const formatMb = (value) => value > 0 ? `${value.toFixed(value >= 1000 ? 0 : 1)} MB` : 'N/A';
+            const sampleRate = durationSec > 0 && samples.length > 0 ? (samples.length / Math.max(durationSec, 1)) : 0;
+            const pressure = maxRssAllProcesses > 0 && maxHeapAllProcesses > 0
+                ? Math.min(999, (maxHeapAllProcesses / maxRssAllProcesses) * 100)
+                : 0;
+
             document.getElementById('content').innerHTML = `
-                <div class="run-info">
-                    <h2>Run Details</h2>
-                    <p><strong>Run ID:</strong> <code>${runId}</code></p>
-                    ${data.finished_at ? `<p><strong>Finished:</strong> ${new Date(data.finished_at).toLocaleString()}</p>` : ''}
-                    ${data.updated_at ? `<p><strong>Last Updated:</strong> ${new Date(data.updated_at).toLocaleString()}</p>` : ''}
-                </div>
-
-                ${!isFinished ? '<div class="refresh-info">🔄 Auto-refreshing every 60 seconds (will stop when build completes)</div>' : ''}
-
-                <div class="status-grid">
-                    <div class="status-card">
-                        <h3>Status</h3>
-                        <p class="${isFinished ? 'status-completed' : 'status-in-progress'}">
-                            ${isFinished ? 'Completed' : 'In Progress'}
-                        </p>
+                <div class="run-header-bar">
+                    <div class="run-header-main">
+                        <span class="run-id">${escapeHtml(runId)}</span>
+                        <span class="run-status ${isFinished ? 'done' : 'live'}">${isFinished ? 'Completed' : 'Live'}</span>
+                        <span class="run-stat">${samples.length} samples</span>
+                        <span class="run-stat">${processCount} processes</span>
+                        ${durationSec > 0 ? `<span class="run-stat">${formatDur(durationSec)}</span>` : ''}
+                        ${maxRssAllProcesses > 0 ? `<span class="run-stat">${maxRssAllProcesses.toFixed(0)} MB peak</span>` : ''}
+                        ${data.updated_at ? `<span class="run-stat muted">${new Date(data.updated_at).toLocaleString()}</span>` : ''}
                     </div>
-                    <div class="status-card">
-                        <h3>Samples</h3>
-                        <p>${samples.length}</p>
-                    </div>
-                    <div class="status-card">
-                        <h3>Processes</h3>
-                        <p>${new Set(samples.map(s => `${s.Name}|${s.PID}`)).size}</p>
-                    </div>
-                    <div class="status-card">
-                        <h3>Auto-refresh</h3>
-                        <p>${isFinished ? 'Stopped' : 'Active (60s)'}</p>
+                    <div class="run-header-actions">
+                        <button type="button" class="btn secondary bpw-layout-toggle" data-bpw-layout-toggle id="btn-layout-toggle">Experiment layout</button>
+                        ${!isFinished ? `
+                            <div class="run-header-refresh">
+                                <label>Refresh</label>
+                                <select id="refreshInterval" onchange="setRefreshInterval(parseInt(this.value))">
+                                    <option value="5" ${refreshInterval === 5 ? 'selected' : ''}>5s</option>
+                                    <option value="10" ${refreshInterval === 10 ? 'selected' : ''}>10s</option>
+                                    <option value="30" ${refreshInterval === 30 ? 'selected' : ''}>30s</option>
+                                    <option value="60" ${refreshInterval === 60 ? 'selected' : ''}>1m</option>
+                                    <option value="120" ${refreshInterval === 120 ? 'selected' : ''}>2m</option>
+                                    <option value="300" ${refreshInterval === 300 ? 'selected' : ''}>5m</option>
+                                </select>
+                            </div>
+                        ` : ''}
                     </div>
                 </div>
 
+                <div class="run-kpi-strip">
+                    <div class="run-kpi">
+                        <div class="run-kpi-label">Peak RSS</div>
+                        <div class="run-kpi-value">${formatMb(maxRssAllProcesses)}</div>
+                        <div class="run-kpi-note">Total memory across active JVMs</div>
+                    </div>
+                    <div class="run-kpi">
+                        <div class="run-kpi-label">Peak Heap</div>
+                        <div class="run-kpi-value">${formatMb(maxHeapAllProcesses)}</div>
+                        <div class="run-kpi-note">${pressure > 0 ? `${pressure.toFixed(0)}% of peak RSS` : 'Heap signal unavailable'}</div>
+                    </div>
+                    <div class="run-kpi">
+                        <div class="run-kpi-label">GC Time</div>
+                        <div class="run-kpi-value">${maxGcTimeAllProcesses > 0 ? `${maxGcTimeAllProcesses.toFixed(2)} s` : 'N/A'}</div>
+                        <div class="run-kpi-note">Highest cumulative process value</div>
+                    </div>
+                    <div class="run-kpi">
+                        <div class="run-kpi-label">Sample Density</div>
+                        <div class="run-kpi-value">${sampleRate > 0 ? `${sampleRate.toFixed(2)}/s` : 'N/A'}</div>
+                        <div class="run-kpi-note">${samples.length} samples over ${durationSec > 0 ? formatDur(durationSec) : 'the run'}</div>
+                    </div>
+                </div>
+
+                ${predictionHtml}
+
+                <!-- Compare runs hidden until ready -->
+
+                <div id="bpw-workspace-deck" class="bpw-workspace-deck" hidden aria-label="Workspace layout"></div>
+
+                ${isFinished === true && samples.length ? `
+                <div id="bpw-unified-replay" class="bpw-unified-replay" hidden>
+                    <div class="bpw-unified-label">Unified replay (all charts)</div>
+                    <div class="replay-controls" id="bpw-unified-replay-controls">
+                        <div class="buttons">
+                            <button class="btn" id="bpw-unified-play" type="button">Play</button>
+                            <button class="btn secondary" id="bpw-unified-pause" type="button">Pause</button>
+                            <button class="btn secondary" id="bpw-unified-reset" type="button">Reset</button>
+                        </div>
+                        <div class="meta" id="bpw-unified-meta">Frame 0 / 0</div>
+                        <div class="timeline">
+                            <input type="range" id="bpw-unified-timeline" min="0" max="0" value="0">
+                            <div class="meta" id="bpw-unified-time-label">Elapsed: 0s</div>
+                            <div class="meta">
+                                Speed:
+                                <select id="bpw-unified-speed">
+                                    <option value="5">5x</option>
+                                    <option value="10">10x</option>
+                                    <option value="15" selected>15x</option>
+                                    <option value="20">20x</option>
+                                    <option value="25">25x</option>
+                                    <option value="30">30x</option>
+                                    <option value="35">35x</option>
+                                    <option value="40">40x</option>
+                                    <option value="45">45x</option>
+                                    <option value="50">50x</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                ` : ''}
+
+                <div id="bpw-chart-studio" class="bpw-chart-studio" hidden aria-label="Chart overlay studio"></div>
+                <div id="bpw-build-story" class="bpw-build-story" hidden aria-label="Build story timeline"></div>
+
+                <div id="bpw-charts-grid" class="bpw-charts-grid">
+                <section class="bpw-chart-panel" data-bpw-panel="memory" id="section-memory">
+                <div class="bpw-panel-card">
+                    <div class="bpw-panel-card-head">
+                        <div>
+                            <span class="bpw-panel-badge">Memory</span>
+                            <h3>Memory Usage Over Time</h3>
+                        </div>
+                        <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="memory" title="Expand this panel">Expand</button>
+                    </div>
+                    <div class="bpw-panel-card-body">
                 <div class="chart-container">
-                    <h3>Memory Usage Over Time</h3>
+                    <div class="downloads-toolbar">
+                        <button class="btn" id="btn-download-png">Download PNG</button>
+                        <button class="btn" id="btn-download-svg">Download SVG</button>
+                        <button class="btn secondary" id="btn-download-json">Download JSON</button>
+                        <button class="btn secondary" id="btn-download-csv">Download CSV</button>
+                    </div>
+                    ${isFinished === true && samples.length ? `
+                        <div class="replay-controls" id="rss-replay-controls">
+                            <div class="buttons">
+                                <button class="btn" id="btn-rss-replay-play">Play</button>
+                                <button class="btn secondary" id="btn-rss-replay-pause">Pause</button>
+                                <button class="btn secondary" id="btn-rss-replay-reset">Reset</button>
+                            </div>
+                            <div class="meta" id="rss-replay-meta">Frame 0 / 0</div>
+                            <div class="timeline">
+                                <input type="range" id="rss-replay-timeline" aria-label="Memory replay timeline" min="0" max="0" value="0">
+                                <div class="meta" id="rss-replay-time-label">Elapsed: 0s</div>
+                                <div class="meta">
+                                    Speed:
+                                    <select id="rss-replay-speed" aria-label="Memory replay speed">
+                                        <option value="5">5x</option>
+                                        <option value="10">10x</option>
+                                        <option value="15" selected>15x</option>
+                                        <option value="20">20x</option>
+                                        <option value="25">25x</option>
+                                        <option value="30">30x</option>
+                                        <option value="35">35x</option>
+                                        <option value="40">40x</option>
+                                        <option value="45">45x</option>
+                                        <option value="50">50x</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="chart-filters" id="main-chart-filters">
+                            <label><input type="checkbox" id="filter-total-rss" checked> Total RSS</label>
+                            <label><input type="checkbox" id="filter-rss" checked> RSS</label>
+                            <label><input type="checkbox" id="filter-heap" checked> Heap</label>
+                        </div>
+                    ` : ''}
                     <div class="chart-wrapper">
                         <div id="chart" style="width: 100%; height: 500px;"></div>
                     </div>
                 </div>
+                    </div>
+                </div>
+                </section>
+
+                ${hasGCData(samples) ? `
+                <section class="bpw-chart-panel" data-bpw-panel="gc" id="section-gc">
+                <div class="bpw-panel-card">
+                    <div class="bpw-panel-card-head">
+                        <div>
+                            <span class="bpw-panel-badge">GC</span>
+                            <h3>Garbage Collection Time</h3>
+                        </div>
+                        <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="gc" title="Expand this panel">Expand</button>
+                    </div>
+                    <div class="bpw-panel-card-body">
+                <div class="chart-container">
+                    <div class="downloads-toolbar">
+                        <button class="btn" id="btn-download-gc-png">Download GC PNG</button>
+                        <button class="btn" id="btn-download-gc-svg">Download GC SVG</button>
+                    </div>
+                    ${isFinished === true ? `
+                        <div class="replay-controls" id="gc-replay-controls">
+                            <div class="buttons">
+                                <button class="btn" id="btn-gc-replay-play">Play</button>
+                                <button class="btn secondary" id="btn-gc-replay-pause">Pause</button>
+                                <button class="btn secondary" id="btn-gc-replay-reset">Reset</button>
+                            </div>
+                            <div class="meta" id="gc-replay-meta">Frame 0 / 0</div>
+                            <div class="timeline">
+                                <input type="range" id="gc-replay-timeline" aria-label="GC replay timeline" min="0" max="0" value="0">
+                                <div class="meta" id="gc-replay-time-label">Elapsed: 0s</div>
+                                <div class="meta">
+                                    Speed:
+                                    <select id="gc-replay-speed" aria-label="GC replay speed">
+                                        <option value="5">5x</option>
+                                        <option value="10">10x</option>
+                                        <option value="15" selected>15x</option>
+                                        <option value="20">20x</option>
+                                        <option value="25">25x</option>
+                                        <option value="30">30x</option>
+                                        <option value="35">35x</option>
+                                        <option value="40">40x</option>
+                                        <option value="45">45x</option>
+                                        <option value="50">50x</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    ` : ''}
+                    <div class="chart-wrapper">
+                        <div id="gc-chart" style="width: 100%; height: 500px;"></div>
+                    </div>
+                </div>
+                    </div>
+                </div>
+                </section>
+                ` : ''}
+                ${(hasJITData(samples) || hasClassLoadingData(samples)) ? `<div class="bpw-runtime-stage">` : ''}
+                ${hasJITData(samples) ? `
+                <section class="bpw-chart-panel" data-bpw-panel="jit-time" id="section-jit-time">
+                <div class="bpw-panel-card">
+                    <div class="bpw-panel-card-head">
+                        <div>
+                            <span class="bpw-panel-badge">JIT</span>
+                            <h3>Cumulative Compilation Time</h3>
+                        </div>
+                        <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="jit-time" title="Expand this panel">Expand</button>
+                    </div>
+                    <div class="bpw-panel-card-body">
+                        <div class="downloads-toolbar">
+                            <button class="btn" id="btn-download-jit-png">Download JIT PNG</button>
+                            <button class="btn" id="btn-download-jit-svg">Download JIT SVG</button>
+                        </div>
+                        ${isFinished === true ? `
+                        <div class="replay-controls" id="jit-replay-controls">
+                            <div class="buttons">
+                                <button class="btn" id="btn-jit-replay-play">Play</button>
+                                <button class="btn secondary" id="btn-jit-replay-pause">Pause</button>
+                                <button class="btn secondary" id="btn-jit-replay-reset">Reset</button>
+                            </div>
+                            <div class="meta" id="jit-replay-meta">Frame 0 / 0</div>
+                            <div class="timeline">
+                                <input type="range" id="jit-replay-timeline" aria-label="JIT replay timeline" min="0" max="0" value="0">
+                                <div class="meta" id="jit-replay-time-label">Elapsed: 0s</div>
+                                <div class="meta">
+                                    Speed:
+                                    <select id="jit-replay-speed" aria-label="JIT replay speed">
+                                        <option value="5">5x</option>
+                                        <option value="10">10x</option>
+                                        <option value="15" selected>15x</option>
+                                        <option value="20">20x</option>
+                                        <option value="25">25x</option>
+                                        <option value="30">30x</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        ` : ''}
+                        <div class="chart-container">
+                            <div class="chart-wrapper">
+                                <div id="jit-time-chart" class="bpw-chart-plot" style="width:100%;height:450px"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </section>
+                <section class="bpw-chart-panel" data-bpw-panel="jit-rate" id="section-jit-rate">
+                <div class="bpw-panel-card">
+                    <div class="bpw-panel-card-head">
+                        <div>
+                            <span class="bpw-panel-badge">JIT</span>
+                            <h3>Compilation Activity</h3>
+                        </div>
+                        <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="jit-rate" title="Expand this panel">Expand</button>
+                    </div>
+                    <div class="bpw-panel-card-body">
+                        <div class="chart-container">
+                            <div class="chart-wrapper">
+                                <div id="jit-rate-chart" class="bpw-chart-plot" style="width:100%;height:450px"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </section>` : ''}
+                ${hasClassLoadingData(samples) ? `
+                <section class="bpw-chart-panel" data-bpw-panel="classes-loaded" id="section-classes-loaded">
+                <div class="bpw-panel-card">
+                    <div class="bpw-panel-card-head">
+                        <div>
+                            <span class="bpw-panel-badge">Classes</span>
+                            <h3>Cumulative Classes Loaded</h3>
+                        </div>
+                        <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="classes-loaded" title="Expand this panel">Expand</button>
+                    </div>
+                    <div class="bpw-panel-card-body">
+                        <div class="downloads-toolbar">
+                            <button class="btn" id="btn-download-classes-png">Download Classes PNG</button>
+                            <button class="btn" id="btn-download-classes-svg">Download Classes SVG</button>
+                        </div>
+                        ${isFinished === true ? `
+                        <div class="replay-controls" id="classes-replay-controls">
+                            <div class="buttons">
+                                <button class="btn" id="btn-classes-replay-play">Play</button>
+                                <button class="btn secondary" id="btn-classes-replay-pause">Pause</button>
+                                <button class="btn secondary" id="btn-classes-replay-reset">Reset</button>
+                            </div>
+                            <div class="meta" id="classes-replay-meta">Frame 0 / 0</div>
+                            <div class="timeline">
+                                <input type="range" id="classes-replay-timeline" aria-label="Class loading replay timeline" min="0" max="0" value="0">
+                                <div class="meta" id="classes-replay-time-label">Elapsed: 0s</div>
+                                <div class="meta">
+                                    Speed:
+                                    <select id="classes-replay-speed" aria-label="Class loading replay speed">
+                                        <option value="5">5x</option>
+                                        <option value="10">10x</option>
+                                        <option value="15" selected>15x</option>
+                                        <option value="20">20x</option>
+                                        <option value="25">25x</option>
+                                        <option value="30">30x</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        ` : ''}
+                        <div class="chart-container">
+                            <div class="chart-wrapper">
+                                <div id="classes-loaded-chart" class="bpw-chart-plot" style="width:100%;height:450px"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </section>
+                <section class="bpw-chart-panel" data-bpw-panel="class-rate" id="section-class-rate">
+                <div class="bpw-panel-card">
+                    <div class="bpw-panel-card-head">
+                        <div>
+                            <span class="bpw-panel-badge">Classes</span>
+                            <h3>Class Loading Activity</h3>
+                        </div>
+                        <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="class-rate" title="Expand this panel">Expand</button>
+                    </div>
+                    <div class="bpw-panel-card-body">
+                        <div class="chart-container">
+                            <div class="chart-wrapper">
+                                <div id="class-rate-chart" class="bpw-chart-plot" style="width:100%;height:450px"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </section>` : ''}
+                ${(hasJITData(samples) || hasClassLoadingData(samples)) ? `</div>` : ''}
+                </div>
+
+                ${processInfoHtml}
+
+                ${isFinished === true ? `
+                    <div class="compare-controls">
+                        <div class="meta"><strong>Compare runs:</strong> upload a JSON export to overlay in replay</div>
+                        <input type="file" id="compare-file-input" accept=".json">
+                        <button class="btn secondary" id="compare-clear" style="display: none;">Clear comparison</button>
+                        <div class="meta" id="compare-file-name">No file selected</div>
+                    </div>
+                ` : ''}
+
+                <div id="compare-section" class="compare-section" style="display: none;"></div>
             `;
 
             if (samples.length > 0) {
-                renderChart(runId, samples);
+                renderChart(samples);
+                setupMainChartFilters();
+                if (hasGCData(samples)) {
+                    renderGCChart(samples);
+                }
+                renderJvmCounterCharts(samples);
+                if (isFinished === true) {
+                    setupCompareControls(samples);
+                    initReplay(samples);
+                } else if (window.BpwChartStudio) {
+                    BpwChartStudio.init({
+                        samples,
+                        runId,
+                        useElapsedAxis: false
+                    });
+                }
+                if (isFinished !== true && window.BpwBuildStory) {
+                    BpwBuildStory.init({
+                        samples,
+                        runId,
+                        useElapsedAxis: false,
+                        initialFrame: samples.length - 1
+                    });
+                }
+            }
+
+            // Wire download buttons
+            const btnPng = document.getElementById('btn-download-png');
+            const btnSvg = document.getElementById('btn-download-svg');
+            const btnJson = document.getElementById('btn-download-json');
+            const btnCsv = document.getElementById('btn-download-csv');
+            const btnGcPng = document.getElementById('btn-download-gc-png');
+            const btnGcSvg = document.getElementById('btn-download-gc-svg');
+            const btnJitPng = document.getElementById('btn-download-jit-png');
+            const btnJitSvg = document.getElementById('btn-download-jit-svg');
+            const btnClassesPng = document.getElementById('btn-download-classes-png');
+            const btnClassesSvg = document.getElementById('btn-download-classes-svg');
+
+            if (btnPng) btnPng.onclick = () => downloadChart('png');
+            if (btnSvg) btnSvg.onclick = () => downloadChart('svg');
+            if (btnJson) btnJson.onclick = () => downloadJson(runId);
+            if (btnCsv) btnCsv.onclick = () => downloadCsv(runId);
+            if (btnGcPng) btnGcPng.onclick = () => downloadGCChart('png');
+            if (btnGcSvg) btnGcSvg.onclick = () => downloadGCChart('svg');
+            if (btnJitPng) btnJitPng.onclick = () => downloadRuntimeChart('jit-time-chart', 'jit', 'png');
+            if (btnJitSvg) btnJitSvg.onclick = () => downloadRuntimeChart('jit-time-chart', 'jit', 'svg');
+            if (btnClassesPng) btnClassesPng.onclick = () => downloadRuntimeChart('classes-loaded-chart', 'classes', 'png');
+            if (btnClassesSvg) btnClassesSvg.onclick = () => downloadRuntimeChart('classes-loaded-chart', 'classes', 'svg');
+
+            if (window.BpwExperimentLayout) {
+                if (typeof BpwExperimentLayout.initAfterRunRender === 'function') {
+                    BpwExperimentLayout.initAfterRunRender();
+                } else {
+                    BpwExperimentLayout.initToggleButtons?.();
+                    if (typeof BpwExperimentLayout.applyMode === 'function') {
+                        BpwExperimentLayout.applyMode(BpwExperimentLayout.getMode());
+                    }
+                    const initDeck = BpwExperimentLayout.initWorkspaceDeck || BpwExperimentLayout.initSectionNav;
+                    if (typeof initDeck === 'function') initDeck();
+                    BpwExperimentLayout.initPanelFocusButtons?.();
+                }
             }
         }
 
-        function renderChart(runId, samples) {
+        function shouldShowRssHeapRatioChart(samples) {
+            const uniqueTimestamps = new Set(samples.map(s => s.Timestamp));
+            return uniqueTimestamps.size > 10;
+        }
+
+        function updateMainChartFilterCheckboxes() {
+            const total = document.getElementById('filter-total-rss');
+            const rss = document.getElementById('filter-rss');
+            const heap = document.getElementById('filter-heap');
+            const chart = document.getElementById('chart');
+            if (!total || !rss || !heap || !chart || !chart.data) return;
+            const map = traceVisibility['chart'] || {};
+
+            let rssVisible = false;
+            let heapVisible = false;
+            chart.data.forEach(trace => {
+                if (!trace.name) return;
+                const vis = map[trace.name];
+                const isVisible = vis !== 'legendonly' && vis !== false;
+                if (trace.name.includes('(RSS)')) rssVisible = rssVisible || isVisible;
+                if (trace.name.includes('(Heap)')) heapVisible = heapVisible || isVisible;
+            });
+            const totalVis = map['Total RSS Memory'];
+            total.checked = totalVis === undefined ? true : (totalVis !== 'legendonly' && totalVis !== false);
+            rss.checked = rssVisible;
+            heap.checked = heapVisible;
+        }
+
+        function setupMainChartFilters() {
+            const total = document.getElementById('filter-total-rss');
+            const rss = document.getElementById('filter-rss');
+            const heap = document.getElementById('filter-heap');
+            if (!total || !rss || !heap) return;
+
+            const applyFilters = () => {
+                const chart = document.getElementById('chart');
+                if (!chart || !chart.data) return;
+                const map = traceVisibility['chart'] || (traceVisibility['chart'] = {});
+
+                chart.data.forEach(trace => {
+                    if (!trace.name) return;
+                    if (trace.name === 'Total RSS Memory') {
+                        map[trace.name] = total.checked ? true : 'legendonly';
+                    } else if (trace.name.includes('(RSS)')) {
+                        map[trace.name] = rss.checked ? true : 'legendonly';
+                    } else if (trace.name.includes('(Heap)')) {
+                        map[trace.name] = heap.checked ? true : 'legendonly';
+                    }
+                });
+
+                const visArray = chart.data.map(trace => map[trace.name] !== undefined ? map[trace.name] : true);
+                Plotly.restyle(chart, 'visible', visArray);
+            };
+
+            total.addEventListener('change', applyFilters);
+            rss.addEventListener('change', applyFilters);
+            heap.addEventListener('change', applyFilters);
+
+            applyFilters();
+        }
+
+        function getMaxHeapGiB(vmFlags) {
+            if (!Array.isArray(vmFlags)) return null;
+            const flag = vmFlags.find(entry => entry.startsWith('-XX:MaxHeapSize='));
+            if (!flag) return null;
+            const value = Number(flag.split('=')[1]);
+            if (!Number.isFinite(value) || value <= 0) return null;
+            const gib = value / (1024 * 1024 * 1024);
+            return gib.toFixed(2);
+        }
+
+        function renderGCChart(samples) {
+            // Process data for GC chart - group by both Name and PID to handle multiple processes with same name
+            const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
+            // Create unique process keys (Name + PID combination)
+            const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
+
+            const traces = [];
+            const colorMap = buildColorMap(processKeys);
+
+            // Create traces for each unique process (Name + PID combination)
+            processKeys.forEach((processKey, index) => {
+                const color = colorMap[processKey];
+                const [processName, pid] = processKey.split('|');
+
+                // GC time data - use null for timestamps where process doesn't exist yet
+                // Convert from milliseconds (stored in DB) to seconds (for display)
+                const gcData = timestamps.map(timestamp => {
+                    const sample = samples
+                        .filter(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp)
+                        [0];
+                    return sample && sample.GCTime !== undefined && sample.GCTime !== null && !Number.isNaN(sample.GCTime) ? sample.GCTime / 1000 : null;
+                });
+
+                traces.push({
+                    x: timestamps.map(t => new Date(t)),
+                    y: gcData,
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    name: `${processName} PID:${pid}`,
+                    line: { color: color, width: 3 },
+                    marker: { size: 6, color: color },
+                    connectgaps: false
+                });
+            });
+
+            // Total GC line intentionally omitted.
+
+            const layout = getGcLayout();
+            const config = getGcConfig();
+
+            Plotly.newPlot('gc-chart', applyVisibilityToTraces('gc-chart', traces), layout, config);
+            attachLegendVisibilityHandlers('gc-chart');
+
+            // Handle window resize
+            window.addEventListener('resize', function() {
+                Plotly.Plots.resize('gc-chart');
+            });
+        }
+
+        function renderRssHeapRatioChart(samples) {
+            // Process data for Heap/RSS ratio chart - group by both Name and PID to handle multiple processes with same name
+            const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
+            // Create unique process keys (Name + PID combination)
+            const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
+
+            const traces = [];
+            const colorMap = buildColorMap(processKeys);
+
+            // Create traces for each unique process (Name + PID combination)
+            processKeys.forEach((processKey, index) => {
+                const color = colorMap[processKey];
+                const [processName, pid] = processKey.split('|');
+
+                // Heap/RSS ratio data - use null for timestamps where process doesn't exist yet or RSS is 0
+                const ratioData = timestamps.map(timestamp => {
+                    const sample = samples
+                        .filter(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp)
+                        [0];
+                    if (sample && sample.RSS && sample.RSS > 0) {
+                        return sample.HeapUsed / sample.RSS;
+                    }
+                    return null;
+                });
+
+                traces.push({
+                    x: timestamps.map(t => new Date(t)),
+                    y: ratioData,
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    name: `${processName} PID:${pid}`,
+                    line: { color: color, width: 3 },
+                    marker: { size: 6, color: color },
+                    connectgaps: false
+                });
+            });
+
+            // Total Heap/RSS ratio line intentionally omitted.
+
+            const layout = getRatioLayout();
+            const config = getRatioConfig();
+
+            Plotly.newPlot('rss-heap-chart', applyVisibilityToTraces('rss-heap-chart', traces), layout, config);
+            attachLegendVisibilityHandlers('rss-heap-chart');
+
+            // Handle window resize
+            window.addEventListener('resize', function() {
+                Plotly.Plots.resize('rss-heap-chart');
+            });
+        }
+
+        function initReplay(samples) {
+            if (window.BpwExperimentLayout) {
+                BpwExperimentLayout.clearReplayPanels();
+            }
+
+            const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
+            const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
+            const elapsedByTimestamp = new Map();
+            samples.forEach(sample => {
+                if (!elapsedByTimestamp.has(sample.Timestamp)) {
+                    elapsedByTimestamp.set(sample.Timestamp, sample.ElapsedTime);
+                }
+            });
+
+            const series = {};
+            const colorMap = buildColorMap(processKeys);
+
+            processKeys.forEach((processKey, index) => {
+                const [processName, pid] = processKey.split('|');
+                const rss = buildForwardFilledSeries(samples, timestamps, processName, pid, s => s.RSS);
+                const heap = buildForwardFilledSeries(samples, timestamps, processName, pid, s => s.HeapUsed);
+                const gc = buildForwardFilledSeries(samples, timestamps, processName, pid, s => {
+                    const gcSeconds = s.GCTimeSeconds ?? (s.GCTime !== null && s.GCTime !== undefined && !Number.isNaN(s.GCTime)
+                        ? s.GCTime / 1000
+                        : null);
+                    return gcSeconds === null || Number.isNaN(gcSeconds) ? null : gcSeconds;
+                });
+                const ratio = buildForwardFilledSeries(samples, timestamps, processName, pid, s => {
+                    if (!s.RSS || s.RSS <= 0) return null;
+                    return s.HeapUsed / s.RSS;
+                }, Number.POSITIVE_INFINITY);
+
+                series[processKey] = {
+                    processName,
+                    pid,
+                    color: colorMap[processKey],
+                    rss,
+                    heap,
+                    gc,
+                    ratio,
+                    firstRss: rss.findIndex(value => value !== null),
+                    firstGc: gc.findIndex(value => value !== null),
+                    firstRatio: ratio.findIndex(value => value !== null)
+                };
+            });
+
+            const totalSeries = buildTotalRssSeries(samples, timestamps, processKeys);
+            let chartTimestamps = timestamps;
+            let chartSeries = series;
+            let chartTotalSeries = totalSeries;
+            if (totalSeries.buildEndIndex >= 0 && totalSeries.buildEndIndex < timestamps.length) {
+                const end = totalSeries.buildEndIndex;
+                chartTimestamps = timestamps.slice(0, end);
+                chartSeries = {};
+                processKeys.forEach(processKey => {
+                    const def = series[processKey];
+                    chartSeries[processKey] = {
+                        ...def,
+                        rss: def.rss.slice(0, end),
+                        heap: def.heap.slice(0, end),
+                        gc: def.gc.slice(0, end),
+                        ratio: def.ratio.slice(0, end),
+                        firstRss: def.firstRss >= end ? -1 : def.firstRss,
+                        firstGc: def.firstGc >= end ? -1 : def.firstGc,
+                        firstRatio: def.firstRatio >= end ? -1 : def.firstRatio
+                    };
+                });
+                chartTotalSeries = {
+                    totalRss: totalSeries.totalRss.slice(0, end),
+                    distribution: totalSeries.distribution.slice(0, end)
+                };
+            }
+            const firstTotalRssIndex = chartTotalSeries.totalRss.findIndex(value => value !== null);
+            const counterReplayData = buildReplayData(samples, timestamps);
+            const counterElapsedSeconds = chartTimestamps.map(timestamp => Math.max(0, (timestamp - chartTimestamps[0]) / 1000));
+
+            function buildMemoryTraces(frameIndex) {
+                const frameTimestamps = chartTimestamps.slice(0, frameIndex + 1).map(t => new Date(t));
+                const traces = [];
+                processKeys.forEach(processKey => {
+                    const def = chartSeries[processKey];
+                    if (def.firstRss === -1 || frameIndex < def.firstRss) return;
+                    traces.push({
+                        x: frameTimestamps,
+                        y: def.rss.slice(0, frameIndex + 1),
+                        type: 'scatter',
+                        mode: 'lines',
+                        name: `${def.processName} PID:${def.pid} (RSS)`,
+                        line: { color: def.color, width: 3 },
+                        connectgaps: false
+                    });
+                    traces.push({
+                        x: frameTimestamps,
+                        y: def.heap.slice(0, frameIndex + 1),
+                        type: 'scatter',
+                        mode: 'lines',
+                        name: `${def.processName} PID:${def.pid} (Heap)`,
+                        line: { color: def.color, width: 2, dash: 'dash' },
+                        connectgaps: false
+                    });
+                });
+                if (firstTotalRssIndex !== -1 && frameIndex >= firstTotalRssIndex) {
+                    traces.push({
+                        x: frameTimestamps,
+                        y: chartTotalSeries.totalRss.slice(0, frameIndex + 1),
+                        type: 'scatter',
+                        mode: 'lines',
+                        name: 'Total RSS Memory',
+                        line: { color: '#2c3e50', width: 4 },
+                        connectgaps: false,
+                        customdata: chartTotalSeries.distribution.slice(0, frameIndex + 1),
+                        hovertemplate: 'Total RSS: %{y} MB<br>%{customdata}<extra></extra>'
+                    });
+                }
+                return applyVisibilityToTraces('chart', traces);
+            }
+
+            function buildGCTraces(frameIndex) {
+                const frameTimestamps = chartTimestamps.slice(0, frameIndex + 1).map(t => new Date(t));
+                const traces = [];
+                processKeys.forEach(processKey => {
+                    const def = chartSeries[processKey];
+                    if (def.firstGc === -1 || frameIndex < def.firstGc) return;
+                    traces.push({
+                        x: frameTimestamps,
+                        y: def.gc.slice(0, frameIndex + 1),
+                        type: 'scatter',
+                        mode: 'lines+markers',
+                        name: `${def.processName} PID:${def.pid}`,
+                        line: { color: def.color, width: 3 },
+                        marker: { size: 6, color: def.color },
+                        connectgaps: false
+                    });
+                });
+                return applyVisibilityToTraces('gc-chart', traces);
+            }
+
+            function buildRatioTraces(frameIndex) {
+                const frameTimestamps = chartTimestamps.slice(0, frameIndex + 1).map(t => new Date(t));
+                const traces = [];
+                processKeys.forEach(processKey => {
+                    const def = chartSeries[processKey];
+                    if (def.firstRatio === -1 || frameIndex < def.firstRatio) return;
+                    traces.push({
+                        x: frameTimestamps,
+                        y: def.ratio.slice(0, frameIndex + 1),
+                        type: 'scatter',
+                        mode: 'lines+markers',
+                        name: `${def.processName} PID:${def.pid}`,
+                        line: { color: def.color, width: 3 },
+                        marker: { size: 6, color: def.color },
+                        connectgaps: false
+                    });
+                });
+                return applyVisibilityToTraces('rss-heap-chart', traces);
+            }
+
+            function setupReplayPanel(options) {
+                const { panelKey, chartId, controlsId, buildTraces, layoutGetter, configGetter, onLegendUpdate } = options;
+                const controls = document.getElementById(controlsId);
+                const chart = document.getElementById(chartId);
+                if (!controls || !chart) return;
+
+                if (!window.replayStops) {
+                    window.replayStops = {};
+                }
+                if (window.replayStops[panelKey]) {
+                    window.replayStops[panelKey]();
+                }
+
+                const timeline = document.getElementById(`${panelKey}-replay-timeline`);
+                const meta = document.getElementById(`${panelKey}-replay-meta`);
+                const timeLabel = document.getElementById(`${panelKey}-replay-time-label`);
+                const playBtn = document.getElementById(`btn-${panelKey}-replay-play`);
+                const pauseBtn = document.getElementById(`btn-${panelKey}-replay-pause`);
+                const resetBtn = document.getElementById(`btn-${panelKey}-replay-reset`);
+                const speedSelect = document.getElementById(`${panelKey}-replay-speed`);
+
+                let isPlaying = false;
+                let playTimer = null;
+                let currentFrame = 0;
+                let speedMultiplier = Number(speedSelect.value) || 15;
+
+                timeline.max = String(Math.max(0, chartTimestamps.length - 1));
+
+                function updateUi(frameIndex) {
+                    timeline.value = String(frameIndex);
+                    meta.textContent = `Frame ${frameIndex + 1} / ${chartTimestamps.length}`;
+                    const timestamp = chartTimestamps[frameIndex];
+                    const elapsed = elapsedByTimestamp.get(timestamp);
+                    const timeText = new Date(timestamp).toLocaleTimeString();
+                    timeLabel.textContent = `Elapsed: ${elapsed}s | ${timeText}`;
+                }
+
+                function renderFrame(frameIndex) {
+                    currentFrame = frameIndex;
+                    updateUi(frameIndex);
+                    return Plotly.react(chartId, buildTraces(frameIndex), layoutGetter(), configGetter());
+                }
+
+                function scheduleNext() {
+                    if (!isPlaying) return;
+                    if (currentFrame >= chartTimestamps.length - 1) {
+                        isPlaying = false;
+                        return;
+                    }
+                    const nextDelay = Math.max(
+                        16,
+                        (chartTimestamps[currentFrame + 1] - chartTimestamps[currentFrame]) / speedMultiplier
+                    );
+                    playTimer = setTimeout(() => {
+                        renderFrame(currentFrame + 1).then(scheduleNext);
+                    }, nextDelay);
+                }
+
+                function play() {
+                    if (isPlaying) return;
+                    isPlaying = true;
+                    scheduleNext();
+                }
+
+                function pause() {
+                    isPlaying = false;
+                    if (playTimer) {
+                        clearTimeout(playTimer);
+                        playTimer = null;
+                    }
+                }
+
+                window.replayStops[panelKey] = pause;
+
+                playBtn.addEventListener('click', play);
+                pauseBtn.addEventListener('click', pause);
+                resetBtn.addEventListener('click', () => {
+                    pause();
+                    renderFrame(0);
+                });
+                timeline.addEventListener('input', () => {
+                    pause();
+                    renderFrame(Number(timeline.value));
+                });
+                speedSelect.addEventListener('change', () => {
+                    const parsed = Number(speedSelect.value);
+                    if (!Number.isNaN(parsed) && parsed > 0) {
+                        speedMultiplier = parsed;
+                    }
+                });
+
+                const initialFrame = Math.max(0, chartTimestamps.length - 1);
+                renderFrame(initialFrame).then(() => {
+                    attachLegendVisibilityHandlers(chartId, onLegendUpdate);
+                });
+
+                if (window.BpwExperimentLayout) {
+                    BpwExperimentLayout.registerReplayPanel({
+                        pause,
+                        renderFrame,
+                        getMaxFrame: () => chartTimestamps.length - 1
+                    });
+                }
+            }
+
+            function setupCounterReplayPanel(options) {
+                const { panelKey, controlsId, charts } = options;
+                const controls = document.getElementById(controlsId);
+                const availableCharts = charts.filter(chart => document.getElementById(chart.id));
+                if (!controls || !availableCharts.length) return;
+
+                if (!window.replayStops) {
+                    window.replayStops = {};
+                }
+                if (window.replayStops[panelKey]) {
+                    window.replayStops[panelKey]();
+                }
+
+                const timeline = document.getElementById(`${panelKey}-replay-timeline`);
+                const meta = document.getElementById(`${panelKey}-replay-meta`);
+                const timeLabel = document.getElementById(`${panelKey}-replay-time-label`);
+                const playBtn = document.getElementById(`btn-${panelKey}-replay-play`);
+                const pauseBtn = document.getElementById(`btn-${panelKey}-replay-pause`);
+                const resetBtn = document.getElementById(`btn-${panelKey}-replay-reset`);
+                const speedSelect = document.getElementById(`${panelKey}-replay-speed`);
+                if (!timeline || !meta || !timeLabel || !playBtn || !pauseBtn || !resetBtn || !speedSelect) return;
+
+                let isPlaying = false;
+                let playTimer = null;
+                let currentFrame = 0;
+                let speedMultiplier = Number(speedSelect.value) || 15;
+
+                timeline.max = String(Math.max(0, chartTimestamps.length - 1));
+
+                function updateUi(frameIndex) {
+                    timeline.value = String(frameIndex);
+                    meta.textContent = `Frame ${frameIndex + 1} / ${chartTimestamps.length}`;
+                    const timestamp = chartTimestamps[frameIndex];
+                    const elapsed = elapsedByTimestamp.get(timestamp);
+                    const timeText = new Date(timestamp).toLocaleTimeString();
+                    timeLabel.textContent = `Elapsed: ${elapsed}s | ${timeText}`;
+                }
+
+                function renderFrame(frameIndex) {
+                    currentFrame = frameIndex;
+                    updateUi(frameIndex);
+                    const tasks = availableCharts.map(chart => {
+                        const traces = buildMetricTraces(
+                            counterReplayData,
+                            chartTimestamps,
+                            frameIndex,
+                            chart.metric,
+                            {},
+                            counterElapsedSeconds
+                        );
+                        const layout = CompareShared.getCounterLayout(chart.title, chart.yTitle);
+                        layout.xaxis = { ...layout.xaxis, title: 'Elapsed (s)', tickformat: null, type: 'linear' };
+                        return Plotly.react(
+                            chart.id,
+                            applyVisibilityToTraces(chart.id, traces),
+                            layout,
+                            CompareShared.getCounterConfig(`build-monitor-${chart.metric}-${runId}`)
+                        );
+                    });
+                    return Promise.all(tasks);
+                }
+
+                function scheduleNext() {
+                    if (!isPlaying) return;
+                    if (currentFrame >= chartTimestamps.length - 1) {
+                        isPlaying = false;
+                        return;
+                    }
+                    const nextDelay = Math.max(
+                        16,
+                        (chartTimestamps[currentFrame + 1] - chartTimestamps[currentFrame]) / speedMultiplier
+                    );
+                    playTimer = setTimeout(() => {
+                        renderFrame(currentFrame + 1).then(scheduleNext);
+                    }, nextDelay);
+                }
+
+                function play() {
+                    if (isPlaying) return;
+                    isPlaying = true;
+                    scheduleNext();
+                }
+
+                function pause() {
+                    isPlaying = false;
+                    if (playTimer) {
+                        clearTimeout(playTimer);
+                        playTimer = null;
+                    }
+                }
+
+                window.replayStops[panelKey] = pause;
+
+                playBtn.addEventListener('click', play);
+                pauseBtn.addEventListener('click', pause);
+                resetBtn.addEventListener('click', () => {
+                    pause();
+                    renderFrame(0);
+                });
+                timeline.addEventListener('input', () => {
+                    pause();
+                    renderFrame(Number(timeline.value));
+                });
+                speedSelect.addEventListener('change', () => {
+                    const parsed = Number(speedSelect.value);
+                    if (!Number.isNaN(parsed) && parsed > 0) {
+                        speedMultiplier = parsed;
+                    }
+                });
+
+                const initialFrame = Math.max(0, chartTimestamps.length - 1);
+                renderFrame(initialFrame).then(() => {
+                    availableCharts.forEach(chart => attachLegendVisibilityHandlers(chart.id));
+                });
+
+                if (window.BpwExperimentLayout) {
+                    BpwExperimentLayout.registerReplayPanel({
+                        pause,
+                        renderFrame,
+                        getMaxFrame: () => chartTimestamps.length - 1
+                    });
+                }
+            }
+
+            setupReplayPanel({
+                panelKey: 'rss',
+                chartId: 'chart',
+                controlsId: 'rss-replay-controls',
+                buildTraces: buildMemoryTraces,
+                layoutGetter: getMemoryLayout,
+                configGetter: getMemoryConfig,
+                onLegendUpdate: updateMainChartFilterCheckboxes
+            });
+            setupReplayPanel({
+                panelKey: 'gc',
+                chartId: 'gc-chart',
+                controlsId: 'gc-replay-controls',
+                buildTraces: buildGCTraces,
+                layoutGetter: getGcLayout,
+                configGetter: getGcConfig
+            });
+            setupCounterReplayPanel({
+                panelKey: 'jit',
+                controlsId: 'jit-replay-controls',
+                charts: [
+                    { id: 'jit-time-chart', metric: 'jitTime', title: 'Cumulative JIT Compilation Time', yTitle: 'Compilation Time (s)' },
+                    { id: 'jit-rate-chart', metric: 'jitRate', title: 'JIT Compilation Activity', yTitle: 'Compiled Methods / s' }
+                ]
+            });
+            setupCounterReplayPanel({
+                panelKey: 'classes',
+                controlsId: 'classes-replay-controls',
+                charts: [
+                    { id: 'classes-loaded-chart', metric: 'classesLoaded', title: 'Cumulative Classes Loaded', yTitle: 'Classes Loaded' },
+                    { id: 'class-rate-chart', metric: 'classRate', title: 'Class Loading Activity', yTitle: 'Classes / s' }
+                ]
+            });
+
+            if (window.BpwChartStudio) {
+                BpwChartStudio.init({
+                    samples,
+                    runId,
+                    useElapsedAxis: true,
+                    initialFrame: Math.max(0, chartTimestamps.length - 1)
+                });
+            }
+            if (window.BpwBuildStory) {
+                BpwBuildStory.init({
+                    samples,
+                    runId,
+                    useElapsedAxis: true,
+                    initialFrame: Math.max(0, chartTimestamps.length - 1)
+                });
+            }
+
+            if (window.BpwExperimentLayout) {
+                BpwExperimentLayout.initUnifiedReplay({
+                    timestamps: chartTimestamps,
+                    elapsedByTimestamp
+                });
+            }
+        }
+
+        function setupCompareControls(samples) {
+            const input = document.getElementById('compare-file-input');
+            const clearBtn = document.getElementById('compare-clear');
+            const fileName = document.getElementById('compare-file-name');
+            const compareSection = document.getElementById('compare-section');
+            if (!input || !clearBtn || !fileName) return;
+
+            input.addEventListener('change', () => {
+                const file = input.files && input.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = () => {
+                    try {
+                        const text = String(reader.result || '');
+                        const parsed = CompareShared.parseJsonText(text);
+                        if (!parsed.samples || !parsed.samples.length) {
+                            throw new Error('JSON missing samples');
+                        }
+                        window.compareSamples = parsed.samples || [];
+                        window.compareProcessSummary = parsed.processSummary || null;
+                        fileName.textContent = file.name;
+                        clearBtn.style.display = 'inline-flex';
+                        if (compareSection) compareSection.style.display = 'block';
+                        renderCompareSection(samples);
+                        initReplay(samples);
+                    } catch (err) {
+                        console.error('Failed to parse comparison JSON', err);
+                        window.compareSamples = [];
+                        window.compareProcessSummary = null;
+                        fileName.textContent = 'Failed to parse JSON';
+                    }
+                };
+                reader.readAsText(file);
+            });
+
+            clearBtn.addEventListener('click', () => {
+                window.compareSamples = [];
+                window.compareProcessSummary = null;
+                fileName.textContent = 'No file selected';
+                clearBtn.style.display = 'none';
+                input.value = '';
+                if (compareSection) compareSection.style.display = 'none';
+                if (compareSection) compareSection.innerHTML = '';
+                initReplay(samples);
+            });
+        }
+
+        function renderCompareSectionLegacy(baseSamples) {
+            const compareSection = document.getElementById('compare-section');
+            const compareSamplesRaw = Array.isArray(window.compareSamples) ? window.compareSamples : [];
+            if (!compareSection) return;
+            if (!compareSamplesRaw.length) {
+                compareSection.style.display = 'none';
+                compareSection.innerHTML = '';
+                return;
+            }
+
+            const timestamps = [...new Set(baseSamples.map(s => s.Timestamp))].sort((a, b) => a - b);
+            const compareSamples = normalizeCompareSamples(compareSamplesRaw, timestamps[0]);
+            const baseHasGC = hasGCData(baseSamples);
+            const compareHasGC = hasGCData(compareSamples);
+            const baseHasRatio = hasRatioData(baseSamples);
+            const compareHasRatio = hasRatioData(compareSamples);
+            const showGC = baseHasGC && compareHasGC;
+            const showRatio = baseHasRatio && compareHasRatio;
+            console.log('[compare] baseHasGC:', baseHasGC, 'compareHasGC:', compareHasGC, 'showGC:', showGC);
+            console.log('[compare] Compare GC sample:', compareSamples.slice(0, 5).map(s => ({ name: s.Name, pid: s.PID, gc: s.GCTimeSeconds })));
+            console.log('[compare] compareSamples timestamp range:', compareSamples[0]?.Timestamp, compareSamples[compareSamples.length - 1]?.Timestamp);
+
+            const storedMode = localStorage.getItem('compareMode') || 'split';
+            const compareMode = storedMode === 'side' ? 'side' : 'split';
+            const isSplitMode = compareMode === 'split';
+
+            compareSection.innerHTML = `
+                <div class="compare-header">
+                    <h2>Comparison</h2>
+                    <span class="meta">Replay both runs with a shared timeline</span>
+                    <label class="meta" style="display:flex; align-items:center; gap:0.5rem;">
+                        View:
+                        <select id="compare-view-mode">
+                            <option value="split" ${isSplitMode ? 'selected' : ''}>Split View</option>
+                            <option value="side" ${!isSplitMode ? 'selected' : ''}>Side by Side</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="replay-controls" id="compare-replay-controls">
+                    <div class="buttons">
+                        <button class="btn" id="btn-compare-replay-play">Play</button>
+                        <button class="btn secondary" id="btn-compare-replay-pause">Pause</button>
+                        <button class="btn secondary" id="btn-compare-replay-reset">Reset</button>
+                    </div>
+                    <div class="meta" id="compare-replay-meta">Frame 0 / 0</div>
+                    <div class="timeline">
+                        <input type="range" id="compare-replay-timeline" min="0" max="0" value="0">
+                        <div class="meta" id="compare-replay-time-label">Elapsed: 0s</div>
+                        <div class="meta">
+                            Speed:
+                            <select id="compare-replay-speed">
+                                <option value="5">5x</option>
+                                <option value="10">10x</option>
+                                <option value="15" selected>15x</option>
+                                <option value="20">20x</option>
+                                <option value="25">25x</option>
+                                <option value="30">30x</option>
+                                <option value="35">35x</option>
+                                <option value="40">40x</option>
+                                <option value="45">45x</option>
+                                <option value="50">50x</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="compare-grid">
+                    ${isSplitMode ? `
+                    <div class="compare-column">
+                        <h3>Current vs Comparison (Split View)</h3>
+                        <div class="chart-container">
+                            <h4>Memory Usage Over Time</h4>
+                            <div class="chart-wrapper">
+                                <div id="compare-rss" style="width: 100%; height: 460px;"></div>
+                            </div>
+                        </div>
+                        ${showGC ? `
+                        <div class="chart-container">
+                            <h4>Garbage Collection Time Over Time</h4>
+                            <div class="chart-wrapper">
+                                <div id="compare-gc" style="width: 100%; height: 460px;"></div>
+                            </div>
+                        </div>
+                        ` : ''}
+                        ${showRatio ? `
+                        <div class="chart-container">
+                            <h4>Heap/RSS Ratio Over Time</h4>
+                            <div class="chart-wrapper">
+                                <div id="compare-ratio" style="width: 100%; height: 460px;"></div>
+                            </div>
+                        </div>
+                        ` : ''}
+                    </div>
+                    ` : `
+                    <div class="compare-column">
+                        <h3>Current Run</h3>
+                        <div class="chart-container">
+                            <h4>Memory Usage Over Time</h4>
+                            <div class="chart-wrapper">
+                                <div id="compare-current-rss" style="width: 100%; height: 460px;"></div>
+                            </div>
+                        </div>
+                        ${showGC ? `
+                        <div class="chart-container">
+                            <h4>Garbage Collection Time Over Time</h4>
+                            <div class="chart-wrapper">
+                                <div id="compare-current-gc" style="width: 100%; height: 460px;"></div>
+                            </div>
+                        </div>
+                        ` : ''}
+                        ${showRatio ? `
+                        <div class="chart-container">
+                            <h4>Heap/RSS Ratio Over Time</h4>
+                            <div class="chart-wrapper">
+                                <div id="compare-current-ratio" style="width: 100%; height: 460px;"></div>
+                            </div>
+                        </div>
+                        ` : ''}
+                    </div>
+                    <div class="compare-column">
+                        <h3>Comparison Run</h3>
+                        <div class="chart-container">
+                            <h4>Memory Usage Over Time</h4>
+                            <div class="chart-wrapper">
+                                <div id="compare-other-rss" style="width: 100%; height: 460px;"></div>
+                            </div>
+                        </div>
+                        ${showGC ? `
+                        <div class="chart-container">
+                            <h4>Garbage Collection Time Over Time</h4>
+                            <div class="chart-wrapper">
+                                <div id="compare-other-gc" style="width: 100%; height: 460px;"></div>
+                            </div>
+                        </div>
+                        ` : ''}
+                        ${showRatio ? `
+                        <div class="chart-container">
+                            <h4>Heap/RSS Ratio Over Time</h4>
+                            <div class="chart-wrapper">
+                                <div id="compare-other-ratio" style="width: 100%; height: 460px;"></div>
+                            </div>
+                        </div>
+                        ` : ''}
+                    </div>
+                    `}
+                </div>
+            `;
+
+            compareSection.style.display = 'block';
+
+            const baseData = buildReplayData(baseSamples, timestamps, COLOR_PALETTE);
+            const chartTimestamps = baseData.timestamps || timestamps;
+            const compareData = buildReplayData(compareSamples, chartTimestamps, COLOR_PALETTE);
+            const elapsedSeconds = chartTimestamps.map(ts => Math.max(0, (ts - chartTimestamps[0]) / 1000));
+            const maxElapsed = elapsedSeconds.length ? elapsedSeconds[elapsedSeconds.length - 1] : 0;
+            const compareElapsed = elapsedSeconds.map(value => value + maxElapsed);
+            console.log('[compare] Base GC series lengths:', baseData.processKeys.map(k => baseData.series[k].gc.filter(v => v !== null).length));
+            console.log('[compare] Compare GC series lengths:', compareData.processKeys.map(k => compareData.series[k].gc.filter(v => v !== null).length));
+
+            const sharedProcessNames = [...new Set([
+                ...baseSamples.map(s => s.Name),
+                ...compareSamples.map(s => s.Name)
+            ])];
+            const sharedColorMap = buildColorMap(sharedProcessNames, COLOR_PALETTE);
+            [baseData, compareData].forEach(data => {
+                data.processKeys.forEach(processKey => {
+                    const def = data.series[processKey];
+                    def.color = sharedColorMap[def.processName] || def.color;
+                });
+            });
+
+            const baseStyle = {
+                lineWidth: 3,
+                heapLineWidth: 2,
+                markerSize: 6,
+                lineDash: 'solid',
+                heapDash: 'dash',
+                lineOpacity: 1,
+                markerOpacity: 1,
+                includeTotalRss: true,
+                totalLabel: 'Total RSS Memory',
+                totalColor: '#2c3e50'
+            };
+            const compareStyle = {
+                lineWidth: 4,
+                heapLineWidth: 3,
+                markerSize: 8,
+                lineDash: 'solid',
+                heapDash: 'dash',
+                lineOpacity: 0.6,
+                markerOpacity: 0.6,
+                includeTotalRss: true,
+                totalLabel: 'Compare Total RSS Memory',
+                totalColor: '#0f172a'
+            };
+
+            const timeline = document.getElementById('compare-replay-timeline');
+            const meta = document.getElementById('compare-replay-meta');
+            const timeLabel = document.getElementById('compare-replay-time-label');
+            const playBtn = document.getElementById('btn-compare-replay-play');
+            const pauseBtn = document.getElementById('btn-compare-replay-pause');
+            const resetBtn = document.getElementById('btn-compare-replay-reset');
+            const speedSelect = document.getElementById('compare-replay-speed');
+
+            let isPlaying = false;
+            let playTimer = null;
+            let currentFrame = 0;
+            let speedMultiplier = Number(speedSelect.value) || 15;
+
+            timeline.max = String(Math.max(0, chartTimestamps.length - 1));
+
+            const elapsedByTimestamp = new Map();
+            baseSamples.forEach(sample => {
+                if (!elapsedByTimestamp.has(sample.Timestamp)) {
+                    elapsedByTimestamp.set(sample.Timestamp, sample.ElapsedTime);
+                }
+            });
+
+            function updateUi(frameIndex) {
+                timeline.value = String(frameIndex);
+                meta.textContent = `Frame ${frameIndex + 1} / ${chartTimestamps.length}`;
+                const timestamp = chartTimestamps[frameIndex];
+                const elapsed = elapsedByTimestamp.get(timestamp) || 0;
+                timeLabel.textContent = `Elapsed: ${elapsed}s`;
+            }
+
+            function renderFrame(frameIndex) {
+                currentFrame = frameIndex;
+                updateUi(frameIndex);
+                const tasks = [];
+                const compareLayout = {
+                    ...getMemoryLayout(),
+                    xaxis: {
+                        ...getMemoryLayout().xaxis,
+                        title: 'Elapsed (s)',
+                        tickformat: null,
+                        type: 'linear'
+                    },
+                    legend: {
+                        x: 0.5,
+                        y: -0.25,
+                        xanchor: 'center',
+                        orientation: 'h'
+                    },
+                    margin: {
+                        ...getMemoryLayout().margin,
+                        b: 110
+                    },
+                    shapes: [
+                        {
+                            type: 'line',
+                            x0: maxElapsed,
+                            x1: maxElapsed,
+                            y0: 0,
+                            y1: 1,
+                            xref: 'x',
+                            yref: 'paper',
+                            line: { color: '#94a3b8', width: 1, dash: 'dot' }
+                        }
+                    ]
+                };
+                if (isSplitMode) {
+                    const rssTraces = [
+                        ...buildMetricTraces(baseData, chartTimestamps, frameIndex, 'rss', baseStyle, elapsedSeconds),
+                        ...buildMetricTraces(compareData, chartTimestamps, frameIndex, 'rss', compareStyle, compareElapsed)
+                    ];
+                    tasks.push(Plotly.react('compare-rss', applyVisibilityToTraces('compare-rss', rssTraces), compareLayout, getMemoryConfig()));
+                } else {
+                    const sideLayout = {
+                        ...compareLayout,
+                        shapes: []
+                    };
+                    tasks.push(Plotly.react('compare-current-rss', applyVisibilityToTraces('compare-current-rss', buildMetricTraces(baseData, chartTimestamps, frameIndex, 'rss', baseStyle, elapsedSeconds)), sideLayout, getMemoryConfig()));
+                    tasks.push(Plotly.react('compare-other-rss', applyVisibilityToTraces('compare-other-rss', buildMetricTraces(compareData, chartTimestamps, frameIndex, 'rss', compareStyle, elapsedSeconds)), sideLayout, getMemoryConfig()));
+                }
+                if (showGC) {
+                    const compareGcLayout = {
+                        ...getGcLayout(),
+                        xaxis: {
+                            ...getGcLayout().xaxis,
+                            title: 'Elapsed (s)',
+                            tickformat: null,
+                            type: 'linear'
+                        },
+                        legend: {
+                            x: 0.5,
+                            y: -0.25,
+                            xanchor: 'center',
+                            orientation: 'h'
+                        },
+                        margin: {
+                            ...getGcLayout().margin,
+                            b: 110
+                        },
+                        shapes: [
+                            {
+                                type: 'line',
+                                x0: maxElapsed,
+                                x1: maxElapsed,
+                                y0: 0,
+                                y1: 1,
+                                xref: 'x',
+                                yref: 'paper',
+                                line: { color: '#94a3b8', width: 1, dash: 'dot' }
+                            }
+                        ]
+                    };
+                    if (isSplitMode) {
+                        const gcTraces = [
+                            ...buildMetricTraces(baseData, chartTimestamps, frameIndex, 'gc', baseStyle, elapsedSeconds),
+                            ...buildMetricTraces(compareData, chartTimestamps, frameIndex, 'gc', compareStyle, compareElapsed)
+                        ];
+                        tasks.push(Plotly.react('compare-gc', applyVisibilityToTraces('compare-gc', gcTraces), compareGcLayout, getGcConfig()));
+                    } else {
+                        const sideGcLayout = {
+                            ...compareGcLayout,
+                            shapes: []
+                        };
+                        tasks.push(Plotly.react('compare-current-gc', applyVisibilityToTraces('compare-current-gc', buildMetricTraces(baseData, chartTimestamps, frameIndex, 'gc', baseStyle, elapsedSeconds)), sideGcLayout, getGcConfig()));
+                        tasks.push(Plotly.react('compare-other-gc', applyVisibilityToTraces('compare-other-gc', buildMetricTraces(compareData, chartTimestamps, frameIndex, 'gc', compareStyle, elapsedSeconds)), sideGcLayout, getGcConfig()));
+                    }
+                }
+                if (showRatio) {
+                    const compareRatioLayout = {
+                        ...getRatioLayout(),
+                        xaxis: {
+                            ...getRatioLayout().xaxis,
+                            title: 'Elapsed (s)',
+                            tickformat: null,
+                            type: 'linear'
+                        },
+                        legend: {
+                            x: 0.5,
+                            y: -0.25,
+                            xanchor: 'center',
+                            orientation: 'h'
+                        },
+                        margin: {
+                            ...getRatioLayout().margin,
+                            b: 110
+                        },
+                        shapes: [
+                            {
+                                type: 'line',
+                                x0: maxElapsed,
+                                x1: maxElapsed,
+                                y0: 0,
+                                y1: 1,
+                                xref: 'x',
+                                yref: 'paper',
+                                line: { color: '#94a3b8', width: 1, dash: 'dot' }
+                            }
+                        ]
+                    };
+                    if (isSplitMode) {
+                        const ratioTraces = [
+                            ...buildMetricTraces(baseData, chartTimestamps, frameIndex, 'ratio', baseStyle, elapsedSeconds),
+                            ...buildMetricTraces(compareData, chartTimestamps, frameIndex, 'ratio', compareStyle, compareElapsed)
+                        ];
+                        tasks.push(Plotly.react('compare-ratio', applyVisibilityToTraces('compare-ratio', ratioTraces), compareRatioLayout, getRatioConfig()));
+                    } else {
+                        const sideRatioLayout = {
+                            ...compareRatioLayout,
+                            shapes: []
+                        };
+                        tasks.push(Plotly.react('compare-current-ratio', applyVisibilityToTraces('compare-current-ratio', buildMetricTraces(baseData, chartTimestamps, frameIndex, 'ratio', baseStyle, elapsedSeconds)), sideRatioLayout, getRatioConfig()));
+                        tasks.push(Plotly.react('compare-other-ratio', applyVisibilityToTraces('compare-other-ratio', buildMetricTraces(compareData, chartTimestamps, frameIndex, 'ratio', compareStyle, elapsedSeconds)), sideRatioLayout, getRatioConfig()));
+                    }
+                }
+                return Promise.all(tasks);
+            }
+
+            function scheduleNext() {
+                if (!isPlaying) return;
+                if (currentFrame >= chartTimestamps.length - 1) {
+                    isPlaying = false;
+                    return;
+                }
+                const nextDelay = Math.max(
+                    16,
+                    (chartTimestamps[currentFrame + 1] - chartTimestamps[currentFrame]) / speedMultiplier
+                );
+                playTimer = setTimeout(() => {
+                    renderFrame(currentFrame + 1).then(scheduleNext);
+                }, nextDelay);
+            }
+
+            function play() {
+                if (isPlaying) return;
+                isPlaying = true;
+                scheduleNext();
+            }
+
+            function pause() {
+                isPlaying = false;
+                if (playTimer) {
+                    clearTimeout(playTimer);
+                    playTimer = null;
+                }
+            }
+
+            if (!window.compareReplayStops) {
+                window.compareReplayStops = {};
+            }
+            window.compareReplayStops.default = pause;
+
+            playBtn.addEventListener('click', play);
+            pauseBtn.addEventListener('click', pause);
+            resetBtn.addEventListener('click', () => {
+                pause();
+                renderFrame(0);
+            });
+            timeline.addEventListener('input', () => {
+                pause();
+                renderFrame(Number(timeline.value));
+            });
+            speedSelect.addEventListener('change', () => {
+                const parsed = Number(speedSelect.value);
+                if (!Number.isNaN(parsed) && parsed > 0) {
+                    speedMultiplier = parsed;
+                }
+            });
+
+            const initialFrame = Math.max(0, chartTimestamps.length - 1);
+            renderFrame(initialFrame).then(() => {
+                if (isSplitMode) {
+                    attachLegendVisibilityHandlers('compare-rss');
+                    if (showGC) {
+                        attachLegendVisibilityHandlers('compare-gc');
+                    }
+                    if (showRatio) {
+                        attachLegendVisibilityHandlers('compare-ratio');
+                    }
+                } else {
+                    attachLegendVisibilityHandlers('compare-current-rss');
+                    attachLegendVisibilityHandlers('compare-other-rss');
+                    if (showGC) {
+                        attachLegendVisibilityHandlers('compare-current-gc');
+                        attachLegendVisibilityHandlers('compare-other-gc');
+                    }
+                    if (showRatio) {
+                        attachLegendVisibilityHandlers('compare-current-ratio');
+                        attachLegendVisibilityHandlers('compare-other-ratio');
+                    }
+                }
+            });
+
+            const viewSelect = document.getElementById('compare-view-mode');
+            if (viewSelect) {
+                viewSelect.addEventListener('change', (event) => {
+                    const nextMode = event.target.value === 'side' ? 'side' : 'split';
+                    localStorage.setItem('compareMode', nextMode);
+                    renderCompareSection(baseSamples);
+                });
+            }
+        }
+
+        function renderCompareSection(baseSamples) {
+            return CompareShared.renderCompareSection({
+                baseSamples,
+                compareSamplesRaw: Array.isArray(window.compareSamples) ? window.compareSamples : [],
+                compareSectionId: 'compare-section',
+                compareModeStorageKey: 'compareMode',
+                baseLabel: 'Current Run',
+                compareLabel: 'Comparison Run',
+                headerTitle: 'Comparison',
+                headerSubtitle: 'Replay both runs with a shared timeline',
+                memoryFilenameBase: `build-monitor-${runId}`,
+                gcFilenameBase: `build-monitor-gc-${runId}`,
+                ratioFilenameBase: `build-monitor-rss-heap-${runId}`,
+                baseProcessSummary: window.currentProcessSummary || null,
+                compareProcessSummary: window.compareProcessSummary || null
+            });
+        }
+
+        function getGcLayout() {
+            return CompareShared.getGcLayout();
+        }
+
+        function getGcConfig() {
+            return CompareShared.getGcConfig(`build-monitor-gc-${runId}`);
+        }
+
+        function getRatioLayout() {
+            return CompareShared.getRatioLayout();
+        }
+
+        function getRatioConfig() {
+            return CompareShared.getRatioConfig(`build-monitor-rss-heap-${runId}`);
+        }
+
+        function renderChart(samples) {
             // Process data for chart - group by both Name and PID to handle multiple processes with same name
             const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
             // Create unique process keys (Name + PID combination)
             const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
-            
+
             const traces = [];
-            const colors = ['#3498db', '#e74c3c', '#9b59b6', '#2ecc71', '#f39c12', '#e67e22'];
-            
+            const colorMap = buildColorMap(processKeys);
+
             // Create traces for each unique process (Name + PID combination)
             processKeys.forEach((processKey, index) => {
-                const color = colors[index % colors.length];
+                const color = colorMap[processKey];
                 const [processName, pid] = processKey.split('|');
-                
-                // RSS data
+
+                // RSS data - use null for timestamps where process doesn't exist yet
                 const rssData = timestamps.map(timestamp => {
                     const sample = samples
-                        .filter(s => s.Name === processName && s.PID === pid && s.Timestamp <= timestamp)
-                        .sort((a, b) => b.Timestamp - a.Timestamp)[0];
-                    return sample ? sample.RSS : 0;
+                        .filter(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp)
+                        [0];
+                    return sample ? sample.RSS : null;  // null means "no data" - line won't appear
                 });
-                
+
                 traces.push({
                     x: timestamps.map(t => new Date(t)),
                     y: rssData,
                     type: 'scatter',
                     mode: 'lines',
                     name: `${processName} PID:${pid} (RSS)`,
-                    line: { color: color, width: 3 }
+                    line: { color: color, width: 3 },
+                    connectgaps: false  // Don't connect across null values
                 });
-                
-                // Heap data
+
+                // Heap data - use null for timestamps where process doesn't exist yet
                 const heapData = timestamps.map(timestamp => {
                     const sample = samples
-                        .filter(s => s.Name === processName && s.PID === pid && s.Timestamp <= timestamp)
-                        .sort((a, b) => b.Timestamp - a.Timestamp)[0];
-                    return sample ? sample.HeapUsed : 0;
+                        .filter(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp)
+                        [0];
+                    return sample ? sample.HeapUsed : null;  // null means "no data" - line won't appear
                 });
-                
+
                 traces.push({
                     x: timestamps.map(t => new Date(t)),
                     y: heapData,
                     type: 'scatter',
                     mode: 'lines',
                     name: `${processName} PID:${pid} (Heap)`,
-                    line: { color: color, width: 2, dash: 'dash' }
+                    line: { color: color, width: 2, dash: 'dash' },
+                    connectgaps: false  // Don't connect across null values
                 });
             });
-            
-            // Add total memory trace
-            const totalData = timestamps.map(timestamp => {
-                let total = 0;
-                processKeys.forEach(processKey => {
-                    const [processName, pid] = processKey.split('|');
-                    const sample = samples
-                        .filter(s => s.Name === processName && s.PID === pid && s.Timestamp <= timestamp)
-                        .sort((a, b) => b.Timestamp - a.Timestamp)[0];
-                    if (sample) total += sample.RSS;
-                });
-                return total;
-            });
-            
-            traces.push({
-                x: timestamps.map(t => new Date(t)),
-                y: totalData,
+
+            const totalSeries = buildTotalRssSeries(samples, timestamps, processKeys);
+            let chartTimestamps = timestamps;
+            let chartTraces = traces;
+            if (totalSeries.buildEndIndex >= 0 && totalSeries.buildEndIndex < timestamps.length) {
+                const end = totalSeries.buildEndIndex;
+                chartTimestamps = timestamps.slice(0, end);
+                chartTraces = traces.map(trace => ({
+                    ...trace,
+                    x: trace.x.slice(0, end),
+                    y: trace.y.slice(0, end),
+                    customdata: trace.customdata ? trace.customdata.slice(0, end) : undefined
+                }));
+            }
+
+            chartTraces.push({
+                x: chartTimestamps.map(t => new Date(t)),
+                y: totalSeries.buildEndIndex >= 0 && totalSeries.buildEndIndex < timestamps.length
+                    ? totalSeries.totalRss.slice(0, totalSeries.buildEndIndex)
+                    : totalSeries.totalRss,
                 type: 'scatter',
                 mode: 'lines',
-                name: 'Total Memory',
-                line: { color: '#2c3e50', width: 4 }
+                name: 'Total RSS Memory',
+                line: { color: '#2c3e50', width: 4 },
+                connectgaps: false,  // Don't connect across null values
+                customdata: totalSeries.buildEndIndex >= 0 && totalSeries.buildEndIndex < timestamps.length
+                    ? totalSeries.distribution.slice(0, totalSeries.buildEndIndex)
+                    : totalSeries.distribution,
+                hovertemplate: 'Total RSS: %{y} MB<br>%{customdata}<extra></extra>'
             });
 
             // Detect if mobile
             const isMobile = window.innerWidth < 768;
-            
-            const layout = {
-                title: isMobile ? '' : 'Memory Usage Over Time', // Hide title on mobile to save space
-                xaxis: { 
-                    title: 'Time',
-                    tickformat: isMobile ? '%H:%M' : '%H:%M:%S', // Shorter time format on mobile
-                    tickangle: isMobile ? -45 : 0
-                },
-                yaxis: { title: 'Memory (MB)' },
-                showlegend: true,
-                legend: { 
-                    x: isMobile ? 0.5 : 1.02, 
-                    y: isMobile ? -0.2 : 1,
-                    xanchor: isMobile ? 'center' : 'left',
-                    orientation: isMobile ? 'h' : 'v'
-                },
-                margin: { 
-                    l: isMobile ? 50 : 60, 
-                    r: isMobile ? 20 : 100, 
-                    t: isMobile ? 20 : 40, 
-                    b: isMobile ? 80 : 60 
-                },
-                font: {
-                    size: isMobile ? 10 : 12
-                }
-            };
 
-            const config = {
-                responsive: true,
-                displayModeBar: true,
-                displaylogo: false,
-                modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d', 'autoScale2d'],
-                toImageButtonOptions: {
-                    format: 'png',
-                    filename: `build-monitor-${runId}`,
-                    height: isMobile ? 400 : 500,
-                    width: isMobile ? 800 : 1000,
-                    scale: 2
-                }
-            };
+            const layout = getMemoryLayout();
+            const config = getMemoryConfig();
 
-            Plotly.newPlot('chart', traces, layout, config);
-            
+            Plotly.newPlot('chart', applyVisibilityToTraces('chart', chartTraces), layout, config);
+            attachLegendVisibilityHandlers('chart', updateMainChartFilterCheckboxes);
+
             // Handle window resize
             window.addEventListener('resize', function() {
                 Plotly.Plots.resize('chart');
             });
         }
 
-        function showNotFound(runId) {
-            document.getElementById('content').innerHTML = `
-                <div class="not-found">
-                    <h2>Run Not Found</h2>
-                    <p>The build run with ID <code>${runId}</code> could not be found.</p>
-                    <p>This might be because:</p>
-                    <ul style="text-align: left; max-width: 400px; margin: 0 auto;">
-                        <li>The memory report has expired (available for 24 hours)</li>
-                        <li>The run ID is incorrect</li>
-                        <li>The build is still in progress</li>
-                    </ul>
-                    <a href="https://process-watcher.web.app" style="color: #2563eb; text-decoration: none;">Back to Home</a>
-                </div>
-            `;
+        function renderJvmCounterCharts(samples) {
+            if (!hasJITData(samples) && !hasClassLoadingData(samples)) return;
+            const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
+            const data = buildReplayData(samples, timestamps);
+            const frame = Math.max(0, data.timestamps.length - 1);
+            const charts = [
+                ['jit-time-chart', 'jitTime', 'Cumulative JIT Compilation Time', 'Compilation Time (s)'],
+                ['jit-rate-chart', 'jitRate', 'JIT Compilation Activity', 'Compiled Methods / s'],
+                ['classes-loaded-chart', 'classesLoaded', 'Cumulative Classes Loaded', 'Classes Loaded'],
+                ['class-rate-chart', 'classRate', 'Class Loading Activity', 'Classes / s']
+            ];
+            charts.forEach(([id, metric, title, yTitle]) => {
+                if (!document.getElementById(id)) return;
+                const traces = buildMetricTraces(data, data.timestamps, frame, metric, {});
+                Plotly.newPlot(id, applyVisibilityToTraces(id, traces), CompareShared.getCounterLayout(title, yTitle), CompareShared.getCounterConfig(`build-monitor-${metric}-${runId}`));
+                attachLegendVisibilityHandlers(id);
+            });
+            if (window.BpwExperimentLayout) {
+                BpwExperimentLayout.resizeCharts();
+            }
         }
 
-        function showError(message) {
+        async function downloadChart(format) {
+            try {
+                const chart = document.getElementById('chart');
+                const isMobile = window.innerWidth < 768;
+                const filename = `build-monitor-${runId}`;
+                const opts = {
+                    format: format,
+                    filename: filename,
+                    height: isMobile ? 400 : 500,
+                    width: isMobile ? 800 : 1000,
+                    scale: 2
+                };
+                const url = await Plotly.toImage(chart, opts);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${filename}.${format}`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            } catch (e) {
+                console.error('Failed to export chart:', e);
+            }
+        }
+
+        async function downloadGCChart(format) {
+            try {
+                const chart = document.getElementById('gc-chart');
+                const isMobile = window.innerWidth < 768;
+                const filename = `build-monitor-gc-${runId}`;
+                const opts = {
+                    format: format,
+                    filename: filename,
+                    height: isMobile ? 400 : 500,
+                    width: isMobile ? 800 : 1000,
+                    scale: 2
+                };
+                const url = await Plotly.toImage(chart, opts);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${filename}.${format}`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            } catch (e) {
+                console.error('Failed to export GC chart:', e);
+            }
+        }
+
+        async function downloadRuntimeChart(chartId, metric, format) {
+            try {
+                const chart = document.getElementById(chartId);
+                const isMobile = window.innerWidth < 768;
+                const filename = `build-monitor-${metric}-${runId}`;
+                const opts = {
+                    format: format,
+                    filename: filename,
+                    height: isMobile ? 400 : 500,
+                    width: isMobile ? 800 : 1000,
+                    scale: 2
+                };
+                const url = await Plotly.toImage(chart, opts);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${filename}.${format}`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            } catch (e) {
+                console.error(`Failed to export ${metric} chart:`, e);
+            }
+        }
+
+        async function downloadRssHeapRatioChart(format) {
+            try {
+                const chart = document.getElementById('rss-heap-chart');
+                const isMobile = window.innerWidth < 768;
+                const filename = `build-monitor-rss-heap-${runId}`;
+                const opts = {
+                    format: format,
+                    filename: filename,
+                    height: isMobile ? 400 : 500,
+                    width: isMobile ? 800 : 1000,
+                    scale: 2
+                };
+                const url = await Plotly.toImage(chart, opts);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${filename}.${format}`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            } catch (e) {
+                console.error('Failed to export Heap/RSS ratio chart:', e);
+            }
+        }
+
+        function downloadJson(runId) {
+            try {
+                const data = window.currentRunData || {};
+                const samples = Array.isArray(data.samples) ? data.samples : [];
+                const processInfo = data.process_info || {};
+                const processSummary = CompareShared.buildProcessSummary(samples, processInfo);
+                const payload = CompareShared.compactReportData({
+                    ...data,
+                    process_summary: processSummary
+                });
+                const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `build-monitor-${runId}.json`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+            } catch (e) {
+                console.error('Failed to download JSON:', e);
+            }
+        }
+
+        function downloadCsv(runId) {
+            try {
+                const samples = window.currentSamples || [];
+                if (!samples.length) return;
+                const hasGC = hasGCData(samples);
+                const header = ['timestamp','elapsed_time','pid','name','rss_mb','heap_used_mb','heap_capacity_mb','gc_time_s','jit_compiled_methods','jit_failed_compilations','jit_invalidated_compilations','jit_compilation_time_ms','classes_loaded','classes_unloaded','class_load_time_ms'];
+                const rows = samples.map(s => {
+                    const baseRow = [
+                        s.Timestamp,
+                        s.ElapsedTime,
+                        s.PID,
+                        s.Name,
+                        s.RSS,
+                        s.HeapUsed,
+                        s.HeapCap
+                    ];
+                    baseRow.push(s.GCTime !== null && s.GCTime !== undefined ? (s.GCTime / 1000).toFixed(3) : null);
+                    baseRow.push(s.JITCompiledMethods, s.JITFailedCompilations, s.JITInvalidatedCompilations, s.JITCompilationTimeMs, s.ClassesLoaded, s.ClassesUnloaded, s.ClassLoadTimeMs);
+                    return baseRow;
+                });
+                const csv = [header.join(','), ...rows.map(r => r.map(escapeCsv).join(','))].join('\n');
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `build-monitor-${runId}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+            } catch (e) {
+                console.error('Failed to download CSV:', e);
+            }
+        }
+
+        function escapeHtml(str) {
+            if (str === undefined || str === null) return '';
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function escapeCsv(value) {
+            if (value === undefined || value === null) return '';
+            const str = String(value);
+            if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                return '"' + str.replace(/"/g, '""') + '"';
+            }
+            return str;
+        }
+
+        function getMemoryLayout() {
+            return CompareShared.getMemoryLayout();
+        }
+
+        function getMemoryConfig() {
+            return CompareShared.getMemoryConfig(`build-monitor-${runId}`);
+        }
+
+        function showUnavailableRun(reason) {
+            const unavailableCopy = reason === 'not-found'
+                ? {
+                    title: 'Run Unavailable',
+                    message: 'This run could not be found. The link may be incorrect, or the run may have expired.'
+                }
+                : reason === 'server'
+                    ? {
+                        title: 'Run Temporarily Unavailable',
+                        message: 'The service could not load this run right now. Please try again.'
+                    }
+                    : {
+                        title: 'Unable to Connect',
+                        message: 'Check your connection, then try loading this run again.'
+                    };
+
             document.getElementById('content').innerHTML = `
                 <div class="error">
-                    <h2>Error Loading Data</h2>
-                    <p>Failed to load run data: ${message}</p>
-                    <a href="https://process-watcher.web.app" style="color: #2563eb; text-decoration: none;">Back to Home</a>
+                    <h2>${unavailableCopy.title}</h2>
+                    <p>${unavailableCopy.message}</p>
+                    <div style="display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;">
+                        <button type="button" id="retry-run-load">Retry</button>
+                        <a href="https://process-watcher.web.app" style="color: #2563eb; text-decoration: none; align-self: center;">Back to Home</a>
+                    </div>
                 </div>
             `;
+            document.getElementById('retry-run-load').addEventListener('click', () => loadRunData(runId));
         }
-
-        // Initialize the page after all functions and data are defined
-        (function init() {
-            // Version check
-            console.log('📦 Example Dashboard v2.0 - Static Data (No Backend Fetch)');
-            console.log('✅ exampleData defined:', typeof exampleData !== 'undefined');
-            console.log('📊 Sample count:', exampleData?.samples?.length || 0);
-            
-            // Get run ID from URL
-            const pathParts = window.location.pathname.split('/');
-            const runId = pathParts[pathParts.length - 1];
-            
-            if (!runId || runId === 'runs' || runId === '') {
-                document.getElementById('content').innerHTML = `
-                    <div class="error">
-                        <h2>Invalid Run ID</h2>
-                        <p>No run ID provided in the URL.</p>
-                        <a href="https://process-watcher.web.app" style="color: #2563eb;">Back to Home</a>
-                    </div>
-                `;
-            } else {
-                loadRunData(runId);
-            }
-        })();
     </script>
 
     <footer style="margin-top: 4rem; padding: 2rem 1rem; border-top: 1px solid #e5e7eb; text-align: center; color: #6b7280; font-size: 0.875rem;">
@@ -2162,7 +2724,7 @@
                 </a>
             </div>
             <p style="margin-top: 1rem; font-size: 0.75rem; color: #9ca3af;">
-                This is a static example with real data · Memory reports are available for 24 hours · Free service
+                Memory reports are available for 24 hours · Free service
             </p>
         </div>
     </footer>

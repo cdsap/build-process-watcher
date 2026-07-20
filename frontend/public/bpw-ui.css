@@ -208,6 +208,118 @@ input[type="file"] {
     font-size: 0.82rem;
 }
 
+.prediction-panel {
+    margin: 0 0 1.2rem;
+    padding: 1rem;
+    border: 1px solid rgba(22, 26, 29, 0.09);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: var(--bpw-shadow);
+}
+
+.prediction-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.8rem;
+}
+
+.prediction-panel-head h2 {
+    margin: 0.2rem 0 0;
+    color: var(--bpw-ink);
+    font-size: 1rem;
+    letter-spacing: 0;
+}
+
+.prediction-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.75rem;
+}
+
+.prediction-card {
+    min-width: 0;
+    padding: 0.85rem;
+    border: 1px solid var(--bpw-line);
+    border-radius: 8px;
+    background: #fff;
+}
+
+.prediction-card.high {
+    border-color: #f0a3a3;
+}
+
+.prediction-card.elevated {
+    border-color: #f2c66d;
+}
+
+.prediction-card.low {
+    border-color: #93c5a3;
+}
+
+.prediction-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.prediction-card-top strong {
+    color: var(--bpw-ink);
+    font-size: 1rem;
+}
+
+.prediction-card-top span {
+    color: var(--bpw-muted);
+    font-size: 0.78rem;
+    text-transform: capitalize;
+}
+
+.prediction-risk {
+    margin-top: 0.5rem;
+    color: var(--bpw-ink);
+    font-size: 1.18rem;
+    font-weight: 780;
+    text-transform: capitalize;
+}
+
+.prediction-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.55rem;
+    margin-top: 0.65rem;
+}
+
+.prediction-metrics span {
+    display: block;
+    color: var(--bpw-muted);
+    font-size: 0.72rem;
+}
+
+.prediction-metrics strong {
+    display: block;
+    margin-top: 0.15rem;
+    color: var(--bpw-ink);
+    font-size: 0.84rem;
+}
+
+.prediction-signals {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.7rem;
+}
+
+.prediction-signals span {
+    padding: 0.18rem 0.5rem;
+    border: 1px solid var(--bpw-line);
+    border-radius: 999px;
+    background: #f5f7fb;
+    color: var(--bpw-muted);
+    font-size: 0.74rem;
+}
+
 .chart-container,
 .process-info-section,
 .compare-controls,
@@ -577,9 +689,11 @@ input[type="file"] {
 .compare-process-list {
     display: grid;
     gap: 0.85rem;
+    min-width: 0;
 }
 
 .compare-process-card {
+    min-width: 0;
     padding: 0.9rem;
     border: 1px solid rgba(22, 26, 29, 0.08);
     border-radius: 8px;
@@ -625,6 +739,8 @@ input[type="file"] {
 .compare-process-grid {
     display: grid;
     gap: 0.35rem;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .compare-process-grid-head,
@@ -809,6 +925,7 @@ footer {
 
     .compare-process-grid {
         overflow-x: auto;
+        overscroll-behavior-inline: contain;
         padding-bottom: 0.2rem;
     }
 

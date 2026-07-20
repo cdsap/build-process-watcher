@@ -119,13 +119,16 @@ describe('generateJsonReport', () => {
     const output = JSON.parse(fs.readFileSync(outputFile, 'utf8'));
     expect(output.finished).toBe(true);
     expect(output.samples).toHaveLength(2);
-    expect(output.samples[0]).toMatchObject({
-      PID: '12345',
-      Name: 'GradleDaemon',
-      RSS: 256,
-      HeapUsed: 100,
-      HeapCap: 512,
-    });
+    expect(output.sample_fields).toEqual([
+      'Timestamp', 'ElapsedTime', 'PID', 'Name', 'RSS', 'HeapUsed', 'HeapCap',
+      'GCTime', 'GCTimeSeconds', 'JITCompiledMethods', 'JITFailedCompilations',
+      'JITInvalidatedCompilations', 'JITCompilationTimeMs', 'ClassesLoaded',
+      'ClassesUnloaded', 'ClassLoadTimeMs',
+    ]);
+    expect(output.samples[0]).toEqual([
+      0, 0, '12345', 'GradleDaemon', 256, 100, 512,
+      null, null, null, null, null, null, null, null, null,
+    ]);
     expect(output.process_info['12345']).toEqual({
       name: 'GradleDaemon',
       vm_flags: ['-XX:MaxHeapSize=2048m', '-XX:+UseG1GC'],
@@ -166,8 +169,9 @@ describe('generateJsonReport', () => {
     generateJsonReport(logFile, outputFile, true);
 
     const output = JSON.parse(fs.readFileSync(outputFile, 'utf8'));
-    expect(output.samples[0].GCTime).toBe(123);
-    expect(output.samples[0].GCTimeSeconds).toBe(0.123);
+    const sample = Object.fromEntries(output.sample_fields.map((field: string, index: number) => [field, output.samples[0][index]]));
+    expect(sample.GCTime).toBe(123);
+    expect(sample.GCTimeSeconds).toBe(0.123);
   });
 
   it('parses extended JIT and class loading metrics', () => {
@@ -178,7 +182,8 @@ describe('generateJsonReport', () => {
       '00:00:05 | 1 | Proc | 10MB | 100MB | 50MB | 0.123s | 42 | 1 | 2 | 0.456 | 900 | 12 | 0.789\n');
 
     generateJsonReport(logFile, outputFile, true);
-    const sample = JSON.parse(fs.readFileSync(outputFile, 'utf8')).samples[0];
+    const output = JSON.parse(fs.readFileSync(outputFile, 'utf8'));
+    const sample = Object.fromEntries(output.sample_fields.map((field: string, index: number) => [field, output.samples[0][index]]));
 
     expect(sample).toMatchObject({
       JITCompiledMethods: 42,
@@ -199,7 +204,8 @@ describe('generateJsonReport', () => {
       '00:00:05 | 1 | Proc | 10MB | 100MB | 50MB | N/A | N/A | bad | N/A | N/A | 0 | N/A | broken\n');
 
     generateJsonReport(logFile, outputFile, true);
-    const sample = JSON.parse(fs.readFileSync(outputFile, 'utf8')).samples[0];
+    const output = JSON.parse(fs.readFileSync(outputFile, 'utf8'));
+    const sample = Object.fromEntries(output.sample_fields.map((field: string, index: number) => [field, output.samples[0][index]]));
 
     expect(sample.RSS).toBe(50);
     expect(sample.GCTime).toBeNull();

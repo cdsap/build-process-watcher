@@ -41,27 +41,45 @@ type ProcessDoc struct {
 
 // RunDoc represents a monitoring run document in Firestore
 type RunDoc struct {
-	ID                 string    `firestore:"id"`
-	RunID              string    `firestore:"run_id"`
-	StartTime          time.Time `firestore:"start_time"`
-	EndTime            time.Time `firestore:"end_time,omitempty"`
-	CreatedAt          time.Time `firestore:"created_at"`
-	UpdatedAt          time.Time `firestore:"updated_at"`
-	UpdatedAtTimestamp int64     `firestore:"updated_at_timestamp"` // Unix millis for timezone-independent queries
-	Samples            []Sample  `firestore:"samples"`
-	Finished           bool      `firestore:"finished,omitempty"`
-	FinishedAt         time.Time `firestore:"finished_at,omitempty"`
-	ExpireAt           time.Time `firestore:"expire_at,omitempty"` // TTL field - set manually in Firestore, used by TTL policy
-	ExportToBigquery   bool      `firestore:"export_to_bigquery,omitempty"`
+	ID                    string                 `firestore:"id"`
+	RunID                 string                 `firestore:"run_id"`
+	StartTime             time.Time              `firestore:"start_time"`
+	EndTime               time.Time              `firestore:"end_time,omitempty"`
+	CreatedAt             time.Time              `firestore:"created_at"`
+	UpdatedAt             time.Time              `firestore:"updated_at"`
+	UpdatedAtTimestamp    int64                  `firestore:"updated_at_timestamp"` // Unix millis for timezone-independent queries
+	Samples               []Sample               `firestore:"samples"`
+	Finished              bool                   `firestore:"finished,omitempty"`
+	FinishedAt            time.Time              `firestore:"finished_at,omitempty"`
+	ExpireAt              time.Time              `firestore:"expire_at,omitempty"` // TTL field - set manually in Firestore, used by TTL policy
+	ExportToBigquery      bool                   `firestore:"export_to_bigquery,omitempty"`
+	PredictionCheckpoints []PredictionCheckpoint `firestore:"prediction_checkpoints,omitempty"`
+}
+
+// PredictionCheckpoint is a public-safe prediction result for one observation window.
+type PredictionCheckpoint struct {
+	ObservationWindowS int       `json:"observation_window_s" firestore:"observation_window_s"`
+	Status             string    `json:"status" firestore:"status"`
+	RiskLevel          string    `json:"risk_level,omitempty" firestore:"risk_level,omitempty"`
+	RiskScore          *float64  `json:"risk_score,omitempty" firestore:"risk_score,omitempty"`
+	Confidence         string    `json:"confidence,omitempty" firestore:"confidence,omitempty"`
+	PredictedPeakRSSMB *float64  `json:"predicted_peak_rss_mb,omitempty" firestore:"predicted_peak_rss_mb,omitempty"`
+	PredictedDurationS *float64  `json:"predicted_duration_s,omitempty" firestore:"predicted_duration_s,omitempty"`
+	Signals            []string  `json:"signals,omitempty" firestore:"signals,omitempty"`
+	ProviderID         string    `json:"provider_id,omitempty" firestore:"provider_id,omitempty"`
+	ModelVersion       string    `json:"model_version,omitempty" firestore:"model_version,omitempty"`
+	CreatedAt          time.Time `json:"created_at" firestore:"created_at"`
+	Message            string    `json:"message,omitempty" firestore:"message,omitempty"`
 }
 
 // RunResponse is the API response for a run
 type RunResponse struct {
-	Samples     []Sample               `json:"samples"`
-	ProcessInfo map[string]ProcessInfo `json:"process_info,omitempty"`
-	Finished    bool                   `json:"finished"`
-	FinishedAt  *time.Time             `json:"finished_at,omitempty"`
-	UpdatedAt   time.Time              `json:"updated_at"`
+	Samples               []Sample               `json:"samples"`
+	ProcessInfo           map[string]ProcessInfo `json:"process_info,omitempty"`
+	PredictionCheckpoints []PredictionCheckpoint `json:"prediction_checkpoints,omitempty"`
+	Finished              bool                   `json:"finished"`
+	FinishedAt            *time.Time             `json:"finished_at,omitempty"`
+	UpdatedAt             time.Time              `json:"updated_at"`
 }
 
 // TokenRequest is the request body for token generation
