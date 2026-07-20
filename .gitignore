@@ -1,0 +1,5 @@
+# Local build outputs
+/predictive-backend
+
+# OS files
+.DS_Store
