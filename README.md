@@ -16,7 +16,7 @@ This repository owns proprietary model execution, feature derivation, scoring th
 - `internal/provider`: private implementation of the public `predictor.Provider` contract.
 - `cmd/predictive-backend`: private backend entrypoint that injects the provider into the public `server.Run` composition API.
 
-The current provider is a deterministic bootstrap smoke implementation. It proves private injection, public-safe checkpoint output, and error handling before production model work begins.
+The current provider is a private heuristic scorer. It evaluates runtime telemetry for memory pressure, memory growth, heap saturation, GC pressure, and process fanout while keeping the stored checkpoint fields public-safe.
 
 ## Configuration
 
@@ -38,7 +38,7 @@ go test ./...
 go build ./cmd/predictive-backend
 ```
 
-The local `go.mod` uses a `replace` directive to point at a sibling checkout of `github.com/cdsap/build-process-watcher/backend` while the public provider contract is being prepared.
+The local `go.mod` resolves the public `github.com/cdsap/build-process-watcher/backend` module directly from the merged public repository.
 
 ## Container Build
 
@@ -50,8 +50,8 @@ docker run --rm -p 8080:8080 \
   -e GOOGLE_CLOUD_PROJECT=your-project \
   -e PREDICTIVE_RELIABILITY_CHECKPOINTS=30,60,180 \
   -e PREDICTIVE_PROVIDER_ID=private-provider \
-  -e PREDICTIVE_MODEL_VERSION=bootstrap-v0 \
+  -e PREDICTIVE_MODEL_VERSION=private-heuristic-v1 \
   bpw-predictive-backend
 ```
 
-The container build expects `go.mod` to resolve the public backend module without a local filesystem `replace`. After the public server/predictor contract lands in the public repository, remove the local `replace`, run `go mod tidy`, and then build the image.
+The container build expects `go.mod` to resolve the public backend module without a local filesystem `replace`.

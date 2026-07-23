@@ -2,6 +2,7 @@
 FROM golang:1.24-alpine AS builder
 
 WORKDIR /src
+ENV GONOSUMDB=github.com/cdsap/build-process-watcher/backend
 
 COPY go.mod go.sum ./
 RUN go mod download

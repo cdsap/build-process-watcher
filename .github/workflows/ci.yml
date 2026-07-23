@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  GONOSUMDB: github.com/cdsap/build-process-watcher/backend
+
+jobs:
+  verify:
+    name: Verify Go module
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Check module tidiness
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build predictive backend
+        run: go build -trimpath -ldflags="-s -w" -o /tmp/predictive-backend ./cmd/predictive-backend
+
+  container:
+    name: Build container image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t bpw-predictive-backend:ci .

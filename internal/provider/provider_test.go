@@ -46,6 +46,12 @@ func TestProviderSatisfiesPredictionContract(t *testing.T) {
 	if checkpoint.PredictedPeakRSSMB == nil || *checkpoint.PredictedPeakRSSMB <= 0 {
 		t.Fatalf("PredictedPeakRSSMB = %v, want positive value", checkpoint.PredictedPeakRSSMB)
 	}
+	if checkpoint.RiskScore == nil {
+		t.Fatal("RiskScore = nil, want scored checkpoint")
+	}
+	if checkpoint.Confidence != "medium" {
+		t.Fatalf("Confidence = %q, want medium", checkpoint.Confidence)
+	}
 }
 
 func TestProviderReturnsElevatedMemorySignal(t *testing.T) {
@@ -59,11 +65,50 @@ func TestProviderReturnsElevatedMemorySignal(t *testing.T) {
 	if checkpoint.RiskLevel != "elevated" {
 		t.Fatalf("RiskLevel = %q, want elevated", checkpoint.RiskLevel)
 	}
+	if checkpoint.Confidence != "low" {
+		t.Fatalf("Confidence = %q, want low", checkpoint.Confidence)
+	}
+	if len(checkpoint.Signals) != 1 || checkpoint.Signals[0] != "high memory pressure" {
+		t.Fatalf("Signals = %v, want [high memory pressure]", checkpoint.Signals)
+	}
+}
+
+func TestProviderReturnsHighRiskForCompoundingRuntimeSignals(t *testing.T) {
+	checkpoint, err := New(Config{}).Predict(context.Background(), predictor.RunSnapshot{
+		Samples: []predictor.Sample{
+			{ElapsedTime: 0, RSS: 512 * 1024, HeapUsed: 300, HeapCap: 1000, GCTime: 0},
+			{ElapsedTime: 30, RSS: 1200 * 1024, HeapUsed: 760, HeapCap: 1000, GCTime: 3000},
+			{ElapsedTime: 60, RSS: 2048 * 1024, HeapUsed: 900, HeapCap: 1000, GCTime: 10000},
+		},
+		ProcessInfo: map[string]predictor.ProcessInfo{
+			"1": {PID: "1"},
+			"2": {PID: "2"},
+			"3": {PID: "3"},
+			"4": {PID: "4"},
+			"5": {PID: "5"},
+		},
+	}, 60)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if checkpoint.RiskLevel != "high" {
+		t.Fatalf("RiskLevel = %q, want high", checkpoint.RiskLevel)
+	}
 	if checkpoint.Confidence != "medium" {
 		t.Fatalf("Confidence = %q, want medium", checkpoint.Confidence)
 	}
-	if len(checkpoint.Signals) != 1 || checkpoint.Signals[0] != "memory pressure" {
-		t.Fatalf("Signals = %v, want [memory pressure]", checkpoint.Signals)
+	if checkpoint.RiskScore == nil || *checkpoint.RiskScore < 0.65 {
+		t.Fatalf("RiskScore = %v, want >= 0.65", checkpoint.RiskScore)
+	}
+	wantSignals := []string{"memory pressure", "rapid memory growth", "heap saturation"}
+	if len(checkpoint.Signals) != len(wantSignals) {
+		t.Fatalf("Signals = %v, want %v", checkpoint.Signals, wantSignals)
+	}
+	for i, want := range wantSignals {
+		if checkpoint.Signals[i] != want {
+			t.Fatalf("Signals[%d] = %q, want %q", i, checkpoint.Signals[i], want)
+		}
 	}
 }
 
