@@ -60,6 +60,8 @@ This is not required for normal local or remote monitoring. Use it only when you
 
 **BigQuery export is optional:** It is only for collecting metrics in BigQuery. Set `export_to_bigquery: 'true'` together with `remote_monitoring: 'true'` when you want that export. The backend service must be configured with `BIGQUERY_EXPORT_DATASET`; optional table overrides are `BIGQUERY_EXPORT_TABLE` and `BIGQUERY_EXPORT_PROCESSES_TABLE`.
 
+**Predictive reliability is private-provider only:** Public builds keep prediction disabled by default. The backend can carry public-safe `prediction_checkpoints` returned by an injected provider, and the dashboard only renders them when `predictiveReliability` is enabled in `config.js`. Production providers, scoring logic, evaluation artifacts, and customer-specific tuning live outside this public repository.
+
 ---
 
 ## 🧭 Behavior Matrix

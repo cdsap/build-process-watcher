@@ -12,7 +12,7 @@ const contentTypes = {
 
 http.createServer((request, response) => {
   const pathname = new URL(request.url, 'http://127.0.0.1').pathname;
-  const requestedPath = pathname === '/' ? '/compare.html' : pathname;
+  const requestedPath = pathname === '/' ? '/index.html' : pathname;
   const filePath = path.resolve(publicDir, `.${requestedPath}`);
   if (!filePath.startsWith(`${publicDir}${path.sep}`)) {
     response.writeHead(403).end('Forbidden');

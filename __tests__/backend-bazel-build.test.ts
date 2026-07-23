@@ -17,6 +17,8 @@ describe('backend Bazel build integration', () => {
       'backend/internal/handlers/BUILD.bazel',
       'backend/internal/models/BUILD.bazel',
       'backend/internal/storage/BUILD.bazel',
+      'backend/pkg/predictor/BUILD.bazel',
+      'backend/pkg/server/BUILD.bazel',
     ].map(read);
 
     expect(moduleFile).toContain('go_deps.from_file(go_mod = "//:go.mod")');
@@ -24,7 +26,8 @@ describe('backend Bazel build integration', () => {
     expect(moduleFile).not.toContain('go_sdk.from_file');
     expect(read('backend/.bazelversion').trim()).toBe('latest');
     expect(buildFiles.join('\n')).toContain('name = "server"');
-    expect(buildFiles.filter((contents) => contents.includes('go_test('))).toHaveLength(6);
+    expect(buildFiles.join('\n')).toContain('importpath = "github.com/cdsap/build-process-watcher/backend/pkg/server"');
+    expect(buildFiles.filter((contents) => contents.includes('go_test('))).toHaveLength(8);
   });
 
   it('uses Bazel in local, container, and CI build paths', () => {

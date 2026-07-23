@@ -10,6 +10,7 @@ go_library(
         "//internal/exportqueue",
         "//internal/models",
         "//internal/storage",
+        "//pkg/predictor",
     ],
 )
 

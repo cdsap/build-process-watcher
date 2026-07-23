@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -12,19 +13,32 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/internal/exportqueue"
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
 	"github.com/cdsap/build-process-watcher/backend/internal/storage"
+	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
 
 // Handlers contains all HTTP handlers
 type Handlers struct {
-	storage *storage.Client
-	export  *exportqueue.Scheduler
+	storage              *storage.Client
+	export               *exportqueue.Scheduler
+	predictor            predictor.Provider
+	predictorCheckpoints []int
 }
 
 // NewHandlers creates a new handlers instance. export may be nil (no BigQuery jobs).
 func NewHandlers(storageClient *storage.Client, export *exportqueue.Scheduler) *Handlers {
+	return NewHandlersWithPredictor(storageClient, export, predictor.NoopProvider{}, nil)
+}
+
+// NewHandlersWithPredictor creates handlers with an optional prediction provider.
+func NewHandlersWithPredictor(storageClient *storage.Client, export *exportqueue.Scheduler, predictionProvider predictor.Provider, checkpoints []int) *Handlers {
+	if predictionProvider == nil {
+		predictionProvider = predictor.NoopProvider{}
+	}
 	return &Handlers{
-		storage: storageClient,
-		export:  export,
+		storage:              storageClient,
+		export:               export,
+		predictor:            predictionProvider,
+		predictorCheckpoints: checkpoints,
 	}
 }
 
@@ -199,10 +213,61 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
+	h.evaluatePredictionCheckpoints(r.Context(), req.RunID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "success", "samples": fmt.Sprintf("%d", len(samples))})
+}
+
+func (h *Handlers) evaluatePredictionCheckpoints(ctx context.Context, runID string) {
+	if h.storage == nil || !predictor.Enabled(h.predictor) || len(h.predictorCheckpoints) == 0 {
+		return
+	}
+
+	runDoc, err := h.storage.GetRun(runID)
+	if err != nil {
+		log.Printf("Prediction skipped: could not load run %s: %v", runID, err)
+		return
+	}
+	processDoc, err := h.storage.GetProcesses(runID)
+	if err != nil {
+		log.Printf("Prediction continuing without process info for run %s: %v", runID, err)
+		processDoc = &models.ProcessDoc{
+			RunID:       runID,
+			ProcessInfo: make(map[string]models.ProcessInfo),
+		}
+	}
+
+	pending := predictor.PendingCheckpoints(runDoc.Samples, runDoc.PredictionCheckpoints, h.predictorCheckpoints)
+	for _, checkpointWindow := range pending {
+		checkpoint, err := h.predictor.Predict(ctx, predictor.RunSnapshot{
+			RunID:                 runID,
+			Samples:               runDoc.Samples,
+			ProcessInfo:           processDoc.ProcessInfo,
+			ExistingCheckpoints:   runDoc.PredictionCheckpoints,
+			ConfiguredCheckpoints: h.predictorCheckpoints,
+			Now:                   time.Now(),
+		}, checkpointWindow)
+		if err != nil {
+			checkpoint = models.PredictionCheckpoint{
+				ObservationWindowS: checkpointWindow,
+				Status:             "error",
+				CreatedAt:          time.Now(),
+				Message:            "prediction provider error",
+			}
+			log.Printf("Prediction provider failed for run %s checkpoint %ds: %v", runID, checkpointWindow, err)
+		}
+		if checkpoint.ObservationWindowS == 0 {
+			checkpoint.ObservationWindowS = checkpointWindow
+		}
+		if checkpoint.CreatedAt.IsZero() {
+			checkpoint.CreatedAt = time.Now()
+		}
+		if err := h.storage.StorePredictionCheckpoint(runID, checkpoint); err != nil {
+			log.Printf("Prediction checkpoint store failed for run %s checkpoint %ds: %v", runID, checkpointWindow, err)
+		}
+	}
 }
 
 // GetRun retrieves run data
@@ -271,6 +336,7 @@ func (h *Handlers) GetRun(w http.ResponseWriter, r *http.Request) {
 	var response models.RunResponse
 	response.Samples = runDoc.Samples
 	response.ProcessInfo = processDoc.ProcessInfo
+	response.PredictionCheckpoints = runDoc.PredictionCheckpoints
 	response.Finished = runDoc.Finished
 	response.UpdatedAt = runDoc.UpdatedAt
 	if !runDoc.FinishedAt.IsZero() {

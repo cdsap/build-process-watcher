@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
 )
@@ -111,5 +112,42 @@ func TestRunResponse_WithoutProcessInfo(t *testing.T) {
 	// ProcessInfo can be nil when not present
 	if unmarshaled.ProcessInfo != nil && len(unmarshaled.ProcessInfo) > 0 {
 		t.Error("ProcessInfo should be nil or empty when not present")
+	}
+}
+
+func TestRunResponse_WithPredictionCheckpoints(t *testing.T) {
+	createdAt := time.Unix(123, 0).UTC()
+	response := models.RunResponse{
+		Samples: []models.Sample{},
+		PredictionCheckpoints: []models.PredictionCheckpoint{
+			{
+				ObservationWindowS: 180,
+				Status:             "ready",
+				RiskLevel:          "low",
+				Confidence:         "medium",
+				Signals:            []string{"stable memory"},
+				ProviderID:         "private",
+				ModelVersion:       "opaque-v1",
+				CreatedAt:          createdAt,
+			},
+		},
+		Finished: false,
+	}
+
+	jsonData, err := json.Marshal(response)
+	if err != nil {
+		t.Fatalf("Failed to marshal RunResponse: %v", err)
+	}
+
+	var unmarshaled models.RunResponse
+	if err := json.Unmarshal(jsonData, &unmarshaled); err != nil {
+		t.Fatalf("Failed to unmarshal RunResponse: %v", err)
+	}
+
+	if len(unmarshaled.PredictionCheckpoints) != 1 {
+		t.Fatalf("Expected 1 prediction checkpoint, got %d", len(unmarshaled.PredictionCheckpoints))
+	}
+	if unmarshaled.PredictionCheckpoints[0].ObservationWindowS != 180 {
+		t.Fatalf("Prediction window = %d, want 180", unmarshaled.PredictionCheckpoints[0].ObservationWindowS)
 	}
 }

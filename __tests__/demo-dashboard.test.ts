@@ -12,6 +12,9 @@ describe('demo dashboard', () => {
     expect(html).toContain("fetch('/demo-run.json')");
     expect(html).toContain('Cumulative JIT Compilation Time');
     expect(html).toContain('Class Loading Activity');
+    expect(html).toContain('window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true');
+    expect(html).toContain('prediction_checkpoints');
+    expect(html).toContain('predictionHtml');
     expect(html).not.toContain('/runs/${runId}');
 
     const data = JSON.parse(fs.readFileSync(demoData, 'utf8'));
@@ -20,6 +23,7 @@ describe('demo dashboard', () => {
     expect(data.samples).toHaveLength(730);
     expect(data.samples.every((sample: unknown) => Array.isArray(sample))).toBe(true);
     expect(data.finished).toBe(true);
+    expect(data.prediction_checkpoints).toBeUndefined();
     const pidIndex = data.sample_fields.indexOf('PID');
     const sampledPids = [...new Set(data.samples.map((sample: unknown[]) => sample[pidIndex]))].sort();
     const processInfoPids = Object.keys(data.process_info).sort();

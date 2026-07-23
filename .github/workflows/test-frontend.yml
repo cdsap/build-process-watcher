@@ -5,11 +5,19 @@ on:
     branches: [ main, develop ]
     paths:
       - 'frontend/**'
+      - 'tests/browser/**'
+      - 'playwright.config.ts'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/test-frontend.yml'
   push:
     branches: [ main, develop ]
     paths:
       - 'frontend/**'
+      - 'tests/browser/**'
+      - 'playwright.config.ts'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/test-frontend.yml'
   workflow_dispatch:
   workflow_call:
@@ -33,7 +41,7 @@ jobs:
         npm ci
         npx playwright install --with-deps chromium
 
-    - name: Test unavailable run states
+    - name: Test browser regressions
       run: npm run test:browser
 
     - name: Install HTML validation tools
@@ -74,7 +82,8 @@ jobs:
         
         echo "window.BUILD_PROCESS_WATCHER_CONFIG = {" > frontend/public/config.js
         echo "  backendUrl: '${BACKEND_URL}'," >> frontend/public/config.js
-        echo "  frontendUrl: '${FRONTEND_URL}'" >> frontend/public/config.js
+        echo "  frontendUrl: '${FRONTEND_URL}'," >> frontend/public/config.js
+        echo "  predictiveReliability: false" >> frontend/public/config.js
         echo "};" >> frontend/public/config.js
         
         echo "✅ Config file generated:"
@@ -149,6 +158,9 @@ jobs:
           echo "❌ ERROR: index.html missing!"
           exit 1
         fi
+
+    - name: Test responsive layout
+      run: npm run test:browser
 
     - name: Frontend validation summary
       run: |

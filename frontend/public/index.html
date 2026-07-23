@@ -269,6 +269,11 @@
             padding: 1rem;
         }
 
+        .snippet-card,
+        .table-card {
+            min-width: 0;
+        }
+
         .snippet-card h3,
         .feature-card h3,
         .media-card h3 {
@@ -286,6 +291,7 @@
         }
 
         pre {
+            max-width: 100%;
             margin-top: 1rem;
             padding: 1rem;
             overflow-x: auto;
@@ -339,6 +345,12 @@
             border-collapse: collapse;
             margin-top: 1rem;
             font-size: 0.94rem;
+        }
+
+        .table-card {
+            max-width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
         }
 
         .input-table th,
@@ -570,7 +582,7 @@
             <div class="section-kicker">Inputs</div>
             <h2 class="section-heading">Configuration that matters most.</h2>
             <p class="section-copy">See the repository README for the full contract and backend deployment details.</p>
-            <div class="table-card" style="overflow-x: auto;">
+            <div class="table-card" tabindex="0" aria-label="Configuration inputs; scroll horizontally to view all columns">
                 <table class="input-table">
                     <thead>
                         <tr>

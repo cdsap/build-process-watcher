@@ -660,6 +660,39 @@
             });
             
             const formatDur = (s) => s < 60 ? s + 's' : (Math.floor(s / 60) + 'm' + (s % 60 ? ' ' + Math.round(s % 60) + 's' : ''));
+            const formatPredictionValue = (value, unit) => Number.isFinite(Number(value)) ? `${Number(value).toFixed(Number(value) >= 1000 ? 0 : 1)} ${unit}` : 'N/A';
+            const predictionRiskClass = (riskLevel) => ['low', 'elevated', 'high'].includes(riskLevel) ? riskLevel : 'unknown';
+            const predictionEnabled = window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true;
+            const predictionCheckpoints = Array.isArray(data.prediction_checkpoints)
+                ? [...data.prediction_checkpoints].sort((a, b) => Number(a.observation_window_s || 0) - Number(b.observation_window_s || 0))
+                : [];
+            const predictionHtml = predictionEnabled && predictionCheckpoints.length ? `
+                <section class="prediction-panel" aria-label="Predictive reliability">
+                    <div class="prediction-panel-head">
+                        <div>
+                            <span class="bpw-panel-badge">Prediction</span>
+                            <h2>Reliability Checkpoints</h2>
+                        </div>
+                    </div>
+                    <div class="prediction-grid">
+                        ${predictionCheckpoints.map(checkpoint => `
+                            <article class="prediction-card ${predictionRiskClass(checkpoint.risk_level)}">
+                                <div class="prediction-card-top">
+                                    <strong>${escapeHtml(String(checkpoint.observation_window_s || 'N/A'))}s</strong>
+                                    <span>${escapeHtml(checkpoint.status || 'unknown')}</span>
+                                </div>
+                                <div class="prediction-risk">${escapeHtml(checkpoint.risk_level || 'unknown')}</div>
+                                <div class="prediction-metrics">
+                                    <div><span>Confidence</span><strong>${escapeHtml(checkpoint.confidence || 'N/A')}</strong></div>
+                                    <div><span>Peak RSS</span><strong>${formatPredictionValue(checkpoint.predicted_peak_rss_mb, 'MB')}</strong></div>
+                                    <div><span>Duration</span><strong>${formatPredictionValue(checkpoint.predicted_duration_s, 's')}</strong></div>
+                                </div>
+                                ${Array.isArray(checkpoint.signals) && checkpoint.signals.length ? `<div class="prediction-signals">${checkpoint.signals.slice(0, 3).map(signal => `<span>${escapeHtml(signal)}</span>`).join('')}</div>` : ''}
+                            </article>
+                        `).join('')}
+                    </div>
+                </section>
+            ` : '';
 
             // Render process info section
             let processInfoHtml = '';
@@ -815,6 +848,8 @@
                         <div class="run-kpi-note">${samples.length} samples over ${durationSec > 0 ? formatDur(durationSec) : 'the run'}</div>
                     </div>
                 </div>
+
+                ${predictionHtml}
 
                 <!-- Compare runs hidden until ready -->
 

@@ -10,12 +10,8 @@ go_library(
     importpath = "github.com/cdsap/build-process-watcher/backend",
     visibility = ["//visibility:private"],
     deps = [
-        "//internal/auth",
-        "//internal/bigqueryexport",
-        "//internal/cleanup",
-        "//internal/exportqueue",
-        "//internal/handlers",
-        "//internal/storage",
+        "//pkg/predictor",
+        "//pkg/server",
     ],
 )
 

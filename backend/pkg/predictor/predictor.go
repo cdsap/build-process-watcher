@@ -1,0 +1,107 @@
+package predictor
+
+import (
+	"context"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/cdsap/build-process-watcher/backend/internal/models"
+)
+
+type Sample = models.Sample
+type ProcessInfo = models.ProcessInfo
+type PredictionCheckpoint = models.PredictionCheckpoint
+
+// RunSnapshot is the public input contract passed to prediction providers.
+type RunSnapshot struct {
+	RunID                 string
+	Samples               []Sample
+	ProcessInfo           map[string]ProcessInfo
+	ExistingCheckpoints   []PredictionCheckpoint
+	ConfiguredCheckpoints []int
+	Now                   time.Time
+}
+
+// Provider returns public-safe checkpoint predictions.
+type Provider interface {
+	Predict(ctx context.Context, snapshot RunSnapshot, observationWindowS int) (PredictionCheckpoint, error)
+}
+
+// NoopProvider is the default public provider. It never produces predictions.
+type NoopProvider struct{}
+
+// Predict returns a skipped checkpoint without model behavior.
+func (NoopProvider) Predict(_ context.Context, snapshot RunSnapshot, observationWindowS int) (PredictionCheckpoint, error) {
+	now := snapshot.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
+	return PredictionCheckpoint{
+		ObservationWindowS: observationWindowS,
+		Status:             "skipped",
+		ProviderID:         "noop",
+		CreatedAt:          now,
+		Message:            "prediction provider disabled",
+	}, nil
+}
+
+// Enabled reports whether this provider can produce real predictions.
+func Enabled(provider Provider) bool {
+	switch provider.(type) {
+	case nil, NoopProvider, *NoopProvider:
+		return false
+	default:
+		return true
+	}
+}
+
+// PendingCheckpoints returns configured windows reached by samples and not yet stored.
+func PendingCheckpoints(samples []Sample, existing []PredictionCheckpoint, configured []int) []int {
+	if len(samples) == 0 || len(configured) == 0 {
+		return nil
+	}
+
+	maxElapsed := 0
+	for _, sample := range samples {
+		if sample.ElapsedTime > maxElapsed {
+			maxElapsed = sample.ElapsedTime
+		}
+	}
+
+	stored := make(map[int]bool, len(existing))
+	for _, checkpoint := range existing {
+		stored[checkpoint.ObservationWindowS] = true
+	}
+
+	seen := make(map[int]bool, len(configured))
+	var pending []int
+	for _, checkpoint := range configured {
+		if checkpoint <= 0 || seen[checkpoint] {
+			continue
+		}
+		seen[checkpoint] = true
+		if maxElapsed >= checkpoint && !stored[checkpoint] {
+			pending = append(pending, checkpoint)
+		}
+	}
+	sort.Ints(pending)
+	return pending
+}
+
+// ParseCheckpoints parses a comma-separated checkpoint list.
+func ParseCheckpoints(value string) []int {
+	parts := strings.Split(value, ",")
+	checkpoints := make([]int, 0, len(parts))
+	seen := make(map[int]bool, len(parts))
+	for _, part := range parts {
+		checkpoint, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil || checkpoint <= 0 || seen[checkpoint] {
+			continue
+		}
+		seen[checkpoint] = true
+		checkpoints = append(checkpoints, checkpoint)
+	}
+	return checkpoints
+}

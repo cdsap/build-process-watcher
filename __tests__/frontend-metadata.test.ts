@@ -20,6 +20,10 @@ function metaContent(html: string, attribute: 'name' | 'property', value: string
 }
 
 describe('frontend discovery and social metadata', () => {
+  it('keeps predictive reliability disabled in the public config', () => {
+    expect(readPage('config.js')).toContain('predictiveReliability: false');
+  });
+
   it.each(publicPages)('$file has complete page-specific sharing metadata', ({ file, canonical, noindex }) => {
     const html = readPage(file);
     const description = metaContent(html, 'name', 'description');
