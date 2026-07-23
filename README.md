@@ -38,7 +38,7 @@ go test ./...
 go build ./cmd/predictive-backend
 ```
 
-The local `go.mod` uses a `replace` directive to point at a sibling checkout of `github.com/cdsap/build-process-watcher/backend` while the public provider contract is being prepared.
+The local `go.mod` resolves the public `github.com/cdsap/build-process-watcher/backend` module directly from the merged public repository.
 
 ## Container Build
 
@@ -54,4 +54,4 @@ docker run --rm -p 8080:8080 \
   bpw-predictive-backend
 ```
 
-The container build expects `go.mod` to resolve the public backend module without a local filesystem `replace`. After the public server/predictor contract lands in the public repository, remove the local `replace`, run `go mod tidy`, and then build the image.
+The container build expects `go.mod` to resolve the public backend module without a local filesystem `replace`.

@@ -2,7 +2,7 @@ module github.com/cdsap/build-process-watcher-predictive-provider
 
 go 1.23.0
 
-require github.com/cdsap/build-process-watcher/backend v0.0.0
+require github.com/cdsap/build-process-watcher/backend v0.0.0-20260723003117-125ba47d874c
 
 require (
 	cloud.google.com/go v0.121.6 // indirect
@@ -51,5 +51,3 @@ require (
 	google.golang.org/grpc v1.74.2 // indirect
 	google.golang.org/protobuf v1.36.7 // indirect
 )
-
-replace github.com/cdsap/build-process-watcher/backend => ../build-process-watcher/backend
