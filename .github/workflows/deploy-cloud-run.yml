@@ -1,0 +1,103 @@
+name: Deploy Cloud Run
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_id:
+        description: Google Cloud project ID
+        required: true
+        type: string
+      region:
+        description: Cloud Run and Artifact Registry region
+        required: true
+        default: us-central1
+        type: string
+      service:
+        description: Cloud Run service name
+        required: true
+        default: bpw-predictive-backend
+        type: string
+      artifact_registry_repository:
+        description: Artifact Registry Docker repository
+        required: true
+        default: bpw-private
+        type: string
+      image_name:
+        description: Container image name
+        required: true
+        default: predictive-backend
+        type: string
+      checkpoints:
+        description: Comma-separated prediction checkpoints in seconds
+        required: true
+        default: 30,60,180
+        type: string
+      provider_id:
+        description: Opaque provider identifier stored with public-safe checkpoints
+        required: true
+        default: private-provider
+        type: string
+      model_version:
+        description: Opaque model version stored with public-safe checkpoints
+        required: true
+        default: private-heuristic-v1
+        type: string
+      allow_unauthenticated:
+        description: Allow unauthenticated HTTP access to the Cloud Run service
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GONOSUMDB: github.com/cdsap/build-process-watcher/backend
+
+jobs:
+  deploy:
+    name: Build and deploy private backend
+    runs-on: ubuntu-latest
+    environment: cloud-run
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${{ inputs.region }}-docker.pkg.dev" --quiet
+
+      - name: Build image
+        run: |
+          IMAGE_URI="${{ inputs.region }}-docker.pkg.dev/${{ inputs.project_id }}/${{ inputs.artifact_registry_repository }}/${{ inputs.image_name }}:${{ github.sha }}"
+          docker build -t "$IMAGE_URI" .
+          echo "IMAGE_URI=$IMAGE_URI" >> "$GITHUB_ENV"
+
+      - name: Push image
+        run: docker push "$IMAGE_URI"
+
+      - name: Deploy Cloud Run service
+        run: |
+          AUTH_FLAG="--no-allow-unauthenticated"
+          if [ "${{ inputs.allow_unauthenticated }}" = "true" ]; then
+            AUTH_FLAG="--allow-unauthenticated"
+          fi
+
+          gcloud run deploy "${{ inputs.service }}" \
+            --project "${{ inputs.project_id }}" \
+            --region "${{ inputs.region }}" \
+            --image "$IMAGE_URI" \
+            --platform managed \
+            --port 8080 \
+            --set-env-vars "^:^GOOGLE_CLOUD_PROJECT=${{ inputs.project_id }}:PREDICTIVE_RELIABILITY_CHECKPOINTS=${{ inputs.checkpoints }}:PREDICTIVE_PROVIDER_ID=${{ inputs.provider_id }}:PREDICTIVE_MODEL_VERSION=${{ inputs.model_version }}" \
+            "$AUTH_FLAG"
