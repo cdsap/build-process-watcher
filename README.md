@@ -55,3 +55,32 @@ docker run --rm -p 8080:8080 \
 ```
 
 The container build expects `go.mod` to resolve the public backend module without a local filesystem `replace`.
+
+## Cloud Run Deployment
+
+The deployment workflow is intentionally manual:
+
+```text
+.github/workflows/deploy-cloud-run.yml
+```
+
+It builds the private Docker image, pushes it to Artifact Registry, and deploys it to Cloud Run. The workflow uses GitHub OIDC; configure these repository secrets before running it:
+
+- `GCP_WORKLOAD_IDENTITY_PROVIDER`: full Workload Identity Provider resource name.
+- `GCP_DEPLOY_SERVICE_ACCOUNT`: deploy service account email.
+
+The deploy service account needs permissions to push to the selected Artifact Registry repository and deploy/update the selected Cloud Run service.
+
+Workflow inputs define the public-safe runtime configuration:
+
+- `project_id`: Google Cloud project used by the public backend storage contract.
+- `region`: Cloud Run and Artifact Registry region.
+- `service`: Cloud Run service name.
+- `artifact_registry_repository`: Artifact Registry Docker repository.
+- `image_name`: container image name.
+- `checkpoints`: comma-separated checkpoint windows for `PREDICTIVE_RELIABILITY_CHECKPOINTS`.
+- `provider_id`: opaque `PREDICTIVE_PROVIDER_ID`.
+- `model_version`: opaque `PREDICTIVE_MODEL_VERSION`.
+- `allow_unauthenticated`: whether Cloud Run accepts unauthenticated HTTP requests.
+
+Do not put model internals, thresholds, feature formulas, training data locations, or customer-specific tuning in workflow inputs, repository variables, or Cloud Run environment variables.
