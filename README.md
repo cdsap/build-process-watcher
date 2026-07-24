@@ -60,7 +60,17 @@ This is not required for normal local or remote monitoring. Use it only when you
 
 **BigQuery export is optional:** It is only for collecting metrics in BigQuery. Set `export_to_bigquery: 'true'` together with `remote_monitoring: 'true'` when you want that export. The backend service must be configured with `BIGQUERY_EXPORT_DATASET`; optional table overrides are `BIGQUERY_EXPORT_TABLE` and `BIGQUERY_EXPORT_PROCESSES_TABLE`.
 
-**Predictive reliability is private-provider only:** Public builds keep prediction disabled by default. The backend can carry public-safe `prediction_checkpoints` returned by an injected provider, and the dashboard only renders them when `predictiveReliability` is enabled in `config.js`. Production providers, scoring logic, evaluation artifacts, and customer-specific tuning live outside this public repository.
+**Predictive reliability is private-provider only:** Public builds keep prediction disabled by default. The backend can carry public-safe `prediction_checkpoints` returned by an injected or remote provider, and the dashboard only renders them when `predictiveReliability` is enabled in `config.js`. Production providers, scoring logic, evaluation artifacts, and customer-specific tuning live outside this public repository.
+
+Backend operators can opt in to the private remote provider with:
+
+- `PREDICTIVE_PROVIDER_ENABLED=true`
+- `PREDICTIVE_PROVIDER_URL`: private provider service base URL, never hardcoded in source.
+- `PREDICTIVE_PROVIDER_AUTH_AUDIENCE`: optional Google ID-token audience for private Cloud Run service-to-service calls, normally the private provider service URL.
+- `PREDICTIVE_PROVIDER_TIMEOUT_MS`: optional timeout; defaults to `1500`.
+- `PREDICTIVE_RELIABILITY_CHECKPOINTS`: comma-separated checkpoint windows such as `30,60,180`.
+
+The public backend sends only public run telemetry to `/predict` and stores only the returned public-safe checkpoint. Do not add private model names, thresholds, feature formulas, training data paths, or customer-specific tuning to this repository or to public frontend config.
 
 ---
 

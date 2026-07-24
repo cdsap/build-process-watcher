@@ -50,6 +50,43 @@ func TestOptionsFromEnvUsesPublicNoopProvider(t *testing.T) {
 	}
 }
 
+func TestOptionsFromEnvUsesNoopWhenRemoteProviderDisabled(t *testing.T) {
+	t.Setenv("PREDICTIVE_PROVIDER_ENABLED", "false")
+	t.Setenv("PREDICTIVE_PROVIDER_URL", "https://private.example")
+
+	options := OptionsFromEnv()
+
+	if predictor.Enabled(options.PredictionProvider) {
+		t.Fatal("provider should remain no-op when remote feature flag is false")
+	}
+}
+
+func TestOptionsFromEnvUsesNoopWhenRemoteProviderURLMissing(t *testing.T) {
+	t.Setenv("PREDICTIVE_PROVIDER_ENABLED", "true")
+	t.Setenv("PREDICTIVE_PROVIDER_URL", "")
+
+	options := OptionsFromEnv()
+
+	if predictor.Enabled(options.PredictionProvider) {
+		t.Fatal("provider should remain no-op when remote URL is missing")
+	}
+}
+
+func TestOptionsFromEnvUsesRemoteProviderWhenEnabled(t *testing.T) {
+	t.Setenv("PREDICTIVE_PROVIDER_ENABLED", "true")
+	t.Setenv("PREDICTIVE_PROVIDER_URL", "https://private.example")
+	t.Setenv("PREDICTIVE_PROVIDER_TIMEOUT_MS", "2500")
+
+	options := OptionsFromEnv()
+
+	if !predictor.Enabled(options.PredictionProvider) {
+		t.Fatal("remote provider should be enabled")
+	}
+	if _, ok := options.PredictionProvider.(*predictor.RemoteProvider); !ok {
+		t.Fatalf("provider type = %T, want *predictor.RemoteProvider", options.PredictionProvider)
+	}
+}
+
 func TestOptionsCanCarryInjectedProvider(t *testing.T) {
 	options := Options{PredictionProvider: fakeProvider{}}
 	if !predictor.Enabled(options.PredictionProvider) {
