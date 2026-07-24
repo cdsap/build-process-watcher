@@ -14,22 +14,73 @@ This repository owns proprietary model execution, feature derivation, scoring th
 ## Shape
 
 - `internal/provider`: private implementation of the public `predictor.Provider` contract.
-- `cmd/predictive-backend`: private backend entrypoint that injects the provider into the public `server.Run` composition API.
+- `internal/api`: private HTTP API that exposes health and prediction endpoints for the public backend to call.
+- `cmd/predictive-backend`: Cloud Run entrypoint for the private provider API.
 
 The current provider is a private heuristic scorer. It evaluates runtime telemetry for memory pressure, memory growth, heap saturation, GC pressure, and process fanout while keeping the stored checkpoint fields public-safe.
 
 ## Configuration
 
-The backend uses the public environment variables from Build Process Watcher, including:
+The backend uses these public-safe environment variables:
 
-- `GOOGLE_CLOUD_PROJECT`
 - `PORT`
-- `PREDICTIVE_RELIABILITY_CHECKPOINTS`
-
-Private provider metadata can be set with:
-
 - `PREDICTIVE_PROVIDER_ID`
 - `PREDICTIVE_MODEL_VERSION`
+
+The deployment workflow also accepts `PREDICTIVE_RELIABILITY_CHECKPOINTS` as a Cloud Run environment variable so the public integration can keep checkpoint configuration aligned, but the private `/predict` request carries the checkpoint window to score.
+
+## HTTP API
+
+The service exposes only public-safe endpoints:
+
+- `GET /healthz`: returns service health.
+- `POST /predict`: accepts public run telemetry and returns one public-safe checkpoint.
+
+Prediction requests use JSON:
+
+```json
+{
+  "observation_window_s": 60,
+  "run_id": "run-id",
+  "samples": [
+    {
+      "elapsed_time": 60,
+      "rss": 1572864,
+      "heap_used": 900,
+      "heap_cap": 1000,
+      "gc_time": 5000
+    }
+  ],
+  "process_info": {
+    "123": {
+      "pid": "123",
+      "name": "GradleDaemon",
+      "vm_flags": []
+    }
+  },
+  "existing_checkpoints": [],
+  "configured_windows": [30, 60, 180]
+}
+```
+
+Responses wrap the public checkpoint:
+
+```json
+{
+  "checkpoint": {
+    "observation_window_s": 60,
+    "status": "ready",
+    "risk_level": "elevated",
+    "risk_score": 0.4,
+    "confidence": "medium",
+    "predicted_peak_rss_mb": 2048,
+    "predicted_duration_s": 67.2,
+    "signals": ["memory pressure"],
+    "provider_id": "private-provider",
+    "model_version": "private-heuristic-v1"
+  }
+}
+```
 
 ## Local Validation
 
@@ -47,8 +98,6 @@ The Dockerfile builds the private backend binary and runs it on port `8080` for 
 ```bash
 docker build -t bpw-predictive-backend .
 docker run --rm -p 8080:8080 \
-  -e GOOGLE_CLOUD_PROJECT=your-project \
-  -e PREDICTIVE_RELIABILITY_CHECKPOINTS=30,60,180 \
   -e PREDICTIVE_PROVIDER_ID=private-provider \
   -e PREDICTIVE_MODEL_VERSION=private-heuristic-v1 \
   bpw-predictive-backend
