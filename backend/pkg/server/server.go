@@ -6,7 +6,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/cdsap/build-process-watcher/backend/internal/auth"
 	"github.com/cdsap/build-process-watcher/backend/internal/bigqueryexport"
@@ -30,13 +32,26 @@ type Options struct {
 
 // OptionsFromEnv reads public backend configuration from environment variables.
 func OptionsFromEnv() Options {
+	predictionProvider := predictor.Provider(predictor.NoopProvider{})
+	if predictionProviderEnabled(os.Getenv("PREDICTIVE_PROVIDER_ENABLED")) {
+		if remoteProvider, err := predictor.NewRemoteProvider(predictor.RemoteConfig{
+			URL:          os.Getenv("PREDICTIVE_PROVIDER_URL"),
+			Timeout:      parseRemoteProviderTimeout(os.Getenv("PREDICTIVE_PROVIDER_TIMEOUT_MS")),
+			AuthAudience: os.Getenv("PREDICTIVE_PROVIDER_AUTH_AUDIENCE"),
+		}); err == nil {
+			predictionProvider = remoteProvider
+		} else {
+			log.Printf("🔮 Remote predictive provider disabled: %v", err)
+		}
+	}
+
 	return Options{
 		ProjectID:              strings.TrimSpace(os.Getenv("GOOGLE_CLOUD_PROJECT")),
 		Port:                   portOrDefault(os.Getenv("PORT")),
 		BigQueryDataset:        strings.TrimSpace(os.Getenv("BIGQUERY_EXPORT_DATASET")),
 		BigQueryTable:          strings.TrimSpace(os.Getenv("BIGQUERY_EXPORT_TABLE")),
 		BigQueryProcessesTable: strings.TrimSpace(os.Getenv("BIGQUERY_EXPORT_PROCESSES_TABLE")),
-		PredictionProvider:     predictor.NoopProvider{},
+		PredictionProvider:     predictionProvider,
 		PredictionCheckpoints:  predictor.ParseCheckpoints(os.Getenv("PREDICTIVE_RELIABILITY_CHECKPOINTS")),
 	}
 }
@@ -133,4 +148,17 @@ func bqProcessesTableOrDefault(table string) string {
 		return "build_process_processes"
 	}
 	return table
+}
+
+func predictionProviderEnabled(value string) bool {
+	enabled, err := strconv.ParseBool(strings.TrimSpace(value))
+	return err == nil && enabled
+}
+
+func parseRemoteProviderTimeout(value string) time.Duration {
+	millis, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || millis <= 0 {
+		return 0
+	}
+	return time.Duration(millis) * time.Millisecond
 }
