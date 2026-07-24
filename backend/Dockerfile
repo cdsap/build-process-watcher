@@ -4,7 +4,7 @@ FROM gcr.io/bazel-public/bazel:8.5.0 AS builder
 WORKDIR /workspace
 
 COPY . .
-RUN bazel build //:server && cp -L bazel-bin/server_/server /tmp/main
+RUN bazel build //:server && cp -L "$(bazel info bazel-bin)/server_/server" /tmp/main
 
 # Runtime stage
 FROM alpine:latest
