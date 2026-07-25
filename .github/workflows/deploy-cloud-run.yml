@@ -101,3 +101,69 @@ jobs:
             --port 8080 \
             --set-env-vars "^:^GOOGLE_CLOUD_PROJECT=${{ inputs.project_id }}:PREDICTIVE_RELIABILITY_CHECKPOINTS=${{ inputs.checkpoints }}:PREDICTIVE_PROVIDER_ID=${{ inputs.provider_id }}:PREDICTIVE_MODEL_VERSION=${{ inputs.model_version }}" \
             "$AUTH_FLAG"
+
+      - name: Get service URL
+        id: service-url
+        run: |
+          SERVICE_URL="$(gcloud run services describe "${{ inputs.service }}" \
+            --project "${{ inputs.project_id }}" \
+            --region "${{ inputs.region }}" \
+            --format='value(status.url)')"
+          echo "url=$SERVICE_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test deployed service
+        run: |
+          set -euo pipefail
+
+          SERVICE_URL="${{ steps.service-url.outputs.url }}"
+          AUTH_HEADER=()
+          if [ "${{ inputs.allow_unauthenticated }}" != "true" ]; then
+            ID_TOKEN="$(gcloud auth print-identity-token --audiences="$SERVICE_URL")"
+            AUTH_HEADER=(-H "Authorization: Bearer $ID_TOKEN")
+          fi
+
+          curl --fail --silent --show-error "${AUTH_HEADER[@]}" "$SERVICE_URL/healthz" \
+            | jq -e '.status == "ok"'
+
+          jq -n \
+            --arg run_id "deploy-smoke-${{ github.run_id }}" \
+            --arg provider_id "${{ inputs.provider_id }}" \
+            --arg model_version "${{ inputs.model_version }}" \
+            '{
+              observation_window_s: 30,
+              run_id: $run_id,
+              configured_windows: [30, 60, 180],
+              samples: [
+                {
+                  elapsed_time: 30,
+                  pid: "101",
+                  name: "GradleDaemon",
+                  heap_used: 128,
+                  heap_cap: 512,
+                  rss: 700,
+                  gc_time: 50
+                },
+                {
+                  elapsed_time: 60,
+                  pid: "101",
+                  name: "GradleDaemon",
+                  heap_used: 160,
+                  heap_cap: 512,
+                  rss: 760,
+                  gc_time: 80
+                }
+              ]
+            }' > /tmp/predict-request.json
+
+          curl --fail --silent --show-error \
+            "${AUTH_HEADER[@]}" \
+            -H "Content-Type: application/json" \
+            --data @/tmp/predict-request.json \
+            "$SERVICE_URL/predict" \
+            | jq -e \
+              --arg provider_id "${{ inputs.provider_id }}" \
+              --arg model_version "${{ inputs.model_version }}" \
+              '.checkpoint.status == "ready"
+                and .checkpoint.observation_window_s == 30
+                and .checkpoint.provider_id == $provider_id
+                and .checkpoint.model_version == $model_version'
