@@ -75,6 +75,46 @@ jobs:
           --format="value(status.url)")
         echo "service-url=$SERVICE_URL" >> $GITHUB_OUTPUT
 
+    - name: Smoke test predictive checkpoints
+      env:
+        SERVICE_URL: ${{ steps.get-url.outputs.service-url }}
+        PREDICTIVE_PROVIDER_ENABLED: ${{ secrets.PREDICTIVE_PROVIDER_ENABLED }}
+        PREDICTIVE_RELIABILITY_CHECKPOINTS: ${{ secrets.PREDICTIVE_RELIABILITY_CHECKPOINTS }}
+      run: |
+        set -euo pipefail
+
+        if [ "$PREDICTIVE_PROVIDER_ENABLED" != "true" ]; then
+          echo "Predictive provider is disabled; skipping predictive checkpoint smoke test."
+          exit 0
+        fi
+
+        RUN_ID="deploy-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+        AUTH_JSON="$(curl --fail --silent --show-error -X POST "$SERVICE_URL/auth/run/$RUN_ID")"
+        TOKEN="$(printf '%s' "$AUTH_JSON" | jq -r '.token')"
+        if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+          echo "Auth response did not include a token."
+          exit 1
+        fi
+
+        jq -n \
+          --arg run_id "$RUN_ID" \
+          --arg data $'00:00:30 | 101 | GradleDaemon | 128MB | 512MB | 700MB | 0.05s\n00:01:00 | 101 | GradleDaemon | 160MB | 512MB | 760MB | 0.08s\n00:03:00 | 101 | GradleDaemon | 220MB | 512MB | 850MB | 0.10s' \
+          '{run_id: $run_id, data: $data}' > /tmp/ingest-request.json
+
+        curl --fail --silent --show-error \
+          -X POST "$SERVICE_URL/ingest" \
+          -H "Authorization: Bearer $TOKEN" \
+          -H "Content-Type: application/json" \
+          --data @/tmp/ingest-request.json \
+          | jq -e '.status == "success"'
+
+        EXPECTED_CHECKPOINTS="$(printf '%s' "$PREDICTIVE_RELIABILITY_CHECKPOINTS" | tr ',' '\n' | sed '/^$/d' | wc -l | tr -d ' ')"
+        curl --fail --silent --show-error "$SERVICE_URL/runs/$RUN_ID" \
+          | jq -e --argjson expected "$EXPECTED_CHECKPOINTS" '
+              (.samples | length) == 3
+              and ((.prediction_checkpoints // []) | length) == $expected
+              and all((.prediction_checkpoints // [])[]; .status == "ready")
+            '
 
     - name: Output service URL
       run: |
