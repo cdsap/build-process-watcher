@@ -111,35 +111,37 @@ jobs:
             --format='value(status.url)')"
           echo "url=$SERVICE_URL" >> "$GITHUB_OUTPUT"
 
-      - name: Authenticate smoke test requests
-        id: smoke-auth
-        if: ${{ inputs.allow_unauthenticated != true }}
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
-          token_format: id_token
-          id_token_audience: ${{ steps.service-url.outputs.url }}
-          id_token_include_email: true
-
       - name: Smoke test deployed service
-        env:
-          SMOKE_ID_TOKEN: ${{ steps.smoke-auth.outputs.id_token }}
         run: |
           set -euo pipefail
 
           SERVICE_URL="${{ steps.service-url.outputs.url }}"
-          AUTH_HEADER=()
+          SMOKE_URL="$SERVICE_URL"
           if [ "${{ inputs.allow_unauthenticated }}" != "true" ]; then
-            if [ -z "$SMOKE_ID_TOKEN" ]; then
-              echo "Smoke test ID token was not generated."
+            SMOKE_URL="http://127.0.0.1:18080"
+            gcloud run services proxy "${{ inputs.service }}" \
+              --project "${{ inputs.project_id }}" \
+              --region "${{ inputs.region }}" \
+              --port 18080 >/tmp/cloud-run-proxy.log 2>&1 &
+            PROXY_PID="$!"
+            trap 'kill "$PROXY_PID" 2>/dev/null || true' EXIT
+
+            for attempt in {1..30}; do
+              if curl --fail --silent --show-error "$SMOKE_URL/healthz" >/tmp/health-response.json 2>/tmp/health-curl.err; then
+                break
+              fi
+              sleep 1
+            done
+            if [ ! -s /tmp/health-response.json ]; then
+              cat /tmp/cloud-run-proxy.log
+              cat /tmp/health-curl.err
               exit 1
             fi
-            AUTH_HEADER=(-H "Authorization: Bearer $SMOKE_ID_TOKEN")
+          else
+            curl --fail --silent --show-error "$SMOKE_URL/healthz" >/tmp/health-response.json
           fi
 
-          curl --fail --silent --show-error "${AUTH_HEADER[@]}" "$SERVICE_URL/healthz" \
-            | jq -e '.status == "healthy"'
+          jq -e '.status == "healthy"' /tmp/health-response.json
 
           jq -n \
             --arg run_id "deploy-smoke-${{ github.run_id }}" \
@@ -172,10 +174,9 @@ jobs:
             }' > /tmp/predict-request.json
 
           curl --fail --silent --show-error \
-            "${AUTH_HEADER[@]}" \
             -H "Content-Type: application/json" \
             --data @/tmp/predict-request.json \
-            "$SERVICE_URL/predict" \
+            "$SMOKE_URL/predict" \
             | jq -e \
               --arg provider_id "${{ inputs.provider_id }}" \
               --arg model_version "${{ inputs.model_version }}" \
