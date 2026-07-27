@@ -119,31 +119,11 @@ jobs:
 
           SERVICE_URL="${{ steps.service-url.outputs.url }}"
           SMOKE_URL="$SERVICE_URL"
-          if [ "${{ inputs.allow_unauthenticated }}" != "true" ]; then
-            SMOKE_URL="http://127.0.0.1:18080"
-            gcloud run services proxy "${{ inputs.service }}" \
-              --project "${{ inputs.project_id }}" \
-              --region "${{ inputs.region }}" \
-              --port 18080 >/tmp/cloud-run-proxy.log 2>&1 &
-            PROXY_PID="$!"
-            trap 'kill "$PROXY_PID" 2>/dev/null || true' EXIT
-
-            for attempt in {1..30}; do
-              if curl --fail --silent --show-error "$SMOKE_URL/healthz" >/tmp/health-response.json 2>/tmp/health-curl.err; then
-                break
-              fi
-              sleep 1
-            done
-            if [ ! -s /tmp/health-response.json ]; then
-              cat /tmp/cloud-run-proxy.log
-              cat /tmp/health-curl.err
-              exit 1
-            fi
-          else
-            curl --fail --silent --show-error "$SMOKE_URL/healthz" >/tmp/health-response.json
-          fi
-
-          jq -e '.status == "healthy"' /tmp/health-response.json
+          gcloud run services describe "${{ inputs.service }}" \
+            --project "${{ inputs.project_id }}" \
+            --region "${{ inputs.region }}" \
+            --format=json \
+            | jq -e '.status.conditions[] | select(.type == "Ready" and .status == "True")'
 
           jq -n \
             --arg run_id "deploy-smoke-${{ github.run_id }}" \
@@ -175,14 +155,43 @@ jobs:
               ]
             }' > /tmp/predict-request.json
 
-          curl --fail --silent --show-error \
-            -H "Content-Type: application/json" \
-            --data @/tmp/predict-request.json \
-            "$SMOKE_URL/predict" \
-            | jq -e \
-              --arg provider_id "${{ inputs.provider_id }}" \
-              --arg model_version "${{ inputs.model_version }}" \
-              '.checkpoint.status == "ready"
-                and .checkpoint.observation_window_s == 30
-                and .checkpoint.provider_id == $provider_id
-                and .checkpoint.model_version == $model_version'
+          if [ "${{ inputs.allow_unauthenticated }}" != "true" ]; then
+            SMOKE_URL="http://127.0.0.1:18080"
+            gcloud run services proxy "${{ inputs.service }}" \
+              --project "${{ inputs.project_id }}" \
+              --region "${{ inputs.region }}" \
+              --port 18080 >/tmp/cloud-run-proxy.log 2>&1 &
+            PROXY_PID="$!"
+            trap 'kill "$PROXY_PID" 2>/dev/null || true' EXIT
+
+            for attempt in {1..30}; do
+              if curl --fail --silent --show-error \
+                -H "Content-Type: application/json" \
+                --data @/tmp/predict-request.json \
+                "$SMOKE_URL/predict" >/tmp/predict-response.json 2>/tmp/predict-curl.err; then
+                break
+              fi
+              sleep 1
+            done
+            if [ ! -s /tmp/predict-response.json ]; then
+              cat /tmp/cloud-run-proxy.log
+              cat /tmp/predict-curl.err
+              exit 1
+            fi
+          else
+            curl --fail --silent --show-error "$SMOKE_URL/healthz" >/tmp/health-response.json
+            jq -e '.status == "healthy"' /tmp/health-response.json
+            curl --fail --silent --show-error \
+              -H "Content-Type: application/json" \
+              --data @/tmp/predict-request.json \
+              "$SMOKE_URL/predict" >/tmp/predict-response.json
+          fi
+
+          jq -e \
+            --arg provider_id "${{ inputs.provider_id }}" \
+            --arg model_version "${{ inputs.model_version }}" \
+            '.checkpoint.status == "ready"
+              and .checkpoint.observation_window_s == 30
+              and .checkpoint.provider_id == $provider_id
+              and .checkpoint.model_version == $model_version' \
+            /tmp/predict-response.json
