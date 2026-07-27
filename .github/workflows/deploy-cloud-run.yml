@@ -111,15 +111,30 @@ jobs:
             --format='value(status.url)')"
           echo "url=$SERVICE_URL" >> "$GITHUB_OUTPUT"
 
+      - name: Authenticate smoke test requests
+        id: smoke-auth
+        if: ${{ inputs.allow_unauthenticated != true }}
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          token_format: id_token
+          id_token_audience: ${{ steps.service-url.outputs.url }}
+
       - name: Smoke test deployed service
+        env:
+          SMOKE_ID_TOKEN: ${{ steps.smoke-auth.outputs.id_token }}
         run: |
           set -euo pipefail
 
           SERVICE_URL="${{ steps.service-url.outputs.url }}"
           AUTH_HEADER=()
           if [ "${{ inputs.allow_unauthenticated }}" != "true" ]; then
-            ID_TOKEN="$(gcloud auth print-identity-token --audiences="$SERVICE_URL")"
-            AUTH_HEADER=(-H "Authorization: Bearer $ID_TOKEN")
+            if [ -z "$SMOKE_ID_TOKEN" ]; then
+              echo "Smoke test ID token was not generated."
+              exit 1
+            fi
+            AUTH_HEADER=(-H "Authorization: Bearer $SMOKE_ID_TOKEN")
           fi
 
           curl --fail --silent --show-error "${AUTH_HEADER[@]}" "$SERVICE_URL/healthz" \
