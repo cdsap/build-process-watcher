@@ -120,6 +120,7 @@ jobs:
           service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
           token_format: id_token
           id_token_audience: ${{ steps.service-url.outputs.url }}
+          id_token_include_email: true
 
       - name: Smoke test deployed service
         env:
@@ -138,7 +139,7 @@ jobs:
           fi
 
           curl --fail --silent --show-error "${AUTH_HEADER[@]}" "$SERVICE_URL/healthz" \
-            | jq -e '.status == "ok"'
+            | jq -e '.status == "healthy"'
 
           jq -n \
             --arg run_id "deploy-smoke-${{ github.run_id }}" \
