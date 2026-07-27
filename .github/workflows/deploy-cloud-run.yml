@@ -73,6 +73,8 @@ jobs:
 
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: cloud-run-proxy
 
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker "${{ inputs.region }}-docker.pkg.dev" --quiet
