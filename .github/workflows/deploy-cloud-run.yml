@@ -113,7 +113,20 @@ jobs:
             --format='value(status.url)')"
           echo "url=$SERVICE_URL" >> "$GITHUB_OUTPUT"
 
+      - name: Authenticate smoke test requests
+        id: smoke-auth
+        if: ${{ inputs.allow_unauthenticated != true }}
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          token_format: id_token
+          id_token_audience: ${{ steps.service-url.outputs.url }}
+          id_token_include_email: true
+
       - name: Smoke test deployed service
+        env:
+          SMOKE_ID_TOKEN: ${{ steps.smoke-auth.outputs.id_token }}
         run: |
           set -euo pipefail
 
@@ -157,9 +170,14 @@ jobs:
 
           if [ "${{ inputs.allow_unauthenticated }}" != "true" ]; then
             SMOKE_URL="http://127.0.0.1:18080"
+            if [ -z "$SMOKE_ID_TOKEN" ]; then
+              echo "Smoke test ID token was not generated."
+              exit 1
+            fi
             gcloud run services proxy "${{ inputs.service }}" \
               --project "${{ inputs.project_id }}" \
               --region "${{ inputs.region }}" \
+              --token "$SMOKE_ID_TOKEN" \
               --port 18080 >/tmp/cloud-run-proxy.log 2>&1 &
             PROXY_PID="$!"
             trap 'kill "$PROXY_PID" 2>/dev/null || true' EXIT
