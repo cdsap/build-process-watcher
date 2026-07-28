@@ -109,12 +109,27 @@ jobs:
           | jq -e '.status == "success"'
 
         EXPECTED_CHECKPOINTS="$(printf '%s' "$PREDICTIVE_RELIABILITY_CHECKPOINTS" | tr ',' '\n' | sed '/^$/d' | wc -l | tr -d ' ')"
-        curl --fail --silent --show-error "$SERVICE_URL/runs/$RUN_ID" \
-          | jq -e --argjson expected "$EXPECTED_CHECKPOINTS" '
+        for attempt in $(seq 1 12); do
+          curl --fail --silent --show-error "$SERVICE_URL/runs/$RUN_ID" > /tmp/smoke-run.json
+          if jq -e --argjson expected "$EXPECTED_CHECKPOINTS" '
               (.samples | length) == 3
               and ((.prediction_checkpoints // []) | length) == $expected
               and all((.prediction_checkpoints // [])[]; .status == "ready")
-            '
+            ' /tmp/smoke-run.json; then
+            exit 0
+          fi
+
+          echo "Waiting for predictive checkpoints (${attempt}/12): $(jq -r '
+            "samples=\(.samples | length), checkpoints=\((.prediction_checkpoints // []) | length), statuses=\([(.prediction_checkpoints // [])[]?.status] | join(","))"
+          ' /tmp/smoke-run.json)"
+          sleep 5
+        done
+
+        echo "Predictive checkpoints did not become ready in time."
+        jq -r '
+          "samples=\(.samples | length), checkpoints=\((.prediction_checkpoints // []) | length), statuses=\([(.prediction_checkpoints // [])[]?.status] | join(","))"
+        ' /tmp/smoke-run.json
+        exit 1
 
     - name: Output service URL
       run: |
