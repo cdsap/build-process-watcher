@@ -1,6 +1,9 @@
 name: Deploy Cloud Run
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       project_id:
@@ -54,6 +57,15 @@ permissions:
 
 env:
   GONOSUMDB: github.com/cdsap/build-process-watcher/backend
+  DEPLOY_PROJECT_ID: ${{ inputs.project_id || vars.GCP_PROJECT_ID || 'process-watcher-473421' }}
+  DEPLOY_REGION: ${{ inputs.region || vars.GCP_REGION || 'us-central1' }}
+  DEPLOY_SERVICE: ${{ inputs.service || vars.CLOUD_RUN_SERVICE || 'bpw-predictive-backend' }}
+  DEPLOY_ARTIFACT_REGISTRY_REPOSITORY: ${{ inputs.artifact_registry_repository || vars.ARTIFACT_REGISTRY_REPOSITORY || 'bpw-private' }}
+  DEPLOY_IMAGE_NAME: ${{ inputs.image_name || vars.IMAGE_NAME || 'predictive-backend' }}
+  DEPLOY_CHECKPOINTS: ${{ inputs.checkpoints || vars.PREDICTIVE_RELIABILITY_CHECKPOINTS || '30,60,180' }}
+  DEPLOY_PROVIDER_ID: ${{ inputs.provider_id || vars.PREDICTIVE_PROVIDER_ID || 'private-provider' }}
+  DEPLOY_MODEL_VERSION: ${{ inputs.model_version || vars.PREDICTIVE_MODEL_VERSION || 'private-heuristic-v1' }}
+  DEPLOY_ALLOW_UNAUTHENTICATED: ${{ inputs.allow_unauthenticated || vars.ALLOW_UNAUTHENTICATED || 'false' }}
 
 jobs:
   deploy:
@@ -77,11 +89,11 @@ jobs:
           install_components: cloud-run-proxy
 
       - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker "${{ inputs.region }}-docker.pkg.dev" --quiet
+        run: gcloud auth configure-docker "${{ env.DEPLOY_REGION }}-docker.pkg.dev" --quiet
 
       - name: Build image
         run: |
-          IMAGE_URI="${{ inputs.region }}-docker.pkg.dev/${{ inputs.project_id }}/${{ inputs.artifact_registry_repository }}/${{ inputs.image_name }}:${{ github.sha }}"
+          IMAGE_URI="${{ env.DEPLOY_REGION }}-docker.pkg.dev/${{ env.DEPLOY_PROJECT_ID }}/${{ env.DEPLOY_ARTIFACT_REGISTRY_REPOSITORY }}/${{ env.DEPLOY_IMAGE_NAME }}:${{ github.sha }}"
           docker build -t "$IMAGE_URI" .
           echo "IMAGE_URI=$IMAGE_URI" >> "$GITHUB_ENV"
 
@@ -91,31 +103,31 @@ jobs:
       - name: Deploy Cloud Run service
         run: |
           AUTH_FLAG="--no-allow-unauthenticated"
-          if [ "${{ inputs.allow_unauthenticated }}" = "true" ]; then
+          if [ "${{ env.DEPLOY_ALLOW_UNAUTHENTICATED }}" = "true" ]; then
             AUTH_FLAG="--allow-unauthenticated"
           fi
 
-          gcloud run deploy "${{ inputs.service }}" \
-            --project "${{ inputs.project_id }}" \
-            --region "${{ inputs.region }}" \
+          gcloud run deploy "${{ env.DEPLOY_SERVICE }}" \
+            --project "${{ env.DEPLOY_PROJECT_ID }}" \
+            --region "${{ env.DEPLOY_REGION }}" \
             --image "$IMAGE_URI" \
             --platform managed \
             --port 8080 \
-            --set-env-vars "^:^GOOGLE_CLOUD_PROJECT=${{ inputs.project_id }}:PREDICTIVE_RELIABILITY_CHECKPOINTS=${{ inputs.checkpoints }}:PREDICTIVE_PROVIDER_ID=${{ inputs.provider_id }}:PREDICTIVE_MODEL_VERSION=${{ inputs.model_version }}" \
+            --set-env-vars "^:^GOOGLE_CLOUD_PROJECT=${{ env.DEPLOY_PROJECT_ID }}:PREDICTIVE_RELIABILITY_CHECKPOINTS=${{ env.DEPLOY_CHECKPOINTS }}:PREDICTIVE_PROVIDER_ID=${{ env.DEPLOY_PROVIDER_ID }}:PREDICTIVE_MODEL_VERSION=${{ env.DEPLOY_MODEL_VERSION }}" \
             "$AUTH_FLAG"
 
       - name: Get service URL
         id: service-url
         run: |
-          SERVICE_URL="$(gcloud run services describe "${{ inputs.service }}" \
-            --project "${{ inputs.project_id }}" \
-            --region "${{ inputs.region }}" \
+          SERVICE_URL="$(gcloud run services describe "${{ env.DEPLOY_SERVICE }}" \
+            --project "${{ env.DEPLOY_PROJECT_ID }}" \
+            --region "${{ env.DEPLOY_REGION }}" \
             --format='value(status.url)')"
           echo "url=$SERVICE_URL" >> "$GITHUB_OUTPUT"
 
       - name: Authenticate smoke test requests
         id: smoke-auth
-        if: ${{ inputs.allow_unauthenticated != true }}
+        if: ${{ env.DEPLOY_ALLOW_UNAUTHENTICATED != 'true' }}
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
@@ -132,16 +144,16 @@ jobs:
 
           SERVICE_URL="${{ steps.service-url.outputs.url }}"
           SMOKE_URL="$SERVICE_URL"
-          gcloud run services describe "${{ inputs.service }}" \
-            --project "${{ inputs.project_id }}" \
-            --region "${{ inputs.region }}" \
+          gcloud run services describe "${{ env.DEPLOY_SERVICE }}" \
+            --project "${{ env.DEPLOY_PROJECT_ID }}" \
+            --region "${{ env.DEPLOY_REGION }}" \
             --format=json \
             | jq -e '.status.conditions[] | select(.type == "Ready" and .status == "True")'
 
           jq -n \
             --arg run_id "deploy-smoke-${{ github.run_id }}" \
-            --arg provider_id "${{ inputs.provider_id }}" \
-            --arg model_version "${{ inputs.model_version }}" \
+            --arg provider_id "${{ env.DEPLOY_PROVIDER_ID }}" \
+            --arg model_version "${{ env.DEPLOY_MODEL_VERSION }}" \
             '{
               observation_window_s: 30,
               run_id: $run_id,
@@ -168,15 +180,15 @@ jobs:
               ]
             }' > /tmp/predict-request.json
 
-          if [ "${{ inputs.allow_unauthenticated }}" != "true" ]; then
+          if [ "${{ env.DEPLOY_ALLOW_UNAUTHENTICATED }}" != "true" ]; then
             SMOKE_URL="http://127.0.0.1:18080"
             if [ -z "$SMOKE_ID_TOKEN" ]; then
               echo "Smoke test ID token was not generated."
               exit 1
             fi
-            gcloud run services proxy "${{ inputs.service }}" \
-              --project "${{ inputs.project_id }}" \
-              --region "${{ inputs.region }}" \
+            gcloud run services proxy "${{ env.DEPLOY_SERVICE }}" \
+              --project "${{ env.DEPLOY_PROJECT_ID }}" \
+              --region "${{ env.DEPLOY_REGION }}" \
               --token "$SMOKE_ID_TOKEN" \
               --port 18080 >/tmp/cloud-run-proxy.log 2>&1 &
             PROXY_PID="$!"
@@ -206,8 +218,8 @@ jobs:
           fi
 
           jq -e \
-            --arg provider_id "${{ inputs.provider_id }}" \
-            --arg model_version "${{ inputs.model_version }}" \
+            --arg provider_id "${{ env.DEPLOY_PROVIDER_ID }}" \
+            --arg model_version "${{ env.DEPLOY_MODEL_VERSION }}" \
             '.checkpoint.status == "ready"
               and .checkpoint.observation_window_s == 30
               and .checkpoint.provider_id == $provider_id
