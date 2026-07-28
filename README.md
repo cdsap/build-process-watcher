@@ -107,7 +107,7 @@ The container build expects `go.mod` to resolve the public backend module withou
 
 ## Cloud Run Deployment
 
-The deployment workflow is intentionally manual:
+The deployment workflow runs automatically when changes land on `main`, and can also be run manually:
 
 ```text
 .github/workflows/deploy-cloud-run.yml
@@ -120,16 +120,16 @@ It builds the private Docker image, pushes it to Artifact Registry, and deploys 
 
 The deploy service account needs permissions to push to the selected Artifact Registry repository and deploy/update the selected Cloud Run service.
 
-Workflow inputs define the public-safe runtime configuration:
+Manual workflow inputs define the public-safe runtime configuration. Automatic `main` deployments use the repository variable with the matching name when present, otherwise the listed default:
 
-- `project_id`: Google Cloud project used by the public backend storage contract.
-- `region`: Cloud Run and Artifact Registry region.
-- `service`: Cloud Run service name.
-- `artifact_registry_repository`: Artifact Registry Docker repository.
-- `image_name`: container image name.
-- `checkpoints`: comma-separated checkpoint windows for `PREDICTIVE_RELIABILITY_CHECKPOINTS`.
-- `provider_id`: opaque `PREDICTIVE_PROVIDER_ID`.
-- `model_version`: opaque `PREDICTIVE_MODEL_VERSION`.
-- `allow_unauthenticated`: whether Cloud Run accepts unauthenticated HTTP requests.
+- `GCP_PROJECT_ID`: Google Cloud project used by the public backend storage contract. Defaults to `process-watcher-473421`.
+- `GCP_REGION`: Cloud Run and Artifact Registry region. Defaults to `us-central1`.
+- `CLOUD_RUN_SERVICE`: Cloud Run service name. Defaults to `bpw-predictive-backend`.
+- `ARTIFACT_REGISTRY_REPOSITORY`: Artifact Registry Docker repository. Defaults to `bpw-private`.
+- `IMAGE_NAME`: container image name. Defaults to `predictive-backend`.
+- `PREDICTIVE_RELIABILITY_CHECKPOINTS`: comma-separated checkpoint windows. Defaults to `30,60,180`.
+- `PREDICTIVE_PROVIDER_ID`: opaque provider identifier stored with public-safe checkpoints. Defaults to `private-provider`.
+- `PREDICTIVE_MODEL_VERSION`: opaque model version stored with public-safe checkpoints. Defaults to `private-heuristic-v1`.
+- `ALLOW_UNAUTHENTICATED`: whether Cloud Run accepts unauthenticated HTTP requests. Defaults to `false`; production should keep this false.
 
 Do not put model internals, thresholds, feature formulas, training data locations, or customer-specific tuning in workflow inputs, repository variables, or Cloud Run environment variables.
