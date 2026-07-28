@@ -38,8 +38,8 @@ func TestPredictReturnsCheckpoint(t *testing.T) {
 		ObservationWindowS: 60,
 		RunID:              "run-1",
 		Samples: []Sample{
-			{ElapsedTime: 0, RSS: 512 * 1024, HeapUsed: 300, HeapCap: 1000},
-			{ElapsedTime: 60, RSS: 2048 * 1024, HeapUsed: 900, HeapCap: 1000, GCTime: 9000},
+			{ElapsedTime: 0, RSS: 512, HeapUsed: 300, HeapCap: 1000},
+			{ElapsedTime: 60, RSS: 2048, HeapUsed: 900, HeapCap: 1000, GCTime: 9000},
 		},
 	}
 	payload, err := json.Marshal(body)
@@ -72,6 +72,9 @@ func TestPredictReturnsCheckpoint(t *testing.T) {
 	}
 	if response.Checkpoint.RiskScore == nil {
 		t.Fatal("risk score = nil, want value")
+	}
+	if response.Checkpoint.PredictedPeakRSSMB == nil || *response.Checkpoint.PredictedPeakRSSMB < 2048 {
+		t.Fatalf("predicted peak RSS = %v, want MB-scale value", response.Checkpoint.PredictedPeakRSSMB)
 	}
 }
 

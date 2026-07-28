@@ -124,7 +124,7 @@ func extractFeatures(snapshot predictor.RunSnapshot) runtimeFeatures {
 	maxGCTimeMs := 0
 	for _, sample := range snapshot.Samples {
 		elapsed := float64(sample.ElapsedTime)
-		rssMB := float64(sample.RSS) / 1024.0
+		rssMB := float64(sample.RSS)
 		if sample.RSS > 0 && (!firstRSSSet || elapsed < features.firstElapsedS) {
 			features.firstElapsedS = elapsed
 			features.firstRSSMB = rssMB

@@ -17,8 +17,8 @@ func TestProviderSatisfiesPredictionContract(t *testing.T) {
 		RunID: "run-1",
 		Now:   now,
 		Samples: []predictor.Sample{
-			{ElapsedTime: 10, RSS: 512 * 1024},
-			{ElapsedTime: 60, RSS: 768 * 1024},
+			{ElapsedTime: 10, RSS: 512},
+			{ElapsedTime: 60, RSS: 768},
 		},
 	}, 60)
 	if err != nil {
@@ -56,7 +56,7 @@ func TestProviderSatisfiesPredictionContract(t *testing.T) {
 
 func TestProviderReturnsElevatedMemorySignal(t *testing.T) {
 	checkpoint, err := New(Config{}).Predict(context.Background(), predictor.RunSnapshot{
-		Samples: []predictor.Sample{{ElapsedTime: 60, RSS: 3 * 1024 * 1024}},
+		Samples: []predictor.Sample{{ElapsedTime: 60, RSS: 3072}},
 	}, 60)
 	if err != nil {
 		t.Fatal(err)
@@ -76,9 +76,9 @@ func TestProviderReturnsElevatedMemorySignal(t *testing.T) {
 func TestProviderReturnsHighRiskForCompoundingRuntimeSignals(t *testing.T) {
 	checkpoint, err := New(Config{}).Predict(context.Background(), predictor.RunSnapshot{
 		Samples: []predictor.Sample{
-			{ElapsedTime: 0, RSS: 512 * 1024, HeapUsed: 300, HeapCap: 1000, GCTime: 0},
-			{ElapsedTime: 30, RSS: 1200 * 1024, HeapUsed: 760, HeapCap: 1000, GCTime: 3000},
-			{ElapsedTime: 60, RSS: 2048 * 1024, HeapUsed: 900, HeapCap: 1000, GCTime: 10000},
+			{ElapsedTime: 0, RSS: 512, HeapUsed: 300, HeapCap: 1000, GCTime: 0},
+			{ElapsedTime: 30, RSS: 1200, HeapUsed: 760, HeapCap: 1000, GCTime: 3000},
+			{ElapsedTime: 60, RSS: 2048, HeapUsed: 900, HeapCap: 1000, GCTime: 10000},
 		},
 		ProcessInfo: map[string]predictor.ProcessInfo{
 			"1": {PID: "1"},
