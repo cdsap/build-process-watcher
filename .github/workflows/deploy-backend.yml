@@ -108,7 +108,7 @@ jobs:
           --data @/tmp/ingest-request.json \
           | jq -e '.status == "success"'
 
-        EXPECTED_CHECKPOINTS="$(printf '%s' "$PREDICTIVE_RELIABILITY_CHECKPOINTS" | tr ',' '\n' | sed '/^$/d' | wc -l | tr -d ' ')"
+        EXPECTED_CHECKPOINTS="$(printf '%s' "$PREDICTIVE_RELIABILITY_CHECKPOINTS" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0)) | length')"
         for attempt in $(seq 1 12); do
           curl --fail --silent --show-error "$SERVICE_URL/runs/$RUN_ID" > /tmp/smoke-run.json
           if jq -e --argjson expected "$EXPECTED_CHECKPOINTS" '
@@ -120,14 +120,14 @@ jobs:
           fi
 
           echo "Waiting for predictive checkpoints (${attempt}/12): $(jq -r '
-            "samples=\(.samples | length), checkpoints=\((.prediction_checkpoints // []) | length), statuses=\([(.prediction_checkpoints // [])[]?.status] | join(","))"
+            "samples=\(.samples | length), expected_checkpoints='"$EXPECTED_CHECKPOINTS"', checkpoints=\((.prediction_checkpoints // []) | length), statuses=\([(.prediction_checkpoints // [])[]?.status] | join(","))"
           ' /tmp/smoke-run.json)"
           sleep 5
         done
 
         echo "Predictive checkpoints did not become ready in time."
         jq -r '
-          "samples=\(.samples | length), checkpoints=\((.prediction_checkpoints // []) | length), statuses=\([(.prediction_checkpoints // [])[]?.status] | join(","))"
+          "samples=\(.samples | length), expected_checkpoints='"$EXPECTED_CHECKPOINTS"', checkpoints=\((.prediction_checkpoints // []) | length), statuses=\([(.prediction_checkpoints // [])[]?.status] | join(","))"
         ' /tmp/smoke-run.json
         exit 1
 
