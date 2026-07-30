@@ -55,13 +55,13 @@ This is not required for normal local or remote monitoring. Use it only when you
 | `debug` | Enable debug logging | `false` | No |
 | `disable_summary_output` | Disable GitHub Actions summary output | `false` | No |
 | `export_to_bigquery` | Optional metrics export to BigQuery when Remote Mode finishes | `false` | No |
-| `predictive_reliability` | Opt in to private predictive reliability checkpoints for Remote Mode runs | `false` | No |
+| `predictive_reliability` | Opt in to private predictive reliability checkpoints; implies Remote Mode and BigQuery export | `false` | No |
 
 **Environment variables (for Remote Mode):** Set `BACKEND_URL` and `FRONTEND_URL` as env vars (e.g. from secrets) for custom URLs. If unset, default Cloud Run and dashboard URLs are used.
 
-**BigQuery export is optional:** It is only for collecting metrics in BigQuery. Set `export_to_bigquery: 'true'` together with `remote_monitoring: 'true'` when you want that export. The backend service must be configured with `BIGQUERY_EXPORT_DATASET`; optional table overrides are `BIGQUERY_EXPORT_TABLE` and `BIGQUERY_EXPORT_PROCESSES_TABLE`.
+**BigQuery export is optional:** It is only for collecting metrics in BigQuery. Set `export_to_bigquery: 'true'` together with `remote_monitoring: 'true'` when you want that export. Predictive reliability also requests BigQuery export automatically. The backend service must be configured with `BIGQUERY_EXPORT_DATASET`; optional table overrides are `BIGQUERY_EXPORT_TABLE` and `BIGQUERY_EXPORT_PROCESSES_TABLE`.
 
-**Predictive reliability is opt-in and private-provider only:** Public builds keep prediction disabled by default. Set `predictive_reliability: 'true'` together with `remote_monitoring: 'true'` when you want a run to request private predictive checkpoints. The backend can carry public-safe `prediction_checkpoints` returned by an injected or remote provider, and the dashboard only renders them when `predictiveReliability` is enabled in `config.js`. Production providers, scoring logic, evaluation artifacts, and customer-specific tuning live outside this public repository.
+**Predictive reliability is opt-in and private-provider only:** Public builds keep prediction disabled by default. Set `predictive_reliability: 'true'` when you want a run to request private predictive checkpoints; this automatically enables Remote Mode and requests BigQuery export for the run. The backend can carry public-safe `prediction_checkpoints` returned by an injected or remote provider, and the dashboard only renders them when `predictiveReliability` is enabled in `config.js`. Production providers, scoring logic, evaluation artifacts, and customer-specific tuning live outside this public repository.
 
 Backend operators can opt in to the private remote provider with:
 

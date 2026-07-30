@@ -25688,10 +25688,11 @@ const child_process_1 = __nccwpck_require__(5317);
 const fs = __importStar(__nccwpck_require__(9896));
 const path = __importStar(__nccwpck_require__(6928));
 const os = __importStar(__nccwpck_require__(857));
+const monitoring_features_1 = __nccwpck_require__(4647);
 async function run() {
     try {
         let backendUrl = process.env.BACKEND_URL || '';
-        const enableBackend = core.getInput('remote_monitoring') === 'true';
+        const remoteMonitoringRequested = core.getInput('remote_monitoring') === 'true';
         const runId = core.getInput('run_id') || `run-${Date.now()}`;
         const debugMode = core.getInput('debug') === 'true';
         const logFileInput = core.getInput('log_file') || 'build_process_watcher.log';
@@ -25716,22 +25717,27 @@ async function run() {
         const disableSummaryOutput = core.getInput('disable_summary_output') === 'true';
         const exportToBigqueryRequested = core.getInput('export_to_bigquery') === 'true';
         const predictiveReliabilityRequested = core.getInput('predictive_reliability') === 'true';
+        const enableBackendRequested = remoteMonitoringRequested || predictiveReliabilityRequested;
         // If backend is enabled but no URL provided, use the default Cloud Run URL
-        if (enableBackend && !backendUrl) {
+        if (enableBackendRequested && !backendUrl) {
             // Default production backend URL
             backendUrl = 'https://build-process-watcher-backend-685615422311.us-central1.run.app';
             if (debugMode) {
                 core.info(`🔧 Backend enabled but no URL provided, using default URL: ${backendUrl}`);
             }
         }
+        const { enableBackend, exportToBigquery, predictiveReliability, } = (0, monitoring_features_1.resolveMonitoringFeatureFlags)({
+            remoteMonitoringRequested,
+            exportToBigqueryRequested,
+            predictiveReliabilityRequested,
+            backendUrl,
+        });
         const useBackend = enableBackend && !!backendUrl;
-        const exportToBigquery = exportToBigqueryRequested && useBackend;
-        const predictiveReliability = predictiveReliabilityRequested && useBackend;
-        if (exportToBigqueryRequested && !useBackend && debugMode) {
-            core.info(`ℹ️  export_to_bigquery is ignored without remote_monitoring and a backend URL`);
+        if (predictiveReliabilityRequested && debugMode) {
+            core.info(`🔮 predictive_reliability enables remote_monitoring and export_to_bigquery for this run`);
         }
-        if (predictiveReliabilityRequested && !useBackend && debugMode) {
-            core.info(`ℹ️  predictive_reliability is ignored without remote_monitoring and a backend URL`);
+        else if (exportToBigqueryRequested && !useBackend && debugMode) {
+            core.info(`ℹ️  export_to_bigquery is ignored without remote_monitoring and a backend URL`);
         }
         // Show mode and essential info
         const mode = enableBackend ? 'Remote Monitoring' : 'Local Monitoring';
@@ -25933,6 +25939,26 @@ async function run() {
     }
 }
 run();
+
+
+/***/ }),
+
+/***/ 4647:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.resolveMonitoringFeatureFlags = resolveMonitoringFeatureFlags;
+function resolveMonitoringFeatureFlags(inputs) {
+    const enableBackend = inputs.remoteMonitoringRequested || inputs.predictiveReliabilityRequested;
+    const useBackend = enableBackend && !!inputs.backendUrl;
+    return {
+        enableBackend,
+        exportToBigquery: (inputs.exportToBigqueryRequested || inputs.predictiveReliabilityRequested) && useBackend,
+        predictiveReliability: inputs.predictiveReliabilityRequested && useBackend,
+    };
+}
 
 
 /***/ }),
