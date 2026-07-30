@@ -4,11 +4,12 @@ import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { resolveMonitoringFeatureFlags } from './monitoring_features';
 
 async function run() {
   try {
     let backendUrl = process.env.BACKEND_URL || '';
-    const enableBackend = core.getInput('remote_monitoring') === 'true';
+    const remoteMonitoringRequested = core.getInput('remote_monitoring') === 'true';
     const runId = core.getInput('run_id') || `run-${Date.now()}`;
     const debugMode = core.getInput('debug') === 'true';
     const logFileInput = core.getInput('log_file') || 'build_process_watcher.log';
@@ -34,8 +35,10 @@ async function run() {
     const exportToBigqueryRequested = core.getInput('export_to_bigquery') === 'true';
     const predictiveReliabilityRequested = core.getInput('predictive_reliability') === 'true';
 
+    const enableBackendRequested = remoteMonitoringRequested || predictiveReliabilityRequested;
+
     // If backend is enabled but no URL provided, use the default Cloud Run URL
-    if (enableBackend && !backendUrl) {
+    if (enableBackendRequested && !backendUrl) {
       // Default production backend URL
       backendUrl = 'https://build-process-watcher-backend-685615422311.us-central1.run.app';
       if (debugMode) {
@@ -43,14 +46,22 @@ async function run() {
       }
     }
 
+    const {
+      enableBackend,
+      exportToBigquery,
+      predictiveReliability,
+    } = resolveMonitoringFeatureFlags({
+      remoteMonitoringRequested,
+      exportToBigqueryRequested,
+      predictiveReliabilityRequested,
+      backendUrl,
+    });
     const useBackend = enableBackend && !!backendUrl;
-    const exportToBigquery = exportToBigqueryRequested && useBackend;
-    const predictiveReliability = predictiveReliabilityRequested && useBackend;
-    if (exportToBigqueryRequested && !useBackend && debugMode) {
+
+    if (predictiveReliabilityRequested && debugMode) {
+      core.info(`🔮 predictive_reliability enables remote_monitoring and export_to_bigquery for this run`);
+    } else if (exportToBigqueryRequested && !useBackend && debugMode) {
       core.info(`ℹ️  export_to_bigquery is ignored without remote_monitoring and a backend URL`);
-    }
-    if (predictiveReliabilityRequested && !useBackend && debugMode) {
-      core.info(`ℹ️  predictive_reliability is ignored without remote_monitoring and a backend URL`);
     }
 
     // Show mode and essential info
