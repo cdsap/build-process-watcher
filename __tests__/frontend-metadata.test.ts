@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const publicDir = path.join(__dirname, '../frontend/public');
+const repoRoot = path.join(__dirname, '..');
 
 const publicPages = [
   { file: 'index.html', canonical: 'https://process-watcher.web.app/' },
@@ -22,6 +23,13 @@ function metaContent(html: string, attribute: 'name' | 'property', value: string
 describe('frontend discovery and social metadata', () => {
   it('keeps predictive reliability disabled in the public config', () => {
     expect(readPage('config.js')).toContain('predictiveReliability: false');
+  });
+
+  it('documents predictive reliability as an opt-in action input', () => {
+    const action = fs.readFileSync(path.join(repoRoot, 'action.yaml'), 'utf8');
+    expect(action).toContain('predictive_reliability:');
+    expect(action).toContain("default: 'false'");
+    expect(readPage('index.html')).toContain('<code>predictive_reliability</code>');
   });
 
   it.each(publicPages)('$file has complete page-specific sharing metadata', ({ file, canonical, noindex }) => {
