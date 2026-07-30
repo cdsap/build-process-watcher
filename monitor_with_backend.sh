@@ -79,6 +79,7 @@ echo "DEBUG_MODE: $DEBUG_MODE" >> "$SCRIPT_DEBUG_LOG"
 echo "REMOTE_MONITORING: $REMOTE_MONITORING" >> "$SCRIPT_DEBUG_LOG"
 echo "INTERVAL: $INTERVAL" >> "$SCRIPT_DEBUG_LOG"
 echo "EXPORT_TO_BIGQUERY: ${EXPORT_TO_BIGQUERY:-false}" >> "$SCRIPT_DEBUG_LOG"
+echo "PREDICTIVE_RELIABILITY: ${PREDICTIVE_RELIABILITY:-false}" >> "$SCRIPT_DEBUG_LOG"
 echo "PATTERNS: ${PATTERNS[*]}" >> "$SCRIPT_DEBUG_LOG"
 echo "PID: $$" >> "$SCRIPT_DEBUG_LOG"
 echo "" >> "$SCRIPT_DEBUG_LOG"
@@ -180,8 +181,17 @@ get_auth_token() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Requesting auth token for run_id: $RUN_ID" >> "$BACKEND_DEBUG_LOG"
     
     local auth_path="$BACKEND_URL/auth/run/$RUN_ID"
+    local auth_params=()
     if [ "${EXPORT_TO_BIGQUERY:-false}" = "true" ]; then
-        auth_path="${auth_path}?export_to_bigquery=true"
+        auth_params+=("export_to_bigquery=true")
+    fi
+    if [ "${PREDICTIVE_RELIABILITY:-false}" = "true" ]; then
+        auth_params+=("predictive_reliability=true")
+    fi
+    if [ ${#auth_params[@]} -gt 0 ]; then
+        local joined_params
+        joined_params=$(IFS='&'; echo "${auth_params[*]}")
+        auth_path="${auth_path}?${joined_params}"
     fi
     log_script "get_auth_token: Sending POST to $auth_path"
     local auth_response

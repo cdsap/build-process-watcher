@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -61,6 +62,11 @@ func (h *Handlers) Auth(w http.ResponseWriter, r *http.Request) {
 	if h.storage != nil && r.URL.Query().Get("export_to_bigquery") == "true" {
 		if err := h.storage.SetRunExportToBigquery(runID, true); err != nil {
 			log.Printf("Warning: could not persist export_to_bigquery for run %s: %v", runID, err)
+		}
+	}
+	if h.storage != nil && boolQuery(r, "predictive_reliability") {
+		if err := h.storage.SetRunPredictiveReliability(runID, true); err != nil {
+			log.Printf("Warning: could not persist predictive_reliability for run %s: %v", runID, err)
 		}
 	}
 
@@ -230,6 +236,9 @@ func (h *Handlers) evaluatePredictionCheckpoints(ctx context.Context, runID stri
 		log.Printf("Prediction skipped: could not load run %s: %v", runID, err)
 		return
 	}
+	if !runDoc.PredictiveReliability {
+		return
+	}
 	processDoc, err := h.storage.GetProcesses(runID)
 	if err != nil {
 		log.Printf("Prediction continuing without process info for run %s: %v", runID, err)
@@ -268,6 +277,11 @@ func (h *Handlers) evaluatePredictionCheckpoints(ctx context.Context, runID stri
 			log.Printf("Prediction checkpoint store failed for run %s checkpoint %ds: %v", runID, checkpointWindow, err)
 		}
 	}
+}
+
+func boolQuery(r *http.Request, key string) bool {
+	enabled, err := strconv.ParseBool(strings.TrimSpace(r.URL.Query().Get(key)))
+	return err == nil && enabled
 }
 
 // GetRun retrieves run data

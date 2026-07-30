@@ -57,6 +57,25 @@ func (c *Client) SetRunExportToBigquery(runID string, enabled bool) error {
 	return nil
 }
 
+// SetRunPredictiveReliability records that a run opted in to private predictive checkpoints.
+func (c *Client) SetRunPredictiveReliability(runID string, enabled bool) error {
+	if !enabled {
+		return nil
+	}
+	now := time.Now()
+	_, err := c.firestore.Collection("runs").Doc(runID).Set(c.ctx, map[string]interface{}{
+		"run_id":                 runID,
+		"predictive_reliability": true,
+		"updated_at":             now,
+		"updated_at_timestamp":   ToMillis(now),
+	}, firestore.MergeAll)
+	if err != nil {
+		return fmt.Errorf("merge predictive_reliability for run %s: %w", runID, err)
+	}
+	log.Printf("🔮 Marked run %s for predictive reliability checkpoints", runID)
+	return nil
+}
+
 // GetRun retrieves a run document by ID
 func (c *Client) GetRun(runID string) (*models.RunDoc, error) {
 	return c.GetRunWithContext(c.ctx, runID)

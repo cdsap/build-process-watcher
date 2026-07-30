@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -41,6 +42,23 @@ func TestIngestHandler_RequestWithProcessInfo(t *testing.T) {
 
 	if len(unmarshaled.ProcessInfo.VMFlags) != 2 {
 		t.Errorf("Expected 2 VM flags, got %d", len(unmarshaled.ProcessInfo.VMFlags))
+	}
+}
+
+func TestBoolQueryAcceptsExplicitTrueOnly(t *testing.T) {
+	request := httptest.NewRequest("POST", "/auth/run/run-1?predictive_reliability=true", nil)
+	if !boolQuery(request, "predictive_reliability") {
+		t.Fatal("expected predictive_reliability=true to be accepted")
+	}
+
+	request = httptest.NewRequest("POST", "/auth/run/run-1?predictive_reliability=false", nil)
+	if boolQuery(request, "predictive_reliability") {
+		t.Fatal("expected predictive_reliability=false to be rejected")
+	}
+
+	request = httptest.NewRequest("POST", "/auth/run/run-1?predictive_reliability=maybe", nil)
+	if boolQuery(request, "predictive_reliability") {
+		t.Fatal("expected invalid predictive_reliability value to be rejected")
 	}
 }
 

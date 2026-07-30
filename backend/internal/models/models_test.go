@@ -219,6 +219,36 @@ func TestRunResponse_OmitsPredictionCheckpointsWhenAbsent(t *testing.T) {
 	}
 }
 
+func TestRunDoc_PredictiveReliabilityDefaultsFalse(t *testing.T) {
+	var runDoc RunDoc
+	payload := []byte(`{"run_id":"run-1"}`)
+	if err := json.Unmarshal(payload, &runDoc); err != nil {
+		t.Fatal(err)
+	}
+	if runDoc.PredictiveReliability {
+		t.Fatal("PredictiveReliability should default false for legacy runs")
+	}
+}
+
+func TestRunDoc_PredictiveReliabilityRoundTrip(t *testing.T) {
+	runDoc := RunDoc{
+		RunID:                 "run-1",
+		PredictiveReliability: true,
+	}
+	jsonData, err := json.Marshal(runDoc)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(jsonData, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if raw["PredictiveReliability"] != true {
+		t.Fatalf("PredictiveReliability JSON = %v, want true", raw["PredictiveReliability"])
+	}
+}
+
 func TestRunResponse_PredictionCheckpointsRoundTrip(t *testing.T) {
 	riskScore := 42.5
 	peakRSS := 2048.0

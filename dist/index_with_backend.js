@@ -25715,6 +25715,7 @@ async function run() {
         const interval = core.getInput('interval') || '5';
         const disableSummaryOutput = core.getInput('disable_summary_output') === 'true';
         const exportToBigqueryRequested = core.getInput('export_to_bigquery') === 'true';
+        const predictiveReliabilityRequested = core.getInput('predictive_reliability') === 'true';
         // If backend is enabled but no URL provided, use the default Cloud Run URL
         if (enableBackend && !backendUrl) {
             // Default production backend URL
@@ -25725,8 +25726,12 @@ async function run() {
         }
         const useBackend = enableBackend && !!backendUrl;
         const exportToBigquery = exportToBigqueryRequested && useBackend;
+        const predictiveReliability = predictiveReliabilityRequested && useBackend;
         if (exportToBigqueryRequested && !useBackend && debugMode) {
             core.info(`ℹ️  export_to_bigquery is ignored without remote_monitoring and a backend URL`);
+        }
+        if (predictiveReliabilityRequested && !useBackend && debugMode) {
+            core.info(`ℹ️  predictive_reliability is ignored without remote_monitoring and a backend URL`);
         }
         // Show mode and essential info
         const mode = enableBackend ? 'Remote Monitoring' : 'Local Monitoring';
@@ -25766,6 +25771,7 @@ async function run() {
         core.exportVariable('BPW_LOG_FILE_DEFAULT', defaultLogFile.toString());
         core.exportVariable('DISABLE_SUMMARY_OUTPUT', disableSummaryOutput.toString());
         core.exportVariable('EXPORT_TO_BIGQUERY', exportToBigquery ? 'true' : 'false');
+        core.exportVariable('PREDICTIVE_RELIABILITY', predictiveReliability ? 'true' : 'false');
         // Also write RUN_ID to a file as a backup for the post step
         // This ensures the post step can always find the RUN_ID even if env vars aren't available
         try {
@@ -25803,6 +25809,7 @@ async function run() {
         core.setOutput('remote_monitoring', enableBackend.toString());
         core.setOutput('frontend_url', frontendUrl);
         core.setOutput('export_to_bigquery', exportToBigquery.toString());
+        core.setOutput('predictive_reliability', predictiveReliability.toString());
         // Always show the dashboard URL when remote monitoring is enabled (regardless of debug mode)
         if (enableBackend && frontendUrl) {
             core.info(`🌐 Dashboard URL: ${frontendUrl}`);
@@ -25868,6 +25875,7 @@ async function run() {
             DEBUG_MODE: debugMode.toString(),
             REMOTE_MONITORING: (enableBackend && backendUrl) ? 'true' : 'false',
             EXPORT_TO_BIGQUERY: exportToBigquery ? 'true' : 'false',
+            PREDICTIVE_RELIABILITY: predictiveReliability ? 'true' : 'false',
             COLLECT_GC: 'true'
         };
         const child = (0, child_process_1.spawn)(scriptPath, args, {
