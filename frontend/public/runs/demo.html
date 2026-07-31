@@ -670,10 +670,10 @@
             const formatDur = (s) => s < 60 ? s + 's' : (Math.floor(s / 60) + 'm' + (s % 60 ? ' ' + Math.round(s % 60) + 's' : ''));
             const formatPredictionValue = (value, unit) => Number.isFinite(Number(value)) ? `${Number(value).toFixed(Number(value) >= 1000 ? 0 : 1)} ${unit}` : 'N/A';
             const predictionRiskClass = (riskLevel) => ['low', 'elevated', 'high'].includes(riskLevel) ? riskLevel : 'unknown';
-            const predictionEnabled = window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true;
             const predictionCheckpoints = Array.isArray(data.prediction_checkpoints)
                 ? [...data.prediction_checkpoints].sort((a, b) => Number(a.observation_window_s || 0) - Number(b.observation_window_s || 0))
                 : [];
+            const predictionEnabled = window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true || predictionCheckpoints.length > 0;
             const predictionHtml = predictionEnabled && predictionCheckpoints.length ? `
                 <section class="prediction-panel" aria-label="Predictive reliability">
                     <div class="prediction-panel-head">
