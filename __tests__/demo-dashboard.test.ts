@@ -12,7 +12,7 @@ describe('demo dashboard', () => {
     expect(html).toContain("fetch('/demo-run.json')");
     expect(html).toContain('Cumulative JIT Compilation Time');
     expect(html).toContain('Class Loading Activity');
-    expect(html).toContain('window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true');
+    expect(html).toContain('window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true || predictionCheckpoints.length > 0');
     expect(html).toContain('prediction_checkpoints');
     expect(html).toContain('predictionHtml');
     expect(html).not.toContain('/runs/${runId}');
