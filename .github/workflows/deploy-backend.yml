@@ -89,7 +89,7 @@ jobs:
         fi
 
         RUN_ID="deploy-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-        AUTH_JSON="$(curl --fail --silent --show-error -X POST "$SERVICE_URL/auth/run/$RUN_ID")"
+        AUTH_JSON="$(curl --fail --silent --show-error -X POST "$SERVICE_URL/auth/run/$RUN_ID?predictive_reliability=true")"
         TOKEN="$(printf '%s' "$AUTH_JSON" | jq -r '.token')"
         if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
           echo "Auth response did not include a token."
