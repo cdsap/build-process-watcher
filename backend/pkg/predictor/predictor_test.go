@@ -51,6 +51,24 @@ func TestEnabled(t *testing.T) {
 	}
 }
 
+func TestDefaultCheckpoints(t *testing.T) {
+	checkpoints := DefaultCheckpoints()
+	expected := []int{60, 300, 600, 1200}
+	if len(checkpoints) != len(expected) {
+		t.Fatalf("checkpoints = %v, want %v", checkpoints, expected)
+	}
+	for i := range expected {
+		if checkpoints[i] != expected[i] {
+			t.Fatalf("checkpoints = %v, want %v", checkpoints, expected)
+		}
+	}
+
+	checkpoints[0] = 1
+	if got := DefaultCheckpoints()[0]; got != 60 {
+		t.Fatalf("DefaultCheckpoints returned shared storage; first = %d, want 60", got)
+	}
+}
+
 func TestPendingCheckpointsReturnsReachedMissingWindows(t *testing.T) {
 	pending := PendingCheckpoints(
 		[]Sample{{ElapsedTime: 10}, {ElapsedTime: 75}},

@@ -57,29 +57,38 @@ func TestOptionsFromEnvUsesPublicNoopProvider(t *testing.T) {
 func TestOptionsFromEnvUsesNoopWhenRemoteProviderDisabled(t *testing.T) {
 	t.Setenv("PREDICTIVE_PROVIDER_ENABLED", "false")
 	t.Setenv(providerEnv("URL"), "http://127.0.0.1:8081")
+	t.Setenv("PREDICTIVE_RELIABILITY_CHECKPOINTS", "")
 
 	options := OptionsFromEnv()
 
 	if predictor.Enabled(options.PredictionProvider) {
 		t.Fatal("provider should remain no-op when remote feature flag is false")
 	}
+	if len(options.PredictionCheckpoints) != 0 {
+		t.Fatalf("PredictionCheckpoints = %v, want empty", options.PredictionCheckpoints)
+	}
 }
 
 func TestOptionsFromEnvUsesNoopWhenRemoteProviderURLMissing(t *testing.T) {
 	t.Setenv("PREDICTIVE_PROVIDER_ENABLED", "true")
 	t.Setenv(providerEnv("URL"), "")
+	t.Setenv("PREDICTIVE_RELIABILITY_CHECKPOINTS", "")
 
 	options := OptionsFromEnv()
 
 	if predictor.Enabled(options.PredictionProvider) {
 		t.Fatal("provider should remain no-op when remote URL is missing")
 	}
+	if len(options.PredictionCheckpoints) != 0 {
+		t.Fatalf("PredictionCheckpoints = %v, want empty", options.PredictionCheckpoints)
+	}
 }
 
-func TestOptionsFromEnvUsesRemoteProviderWhenEnabled(t *testing.T) {
+func TestOptionsFromEnvUsesRemoteProviderWithDefaultCheckpointsWhenEnabled(t *testing.T) {
 	t.Setenv("PREDICTIVE_PROVIDER_ENABLED", "true")
 	t.Setenv(providerEnv("URL"), "http://127.0.0.1:8081")
 	t.Setenv(providerEnv("TIMEOUT_MS"), "2500")
+	t.Setenv("PREDICTIVE_RELIABILITY_CHECKPOINTS", "")
 
 	options := OptionsFromEnv()
 
@@ -88,6 +97,47 @@ func TestOptionsFromEnvUsesRemoteProviderWhenEnabled(t *testing.T) {
 	}
 	if _, ok := options.PredictionProvider.(*predictor.RemoteProvider); !ok {
 		t.Fatalf("provider type = %T, want *predictor.RemoteProvider", options.PredictionProvider)
+	}
+	expected := []int{60, 300, 600, 1200}
+	if got := options.PredictionCheckpoints; len(got) != len(expected) {
+		t.Fatalf("PredictionCheckpoints = %v, want %v", got, expected)
+	} else {
+		for i := range expected {
+			if got[i] != expected[i] {
+				t.Fatalf("PredictionCheckpoints = %v, want %v", got, expected)
+			}
+		}
+	}
+}
+
+func TestOptionsFromEnvKeepsExplicitCheckpointsWhenRemoteProviderEnabled(t *testing.T) {
+	t.Setenv("PREDICTIVE_PROVIDER_ENABLED", "true")
+	t.Setenv(providerEnv("URL"), "http://127.0.0.1:8081")
+	t.Setenv("PREDICTIVE_RELIABILITY_CHECKPOINTS", "30,60,bad,60")
+
+	options := OptionsFromEnv()
+
+	expected := []int{30, 60}
+	if got := options.PredictionCheckpoints; len(got) != len(expected) {
+		t.Fatalf("PredictionCheckpoints = %v, want %v", got, expected)
+	} else {
+		for i := range expected {
+			if got[i] != expected[i] {
+				t.Fatalf("PredictionCheckpoints = %v, want %v", got, expected)
+			}
+		}
+	}
+}
+
+func TestOptionsFromEnvDoesNotDefaultInvalidExplicitCheckpoints(t *testing.T) {
+	t.Setenv("PREDICTIVE_PROVIDER_ENABLED", "true")
+	t.Setenv(providerEnv("URL"), "http://127.0.0.1:8081")
+	t.Setenv("PREDICTIVE_RELIABILITY_CHECKPOINTS", "bad,0")
+
+	options := OptionsFromEnv()
+
+	if got := options.PredictionCheckpoints; len(got) != 0 {
+		t.Fatalf("PredictionCheckpoints = %v, want empty for invalid explicit config", got)
 	}
 }
 

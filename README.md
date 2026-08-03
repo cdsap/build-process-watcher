@@ -65,6 +65,10 @@ This is not required for normal local or remote monitoring. Use it only when you
 
 When run data contains public-safe `prediction_checkpoints`, the dashboard renders those checkpoint records in observation-window order. The public contract intentionally omits non-public implementation details, exact checkpoint policy, training data, and service endpoints.
 
+`PREDICTIVE_RELIABILITY_CHECKPOINTS` can set a comma-separated checkpoint window list. When a production provider is enabled and this value is empty, the backend uses `60,300,600,1200`.
+
+The public backend sends only public run telemetry to `/predict` and stores only the returned public-safe checkpoint. Do not add private model names, thresholds, feature formulas, training data paths, or customer-specific tuning to this repository or to public frontend config.
+
 ---
 
 ## 🧭 Behavior Matrix

@@ -44,6 +44,11 @@ func OptionsFromEnv() Options {
 			log.Printf("🔮 Remote predictive provider disabled: %v", err)
 		}
 	}
+	predictionCheckpointsValue := strings.TrimSpace(os.Getenv("PREDICTIVE_RELIABILITY_CHECKPOINTS"))
+	predictionCheckpoints := predictor.ParseCheckpoints(predictionCheckpointsValue)
+	if predictionCheckpointsValue == "" && predictor.Enabled(predictionProvider) {
+		predictionCheckpoints = predictor.DefaultCheckpoints()
+	}
 
 	return Options{
 		ProjectID:              strings.TrimSpace(os.Getenv("GOOGLE_CLOUD_PROJECT")),
@@ -52,7 +57,7 @@ func OptionsFromEnv() Options {
 		BigQueryTable:          strings.TrimSpace(os.Getenv("BIGQUERY_EXPORT_TABLE")),
 		BigQueryProcessesTable: strings.TrimSpace(os.Getenv("BIGQUERY_EXPORT_PROCESSES_TABLE")),
 		PredictionProvider:     predictionProvider,
-		PredictionCheckpoints:  predictor.ParseCheckpoints(os.Getenv("PREDICTIVE_RELIABILITY_CHECKPOINTS")),
+		PredictionCheckpoints:  predictionCheckpoints,
 	}
 }
 

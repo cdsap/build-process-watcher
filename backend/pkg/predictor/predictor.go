@@ -14,6 +14,8 @@ type Sample = models.Sample
 type ProcessInfo = models.ProcessInfo
 type PredictionCheckpoint = models.PredictionCheckpoint
 
+var defaultCheckpoints = []int{60, 300, 600, 1200}
+
 // RunSnapshot is the public input contract passed to prediction providers.
 type RunSnapshot struct {
 	RunID                 string
@@ -55,6 +57,13 @@ func Enabled(provider Provider) bool {
 	default:
 		return true
 	}
+}
+
+// DefaultCheckpoints returns the public v1 checkpoint windows.
+func DefaultCheckpoints() []int {
+	checkpoints := make([]int, len(defaultCheckpoints))
+	copy(checkpoints, defaultCheckpoints)
+	return checkpoints
 }
 
 // PendingCheckpoints returns configured windows reached by samples and not yet stored.
