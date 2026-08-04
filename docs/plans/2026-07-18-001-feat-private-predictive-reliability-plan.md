@@ -14,11 +14,11 @@ date: 2026-07-18
 
 | Field | Value |
 |---|---|
-| Objective | Add predictive reliability as a hidden, configuration-gated capability while keeping model logic, scoring thresholds, training details, and business-sensitive implementation outside the public repository. |
+| Objective | Add predictive reliability as a hidden, configuration-gated capability while keeping non-public prediction implementation details outside the public repository. |
 | Primary outcome | The public repo exposes stable prediction contracts and safe UI/API surfaces, while private deployments can attach proprietary prediction providers and iterate on models without public commits. |
 | Authority hierarchy | User privacy and business-model constraint first; backward-compatible public API second; model iteration speed third. |
 | Execution profile | Deep feature plan touching backend models, storage, handlers, frontend rendering, docs, tests, and release hygiene. |
-| Stop conditions | Do not commit public SQL/model templates, proprietary thresholds, feature engineering details, customer-specific evaluation data, or private-provider code to the public repo. |
+| Stop conditions | Do not commit proprietary prediction assets, private deployment code, or private evaluation material to the public repo. |
 
 ---
 
@@ -28,7 +28,7 @@ date: 2026-07-18
 
 Predictive reliability should become a commercial feature surface rather than a public implementation dump.
 The public Build Process Watcher repo should support a hidden prediction panel, a backend prediction contract, and disabled-by-default configuration.
-The proprietary value should live in a private provider that can change independently: model families, feature builders, thresholds, confidence rules, evaluation reports, and customer-specific tuning.
+The proprietary value should live in a private provider that can change independently while the public repo exposes only stable contracts.
 
 ### Problem Frame
 
@@ -43,12 +43,12 @@ The implementation needs an architectural boundary that lets the public project 
 - R1. Prediction surfaces must be hidden by default in public builds and disabled unless explicit backend configuration enables them.
 - R2. The dashboard must tolerate missing predictions and render the existing run experience unchanged for old runs, local artifacts, and public deployments.
 - R3. Public documentation must describe the feature at an integration-contract level, not at a model-implementation level.
-- R4. Any public sample/demo prediction data must be synthetic and must not reveal real scoring cutoffs, private model identifiers, feature importance, or customer data.
+- R4. Any public sample/demo prediction data must be synthetic and must not reveal private implementation details.
 
 **Public/private boundary**
 
 - R5. The public repo may define generic prediction records, provider interfaces, feature flags, and UI rendering for already-computed prediction results.
-- R6. The private implementation must own model training, feature derivation, model invocation, risk scoring, confidence calibration, rollout gates, and customer-specific tuning.
+- R6. The private implementation must own all proprietary prediction behavior and rollout gates.
 - R7. Public backend code must degrade cleanly when no private provider is installed or configured.
 - R8. Public tests must use fake or deterministic stub providers rather than real model logic.
 
@@ -64,7 +64,7 @@ The implementation needs an architectural boundary that lets the public project 
 - AE1. Given prediction config is absent, when `/runs/{runId}` returns a run, then no prediction fields are shown in the dashboard and the response remains compatible with current consumers.
 - AE2. Given a private provider is configured and a run reaches a checkpoint, when ingest stores enough samples, then the backend stores one prediction record for that checkpoint and does not repeat it.
 - AE3. Given a run has `30s`, `60s`, and `180s` prediction records, when the dashboard renders, then each checkpoint appears separately with confidence and timing, not as a single final verdict.
-- AE4. Given a public PR is prepared, when release hygiene checks run, then proprietary model files, real scoring cutoffs, and private-provider references are absent from the public diff.
+- AE4. Given a public PR is prepared, when release hygiene checks run, then proprietary prediction assets and private deployment references are absent from the public diff.
 - AE5. Given a provider returns an error, when ingest succeeds, then telemetry storage still succeeds and prediction status records the failure without blocking the run.
 
 ### Scope Boundaries
@@ -84,13 +84,13 @@ The implementation needs an architectural boundary that lets the public project 
 - Build the proprietary provider implementation in a private repository.
 - Train, evaluate, and version production models.
 - Add billing, license enforcement, or SaaS tenant management.
-- Add customer-specific dashboards or hosted account management.
+- Add account-specific dashboards or hosted account management.
 - Add automated GitHub Action warnings from predictions.
 
 #### Outside This Product's Public Identity
 
-- Publicly documenting model internals, feature formulas, scoring cutoffs, private model identifiers, or training artifacts.
-- Shipping real customer-derived model evaluation reports in this repository.
+- Publicly documenting proprietary prediction internals or private deployment details.
+- Shipping private evaluation reports in this repository.
 - Treating advisory resource risk as a guaranteed OOM, timeout, or failure probability.
 
 ---
@@ -102,8 +102,8 @@ The implementation needs an architectural boundary that lets the public project 
 - KTD1. Use a public provider interface plus private provider implementation. The public repo owns contracts and integration points; a private deployment injects the model implementation. (session-settled: user-directed — chosen over committing model logic publicly: the feature is intended to support a business model)
 - KTD2. Hide prediction by default behind backend and frontend flags. Disabled public builds must behave exactly like the current product so the feature can incubate privately.
 - KTD3. Store prediction checkpoints as operational metadata on the run document or a related run-scoped document. This keeps `/runs/{runId}` as the dashboard's single read path while allowing multiple checkpoint records.
-- KTD4. Public prediction records carry public-safe explanations only. They may include labels such as memory pressure, duration risk, anomaly, or confidence, but not raw feature formulas, feature importance, scoring cutoffs, or model implementation details.
-- KTD5. Keep model iteration outside the public schema by versioning providers and output contracts. The private provider can evolve model families and feature builders as long as it returns the stable public `PredictionCheckpoint` shape.
+- KTD4. Public prediction records carry public-safe explanations only and avoid exposing proprietary prediction internals.
+- KTD5. Keep model iteration outside the public schema by versioning providers and output contracts. The private provider can evolve independently as long as it returns the stable public `PredictionCheckpoint` shape.
 - KTD6. Treat existing checked-in predictive SQL as pre-public sensitive material until audited. Before any public PR, either move it out of the public diff or replace it with contract-level documentation.
 
 ### High-Level Technical Design
@@ -255,7 +255,7 @@ The public contract should be stable and intentionally generic:
 - **Test scenarios:**
   - Public CI runs without private provider credentials or modules.
   - Deployment config omits prediction env vars unless explicitly supplied.
-  - Docs describe provider attachment without naming private repositories, training artifacts, models, scoring cutoffs, or customers.
+  - Docs describe provider attachment without naming private repositories or proprietary prediction details.
 - **Verification:** Public build and deployment config remain usable without private access.
 
 ### U7. Iteration And Commercial Rollout Guardrails
@@ -281,7 +281,7 @@ The public contract should be stable and intentionally generic:
 | `npm test -- --runInBand` | U1, U2, U5, U7 | Public JS/static tests and backend contract fixtures pass. |
 | `go test ./backend/...` | U2, U3, U4, U6 | Backend model, provider, storage, and handler behavior passes with no private provider dependency. |
 | `node --check frontend/public/replay.js` and changed frontend scripts | U5 | Changed frontend JavaScript remains syntactically valid. |
-| Public leak scan test | U1, U6, U7 | Public diff excludes training artifacts, scoring cutoffs, feature formulas, private provider names, and customer-specific data. |
+| Public leak scan test | U1, U6, U7 | Public diff excludes proprietary prediction details and private deployment material. |
 | Manual public-diff review | All units | Reviewer can verify the PR contains contracts and hidden surfaces only, not proprietary model implementation. |
 
 ---
@@ -293,6 +293,6 @@ The public contract should be stable and intentionally generic:
 - Public code has a provider interface, no-op/fake implementations, and tests that do not require private dependencies.
 - Dashboard prediction rendering is hidden unless both data and feature gates allow it.
 - Multiple checkpoint records can be stored and rendered without treating early predictions as final.
-- Private model internals, training artifacts, scoring cutoffs, and customer-specific evaluation artifacts are not present in the public diff.
+- Proprietary prediction details and private evaluation artifacts are not present in the public diff.
 - Documentation explains provider attachment and commercial packaging at a contract level only.
 - Abandoned experimental predictive files are removed, ignored, or moved outside the public repository before commit.

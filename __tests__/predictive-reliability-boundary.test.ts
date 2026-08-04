@@ -20,6 +20,18 @@ function trackedFiles(): string[] {
     .filter(Boolean);
 }
 
+function joined(...parts: string[]): string {
+  return parts.join('');
+}
+
+function underscored(...parts: string[]): string {
+  return parts.join('_');
+}
+
+function predictiveEnv(suffix: string): string {
+  return ['PREDICTIVE', 'PROVIDER', suffix].join('_');
+}
+
 describe('predictive reliability public boundary', () => {
   it('keeps private predictive artifacts ignored', () => {
     const gitignore = readRepoFile('.gitignore');
@@ -48,12 +60,12 @@ describe('predictive reliability public boundary', () => {
 
   it('keeps tracked public files free of concrete predictive model internals', () => {
     const disallowedPatterns = [
-      /CREATE\s+(OR\s+REPLACE\s+)?MODEL/i,
-      /ML\.(PREDICT|EVALUATE|DETECT_ANOMALIES)/i,
-      /\bpeak_rss_\d+s\b/,
-      /\bduration_\d+s\b/,
-      /\bbehavior_anomaly_\d+s\b/,
-      /\brun_early_features_\d+s\b/,
+      new RegExp(`${joined('CREATE')}\\s+(OR\\s+REPLACE\\s+)?${joined('MODEL')}`, 'i'),
+      new RegExp(`${joined('ML')}\\.(${joined('PREDICT')}|${joined('EVALUATE')}|${underscored('DETECT', 'ANOMALIES')})`, 'i'),
+      new RegExp(`\\b${underscored('peak', 'rss')}_\\d+s\\b`),
+      new RegExp(`\\b${underscored('duration')}_\\d+s\\b`),
+      new RegExp(`\\b${underscored('behavior', 'anomaly')}_\\d+s\\b`),
+      new RegExp(`\\b${underscored('run', 'early', 'features')}_\\d+s\\b`),
     ];
 
     const violations = trackedFiles()
@@ -65,6 +77,32 @@ describe('predictive reliability public boundary', () => {
           .filter(pattern => pattern.test(contents))
           .map(pattern => `${file}: ${pattern}`);
       });
+
+    expect(violations).toEqual([]);
+  });
+
+  it('keeps public docs and tests free of private provider release details', () => {
+    const disallowedTerms = [
+      predictiveEnv('URL'),
+      predictiveEnv('AUTH_AUDIENCE'),
+      predictiveEnv('TIMEOUT_MS'),
+      joined('private', '.example'),
+    ];
+    const publicDocFiles = new Set([
+      'README.md',
+      'action.yaml',
+      'frontend/public/index.html',
+    ]);
+    const docsAndTests = trackedFiles()
+      .filter(file => repoFileExists(file))
+      .filter(file => publicDocFiles.has(file) || file.endsWith('.md') || file.includes('__tests__/') || file.endsWith('_test.go'));
+
+    const violations = docsAndTests.flatMap(file => {
+      const contents = readRepoFile(file);
+      return disallowedTerms
+        .filter(term => contents.includes(term))
+        .map(term => `${file}: ${term}`);
+    });
 
     expect(violations).toEqual([]);
   });

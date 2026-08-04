@@ -17,6 +17,10 @@ func (fakeProvider) Predict(context.Context, predictor.RunSnapshot, int) (predic
 	return predictor.PredictionCheckpoint{}, nil
 }
 
+func providerEnv(suffix string) string {
+	return "PREDICTIVE_PROVIDER_" + suffix
+}
+
 func TestOptionsFromEnvUsesPublicNoopProvider(t *testing.T) {
 	t.Setenv("GOOGLE_CLOUD_PROJECT", "project-1")
 	t.Setenv("PORT", "")
@@ -52,7 +56,7 @@ func TestOptionsFromEnvUsesPublicNoopProvider(t *testing.T) {
 
 func TestOptionsFromEnvUsesNoopWhenRemoteProviderDisabled(t *testing.T) {
 	t.Setenv("PREDICTIVE_PROVIDER_ENABLED", "false")
-	t.Setenv("PREDICTIVE_PROVIDER_URL", "https://private.example")
+	t.Setenv(providerEnv("URL"), "http://127.0.0.1:8081")
 
 	options := OptionsFromEnv()
 
@@ -63,7 +67,7 @@ func TestOptionsFromEnvUsesNoopWhenRemoteProviderDisabled(t *testing.T) {
 
 func TestOptionsFromEnvUsesNoopWhenRemoteProviderURLMissing(t *testing.T) {
 	t.Setenv("PREDICTIVE_PROVIDER_ENABLED", "true")
-	t.Setenv("PREDICTIVE_PROVIDER_URL", "")
+	t.Setenv(providerEnv("URL"), "")
 
 	options := OptionsFromEnv()
 
@@ -74,8 +78,8 @@ func TestOptionsFromEnvUsesNoopWhenRemoteProviderURLMissing(t *testing.T) {
 
 func TestOptionsFromEnvUsesRemoteProviderWhenEnabled(t *testing.T) {
 	t.Setenv("PREDICTIVE_PROVIDER_ENABLED", "true")
-	t.Setenv("PREDICTIVE_PROVIDER_URL", "https://private.example")
-	t.Setenv("PREDICTIVE_PROVIDER_TIMEOUT_MS", "2500")
+	t.Setenv(providerEnv("URL"), "http://127.0.0.1:8081")
+	t.Setenv(providerEnv("TIMEOUT_MS"), "2500")
 
 	options := OptionsFromEnv()
 

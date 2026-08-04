@@ -27,9 +27,13 @@ describe('frontend discovery and social metadata', () => {
 
   it('documents predictive reliability as an opt-in action input', () => {
     const action = fs.readFileSync(path.join(repoRoot, 'action.yaml'), 'utf8');
+    const readme = fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf8');
     expect(action).toContain('predictive_reliability:');
     expect(action).toContain("default: 'false'");
+    expect(action).toContain('Opt in to advisory predictive reliability checkpoints');
+    expect(readme).toContain('**Predictive reliability is opt-in and advisory:**');
     expect(readPage('index.html')).toContain('<code>predictive_reliability</code>');
+    expect(readPage('index.html')).toContain('Opt in to advisory predictive reliability checkpoints');
   });
 
   it.each(publicPages)('$file has complete page-specific sharing metadata', ({ file, canonical, noindex }) => {

@@ -18,7 +18,7 @@ date: 2026-07-20
 | Primary outcome | The public backend exposes a stable server composition API that defaults to `NoopProvider`, while a separate private checkout can build a prediction-enabled backend binary by supplying a real `predictor.Provider`. |
 | Authority hierarchy | Public/private leakage boundary first; deployable private backend second; backward-compatible public backend behavior third. |
 | Execution profile | Cross-repo integration plan: public repo package extraction and tests first, private provider repo bootstrap second. |
-| Stop conditions | Do not publish real model formulas, thresholds, training SQL, feature importance, customer data, private provider names, or private repo URLs in public tracked files. |
+| Stop conditions | Do not publish proprietary prediction internals or private deployment material in public tracked files. |
 
 ---
 
@@ -93,8 +93,8 @@ The private repo needs a minimal first provider implementation that proves the d
 
 #### Outside This Product's Public Identity
 
-- Publishing raw feature formulas, scoring cutoffs, model-family details, or training SQL.
-- Naming private repository URLs or customer-specific artifacts in public tracked files.
+- Publishing proprietary prediction internals or private deployment material.
+- Naming private repository locations or private evaluation artifacts in public tracked files.
 - Treating checkpoint predictions as guaranteed OOM, timeout, or failure outcomes.
 
 ---
@@ -107,7 +107,7 @@ The private repo needs a minimal first provider implementation that proves the d
 - KTD2. **Keep `backend/main.go` no-op and boring.** The public binary should call the same server package with `predictor.NoopProvider{}` so public behavior remains the default and is easy to audit.
 - KTD3. **Private repo builds a separate backend binary, not a plugin loaded by the public binary.** A separate binary avoids runtime plugin loading complexity, avoids private dependencies in public builds, and works cleanly with Cloud Run/container deploys.
 - KTD4. **Use deterministic private bootstrap logic before real modeling.** The first private provider should prove wiring, checkpoint idempotency, and deployment shape with synthetic-safe logic before model iteration begins.
-- KTD5. **Public docs stay generic.** The public repo may document package names, env vars, and provider contracts, but not exact private repo URLs, private provider identifiers, thresholds, feature weights, or model names.
+- KTD5. **Public docs stay generic.** The public repo may document package names, env vars, and provider contracts, but not non-public implementation or deployment details.
 - KTD6. **Private provider imports only public packages.** If private code needs a type that is still under `backend/internal`, the fix belongs in the public contract, not in a workaround.
 
 ### High-Level Technical Design
@@ -213,7 +213,7 @@ The new public server package should be intentionally small:
 - **Requirements:** R6, R7, R8, R11, AE2, AE3.
 - **Dependencies:** U3.
 - **Files:** Private provider repo: `internal/provider/provider.go`, `internal/provider/provider_test.go`, `testdata/synthetic-run.json` or equivalent synthetic fixture.
-- **Approach:** Implement conservative deterministic behavior that maps synthetic telemetry into public-safe labels such as `low`, `elevated`, `unknown`, and `memory pressure`, without encoding production thresholds or formulas. Add explicit error-path behavior for malformed snapshots.
+- **Approach:** Implement conservative deterministic behavior that maps synthetic telemetry into public-safe labels without encoding proprietary prediction internals. Add explicit error-path behavior for malformed snapshots.
 - **Patterns to follow:** Return the existing public `PredictionCheckpoint` shape. Let the public handler convert provider errors to generic checkpoint errors instead of surfacing private error text.
 - **Test scenarios:**
   - Provider returns a `ready` checkpoint for a valid synthetic snapshot.
@@ -278,4 +278,4 @@ The new public server package should be intentionally small:
 - A private smoke path can store and return at least one public-safe checkpoint through the existing `/runs/{runId}` response.
 - Public verification passes without private repo access.
 - Private verification passes separately.
-- Public tracked files do not name private repository URLs, private model internals, scoring cutoffs, training SQL, feature formulas, customer data, or abandoned experimental code.
+- Public tracked files do not name proprietary prediction internals, private repository locations, private evaluation artifacts, or abandoned experimental code.
