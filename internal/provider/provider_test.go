@@ -112,6 +112,39 @@ func TestProviderReturnsHighRiskForCompoundingRuntimeSignals(t *testing.T) {
 	}
 }
 
+func TestProviderSkipsExistingCheckpointWindow(t *testing.T) {
+	now := time.Unix(456, 0).UTC()
+	checkpoint, err := New(Config{}).Predict(context.Background(), predictor.RunSnapshot{
+		RunID: "run-duplicate",
+		Now:   now,
+		Samples: []predictor.Sample{
+			{ElapsedTime: 300, RSS: 1024},
+		},
+		ExistingCheckpoints: []predictor.PredictionCheckpoint{
+			{ObservationWindowS: 300, Status: "ready"},
+		},
+	}, 300)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if checkpoint.Status != "skipped" {
+		t.Fatalf("Status = %q, want skipped", checkpoint.Status)
+	}
+	if checkpoint.ObservationWindowS != 300 {
+		t.Fatalf("ObservationWindowS = %d, want 300", checkpoint.ObservationWindowS)
+	}
+	if checkpoint.RiskScore != nil || checkpoint.PredictedPeakRSSMB != nil || checkpoint.PredictedDurationS != nil {
+		t.Fatalf("duplicate checkpoint exposed scored fields: %+v", checkpoint)
+	}
+	if len(checkpoint.Signals) != 0 {
+		t.Fatalf("Signals = %v, want none", checkpoint.Signals)
+	}
+	if !checkpoint.CreatedAt.Equal(now) {
+		t.Fatalf("CreatedAt = %v, want %v", checkpoint.CreatedAt, now)
+	}
+}
+
 func TestProviderReturnsErrorForEmptySnapshot(t *testing.T) {
 	_, err := New(Config{}).Predict(context.Background(), predictor.RunSnapshot{}, 30)
 	if err == nil {

@@ -33,7 +33,7 @@ on:
       checkpoints:
         description: Comma-separated prediction checkpoints in seconds
         required: true
-        default: 30,60,180
+        default: 60,300,600,1200
         type: string
       provider_id:
         description: Opaque provider identifier stored with public-safe checkpoints
@@ -62,7 +62,7 @@ env:
   DEPLOY_SERVICE: ${{ inputs.service || vars.CLOUD_RUN_SERVICE || 'bpw-predictive-backend' }}
   DEPLOY_ARTIFACT_REGISTRY_REPOSITORY: ${{ inputs.artifact_registry_repository || vars.ARTIFACT_REGISTRY_REPOSITORY || 'bpw-private' }}
   DEPLOY_IMAGE_NAME: ${{ inputs.image_name || vars.IMAGE_NAME || 'predictive-backend' }}
-  DEPLOY_CHECKPOINTS: ${{ inputs.checkpoints || vars.PREDICTIVE_RELIABILITY_CHECKPOINTS || '30,60,180' }}
+  DEPLOY_CHECKPOINTS: ${{ inputs.checkpoints || vars.PREDICTIVE_RELIABILITY_CHECKPOINTS || '60,300,600,1200' }}
   DEPLOY_PROVIDER_ID: ${{ inputs.provider_id || vars.PREDICTIVE_PROVIDER_ID || 'private-provider' }}
   DEPLOY_MODEL_VERSION: ${{ inputs.model_version || vars.PREDICTIVE_MODEL_VERSION || 'private-heuristic-v1' }}
   DEPLOY_ALLOW_UNAUTHENTICATED: ${{ inputs.allow_unauthenticated || vars.ALLOW_UNAUTHENTICATED || 'false' }}
@@ -150,35 +150,90 @@ jobs:
             --format=json \
             | jq -e '.status.conditions[] | select(.type == "Ready" and .status == "True")'
 
-          jq -n \
-            --arg run_id "deploy-smoke-${{ github.run_id }}" \
-            --arg provider_id "${{ env.DEPLOY_PROVIDER_ID }}" \
-            --arg model_version "${{ env.DEPLOY_MODEL_VERSION }}" \
-            '{
-              observation_window_s: 30,
-              run_id: $run_id,
-              configured_windows: [30, 60, 180],
-              samples: [
-                {
-                  elapsed_time: 30,
-                  pid: "101",
-                  name: "GradleDaemon",
-                  heap_used: 128,
-                  heap_cap: 512,
-                  rss: 700,
-                  gc_time: 50
-                },
-                {
-                  elapsed_time: 60,
-                  pid: "101",
-                  name: "GradleDaemon",
-                  heap_used: 160,
-                  heap_cap: 512,
-                  rss: 760,
-                  gc_time: 80
-                }
-              ]
-            }' > /tmp/predict-request.json
+          write_request() {
+            local checkpoint="$1"
+            local existing="${2:-[]}"
+            jq -n \
+              --arg run_id "deploy-smoke-${{ github.run_id }}" \
+              --argjson checkpoint "$checkpoint" \
+              --argjson existing "$existing" \
+              '{
+                observation_window_s: $checkpoint,
+                run_id: $run_id,
+                configured_windows: [60, 300, 600, 1200],
+                existing_checkpoints: $existing,
+                samples: [
+                  {
+                    elapsed_time: 60,
+                    pid: "101",
+                    name: "GradleDaemon",
+                    heap_used: 128,
+                    heap_cap: 512,
+                    rss: 700,
+                    gc_time: 50
+                  },
+                  {
+                    elapsed_time: 300,
+                    pid: "101",
+                    name: "GradleDaemon",
+                    heap_used: 180,
+                    heap_cap: 512,
+                    rss: 820,
+                    gc_time: 100
+                  },
+                  {
+                    elapsed_time: 600,
+                    pid: "101",
+                    name: "GradleDaemon",
+                    heap_used: 220,
+                    heap_cap: 512,
+                    rss: 980,
+                    gc_time: 160
+                  },
+                  {
+                    elapsed_time: 1200,
+                    pid: "101",
+                    name: "GradleDaemon",
+                    heap_used: 260,
+                    heap_cap: 512,
+                    rss: 1200,
+                    gc_time: 220
+                  }
+                ]
+              }' > "/tmp/predict-request-${checkpoint}.json"
+          }
+
+          call_predict() {
+            local checkpoint="$1"
+            for attempt in {1..30}; do
+              if curl --fail --silent --show-error \
+                -H "Content-Type: application/json" \
+                --data "@/tmp/predict-request-${checkpoint}.json" \
+                "$SMOKE_URL/predict" >"/tmp/predict-response-${checkpoint}.json" 2>/tmp/predict-curl.err; then
+                return 0
+              fi
+              sleep 1
+            done
+            return 1
+          }
+
+          assert_ready_checkpoint() {
+            local checkpoint="$1"
+            jq -e \
+              --argjson checkpoint "$checkpoint" \
+              --arg provider_id "${{ env.DEPLOY_PROVIDER_ID }}" \
+              --arg model_version "${{ env.DEPLOY_MODEL_VERSION }}" \
+              '.checkpoint.status == "ready"
+                and .checkpoint.observation_window_s == $checkpoint
+                and (.checkpoint.risk_level | length > 0)
+                and (.checkpoint.confidence | length > 0)
+                and (.checkpoint.predicted_peak_rss_mb | type == "number")
+                and (.checkpoint.predicted_duration_s | type == "number")
+                and (.checkpoint.signals | type == "array" and length > 0)
+                and .checkpoint.provider_id == $provider_id
+                and .checkpoint.model_version == $model_version' \
+              "/tmp/predict-response-${checkpoint}.json"
+          }
 
           if [ "${{ env.DEPLOY_ALLOW_UNAUTHENTICATED }}" != "true" ]; then
             SMOKE_URL="http://127.0.0.1:18080"
@@ -194,16 +249,8 @@ jobs:
             PROXY_PID="$!"
             trap 'kill "$PROXY_PID" 2>/dev/null || true' EXIT
 
-            for attempt in {1..30}; do
-              if curl --fail --silent --show-error \
-                -H "Content-Type: application/json" \
-                --data @/tmp/predict-request.json \
-                "$SMOKE_URL/predict" >/tmp/predict-response.json 2>/tmp/predict-curl.err; then
-                break
-              fi
-              sleep 1
-            done
-            if [ ! -s /tmp/predict-response.json ]; then
+            write_request 60
+            if ! call_predict 60; then
               cat /tmp/cloud-run-proxy.log
               cat /tmp/predict-curl.err
               exit 1
@@ -211,17 +258,31 @@ jobs:
           else
             curl --fail --silent --show-error "$SMOKE_URL/healthz" >/tmp/health-response.json
             jq -e '.status == "healthy"' /tmp/health-response.json
-            curl --fail --silent --show-error \
-              -H "Content-Type: application/json" \
-              --data @/tmp/predict-request.json \
-              "$SMOKE_URL/predict" >/tmp/predict-response.json
+            write_request 60
+            call_predict 60
           fi
 
+          assert_ready_checkpoint 60
+
+          existing_checkpoints="$(jq -s '[.[].checkpoint]' /tmp/predict-response-60.json)"
+          for checkpoint in 300 600 1200; do
+            write_request "$checkpoint" "$existing_checkpoints"
+            call_predict "$checkpoint"
+            assert_ready_checkpoint "$checkpoint"
+            existing_checkpoints="$(jq -n \
+              --argjson existing "$existing_checkpoints" \
+              --slurpfile response "/tmp/predict-response-${checkpoint}.json" \
+              '$existing + [$response[0].checkpoint]')"
+          done
+
+          write_request 300 "$existing_checkpoints"
+          call_predict 300
           jq -e \
-            --arg provider_id "${{ env.DEPLOY_PROVIDER_ID }}" \
-            --arg model_version "${{ env.DEPLOY_MODEL_VERSION }}" \
-            '.checkpoint.status == "ready"
-              and .checkpoint.observation_window_s == 30
-              and .checkpoint.provider_id == $provider_id
-              and .checkpoint.model_version == $model_version' \
-            /tmp/predict-response.json
+            '.checkpoint.status == "skipped"
+              and .checkpoint.observation_window_s == 300
+              and .checkpoint.message == "checkpoint already evaluated"
+              and (.checkpoint.risk_score | not)
+              and (.checkpoint.predicted_peak_rss_mb | not)
+              and (.checkpoint.predicted_duration_s | not)
+              and (.checkpoint.signals | not)' \
+            /tmp/predict-response-300.json
