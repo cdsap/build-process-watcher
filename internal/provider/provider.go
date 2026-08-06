@@ -54,13 +54,25 @@ func New(config Config) *Provider {
 
 // Predict returns a public-safe checkpoint from private scoring signals.
 func (p *Provider) Predict(_ context.Context, snapshot predictor.RunSnapshot, observationWindowS int) (predictor.PredictionCheckpoint, error) {
-	if len(snapshot.Samples) == 0 {
-		return predictor.PredictionCheckpoint{}, errors.New("snapshot has no samples")
-	}
-
 	now := snapshot.Now
 	if now.IsZero() {
 		now = time.Now()
+	}
+
+	for _, checkpoint := range snapshot.ExistingCheckpoints {
+		if checkpoint.ObservationWindowS == observationWindowS {
+			return predictor.PredictionCheckpoint{
+				ObservationWindowS: observationWindowS,
+				Status:             "skipped",
+				ProviderID:         p.providerID,
+				CreatedAt:          now,
+				Message:            "checkpoint already evaluated",
+			}, nil
+		}
+	}
+
+	if len(snapshot.Samples) == 0 {
+		return predictor.PredictionCheckpoint{}, errors.New("snapshot has no samples")
 	}
 
 	features := extractFeatures(snapshot)

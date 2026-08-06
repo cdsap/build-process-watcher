@@ -61,11 +61,20 @@ func (s *Server) predict(w http.ResponseWriter, r *http.Request) {
 	checkpoint, err := s.provider.Predict(r.Context(), req.toSnapshot(s.now()), req.ObservationWindowS)
 	if err != nil {
 		log.Printf("prediction failed for run %q checkpoint %ds: %v", req.RunID, req.ObservationWindowS, err)
-		http.Error(w, "prediction failed", http.StatusUnprocessableEntity)
+		writeJSON(w, http.StatusOK, PredictResponse{Checkpoint: skippedCheckpoint(req.ObservationWindowS, s.now())})
 		return
 	}
 
 	writeJSON(w, http.StatusOK, PredictResponse{Checkpoint: checkpoint})
+}
+
+func skippedCheckpoint(observationWindowS int, now time.Time) predictor.PredictionCheckpoint {
+	return predictor.PredictionCheckpoint{
+		ObservationWindowS: observationWindowS,
+		Status:             "skipped",
+		CreatedAt:          now,
+		Message:            "prediction provider unavailable",
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

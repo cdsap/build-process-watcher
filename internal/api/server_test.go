@@ -2,12 +2,16 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/cdsap/build-process-watcher-predictive-provider/internal/provider"
+	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
 
 func TestHealthReturnsHealthy(t *testing.T) {
@@ -102,11 +106,15 @@ func TestPredictRejectsInvalidRequest(t *testing.T) {
 	}
 }
 
-func TestPredictReturnsUnprocessableWhenProviderCannotScore(t *testing.T) {
-	server := NewServer(provider.New(provider.Config{}))
+func TestPredictReturnsSkippedCheckpointWhenProviderCannotScore(t *testing.T) {
+	server := NewServer(errorProvider{err: errors.New("private backend timeout: model secret details")})
+	server.now = func() time.Time { return time.Unix(789, 0).UTC() }
 	body := PredictRequest{
-		ObservationWindowS: 30,
+		ObservationWindowS: 300,
 		RunID:              "run-empty",
+		Samples: []Sample{
+			{ElapsedTime: 300, RSS: 1024},
+		},
 	}
 	payload, err := json.Marshal(body)
 	if err != nil {
@@ -117,7 +125,38 @@ func TestPredictReturnsUnprocessableWhenProviderCannotScore(t *testing.T) {
 
 	server.Handler().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnprocessableEntity)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
+	var response PredictResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := response.Checkpoint
+	if checkpoint.Status != "skipped" {
+		t.Fatalf("status = %q, want skipped", checkpoint.Status)
+	}
+	if checkpoint.ObservationWindowS != 300 {
+		t.Fatalf("observation window = %d, want 300", checkpoint.ObservationWindowS)
+	}
+	if checkpoint.Message != "prediction provider unavailable" {
+		t.Fatalf("message = %q, want generic unavailable message", checkpoint.Message)
+	}
+	if checkpoint.RiskLevel != "" || checkpoint.Confidence != "" || checkpoint.ProviderID != "" || checkpoint.ModelVersion != "" {
+		t.Fatalf("checkpoint leaked provider/model fields: %+v", checkpoint)
+	}
+	if checkpoint.RiskScore != nil || checkpoint.PredictedPeakRSSMB != nil || checkpoint.PredictedDurationS != nil {
+		t.Fatalf("checkpoint leaked scored fields: %+v", checkpoint)
+	}
+	if !checkpoint.CreatedAt.Equal(time.Unix(789, 0).UTC()) {
+		t.Fatalf("created at = %v, want fixed test time", checkpoint.CreatedAt)
+	}
+}
+
+type errorProvider struct {
+	err error
+}
+
+func (p errorProvider) Predict(context.Context, predictor.RunSnapshot, int) (predictor.PredictionCheckpoint, error) {
+	return predictor.PredictionCheckpoint{}, p.err
 }

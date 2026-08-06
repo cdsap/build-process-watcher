@@ -127,7 +127,7 @@ Manual workflow inputs define the public-safe runtime configuration. Automatic `
 - `CLOUD_RUN_SERVICE`: Cloud Run service name. Defaults to `bpw-predictive-backend`.
 - `ARTIFACT_REGISTRY_REPOSITORY`: Artifact Registry Docker repository. Defaults to `bpw-private`.
 - `IMAGE_NAME`: container image name. Defaults to `predictive-backend`.
-- `PREDICTIVE_RELIABILITY_CHECKPOINTS`: comma-separated checkpoint windows. Defaults to `30,60,180`.
+- `PREDICTIVE_RELIABILITY_CHECKPOINTS`: comma-separated checkpoint windows. Defaults to `60,300,600,1200`.
 - `PREDICTIVE_PROVIDER_ID`: opaque provider identifier stored with public-safe checkpoints. Defaults to `private-provider`.
 - `PREDICTIVE_MODEL_VERSION`: opaque model version stored with public-safe checkpoints. Defaults to `private-heuristic-v1`.
 - `ALLOW_UNAUTHENTICATED`: whether Cloud Run accepts unauthenticated HTTP requests. Defaults to `false`; production should keep this false.
