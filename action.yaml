@@ -31,7 +31,7 @@ inputs:
     required: false
     default: 'false'
   predictive_reliability:
-    description: "Opt in to private predictive reliability checkpoints; this enables remote_monitoring and export_to_bigquery for the run (requires the hosted backend to be configured with a private provider)"
+    description: "Opt in to advisory predictive reliability checkpoints; this enables remote_monitoring and export_to_bigquery for the run when the hosted backend supports predictions"
     required: false
     default: 'false'
 
@@ -47,7 +47,7 @@ outputs:
   export_to_bigquery:
     description: 'Whether optional BigQuery metrics export was requested for this run (backend must be configured with BIGQUERY_EXPORT_DATASET)'
   predictive_reliability:
-    description: 'Whether private predictive reliability checkpoints were requested for this run'
+    description: 'Whether advisory predictive reliability checkpoints were requested for this run'
 
 branding:
   icon: "activity"
