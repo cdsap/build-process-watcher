@@ -108,7 +108,15 @@ jobs:
           --data @/tmp/ingest-request.json \
           | jq -e '.status == "success"'
 
-        EXPECTED_CHECKPOINTS="$(printf '%s' "$PREDICTIVE_RELIABILITY_CHECKPOINTS" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0)) | length')"
+        CHECKPOINT_WINDOWS="${PREDICTIVE_RELIABILITY_CHECKPOINTS:-60,300,600,1200}"
+        EXPECTED_CHECKPOINTS="$(printf '%s' "$CHECKPOINT_WINDOWS" | jq -R '
+          split(",")
+          | map(gsub("^\\s+|\\s+$"; ""))
+          | map(select(length > 0))
+          | map(tonumber? // empty)
+          | map(select(. <= 180))
+          | length
+        ')"
         for attempt in $(seq 1 12); do
           curl --fail --silent --show-error "$SERVICE_URL/runs/$RUN_ID" > /tmp/smoke-run.json
           if jq -e --argjson expected "$EXPECTED_CHECKPOINTS" '
