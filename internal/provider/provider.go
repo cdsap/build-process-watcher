@@ -2,9 +2,11 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,22 +20,25 @@ const (
 
 // Config holds private provider configuration.
 type Config struct {
-	ProviderID   string
-	ModelVersion string
+	ProviderID     string
+	ModelVersion   string
+	PromotedModels map[int]string
 }
 
 // ConfigFromEnv reads private provider metadata from environment variables.
 func ConfigFromEnv() Config {
 	return Config{
-		ProviderID:   strings.TrimSpace(os.Getenv("PREDICTIVE_PROVIDER_ID")),
-		ModelVersion: strings.TrimSpace(os.Getenv("PREDICTIVE_MODEL_VERSION")),
+		ProviderID:     strings.TrimSpace(os.Getenv("PREDICTIVE_PROVIDER_ID")),
+		ModelVersion:   strings.TrimSpace(os.Getenv("PREDICTIVE_MODEL_VERSION")),
+		PromotedModels: parsePromotedModels(os.Getenv("PREDICTIVE_PROMOTED_MODELS")),
 	}
 }
 
 // Provider implements the public Build Process Watcher prediction contract.
 type Provider struct {
-	providerID   string
-	modelVersion string
+	providerID     string
+	modelVersion   string
+	promotedModels map[int]string
 }
 
 // New creates a private predictive reliability provider.
@@ -46,10 +51,82 @@ func New(config Config) *Provider {
 	if modelVersion == "" {
 		modelVersion = defaultModelVersion
 	}
-	return &Provider{
-		providerID:   providerID,
-		modelVersion: modelVersion,
+	promotedModels := config.PromotedModels
+	if promotedModels == nil {
+		promotedModels = map[int]string{}
 	}
+	return &Provider{
+		providerID:     providerID,
+		modelVersion:   modelVersion,
+		promotedModels: promotedModels,
+	}
+}
+
+func (p *Provider) modelVersionForWindow(observationWindowS int) string {
+	if version := strings.TrimSpace(p.promotedModels[observationWindowS]); version != "" {
+		return version
+	}
+	return p.modelVersion
+}
+
+// parsePromotedModels accepts JSON object/array registry shapes or comma-separated
+// window:version pairs produced by private model refresh promotion metadata.
+func parsePromotedModels(raw string) map[int]string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return map[int]string{}
+	}
+
+	versions := map[int]string{}
+	if strings.HasPrefix(raw, "{") {
+		var object map[string]string
+		if err := json.Unmarshal([]byte(raw), &object); err == nil {
+			for key, value := range object {
+				window, err := strconv.Atoi(strings.TrimSpace(key))
+				if err != nil || window <= 0 || strings.TrimSpace(value) == "" {
+					continue
+				}
+				versions[window] = strings.TrimSpace(value)
+			}
+			return versions
+		}
+		var registry struct {
+			Models []struct {
+				ObservationWindowS int    `json:"observation_window_s"`
+				ModelVersion       string `json:"model_version"`
+			} `json:"models"`
+		}
+		if err := json.Unmarshal([]byte(raw), &registry); err == nil {
+			for _, model := range registry.Models {
+				if model.ObservationWindowS <= 0 || strings.TrimSpace(model.ModelVersion) == "" {
+					continue
+				}
+				versions[model.ObservationWindowS] = strings.TrimSpace(model.ModelVersion)
+			}
+			return versions
+		}
+	}
+
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		windowText, version, ok := strings.Cut(part, ":")
+		if !ok {
+			continue
+		}
+		window, err := strconv.Atoi(strings.TrimSpace(windowText))
+		if err != nil || window <= 0 {
+			continue
+		}
+		version = strings.TrimSpace(version)
+		if version == "" {
+			continue
+		}
+		versions[window] = version
+	}
+	return versions
 }
 
 // Predict returns a public-safe checkpoint from private scoring signals.
@@ -75,6 +152,7 @@ func (p *Provider) Predict(_ context.Context, snapshot predictor.RunSnapshot, ob
 		return predictor.PredictionCheckpoint{}, errors.New("snapshot has no samples")
 	}
 
+	modelVersion := p.modelVersionForWindow(observationWindowS)
 	features := extractFeatures(snapshot)
 	if features.peakRSSMB == 0 {
 		return predictor.PredictionCheckpoint{
@@ -84,7 +162,7 @@ func (p *Provider) Predict(_ context.Context, snapshot predictor.RunSnapshot, ob
 			Confidence:         "low",
 			Signals:            []string{"insufficient memory signal"},
 			ProviderID:         p.providerID,
-			ModelVersion:       p.modelVersion,
+			ModelVersion:       modelVersion,
 			CreatedAt:          now,
 			Message:            "private predictive provider evaluated limited telemetry",
 		}, nil
@@ -107,7 +185,7 @@ func (p *Provider) Predict(_ context.Context, snapshot predictor.RunSnapshot, ob
 		PredictedDurationS: &predictedDuration,
 		Signals:            signals,
 		ProviderID:         p.providerID,
-		ModelVersion:       p.modelVersion,
+		ModelVersion:       modelVersion,
 		CreatedAt:          now,
 		Message:            "private predictive provider evaluated runtime telemetry",
 	}, nil

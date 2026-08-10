@@ -1,0 +1,28 @@
+{
+  "models": [
+    {
+      "observation_window_s": 60,
+      "model_version": "cp-60s-fixture-old",
+      "model_set_version": "fixture-set-old",
+      "promoted_at": "2026-08-01T00:00:00Z"
+    },
+    {
+      "observation_window_s": 300,
+      "model_version": "cp-300s-fixture-old",
+      "model_set_version": "fixture-set-old",
+      "promoted_at": "2026-08-01T00:00:00Z"
+    },
+    {
+      "observation_window_s": 600,
+      "model_version": "cp-600s-fixture-old",
+      "model_set_version": "fixture-set-old",
+      "promoted_at": "2026-08-01T00:00:00Z"
+    },
+    {
+      "observation_window_s": 1200,
+      "model_version": "cp-1200s-fixture-old",
+      "model_set_version": "fixture-set-old",
+      "promoted_at": "2026-08-01T00:00:00Z"
+    }
+  ]
+}

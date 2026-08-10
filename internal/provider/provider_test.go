@@ -151,3 +151,51 @@ func TestProviderReturnsErrorForEmptySnapshot(t *testing.T) {
 		t.Fatal("expected error for empty snapshot")
 	}
 }
+
+func TestProviderUsesPromotedModelVersionPerCheckpoint(t *testing.T) {
+	provider := New(Config{
+		ProviderID:   "provider-test",
+		ModelVersion: "fallback-version",
+		PromotedModels: map[int]string{
+			60:  "cp-60s-live",
+			300: "cp-300s-live",
+		},
+	})
+
+	first, err := provider.Predict(context.Background(), predictor.RunSnapshot{
+		Samples: []predictor.Sample{{ElapsedTime: 60, RSS: 1024}},
+	}, 60)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ModelVersion != "cp-60s-live" {
+		t.Fatalf("60s ModelVersion = %q, want cp-60s-live", first.ModelVersion)
+	}
+
+	second, err := provider.Predict(context.Background(), predictor.RunSnapshot{
+		Samples: []predictor.Sample{{ElapsedTime: 600, RSS: 1024}},
+	}, 600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.ModelVersion != "fallback-version" {
+		t.Fatalf("600s ModelVersion = %q, want fallback-version", second.ModelVersion)
+	}
+}
+
+func TestParsePromotedModelsSupportsRegistryJSON(t *testing.T) {
+	versions := parsePromotedModels(`{"models":[{"observation_window_s":60,"model_version":"cp-60s-a"},{"observation_window_s":300,"model_version":"cp-300s-a"}]}`)
+	if versions[60] != "cp-60s-a" || versions[300] != "cp-300s-a" {
+		t.Fatalf("versions = %#v", versions)
+	}
+
+	versions = parsePromotedModels(`{"60":"cp-60s-b","1200":"cp-1200s-b"}`)
+	if versions[60] != "cp-60s-b" || versions[1200] != "cp-1200s-b" {
+		t.Fatalf("object versions = %#v", versions)
+	}
+
+	versions = parsePromotedModels("60:cp-60s-c,300:cp-300s-c")
+	if versions[60] != "cp-60s-c" || versions[300] != "cp-300s-c" {
+		t.Fatalf("csv versions = %#v", versions)
+	}
+}

@@ -1,0 +1,54 @@
+{
+  "model_set_version": "fixture-set-mixed",
+  "checkpoints": [
+    {
+      "observation_window_s": 60,
+      "cohort_size": 5,
+      "sparse": false,
+      "peak_rss_mape": 0.18,
+      "duration_mape": 0.21,
+      "risk_accuracy_rate": 0.82,
+      "baseline_peak_rss_mape": 0.28,
+      "baseline_duration_mape": 0.30,
+      "baseline_risk_accuracy_rate": 0.60,
+      "candidate_model_version": "cp-60s-fixture-new"
+    },
+    {
+      "observation_window_s": 300,
+      "cohort_size": 5,
+      "sparse": false,
+      "peak_rss_mape": 0.17,
+      "duration_mape": 0.19,
+      "risk_accuracy_rate": 0.84,
+      "baseline_peak_rss_mape": 0.27,
+      "baseline_duration_mape": 0.29,
+      "baseline_risk_accuracy_rate": 0.60,
+      "candidate_model_version": "cp-300s-fixture-new"
+    },
+    {
+      "observation_window_s": 600,
+      "cohort_size": 2,
+      "sparse": true,
+      "peak_rss_mape": 0.20,
+      "duration_mape": 0.22,
+      "risk_accuracy_rate": 0.80,
+      "baseline_peak_rss_mape": 0.30,
+      "baseline_duration_mape": 0.30,
+      "baseline_risk_accuracy_rate": 0.60,
+      "candidate_model_version": "cp-600s-fixture-new",
+      "notes": ["sparse coverage called out by quality report"]
+    },
+    {
+      "observation_window_s": 1200,
+      "cohort_size": 1,
+      "sparse": false,
+      "peak_rss_mape": 0.70,
+      "duration_mape": 0.75,
+      "risk_accuracy_rate": 0.20,
+      "baseline_peak_rss_mape": 0.35,
+      "baseline_duration_mape": 0.35,
+      "baseline_risk_accuracy_rate": 0.55,
+      "candidate_model_version": "cp-1200s-fixture-new"
+    }
+  ]
+}

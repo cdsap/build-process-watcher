@@ -15,7 +15,9 @@ This repository owns proprietary model execution, feature derivation, scoring th
 
 - `internal/provider`: private implementation of the public `predictor.Provider` contract.
 - `internal/api`: private HTTP API that exposes health and prediction endpoints for the public backend to call.
+- `internal/promotion`: private model refresh evaluation, independent checkpoint promotion gates, and promotion registry metadata for live scoring.
 - `cmd/predictive-backend`: Cloud Run entrypoint for the private provider API.
+- `cmd/model-refresh`: manual/scheduled dry-run and apply command for refresh and promotion decisions.
 
 The current provider is a private heuristic scorer. It evaluates runtime telemetry for memory pressure, memory growth, heap saturation, GC pressure, and process fanout while keeping the stored checkpoint fields public-safe.
 
@@ -26,6 +28,7 @@ The backend uses these public-safe environment variables:
 - `PORT`
 - `PREDICTIVE_PROVIDER_ID`
 - `PREDICTIVE_MODEL_VERSION`
+- `PREDICTIVE_PROMOTED_MODELS`: optional per-checkpoint promoted model versions for live scoring. Accepts JSON registry shape `{"models":[{"observation_window_s":60,"model_version":"cp-60s-..."}]}`, JSON object `{"60":"cp-60s-..."}`, or comma-separated `60:cp-60s-...,300:cp-300s-...`. When a checkpoint window is absent, `PREDICTIVE_MODEL_VERSION` remains the fallback.
 
 The deployment workflow also accepts `PREDICTIVE_RELIABILITY_CHECKPOINTS` as a Cloud Run environment variable so the public integration can keep checkpoint configuration aligned, but the private `/predict` request carries the checkpoint window to score.
 
@@ -89,6 +92,26 @@ go test ./...
 go build ./cmd/predictive-backend
 ```
 
+Dry-run the automated model refresh and independent promotion gates against fixture quality-report input:
+
+```bash
+go run ./cmd/model-refresh \
+  -dry-run \
+  -report internal/promotion/testdata/quality_report_mixed.json \
+  -registry internal/promotion/testdata/registry_previous.json
+```
+
+The dry-run prints refresh evaluation decisions for each v1 checkpoint window (`60`, `300`, `600`, `1200`), including promote and retain/no-promotion branches. Failed or sparse windows keep the previously promoted model version in the resulting registry metadata.
+
+Apply mode writes the registry artifact used for live scoring:
+
+```bash
+go run ./cmd/model-refresh \
+  -report /path/to/private-quality-report.json \
+  -registry /path/to/promoted-models.json \
+  -out /path/to/promoted-models.json
+```
+
 The local `go.mod` resolves the public `github.com/cdsap/build-process-watcher/backend` module directly from the merged public repository.
 
 ## Container Build
@@ -133,3 +156,40 @@ Manual workflow inputs define the public-safe runtime configuration. Automatic `
 - `ALLOW_UNAUTHENTICATED`: whether Cloud Run accepts unauthenticated HTTP requests. Defaults to `false`; production should keep this false.
 
 Do not put model internals, thresholds, feature formulas, training data locations, or customer-specific tuning in workflow inputs, repository variables, or Cloud Run environment variables.
+
+## Automated Model Refresh And Promotion
+
+Private checkpoint models refresh through:
+
+```text
+.github/workflows/model-refresh.yml
+```
+
+The workflow runs on a weekly schedule and can be started manually. Manual runs default to dry-run against fixture quality-report and registry inputs so promote and retain branches are proven without mutating live state.
+
+Promotion behavior:
+
+- Each checkpoint window is evaluated independently against the private quality gate.
+- A window is promoted only when its quality gate passes and a candidate model version is present.
+- Failed gates or sparse coverage leave the previously promoted model in place.
+- Promotion metadata records `observation_window_s` and `model_version` for live scoring via `PREDICTIVE_PROMOTED_MODELS`.
+
+### Required secrets and configuration
+
+For apply-mode refresh against private training/quality data, configure the same GitHub OIDC deploy trust used by Cloud Run plus a training/quality service account:
+
+- `GCP_WORKLOAD_IDENTITY_PROVIDER`: full Workload Identity Provider resource name.
+- `GCP_TRAINING_SERVICE_ACCOUNT`: service account email allowed to read private quality-report inputs and write promotion registry artifacts in the private GCP project.
+- Repository variable or workflow input paths for the private quality report and current promotion registry locations.
+
+The training service account should be limited to the private dataset/object paths required for refresh and promotion metadata. Do not store model SQL, feature formulas, thresholds, or customer identifiers in GitHub variables.
+
+Until those secrets and live quality-report paths are wired, scheduled runs remain dry-run and use the checked-in fixture report/registry pair.
+
+### Rollback
+
+Rollback is per checkpoint and does not require redeploying every window:
+
+1. Automatic: a failed or sparse refresh keeps the previous promoted model version for that window, so live scoring continues on the last good version.
+2. Manual: restore the previous `promoted-models.json` registry artifact (or set `PREDICTIVE_PROMOTED_MODELS` to the prior window/version map) and redeploy or update the Cloud Run service env var.
+3. Fallback: clear a window from `PREDICTIVE_PROMOTED_MODELS` to fall back to `PREDICTIVE_MODEL_VERSION` for that checkpoint only.

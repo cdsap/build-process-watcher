@@ -1,0 +1,131 @@
+name: Model Refresh
+
+on:
+  schedule:
+    # Weekly Monday refresh cadence for private checkpoint models.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Evaluate refresh and promotion gates without writing a registry artifact
+        required: true
+        default: true
+        type: boolean
+      quality_report_path:
+        description: Path to a private quality report JSON (fixture path is valid for dry-run)
+        required: true
+        default: internal/promotion/testdata/quality_report_mixed.json
+        type: string
+      registry_path:
+        description: Path to the current promotion registry JSON
+        required: true
+        default: internal/promotion/testdata/registry_previous.json
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  GONOSUMDB: github.com/cdsap/build-process-watcher/backend
+
+jobs:
+  refresh:
+    name: Refresh and promote checkpoint models
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Resolve refresh mode
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "dry_run=${{ inputs.dry_run }}" >> "$GITHUB_OUTPUT"
+            echo "report=${{ inputs.quality_report_path }}" >> "$GITHUB_OUTPUT"
+            echo "registry=${{ inputs.registry_path }}" >> "$GITHUB_OUTPUT"
+          else
+            # Scheduled runs stay dry-run until live quality-report + secret-backed
+            # training refresh credentials are wired for apply mode.
+            echo "dry_run=true" >> "$GITHUB_OUTPUT"
+            echo "report=internal/promotion/testdata/quality_report_mixed.json" >> "$GITHUB_OUTPUT"
+            echo "registry=internal/promotion/testdata/registry_previous.json" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run model refresh
+        id: refresh
+        env:
+          DRY_RUN: ${{ steps.mode.outputs.dry_run }}
+          REPORT_PATH: ${{ steps.mode.outputs.report }}
+          REGISTRY_PATH: ${{ steps.mode.outputs.registry }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/model-refresh
+          args=(-report "$REPORT_PATH" -registry "$REGISTRY_PATH")
+          if [ "$DRY_RUN" = "true" ]; then
+            args+=(-dry-run)
+          else
+            args+=(-out /tmp/model-refresh/promoted-models.json)
+          fi
+          go run ./cmd/model-refresh "${args[@]}" | tee /tmp/model-refresh/result.json
+
+      - name: Prove refresh evaluation and promotion branches
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import sys
+
+          with open("/tmp/model-refresh/result.json", encoding="utf-8") as handle:
+              result = json.load(handle)
+
+          decisions = {item["observation_window_s"]: item for item in result["decisions"]}
+          required = {60, 300, 600, 1200}
+          if set(decisions) != required:
+              raise SystemExit(f"unexpected windows: {sorted(decisions)}")
+
+          actions = {window: decisions[window]["action"] for window in required}
+          if "promote" not in actions.values():
+              raise SystemExit(f"missing promote branch: {actions}")
+          if "retain" not in actions.values():
+              raise SystemExit(f"missing retain/no-promotion branch: {actions}")
+
+          # Mixed fixture: 60/300 promote, 600 sparse retain, 1200 failed gate retain.
+          if decisions[60]["action"] != "promote":
+              raise SystemExit(f"60s expected promote, got {decisions[60]}")
+          if decisions[300]["action"] != "promote":
+              raise SystemExit(f"300s expected promote, got {decisions[300]}")
+          if decisions[600]["action"] != "retain":
+              raise SystemExit(f"600s expected retain, got {decisions[600]}")
+          if decisions[1200]["action"] != "retain":
+              raise SystemExit(f"1200s expected retain, got {decisions[1200]}")
+
+          registry = {
+              model["observation_window_s"]: model["model_version"]
+              for model in result["registry"]["models"]
+          }
+          if registry.get(60) != "cp-60s-fixture-new":
+              raise SystemExit(f"60s registry mismatch: {registry}")
+          if registry.get(300) != "cp-300s-fixture-new":
+              raise SystemExit(f"300s registry mismatch: {registry}")
+          if registry.get(600) != "cp-600s-fixture-old":
+              raise SystemExit(f"600s should retain previous model: {registry}")
+          if registry.get(1200) != "cp-1200s-fixture-old":
+              raise SystemExit(f"1200s should retain previous model: {registry}")
+
+          print("refresh dry-run proved promote and retain branches")
+          PY
+
+      - name: Upload refresh artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-refresh-result
+          path: /tmp/model-refresh/
+          if-no-files-found: warn
