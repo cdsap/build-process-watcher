@@ -1,0 +1,112 @@
+name: Model Quality Report
+
+on:
+  schedule:
+    # Weekly Monday quality-report cadence for private checkpoint review.
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      input_path:
+        description: Path to a private finished-run quality fixture or dataset JSON
+        required: true
+        default: internal/quality/testdata/complete.json
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  GONOSUMDB: github.com/cdsap/build-process-watcher/backend
+
+jobs:
+  report:
+    name: Generate private quality report
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Resolve report input
+        id: input
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "path=${{ inputs.input_path }}" >> "$GITHUB_OUTPUT"
+          else
+            # Scheduled runs stay on the checked-in fixture until live private
+            # finished-run dataset paths are wired.
+            echo "path=internal/quality/testdata/complete.json" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate quality report
+        env:
+          INPUT_PATH: ${{ steps.input.outputs.path }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/quality-report
+          go run ./cmd/quality-report \
+            -input "$INPUT_PATH" \
+            -out /tmp/quality-report \
+            -format markdown | tee /tmp/quality-report/stdout.md
+
+      - name: Prove report covers checkpoint windows and sparse callouts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("/tmp/quality-report/quality-report.json").read_text(encoding="utf-8"))
+          markdown = Path("/tmp/quality-report/quality-report.md").read_text(encoding="utf-8")
+          windows = {item["observation_window_s"] for item in report["checkpoints"]}
+          if windows != {60, 300, 600, 1200}:
+              raise SystemExit(f"unexpected windows: {sorted(windows)}")
+          for heading in ("## 60s", "## 5m", "## 10m", "## 20m"):
+              if heading not in markdown:
+                  raise SystemExit(f"missing heading {heading}")
+          if "Baseline peak RSS MAPE" not in markdown:
+              raise SystemExit("missing baseline comparison section")
+          # Fixture-driven sparse proof remains available via workflow_dispatch.
+          print("quality report generated for v1 checkpoint windows")
+          PY
+
+      - name: Prove sparse fixture callout path
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/quality-report-sparse
+          go run ./cmd/quality-report \
+            -input internal/quality/testdata/sparse.json \
+            -out /tmp/quality-report-sparse \
+            -format json > /tmp/quality-report-sparse/stdout.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("/tmp/quality-report-sparse/quality-report.json").read_text(encoding="utf-8"))
+          by_window = {item["observation_window_s"]: item for item in report["checkpoints"]}
+          if by_window[60]["sparse"]:
+              raise SystemExit("60s should not be sparse in sparse fixture")
+          for window in (300, 600, 1200):
+              if not by_window[window]["sparse"]:
+                  raise SystemExit(f"{window}s should be sparse")
+              if "sparse checkpoint coverage" not in by_window[window].get("notes", []):
+                  raise SystemExit(f"{window}s missing sparse note")
+          markdown = Path("/tmp/quality-report-sparse/quality-report.md").read_text(encoding="utf-8")
+          if "Coverage: sparse checkpoint coverage" not in markdown:
+              raise SystemExit("sparse markdown missing coverage callout")
+          print("sparse coverage callout proven")
+          PY
+
+      - name: Upload private quality-report artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-quality-report
+          path: /tmp/quality-report/
+          if-no-files-found: warn

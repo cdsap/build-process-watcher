@@ -1,0 +1,174 @@
+{
+  "model_set_version": "fixture-set-complete",
+  "min_cohort": 3,
+  "runs": [
+    {
+      "checkpoints": [
+        {
+          "observation_window_s": 60,
+          "predicted_peak_rss_mb": 2500,
+          "predicted_duration_s": 1450,
+          "predicted_risk": "elevated",
+          "baseline_peak_rss_mb": 2900,
+          "baseline_duration_s": 1700,
+          "baseline_risk": "high",
+          "actual_peak_rss_mb": 2600,
+          "actual_duration_s": 1500,
+          "actual_risk": "elevated",
+          "candidate_model_version": "cp-60s-fixture"
+        },
+        {
+          "observation_window_s": 300,
+          "predicted_peak_rss_mb": 2520,
+          "predicted_duration_s": 1460,
+          "predicted_risk": "elevated",
+          "baseline_peak_rss_mb": 2910,
+          "baseline_duration_s": 1710,
+          "baseline_risk": "high",
+          "actual_peak_rss_mb": 2600,
+          "actual_duration_s": 1500,
+          "actual_risk": "elevated",
+          "candidate_model_version": "cp-300s-fixture"
+        },
+        {
+          "observation_window_s": 600,
+          "predicted_peak_rss_mb": 2540,
+          "predicted_duration_s": 1470,
+          "predicted_risk": "elevated",
+          "baseline_peak_rss_mb": 2920,
+          "baseline_duration_s": 1720,
+          "baseline_risk": "high",
+          "actual_peak_rss_mb": 2600,
+          "actual_duration_s": 1500,
+          "actual_risk": "elevated",
+          "candidate_model_version": "cp-600s-fixture"
+        },
+        {
+          "observation_window_s": 1200,
+          "predicted_peak_rss_mb": 2560,
+          "predicted_duration_s": 1480,
+          "predicted_risk": "elevated",
+          "baseline_peak_rss_mb": 2930,
+          "baseline_duration_s": 1730,
+          "baseline_risk": "high",
+          "actual_peak_rss_mb": 2600,
+          "actual_duration_s": 1500,
+          "actual_risk": "elevated",
+          "candidate_model_version": "cp-1200s-fixture"
+        }
+      ]
+    },
+    {
+      "checkpoints": [
+        {
+          "observation_window_s": 60,
+          "predicted_peak_rss_mb": 2480,
+          "predicted_duration_s": 1440,
+          "predicted_risk": "elevated",
+          "baseline_peak_rss_mb": 2880,
+          "baseline_duration_s": 1690,
+          "baseline_risk": "high",
+          "actual_peak_rss_mb": 2550,
+          "actual_duration_s": 1480,
+          "actual_risk": "elevated",
+          "candidate_model_version": "cp-60s-fixture"
+        },
+        {
+          "observation_window_s": 300,
+          "predicted_peak_rss_mb": 2500,
+          "predicted_duration_s": 1450,
+          "predicted_risk": "elevated",
+          "baseline_peak_rss_mb": 2890,
+          "baseline_duration_s": 1700,
+          "baseline_risk": "high",
+          "actual_peak_rss_mb": 2550,
+          "actual_duration_s": 1480,
+          "actual_risk": "elevated",
+          "candidate_model_version": "cp-300s-fixture"
+        },
+        {
+          "observation_window_s": 600,
+          "predicted_peak_rss_mb": 2510,
+          "predicted_duration_s": 1460,
+          "predicted_risk": "elevated",
+          "baseline_peak_rss_mb": 2900,
+          "baseline_duration_s": 1710,
+          "baseline_risk": "high",
+          "actual_peak_rss_mb": 2550,
+          "actual_duration_s": 1480,
+          "actual_risk": "elevated",
+          "candidate_model_version": "cp-600s-fixture"
+        },
+        {
+          "observation_window_s": 1200,
+          "predicted_peak_rss_mb": 2530,
+          "predicted_duration_s": 1470,
+          "predicted_risk": "elevated",
+          "baseline_peak_rss_mb": 2910,
+          "baseline_duration_s": 1720,
+          "baseline_risk": "high",
+          "actual_peak_rss_mb": 2550,
+          "actual_duration_s": 1480,
+          "actual_risk": "elevated",
+          "candidate_model_version": "cp-1200s-fixture"
+        }
+      ]
+    },
+    {
+      "checkpoints": [
+        {
+          "observation_window_s": 60,
+          "predicted_peak_rss_mb": 2550,
+          "predicted_duration_s": 1490,
+          "predicted_risk": "elevated",
+          "baseline_peak_rss_mb": 2950,
+          "baseline_duration_s": 1750,
+          "baseline_risk": "high",
+          "actual_peak_rss_mb": 2625,
+          "actual_duration_s": 1520,
+          "actual_risk": "elevated",
+          "candidate_model_version": "cp-60s-fixture"
+        },
+        {
+          "observation_window_s": 300,
+          "predicted_peak_rss_mb": 2560,
+          "predicted_duration_s": 1500,
+          "predicted_risk": "elevated",
+          "baseline_peak_rss_mb": 2960,
+          "baseline_duration_s": 1760,
+          "baseline_risk": "high",
+          "actual_peak_rss_mb": 2625,
+          "actual_duration_s": 1520,
+          "actual_risk": "elevated",
+          "candidate_model_version": "cp-300s-fixture"
+        },
+        {
+          "observation_window_s": 600,
+          "predicted_peak_rss_mb": 2570,
+          "predicted_duration_s": 1510,
+          "predicted_risk": "elevated",
+          "baseline_peak_rss_mb": 2970,
+          "baseline_duration_s": 1770,
+          "baseline_risk": "high",
+          "actual_peak_rss_mb": 2625,
+          "actual_duration_s": 1520,
+          "actual_risk": "elevated",
+          "candidate_model_version": "cp-600s-fixture"
+        },
+        {
+          "observation_window_s": 1200,
+          "predicted_peak_rss_mb": 2580,
+          "predicted_duration_s": 1515,
+          "predicted_risk": "elevated",
+          "baseline_peak_rss_mb": 2980,
+          "baseline_duration_s": 1780,
+          "baseline_risk": "high",
+          "actual_peak_rss_mb": 2625,
+          "actual_duration_s": 1520,
+          "actual_risk": "elevated",
+          "candidate_model_version": "cp-1200s-fixture"
+        }
+      ]
+    }
+  ]
+}

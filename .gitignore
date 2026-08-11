@@ -1,6 +1,11 @@
 # Local build outputs
 /predictive-backend
+/quality-report
 /relprogress-eval
+
+# Generated private quality-report artifacts
+/artifacts/quality-report/
+/tmp-quality-report/
 
 # OS files
 .DS_Store

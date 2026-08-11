@@ -15,9 +15,11 @@ This repository owns proprietary model execution, feature derivation, scoring th
 
 - `internal/provider`: private implementation of the public `predictor.Provider` contract.
 - `internal/api`: private HTTP API that exposes health and prediction endpoints for the public backend to call.
+- `internal/quality`: private recurring quality report over finished-run checkpoint outcomes, including baseline comparison and sparse-coverage callouts.
 - `internal/relprogress`: private relative-progress checkpoint prototype and fixture study (not wired into live `/predict`).
 - `internal/promotion`: private model refresh evaluation, independent checkpoint promotion gates, and promotion registry metadata for live scoring.
 - `cmd/predictive-backend`: Cloud Run entrypoint for the private provider API.
+- `cmd/quality-report`: generates the private markdown/JSON quality report from a controlled finished-run fixture or dataset.
 - `cmd/relprogress-eval`: renders a private relative-progress evaluation report from fixture JSON.
 - `cmd/model-refresh`: manual/scheduled dry-run and apply command for refresh and promotion decisions.
 
@@ -94,6 +96,29 @@ go test ./...
 go build ./cmd/predictive-backend
 ```
 
+Generate the private recurring model quality report against a controlled fixture:
+
+```bash
+mkdir -p artifacts/quality-report
+go run ./cmd/quality-report \
+  -input internal/quality/testdata/complete.json \
+  -out artifacts/quality-report
+```
+
+Sparse and no-promotable-model fixtures are also available for local review:
+
+```bash
+go run ./cmd/quality-report -input internal/quality/testdata/sparse.json -out artifacts/quality-report
+go run ./cmd/quality-report -input internal/quality/testdata/no_promotable.json -out artifacts/quality-report
+```
+
+The command writes private artifacts to the `-out` directory:
+
+- `quality-report.json`: checkpoint quality summary consumed by promotion review
+- `quality-report.md`: human-readable error, risk-class, and baseline comparison report
+
+Generated files under `artifacts/quality-report/` are local/private review outputs and are gitignored. The report summarizes cohort size, prediction MAPE, risk-class accuracy, baseline comparison, sparse coverage, and candidate model presence by checkpoint window. It does not include training corpus details, thresholds, feature formulas, or customer metadata.
+
 Run the private relative-progress fixture study (advisory only; does not change the live provider):
 
 ```bash
@@ -164,6 +189,25 @@ Manual workflow inputs define the public-safe runtime configuration. Automatic `
 - `ALLOW_UNAUTHENTICATED`: whether Cloud Run accepts unauthenticated HTTP requests. Defaults to `false`; production should keep this false.
 
 Do not put model internals, thresholds, feature formulas, training data locations, or customer-specific tuning in workflow inputs, repository variables, or Cloud Run environment variables.
+
+## Recurring Model Quality Report
+
+Private checkpoint quality is reviewed through:
+
+```text
+.github/workflows/quality-report.yml
+```
+
+The workflow runs on a weekly schedule and can be started manually. Until live finished-run dataset paths are wired, scheduled runs use the checked-in complete fixture. Manual runs can point `-input` at another private fixture such as `internal/quality/testdata/sparse.json` or `internal/quality/testdata/no_promotable.json`.
+
+Usage:
+
+1. Produce or select a finished-run evaluation dataset that contains per-checkpoint current-model predictions, simple-baseline predictions, and actual outcomes.
+2. Run `go run ./cmd/quality-report -input <dataset.json> -out artifacts/quality-report`.
+3. Review `artifacts/quality-report/quality-report.md` for per-window error and risk-class quality, baseline comparison, and sparse/no-candidate callouts.
+4. Use `artifacts/quality-report/quality-report.json` as the private quality-report input for promotion gates.
+
+Do not copy generated quality-report artifacts, dataset paths containing customer metadata, thresholds, or feature formulas into the public Build Process Watcher repository.
 
 ## Automated Model Refresh And Promotion
 
