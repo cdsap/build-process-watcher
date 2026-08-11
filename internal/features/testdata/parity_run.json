@@ -1,0 +1,154 @@
+{
+  "run_id": "parity-run-1",
+  "process_info": {
+    "1": {
+      "pid": "1",
+      "name": "GradleDaemon",
+      "vm_flags": ["-XX:MaxRAMPercentage=90"]
+    },
+    "2": {
+      "pid": "2",
+      "name": "KotlinCompileDaemon",
+      "vm_flags": ["-Xmx4g"]
+    }
+  },
+  "samples": [
+    {
+      "run_id": "parity-run-1",
+      "elapsed_time": 60,
+      "pid": "1",
+      "name": "GradleDaemon",
+      "rss": 768,
+      "heap_used": 450,
+      "heap_cap": 1000,
+      "gc_time": 2000,
+      "jit_compiled_methods": 160,
+      "classes_loaded": 10000
+    },
+    {
+      "run_id": "parity-run-1",
+      "elapsed_time": 20,
+      "pid": "1",
+      "name": "GradleDaemon",
+      "rss": 512,
+      "heap_used": 300,
+      "heap_cap": 1000,
+      "gc_time": 1000,
+      "jit_compiled_methods": 120,
+      "jit_failed_compilations": 2,
+      "jit_compilation_time_ms": 4300,
+      "classes_loaded": 9500,
+      "class_load_time_ms": 2100
+    },
+    {
+      "run_id": "parity-run-1",
+      "elapsed_time": 300,
+      "pid": "1",
+      "name": "GradleDaemon",
+      "rss": 1024,
+      "heap_used": 620,
+      "heap_cap": 1000,
+      "gc_time": 4000
+    },
+    {
+      "run_id": "parity-run-1",
+      "elapsed_time": 600,
+      "pid": "2",
+      "name": "KotlinCompileDaemon",
+      "rss": 1536,
+      "heap_used": 700,
+      "heap_cap": 1000,
+      "gc_time": 7000
+    },
+    {
+      "run_id": "parity-run-1",
+      "elapsed_time": 1200,
+      "pid": "2",
+      "name": "KotlinCompileDaemon",
+      "rss": 2048,
+      "heap_used": 780,
+      "heap_cap": 1000,
+      "gc_time": 9000
+    },
+    {
+      "run_id": "parity-run-1",
+      "elapsed_time": 1500,
+      "pid": "2",
+      "name": "KotlinCompileDaemon",
+      "rss": 4096,
+      "heap_used": 990,
+      "heap_cap": 1000,
+      "gc_time": 60000
+    }
+  ],
+  "expected_by_window": {
+    "60": {
+      "sample_count": 2,
+      "process_count": 2,
+      "max_elapsed_s": 60,
+      "first_elapsed_s": 20,
+      "peak_rss_mb": 768,
+      "first_rss_mb": 512,
+      "latest_rss_mb": 768,
+      "rss_growth_mb_per_min": 384,
+      "heap_utilization": 0.45,
+      "gc_time_ratio": 0.03333333333333333,
+      "jit_compiled_methods": 160,
+      "jit_failed_compilations": 2,
+      "jit_compilation_time_ms": 4300,
+      "classes_loaded": 10000,
+      "class_load_time_ms": 2100
+    },
+    "300": {
+      "sample_count": 3,
+      "process_count": 2,
+      "max_elapsed_s": 300,
+      "first_elapsed_s": 20,
+      "peak_rss_mb": 1024,
+      "first_rss_mb": 512,
+      "latest_rss_mb": 1024,
+      "rss_growth_mb_per_min": 109.71428571428571,
+      "heap_utilization": 0.62,
+      "gc_time_ratio": 0.013333333333333334,
+      "jit_compiled_methods": 160,
+      "jit_failed_compilations": 2,
+      "jit_compilation_time_ms": 4300,
+      "classes_loaded": 10000,
+      "class_load_time_ms": 2100
+    },
+    "600": {
+      "sample_count": 4,
+      "process_count": 2,
+      "max_elapsed_s": 600,
+      "first_elapsed_s": 20,
+      "peak_rss_mb": 1536,
+      "first_rss_mb": 512,
+      "latest_rss_mb": 1536,
+      "rss_growth_mb_per_min": 105.93103448275862,
+      "heap_utilization": 0.7,
+      "gc_time_ratio": 0.011666666666666667,
+      "jit_compiled_methods": 160,
+      "jit_failed_compilations": 2,
+      "jit_compilation_time_ms": 4300,
+      "classes_loaded": 10000,
+      "class_load_time_ms": 2100
+    },
+    "1200": {
+      "sample_count": 5,
+      "process_count": 2,
+      "max_elapsed_s": 1200,
+      "first_elapsed_s": 20,
+      "peak_rss_mb": 2048,
+      "first_rss_mb": 512,
+      "latest_rss_mb": 2048,
+      "rss_growth_mb_per_min": 78.10169491525423,
+      "heap_utilization": 0.78,
+      "gc_time_ratio": 0.0075,
+      "jit_compiled_methods": 160,
+      "jit_failed_compilations": 2,
+      "jit_compilation_time_ms": 4300,
+      "classes_loaded": 10000,
+      "class_load_time_ms": 2100
+    }
+  }
+}

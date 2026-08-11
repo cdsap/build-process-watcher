@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cdsap/build-process-watcher-predictive-provider/internal/features"
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
 
@@ -153,8 +154,8 @@ func (p *Provider) Predict(_ context.Context, snapshot predictor.RunSnapshot, ob
 	}
 
 	modelVersion := p.modelVersionForWindow(observationWindowS)
-	features := extractFeatures(snapshot)
-	if features.peakRSSMB == 0 {
+	row := features.FromSnapshot(snapshot, observationWindowS)
+	if row.PeakRSSMB == 0 {
 		return predictor.PredictionCheckpoint{
 			ObservationWindowS: observationWindowS,
 			Status:             "ready",
@@ -168,11 +169,11 @@ func (p *Provider) Predict(_ context.Context, snapshot predictor.RunSnapshot, ob
 		}, nil
 	}
 
-	score, signals := scoreFeatures(features)
+	score, signals := scoreFeatures(row)
 	riskLevel := riskLevel(score)
-	confidence := confidenceLevel(features, observationWindowS)
-	predictedRSS := roundOneDecimal(features.peakRSSMB + math.Max(features.rssGrowthMBPerMin, 0)*0.75)
-	predictedDuration := roundOneDecimal(features.maxElapsedS * (1.04 + score*0.18))
+	confidence := confidenceLevel(row, observationWindowS)
+	predictedRSS := roundOneDecimal(row.PeakRSSMB + math.Max(row.RSSGrowthMBPerMin, 0)*0.75)
+	predictedDuration := roundOneDecimal(row.MaxElapsedS * (1.04 + score*0.18))
 	score = roundOneDecimal(score)
 
 	return predictor.PredictionCheckpoint{
@@ -191,99 +192,43 @@ func (p *Provider) Predict(_ context.Context, snapshot predictor.RunSnapshot, ob
 	}, nil
 }
 
-type runtimeFeatures struct {
-	sampleCount       int
-	processCount      int
-	maxElapsedS       float64
-	firstElapsedS     float64
-	peakRSSMB         float64
-	firstRSSMB        float64
-	latestRSSMB       float64
-	rssGrowthMBPerMin float64
-	heapUtilization   float64
-	gcTimeRatio       float64
-}
-
-func extractFeatures(snapshot predictor.RunSnapshot) runtimeFeatures {
-	features := runtimeFeatures{
-		sampleCount:  len(snapshot.Samples),
-		processCount: len(snapshot.ProcessInfo),
-	}
-
-	var firstRSSSet bool
-	maxGCTimeMs := 0
-	for _, sample := range snapshot.Samples {
-		elapsed := float64(sample.ElapsedTime)
-		rssMB := float64(sample.RSS)
-		if sample.RSS > 0 && (!firstRSSSet || elapsed < features.firstElapsedS) {
-			features.firstElapsedS = elapsed
-			features.firstRSSMB = rssMB
-			firstRSSSet = true
-		}
-		if elapsed >= features.maxElapsedS {
-			features.maxElapsedS = elapsed
-			if sample.RSS > 0 {
-				features.latestRSSMB = rssMB
-			}
-		}
-		if rssMB > features.peakRSSMB {
-			features.peakRSSMB = rssMB
-		}
-		if sample.HeapCap > 0 && sample.HeapUsed > 0 {
-			features.heapUtilization = math.Max(features.heapUtilization, float64(sample.HeapUsed)/float64(sample.HeapCap))
-		}
-		if sample.GCTime > maxGCTimeMs {
-			maxGCTimeMs = sample.GCTime
-		}
-	}
-
-	elapsedDelta := features.maxElapsedS - features.firstElapsedS
-	if elapsedDelta > 0 && firstRSSSet && features.latestRSSMB > 0 {
-		features.rssGrowthMBPerMin = (features.latestRSSMB - features.firstRSSMB) / elapsedDelta * 60.0
-	}
-	if features.maxElapsedS > 0 && maxGCTimeMs > 0 {
-		features.gcTimeRatio = float64(maxGCTimeMs) / (features.maxElapsedS * 1000.0)
-	}
-	return features
-}
-
-func scoreFeatures(features runtimeFeatures) (float64, []string) {
+func scoreFeatures(row features.CheckpointRow) (float64, []string) {
 	score := 0.0
 	signals := make([]string, 0, 4)
 
-	if features.peakRSSMB >= 3072 {
+	if row.PeakRSSMB >= 3072 {
 		score += 0.35
 		signals = append(signals, "high memory pressure")
-	} else if features.peakRSSMB >= 1536 {
+	} else if row.PeakRSSMB >= 1536 {
 		score += 0.22
 		signals = append(signals, "memory pressure")
 	}
 
-	if features.rssGrowthMBPerMin >= 512 {
+	if row.RSSGrowthMBPerMin >= 512 {
 		score += 0.30
 		signals = append(signals, "rapid memory growth")
-	} else if features.rssGrowthMBPerMin >= 128 {
+	} else if row.RSSGrowthMBPerMin >= 128 {
 		score += 0.14
 		signals = append(signals, "memory growth")
 	}
 
-	if features.heapUtilization >= 0.85 {
+	if row.HeapUtilization >= 0.85 {
 		score += 0.20
 		signals = append(signals, "heap saturation")
-	} else if features.heapUtilization >= 0.70 {
+	} else if row.HeapUtilization >= 0.70 {
 		score += 0.10
 		signals = append(signals, "heap pressure")
 	}
 
-	if features.gcTimeRatio >= 0.15 {
+	if row.GCTimeRatio >= 0.15 {
 		score += 0.18
 		signals = append(signals, "gc pressure")
-	} else if features.gcTimeRatio >= 0.07 {
+	} else if row.GCTimeRatio >= 0.07 {
 		score += 0.09
 		signals = append(signals, "gc activity")
 	}
 
-	if features.processCount >= 5 {
+	if row.ProcessCount >= 5 {
 		score += 0.08
 		signals = append(signals, "process fanout")
 	}
@@ -308,11 +253,11 @@ func riskLevel(score float64) string {
 	}
 }
 
-func confidenceLevel(features runtimeFeatures, observationWindowS int) string {
-	if features.sampleCount >= 4 && features.maxElapsedS >= float64(observationWindowS) {
+func confidenceLevel(row features.CheckpointRow, observationWindowS int) string {
+	if row.SampleCount >= 4 && row.MaxElapsedS >= float64(observationWindowS) {
 		return "high"
 	}
-	if features.sampleCount >= 2 {
+	if row.SampleCount >= 2 {
 		return "medium"
 	}
 	return "low"

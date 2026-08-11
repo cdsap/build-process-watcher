@@ -1,0 +1,94 @@
+{
+  "run_id": "legacy-partial-1",
+  "process_info": {
+    "9": {
+      "pid": "9",
+      "name": "LegacyWorker"
+    }
+  },
+  "samples": [
+    {
+      "run_id": "legacy-partial-1",
+      "elapsed_time": 15,
+      "pid": "9",
+      "name": "LegacyWorker"
+    },
+    {
+      "run_id": "legacy-partial-1",
+      "elapsed_time": 60,
+      "pid": "9",
+      "name": "LegacyWorker",
+      "rss": 256
+    },
+    {
+      "run_id": "legacy-partial-1",
+      "elapsed_time": 300,
+      "pid": "9",
+      "name": "LegacyWorker",
+      "rss": 400,
+      "heap_used": 0,
+      "heap_cap": 0,
+      "gc_time": 0
+    },
+    {
+      "run_id": "legacy-partial-1",
+      "elapsed_time": 1500,
+      "pid": "9",
+      "name": "LegacyWorker",
+      "rss": 9000,
+      "heap_used": 990,
+      "heap_cap": 1000,
+      "gc_time": 120000
+    }
+  ],
+  "expected_by_window": {
+    "60": {
+      "sample_count": 2,
+      "process_count": 1,
+      "max_elapsed_s": 60,
+      "first_elapsed_s": 60,
+      "peak_rss_mb": 256,
+      "first_rss_mb": 256,
+      "latest_rss_mb": 256,
+      "rss_growth_mb_per_min": 0,
+      "heap_utilization": 0,
+      "gc_time_ratio": 0
+    },
+    "300": {
+      "sample_count": 3,
+      "process_count": 1,
+      "max_elapsed_s": 300,
+      "first_elapsed_s": 60,
+      "peak_rss_mb": 400,
+      "first_rss_mb": 256,
+      "latest_rss_mb": 400,
+      "rss_growth_mb_per_min": 36,
+      "heap_utilization": 0,
+      "gc_time_ratio": 0
+    },
+    "600": {
+      "sample_count": 3,
+      "process_count": 1,
+      "max_elapsed_s": 300,
+      "first_elapsed_s": 60,
+      "peak_rss_mb": 400,
+      "first_rss_mb": 256,
+      "latest_rss_mb": 400,
+      "rss_growth_mb_per_min": 36,
+      "heap_utilization": 0,
+      "gc_time_ratio": 0
+    },
+    "1200": {
+      "sample_count": 3,
+      "process_count": 1,
+      "max_elapsed_s": 300,
+      "first_elapsed_s": 60,
+      "peak_rss_mb": 400,
+      "first_rss_mb": 256,
+      "latest_rss_mb": 400,
+      "rss_growth_mb_per_min": 36,
+      "heap_utilization": 0,
+      "gc_time_ratio": 0
+    }
+  }
+}

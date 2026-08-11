@@ -152,6 +152,63 @@ func TestProviderReturnsErrorForEmptySnapshot(t *testing.T) {
 	}
 }
 
+func TestProviderHandlesLegacyPartialTelemetryWithoutFailing(t *testing.T) {
+	for _, window := range []int{60, 300, 600, 1200} {
+		checkpoint, err := New(Config{}).Predict(context.Background(), predictor.RunSnapshot{
+			RunID: "legacy-partial-1",
+			Samples: []predictor.Sample{
+				{ElapsedTime: 15, PID: "9", Name: "LegacyWorker"},
+				{ElapsedTime: 60, PID: "9", Name: "LegacyWorker", RSS: 256},
+				{ElapsedTime: 300, PID: "9", Name: "LegacyWorker", RSS: 400},
+				{ElapsedTime: 1500, PID: "9", Name: "LegacyWorker", RSS: 9000, HeapUsed: 990, HeapCap: 1000, GCTime: 120000},
+			},
+			ProcessInfo: map[string]predictor.ProcessInfo{
+				"9": {PID: "9", Name: "LegacyWorker"},
+			},
+		}, window)
+		if err != nil {
+			t.Fatalf("window %ds returned error for partial telemetry: %v", window, err)
+		}
+		if checkpoint.Status != "ready" {
+			t.Fatalf("window %ds Status = %q, want ready", window, checkpoint.Status)
+		}
+		if checkpoint.ProviderID == "" || checkpoint.ModelVersion == "" {
+			t.Fatalf("window %ds missing opaque provider metadata: %+v", window, checkpoint)
+		}
+		if checkpoint.PredictedPeakRSSMB == nil || *checkpoint.PredictedPeakRSSMB <= 0 {
+			t.Fatalf("window %ds PredictedPeakRSSMB = %v, want positive in-window value", window, checkpoint.PredictedPeakRSSMB)
+		}
+		if *checkpoint.PredictedPeakRSSMB >= 9000 {
+			t.Fatalf("window %ds PredictedPeakRSSMB = %v leaked post-window sample", window, *checkpoint.PredictedPeakRSSMB)
+		}
+	}
+}
+
+func TestProviderReturnsUnknownForWindowWithoutMemorySignal(t *testing.T) {
+	checkpoint, err := New(Config{}).Predict(context.Background(), predictor.RunSnapshot{
+		RunID: "no-memory",
+		Samples: []predictor.Sample{
+			{ElapsedTime: 10},
+			{ElapsedTime: 30},
+		},
+	}, 60)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if checkpoint.Status != "ready" {
+		t.Fatalf("Status = %q, want ready", checkpoint.Status)
+	}
+	if checkpoint.RiskLevel != "unknown" {
+		t.Fatalf("RiskLevel = %q, want unknown", checkpoint.RiskLevel)
+	}
+	if checkpoint.Confidence != "low" {
+		t.Fatalf("Confidence = %q, want low", checkpoint.Confidence)
+	}
+	if len(checkpoint.Signals) != 1 || checkpoint.Signals[0] != "insufficient memory signal" {
+		t.Fatalf("Signals = %v, want [insufficient memory signal]", checkpoint.Signals)
+	}
+}
+
 func TestProviderUsesPromotedModelVersionPerCheckpoint(t *testing.T) {
 	provider := New(Config{
 		ProviderID:   "provider-test",
