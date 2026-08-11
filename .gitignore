@@ -1,5 +1,6 @@
 # Local build outputs
 /predictive-backend
+/relprogress-eval
 
 # OS files
 .DS_Store

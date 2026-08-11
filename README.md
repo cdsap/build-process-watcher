@@ -15,8 +15,10 @@ This repository owns proprietary model execution, feature derivation, scoring th
 
 - `internal/provider`: private implementation of the public `predictor.Provider` contract.
 - `internal/api`: private HTTP API that exposes health and prediction endpoints for the public backend to call.
+- `internal/relprogress`: private relative-progress checkpoint prototype and fixture study (not wired into live `/predict`).
 - `internal/promotion`: private model refresh evaluation, independent checkpoint promotion gates, and promotion registry metadata for live scoring.
 - `cmd/predictive-backend`: Cloud Run entrypoint for the private provider API.
+- `cmd/relprogress-eval`: renders a private relative-progress evaluation report from fixture JSON.
 - `cmd/model-refresh`: manual/scheduled dry-run and apply command for refresh and promotion decisions.
 
 The current provider is a private heuristic scorer. It evaluates runtime telemetry for memory pressure, memory growth, heap saturation, GC pressure, and process fanout while keeping the stored checkpoint fields public-safe.
@@ -90,6 +92,12 @@ Responses wrap the public checkpoint:
 ```bash
 go test ./...
 go build ./cmd/predictive-backend
+```
+
+Run the private relative-progress fixture study (advisory only; does not change the live provider):
+
+```bash
+go run ./cmd/relprogress-eval -input internal/relprogress/testdata/fixture_runs.json
 ```
 
 Dry-run the automated model refresh and independent promotion gates against fixture quality-report input:
