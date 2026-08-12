@@ -10,10 +10,22 @@ import (
 type Outcome string
 
 const (
-	OutcomeSuccess Outcome = "success"
-	OutcomeSkipped Outcome = "skipped"
-	OutcomeTimeout Outcome = "timeout"
-	OutcomeError   Outcome = "error"
+	OutcomeSuccess  Outcome = "success"
+	OutcomeSkipped  Outcome = "skipped"
+	OutcomeTimeout  Outcome = "timeout"
+	OutcomeError    Outcome = "error"
+	OutcomeFallback Outcome = "fallback"
+)
+
+// State distinguishes degraded and failure modes for private operational triage.
+// Values stay coarse so logs/reports never expose formulas, thresholds, or corpus details.
+type State string
+
+const (
+	StateNoData           State = "no_data"
+	StatePartialData      State = "partial_data"
+	StateProviderError    State = "provider_error"
+	StateModelUnavailable State = "model_unavailable"
 )
 
 // Latency buckets keep coarse private latency distributions without raw timings.
@@ -32,6 +44,7 @@ type Event struct {
 	ObservationWindowS int
 	ModelVersion       string
 	Outcome            Outcome
+	State              State
 	Latency            time.Duration
 	// Diagnostic stays in private logs/ops views; never copy into public checkpoints.
 	Diagnostic string
@@ -47,6 +60,11 @@ type Stats struct {
 	Skipped            int            `json:"skipped"`
 	Timeout            int            `json:"timeout"`
 	Error              int            `json:"error"`
+	Fallback           int            `json:"fallback"`
+	NoData             int            `json:"no_data"`
+	PartialData        int            `json:"partial_data"`
+	ProviderError      int            `json:"provider_error"`
+	ModelUnavailable   int            `json:"model_unavailable"`
 	LatencyBuckets     map[string]int `json:"latency_buckets"`
 }
 
@@ -66,7 +84,7 @@ func NewStore() *Store {
 	return &Store{stats: make(map[key]*Stats)}
 }
 
-// Record updates per-window/model attempt counts, outcomes, and latency buckets.
+// Record updates per-window/model attempt counts, outcomes, states, and latency buckets.
 func (s *Store) Record(event Event) {
 	if s == nil {
 		return
@@ -92,8 +110,20 @@ func (s *Store) Record(event Event) {
 		stat.Skipped++
 	case OutcomeTimeout:
 		stat.Timeout++
+	case OutcomeFallback:
+		stat.Fallback++
 	default:
 		stat.Error++
+	}
+	switch event.State {
+	case StateNoData:
+		stat.NoData++
+	case StatePartialData:
+		stat.PartialData++
+	case StateProviderError:
+		stat.ProviderError++
+	case StateModelUnavailable:
+		stat.ModelUnavailable++
 	}
 	stat.LatencyBuckets[LatencyBucket(event.Latency)]++
 }

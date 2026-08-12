@@ -49,8 +49,49 @@ func TestProviderTelemetrySuccessPath(t *testing.T) {
 	if stats[0].Attempts != 1 || stats[0].Success != 1 || stats[0].Skipped != 0 || stats[0].Timeout != 0 || stats[0].Error != 0 {
 		t.Fatalf("success stats = %+v", stats[0])
 	}
+	if stats[0].PartialData != 0 || stats[0].NoData != 0 || stats[0].ProviderError != 0 || stats[0].ModelUnavailable != 0 {
+		t.Fatalf("success state counters = %+v", stats[0])
+	}
 	if stats[0].LatencyBuckets[telemetry.BucketUnder50ms] != 1 {
 		t.Fatalf("latency buckets = %#v", stats[0].LatencyBuckets)
+	}
+}
+
+func TestProviderTelemetryPartialDataPath(t *testing.T) {
+	store := telemetry.NewStore()
+	p := New(Config{ModelVersion: "model-partial", Telemetry: store})
+
+	var logBuf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&logBuf)
+	defer log.SetOutput(prev)
+
+	checkpoint, err := p.Predict(context.Background(), predictor.RunSnapshot{
+		RunID: "run-partial",
+		Samples: []predictor.Sample{
+			{ElapsedTime: 10},
+			{ElapsedTime: 30},
+		},
+	}, 60)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if checkpoint.RiskLevel != "unknown" || checkpoint.Message != publicLimitedMessage {
+		t.Fatalf("checkpoint = %+v, want partial-data limited scoring", checkpoint)
+	}
+	if strings.Contains(checkpoint.Message, "threshold") || strings.Contains(checkpoint.Message, "formula") {
+		t.Fatalf("public message leaked internals: %q", checkpoint.Message)
+	}
+
+	stats := store.Snapshot()
+	if len(stats) != 1 || stats[0].Success != 1 || stats[0].PartialData != 1 {
+		t.Fatalf("partial-data stats = %+v", stats)
+	}
+	if !strings.Contains(logBuf.String(), "state=partial_data") {
+		t.Fatalf("logs missing partial_data state: %s", logBuf.String())
+	}
+	if !strings.Contains(logBuf.String(), "partial-data:") {
+		t.Fatalf("logs missing partial-data diagnostic: %s", logBuf.String())
 	}
 }
 
@@ -113,8 +154,8 @@ func TestProviderTelemetryTimeoutPath(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
-	if err.Error() != "scoring timed out" {
-		t.Fatalf("err = %v, want generic timeout error", err)
+	if !errors.Is(err, ErrScoringTimeout) {
+		t.Fatalf("err = %v, want ErrScoringTimeout", err)
 	}
 	if checkpoint.Message != "" {
 		t.Fatalf("checkpoint message = %q, want empty on error", checkpoint.Message)
@@ -122,15 +163,15 @@ func TestProviderTelemetryTimeoutPath(t *testing.T) {
 	if strings.Contains(err.Error(), "hook unexpectedly") {
 		t.Fatal("returned error leaked private hook detail")
 	}
-	if !strings.Contains(logBuf.String(), "outcome=timeout") {
-		t.Fatalf("logs missing timeout telemetry: %s", logBuf.String())
+	if !strings.Contains(logBuf.String(), "outcome=timeout") || !strings.Contains(logBuf.String(), "state=model_unavailable") {
+		t.Fatalf("logs missing timeout/model_unavailable telemetry: %s", logBuf.String())
 	}
-	if !strings.Contains(logBuf.String(), "live scoring timed out:") {
+	if !strings.Contains(logBuf.String(), "model-unavailable: live scoring timed out:") {
 		t.Fatalf("logs missing private timeout diagnostic: %s", logBuf.String())
 	}
 
 	stats := store.Snapshot()
-	if len(stats) != 1 || stats[0].Timeout != 1 || stats[0].Attempts != 1 {
+	if len(stats) != 1 || stats[0].Timeout != 1 || stats[0].ModelUnavailable != 1 || stats[0].Attempts != 1 {
 		t.Fatalf("timeout stats = %+v", stats)
 	}
 	if stats[0].ModelVersion != "model-timeout" || stats[0].ObservationWindowS != 60 {
@@ -160,25 +201,80 @@ func TestProviderTelemetryScoringErrorPath(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected scoring error")
 	}
-	if err.Error() != "scoring failed" {
-		t.Fatalf("err = %v, want generic scoring failed", err)
+	if !errors.Is(err, ErrScoringFailed) {
+		t.Fatalf("err = %v, want ErrScoringFailed", err)
 	}
 	if strings.Contains(err.Error(), "bigquery") || strings.Contains(err.Error(), "missing model") {
 		t.Fatal("returned error leaked private scoring detail")
 	}
-	if !strings.Contains(logBuf.String(), "outcome=error") {
-		t.Fatalf("logs missing error telemetry: %s", logBuf.String())
+	if !strings.Contains(logBuf.String(), "outcome=error") || !strings.Contains(logBuf.String(), "state=provider_error") {
+		t.Fatalf("logs missing error/provider_error telemetry: %s", logBuf.String())
 	}
-	if !strings.Contains(logBuf.String(), "bigquery ml private detail: missing model table") {
+	if !strings.Contains(logBuf.String(), "provider-error: bigquery ml private detail: missing model table") {
 		t.Fatalf("logs missing private diagnostic context: %s", logBuf.String())
 	}
 
 	stats := store.Snapshot()
-	if len(stats) != 1 || stats[0].Error != 1 || stats[0].Attempts != 1 {
+	if len(stats) != 1 || stats[0].Error != 1 || stats[0].ProviderError != 1 || stats[0].Attempts != 1 {
 		t.Fatalf("error stats = %+v", stats)
 	}
 	if stats[0].ModelVersion != "model-error" {
 		t.Fatalf("model version = %q, want model-error", stats[0].ModelVersion)
+	}
+}
+
+func TestProviderTelemetryNoDataPath(t *testing.T) {
+	store := telemetry.NewStore()
+	p := New(Config{ModelVersion: "model-nodata", Telemetry: store})
+
+	var logBuf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&logBuf)
+	defer log.SetOutput(prev)
+
+	_, err := p.Predict(context.Background(), predictor.RunSnapshot{RunID: "run-nodata"}, 60)
+	if err == nil {
+		t.Fatal("expected no-data error")
+	}
+	if !errors.Is(err, ErrNoData) {
+		t.Fatalf("err = %v, want ErrNoData", err)
+	}
+
+	stats := store.Snapshot()
+	if len(stats) != 1 || stats[0].Error != 1 || stats[0].NoData != 1 {
+		t.Fatalf("no-data stats = %+v", stats)
+	}
+	if !strings.Contains(logBuf.String(), "state=no_data") {
+		t.Fatalf("logs missing no_data state: %s", logBuf.String())
+	}
+}
+
+func TestProviderTelemetryModelUnavailablePath(t *testing.T) {
+	store := telemetry.NewStore()
+	p := New(Config{ModelVersion: "model-missing", Telemetry: store})
+	p.scoreHook = func(context.Context, features.CheckpointRow, int) (scoredValues, error) {
+		return scoredValues{}, ErrModelUnavailable
+	}
+
+	var logBuf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&logBuf)
+	defer log.SetOutput(prev)
+
+	_, err := p.Predict(context.Background(), predictor.RunSnapshot{
+		RunID:   "run-model-missing",
+		Samples: []predictor.Sample{{ElapsedTime: 60, RSS: 1024}},
+	}, 60)
+	if !errors.Is(err, ErrModelUnavailable) {
+		t.Fatalf("err = %v, want ErrModelUnavailable", err)
+	}
+
+	stats := store.Snapshot()
+	if len(stats) != 1 || stats[0].Error != 1 || stats[0].ModelUnavailable != 1 {
+		t.Fatalf("model-unavailable stats = %+v", stats)
+	}
+	if !strings.Contains(logBuf.String(), "state=model_unavailable") {
+		t.Fatalf("logs missing model_unavailable state: %s", logBuf.String())
 	}
 }
 

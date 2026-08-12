@@ -25,6 +25,14 @@ const (
 	publicSkippedMessage = "checkpoint already evaluated"
 )
 
+// Public-safe sentinel errors returned by Predict. Private diagnostic detail stays in telemetry logs.
+var (
+	ErrNoData           = errors.New("snapshot has no samples")
+	ErrScoringTimeout   = errors.New("scoring timed out")
+	ErrScoringFailed    = errors.New("scoring failed")
+	ErrModelUnavailable = errors.New("model unavailable")
+)
+
 // Config holds private provider configuration.
 type Config struct {
 	ProviderID     string
@@ -76,6 +84,7 @@ type scoredValues struct {
 	signals            []string
 	message            string
 	modelVersion       string
+	state              telemetry.State
 }
 
 // New creates a private predictive reliability provider.
@@ -215,11 +224,12 @@ func (p *Provider) Predict(ctx context.Context, snapshot predictor.RunSnapshot, 
 			ObservationWindowS: observationWindowS,
 			ModelVersion:       modelVersion,
 			Outcome:            telemetry.OutcomeError,
+			State:              telemetry.StateNoData,
 			Latency:            time.Since(started),
-			Diagnostic:         "snapshot has no samples",
+			Diagnostic:         "no-data: snapshot has no samples",
 			RunID:              snapshot.RunID,
 		})
-		return predictor.PredictionCheckpoint{}, errors.New("snapshot has no samples")
+		return predictor.PredictionCheckpoint{}, ErrNoData
 	}
 
 	scoreCtx := ctx
@@ -233,37 +243,34 @@ func (p *Provider) Predict(ctx context.Context, snapshot predictor.RunSnapshot, 
 	scored, err := p.score(scoreCtx, row, observationWindowS)
 	latency := time.Since(started)
 	if err != nil {
-		outcome := telemetry.OutcomeError
-		diagnostic := err.Error()
-		if errors.Is(err, context.DeadlineExceeded) {
-			outcome = telemetry.OutcomeTimeout
-			diagnostic = "live scoring timed out: " + err.Error()
-		}
+		outcome, state, diagnostic, publicErr := classifyScoreError(err)
 		p.record(telemetry.Event{
 			ObservationWindowS: observationWindowS,
 			ModelVersion:       modelVersion,
 			Outcome:            outcome,
+			State:              state,
 			Latency:            latency,
 			Diagnostic:         diagnostic,
 			RunID:              snapshot.RunID,
 		})
-		// Keep returned errors generic so HTTP/API fallback messages stay public-safe.
-		if outcome == telemetry.OutcomeTimeout {
-			return predictor.PredictionCheckpoint{}, errors.New("scoring timed out")
-		}
-		return predictor.PredictionCheckpoint{}, errors.New("scoring failed")
+		return predictor.PredictionCheckpoint{}, publicErr
 	}
 
 	scoredModelVersion := scored.modelVersion
 	if scoredModelVersion == "" {
 		scoredModelVersion = modelVersion
 	}
+	diagnostic := "live scoring produced public-safe checkpoint"
+	if scored.state == telemetry.StatePartialData {
+		diagnostic = "partial-data: scoring continued with limited telemetry"
+	}
 	p.record(telemetry.Event{
 		ObservationWindowS: observationWindowS,
 		ModelVersion:       scoredModelVersion,
 		Outcome:            telemetry.OutcomeSuccess,
+		State:              scored.state,
 		Latency:            latency,
-		Diagnostic:         "live scoring produced public-safe checkpoint",
+		Diagnostic:         diagnostic,
 		RunID:              snapshot.RunID,
 	})
 
@@ -283,6 +290,21 @@ func (p *Provider) Predict(ctx context.Context, snapshot predictor.RunSnapshot, 
 	}, nil
 }
 
+// classifyScoreError maps private scoring failures to triage state and public-safe errors.
+func classifyScoreError(err error) (telemetry.Outcome, telemetry.State, string, error) {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return telemetry.OutcomeTimeout, telemetry.StateModelUnavailable,
+			"model-unavailable: live scoring timed out: " + err.Error(), ErrScoringTimeout
+	case errors.Is(err, ErrModelUnavailable):
+		return telemetry.OutcomeError, telemetry.StateModelUnavailable,
+			"model-unavailable: " + err.Error(), ErrModelUnavailable
+	default:
+		return telemetry.OutcomeError, telemetry.StateProviderError,
+			"provider-error: " + err.Error(), ErrScoringFailed
+	}
+}
+
 func (p *Provider) score(ctx context.Context, row features.CheckpointRow, observationWindowS int) (scoredValues, error) {
 	if err := ctx.Err(); err != nil {
 		return scoredValues{}, err
@@ -295,13 +317,14 @@ func (p *Provider) score(ctx context.Context, row features.CheckpointRow, observ
 
 func (p *Provider) scoreHeuristic(row features.CheckpointRow, observationWindowS int) scoredValues {
 	modelVersion := p.modelVersionForWindow(observationWindowS)
-	if row.PeakRSSMB == 0 {
+	if row.SampleCount == 0 || row.PeakRSSMB == 0 {
 		return scoredValues{
 			riskLevel:    "unknown",
 			confidence:   "low",
 			signals:      []string{"insufficient memory signal"},
 			message:      publicLimitedMessage,
 			modelVersion: modelVersion,
+			state:        telemetry.StatePartialData,
 		}
 	}
 
@@ -326,8 +349,9 @@ func (p *Provider) scoreHeuristic(row features.CheckpointRow, observationWindowS
 func (p *Provider) record(event telemetry.Event) {
 	p.telemetry.Record(event)
 	log.Printf(
-		"scoring_telemetry outcome=%s window=%ds model=%q latency_ms=%d run=%q diagnostic=%q",
+		"scoring_telemetry outcome=%s state=%s window=%ds model=%q latency_ms=%d run=%q diagnostic=%q",
 		event.Outcome,
+		event.State,
 		event.ObservationWindowS,
 		event.ModelVersion,
 		event.Latency.Milliseconds(),

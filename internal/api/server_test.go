@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/cdsap/build-process-watcher-predictive-provider/internal/provider"
+	"github.com/cdsap/build-process-watcher-predictive-provider/internal/telemetry"
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
 
@@ -110,6 +112,12 @@ func TestPredictRejectsInvalidRequest(t *testing.T) {
 func TestPredictReturnsSkippedCheckpointWhenProviderCannotScore(t *testing.T) {
 	server := NewServer(errorProvider{err: errors.New("private backend timeout: model secret details")})
 	server.now = func() time.Time { return time.Unix(789, 0).UTC() }
+
+	var logBuf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&logBuf)
+	defer log.SetOutput(prev)
+
 	body := PredictRequest{
 		ObservationWindowS: 300,
 		RunID:              "run-empty",
@@ -151,6 +159,74 @@ func TestPredictReturnsSkippedCheckpointWhenProviderCannotScore(t *testing.T) {
 	}
 	if !checkpoint.CreatedAt.Equal(time.Unix(789, 0).UTC()) {
 		t.Fatalf("created at = %v, want fixed test time", checkpoint.CreatedAt)
+	}
+
+	stats := server.Telemetry().Snapshot()
+	if len(stats) != 1 || stats[0].Fallback != 1 || stats[0].ProviderError != 1 {
+		t.Fatalf("fallback stats = %+v", stats)
+	}
+	if stats[0].ModelVersion != "api-fallback" {
+		t.Fatalf("fallback model version = %q, want api-fallback", stats[0].ModelVersion)
+	}
+	if !strings.Contains(logBuf.String(), "outcome=fallback") || !strings.Contains(logBuf.String(), "state=provider_error") {
+		t.Fatalf("logs missing fallback telemetry: %s", logBuf.String())
+	}
+	if strings.Contains(rec.Body.String(), "model secret") {
+		t.Fatalf("HTTP body leaked private diagnostic: %s", rec.Body.String())
+	}
+}
+
+func TestPredictFallbackTelemetryClassifiesProviderSentinels(t *testing.T) {
+	cases := []struct {
+		name      string
+		err       error
+		wantState telemetry.State
+	}{
+		{name: "no-data", err: provider.ErrNoData, wantState: telemetry.StateNoData},
+		{name: "timeout", err: provider.ErrScoringTimeout, wantState: telemetry.StateModelUnavailable},
+		{name: "model-unavailable", err: provider.ErrModelUnavailable, wantState: telemetry.StateModelUnavailable},
+		{name: "provider-error", err: provider.ErrScoringFailed, wantState: telemetry.StateProviderError},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := NewServer(errorProvider{err: tc.err})
+			body := PredictRequest{
+				ObservationWindowS: 60,
+				RunID:              "run-" + tc.name,
+				Samples:            []Sample{{ElapsedTime: 60, RSS: 512}},
+			}
+			payload, err := json.Marshal(body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodPost, "/predict", bytes.NewReader(payload))
+			rec := httptest.NewRecorder()
+			server.Handler().ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+			}
+			stats := server.Telemetry().Snapshot()
+			if len(stats) != 1 || stats[0].Fallback != 1 {
+				t.Fatalf("stats = %+v, want one fallback", stats)
+			}
+			switch tc.wantState {
+			case telemetry.StateNoData:
+				if stats[0].NoData != 1 {
+					t.Fatalf("stats = %+v, want no_data=1", stats[0])
+				}
+			case telemetry.StateModelUnavailable:
+				if stats[0].ModelUnavailable != 1 {
+					t.Fatalf("stats = %+v, want model_unavailable=1", stats[0])
+				}
+			case telemetry.StateProviderError:
+				if stats[0].ProviderError != 1 {
+					t.Fatalf("stats = %+v, want provider_error=1", stats[0])
+				}
+			}
+			if strings.Contains(rec.Body.String(), "scoring") || strings.Contains(rec.Body.String(), "snapshot") {
+				t.Fatalf("HTTP body leaked private sentinel detail: %s", rec.Body.String())
+			}
+		})
 	}
 }
 
@@ -227,6 +303,11 @@ func TestLocalSmokeScoredAndSafeFallbackCheckpoint(t *testing.T) {
 	telemetrySnap := liveProvider.Telemetry().Snapshot()
 	if len(telemetrySnap) != 1 || telemetrySnap[0].Success != 1 || telemetrySnap[0].ObservationWindowS != 60 {
 		t.Fatalf("smoke telemetry = %+v, want one successful 60s attempt", telemetrySnap)
+	}
+
+	fallbackStats := failing.Telemetry().Snapshot()
+	if len(fallbackStats) != 1 || fallbackStats[0].Fallback != 1 || fallbackStats[0].ProviderError != 1 {
+		t.Fatalf("smoke fallback telemetry = %+v, want one provider-error fallback", fallbackStats)
 	}
 }
 

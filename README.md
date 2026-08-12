@@ -25,7 +25,7 @@ This repository owns proprietary model execution, feature derivation, scoring th
 
 The current provider is a private heuristic scorer. It evaluates runtime telemetry for memory pressure, memory growth, heap saturation, GC pressure, and process fanout while keeping the stored checkpoint fields public-safe.
 
-Private live-scoring telemetry records per-checkpoint attempt counts, success/skipped/timeout/error outcomes, and coarse latency buckets keyed by observation window and opaque model version. Diagnostic detail stays in private process logs; returned checkpoint messages remain public-safe. Scoring failures return a generic skipped checkpoint so public ingestion and checkpoint storage can continue.
+Private live-scoring telemetry records per-checkpoint attempt counts, success/skipped/timeout/error/fallback outcomes, triage states (`no_data`, `partial_data`, `provider_error`, `model_unavailable`), and coarse latency buckets keyed by observation window and opaque model version. Diagnostic detail stays in private process logs; returned checkpoint messages remain public-safe. Scoring failures return a generic skipped checkpoint so public ingestion and checkpoint storage can continue.
 
 ## Configuration
 

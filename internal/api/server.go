@@ -2,24 +2,39 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"time"
 
+	"github.com/cdsap/build-process-watcher-predictive-provider/internal/provider"
+	"github.com/cdsap/build-process-watcher-predictive-provider/internal/telemetry"
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
 
 // Server exposes the private prediction provider over a public-safe HTTP API.
 type Server struct {
-	provider predictor.Provider
-	now      func() time.Time
+	provider  predictor.Provider
+	telemetry *telemetry.Store
+	now       func() time.Time
+}
+
+type telemetrySource interface {
+	Telemetry() *telemetry.Store
 }
 
 // NewServer creates an HTTP API server for a private prediction provider.
-func NewServer(provider predictor.Provider) *Server {
+func NewServer(p predictor.Provider) *Server {
+	store := telemetry.NewStore()
+	if source, ok := p.(telemetrySource); ok {
+		if shared := source.Telemetry(); shared != nil {
+			store = shared
+		}
+	}
 	return &Server{
-		provider: provider,
-		now:      time.Now,
+		provider:  p,
+		telemetry: store,
+		now:       time.Now,
 	}
 }
 
@@ -29,6 +44,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/healthz", s.health)
 	mux.HandleFunc("/predict", s.predict)
 	return mux
+}
+
+// Telemetry returns the private diagnostics store used for fallback triage.
+func (s *Server) Telemetry() *telemetry.Store {
+	return s.telemetry
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
@@ -60,13 +80,51 @@ func (s *Server) predict(w http.ResponseWriter, r *http.Request) {
 
 	checkpoint, err := s.provider.Predict(r.Context(), req.toSnapshot(s.now()), req.ObservationWindowS)
 	if err != nil {
-		// Keep private diagnostic context in server logs; HTTP body stays public-safe.
-		log.Printf("prediction failed for run %q checkpoint %ds: %v; returning public-safe skipped fallback", req.RunID, req.ObservationWindowS, err)
+		state, diagnostic := classifyFallback(err)
+		s.recordFallback(req.ObservationWindowS, req.RunID, state, diagnostic)
 		writeJSON(w, http.StatusOK, PredictResponse{Checkpoint: skippedCheckpoint(req.ObservationWindowS, s.now())})
 		return
 	}
 
 	writeJSON(w, http.StatusOK, PredictResponse{Checkpoint: checkpoint})
+}
+
+func classifyFallback(err error) (telemetry.State, string) {
+	switch {
+	case errors.Is(err, provider.ErrNoData):
+		return telemetry.StateNoData, "fallback after no-data scoring path"
+	case errors.Is(err, provider.ErrScoringTimeout), errors.Is(err, provider.ErrModelUnavailable):
+		return telemetry.StateModelUnavailable, "fallback after model-unavailable scoring path"
+	case errors.Is(err, provider.ErrScoringFailed):
+		return telemetry.StateProviderError, "fallback after provider-error scoring path"
+	default:
+		// Keep private upstream detail in the diagnostic; public response stays generic.
+		return telemetry.StateProviderError, "fallback after provider failure: " + err.Error()
+	}
+}
+
+const apiFallbackModelVersion = "api-fallback"
+
+func (s *Server) recordFallback(observationWindowS int, runID string, state telemetry.State, diagnostic string) {
+	event := telemetry.Event{
+		ObservationWindowS: observationWindowS,
+		ModelVersion:       apiFallbackModelVersion,
+		Outcome:            telemetry.OutcomeFallback,
+		State:              state,
+		Diagnostic:         diagnostic,
+		RunID:              runID,
+	}
+	s.telemetry.Record(event)
+	log.Printf(
+		"scoring_telemetry outcome=%s state=%s window=%ds model=%q latency_ms=%d run=%q diagnostic=%q",
+		event.Outcome,
+		event.State,
+		event.ObservationWindowS,
+		event.ModelVersion,
+		event.Latency.Milliseconds(),
+		event.RunID,
+		event.Diagnostic,
+	)
 }
 
 func skippedCheckpoint(observationWindowS int, now time.Time) predictor.PredictionCheckpoint {
