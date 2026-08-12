@@ -25,6 +25,8 @@ This repository owns proprietary model execution, feature derivation, scoring th
 
 The current provider is a private heuristic scorer. It evaluates runtime telemetry for memory pressure, memory growth, heap saturation, GC pressure, and process fanout while keeping the stored checkpoint fields public-safe.
 
+Private live-scoring telemetry records per-checkpoint attempt counts, success/skipped/timeout/error outcomes, and coarse latency buckets keyed by observation window and opaque model version. Diagnostic detail stays in private process logs; returned checkpoint messages remain public-safe. Scoring failures return a generic skipped checkpoint so public ingestion and checkpoint storage can continue.
+
 ## Configuration
 
 The backend uses these public-safe environment variables:
@@ -32,6 +34,7 @@ The backend uses these public-safe environment variables:
 - `PORT`
 - `PREDICTIVE_PROVIDER_ID`
 - `PREDICTIVE_MODEL_VERSION`
+- `PREDICTIVE_SCORING_TIMEOUT_MS` (optional; defaults to `2000`)
 - `PREDICTIVE_PROMOTED_MODELS`: optional per-checkpoint promoted model versions for live scoring. Accepts JSON registry shape `{"models":[{"observation_window_s":60,"model_version":"cp-60s-..."}]}`, JSON object `{"60":"cp-60s-..."}`, or comma-separated `60:cp-60s-...,300:cp-300s-...`. When a checkpoint window is absent, `PREDICTIVE_MODEL_VERSION` remains the fallback.
 
 The deployment workflow also accepts `PREDICTIVE_RELIABILITY_CHECKPOINTS` as a Cloud Run environment variable so the public integration can keep checkpoint configuration aligned, but the private `/predict` request carries the checkpoint window to score.

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -150,6 +151,82 @@ func TestPredictReturnsSkippedCheckpointWhenProviderCannotScore(t *testing.T) {
 	}
 	if !checkpoint.CreatedAt.Equal(time.Unix(789, 0).UTC()) {
 		t.Fatalf("created at = %v, want fixed test time", checkpoint.CreatedAt)
+	}
+}
+
+func TestLocalSmokeScoredAndSafeFallbackCheckpoint(t *testing.T) {
+	liveProvider := provider.New(provider.Config{
+		ProviderID:   "smoke-provider",
+		ModelVersion: "smoke-model",
+	})
+	server := NewServer(liveProvider)
+
+	readyBody := PredictRequest{
+		ObservationWindowS: 60,
+		RunID:              "smoke-run",
+		Samples: []Sample{
+			{ElapsedTime: 0, RSS: 512, HeapUsed: 300, HeapCap: 1000},
+			{ElapsedTime: 60, RSS: 2048, HeapUsed: 900, HeapCap: 1000, GCTime: 9000},
+		},
+	}
+	readyPayload, err := json.Marshal(readyBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readyReq := httptest.NewRequest(http.MethodPost, "/predict", bytes.NewReader(readyPayload))
+	readyRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(readyRec, readyReq)
+	if readyRec.Code != http.StatusOK {
+		t.Fatalf("scored status = %d, want %d: %s", readyRec.Code, http.StatusOK, readyRec.Body.String())
+	}
+	var readyResp PredictResponse
+	if err := json.Unmarshal(readyRec.Body.Bytes(), &readyResp); err != nil {
+		t.Fatal(err)
+	}
+	if readyResp.Checkpoint.Status != "ready" {
+		t.Fatalf("scored checkpoint status = %q, want ready", readyResp.Checkpoint.Status)
+	}
+	if readyResp.Checkpoint.Message != "private predictive provider evaluated runtime telemetry" {
+		t.Fatalf("scored message = %q, want public-safe runtime message", readyResp.Checkpoint.Message)
+	}
+	if strings.Contains(readyResp.Checkpoint.Message, "bigquery") || strings.Contains(readyResp.Checkpoint.Message, "diagnostic") {
+		t.Fatalf("scored message leaked private context: %q", readyResp.Checkpoint.Message)
+	}
+
+	failing := NewServer(errorProvider{err: errors.New("bigquery ml private detail: deadline exceeded upstream")})
+	failing.now = func() time.Time { return time.Unix(1000, 0).UTC() }
+	fallbackBody := PredictRequest{
+		ObservationWindowS: 300,
+		RunID:              "smoke-fallback",
+		Samples:            []Sample{{ElapsedTime: 300, RSS: 1024}},
+	}
+	fallbackPayload, err := json.Marshal(fallbackBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fallbackReq := httptest.NewRequest(http.MethodPost, "/predict", bytes.NewReader(fallbackPayload))
+	fallbackRec := httptest.NewRecorder()
+	failing.Handler().ServeHTTP(fallbackRec, fallbackReq)
+	if fallbackRec.Code != http.StatusOK {
+		t.Fatalf("fallback status = %d, want %d: %s", fallbackRec.Code, http.StatusOK, fallbackRec.Body.String())
+	}
+	var fallbackResp PredictResponse
+	if err := json.Unmarshal(fallbackRec.Body.Bytes(), &fallbackResp); err != nil {
+		t.Fatal(err)
+	}
+	if fallbackResp.Checkpoint.Status != "skipped" {
+		t.Fatalf("fallback status = %q, want skipped", fallbackResp.Checkpoint.Status)
+	}
+	if fallbackResp.Checkpoint.Message != "prediction provider unavailable" {
+		t.Fatalf("fallback message = %q, want public-safe unavailable message", fallbackResp.Checkpoint.Message)
+	}
+	if strings.Contains(fallbackRec.Body.String(), "bigquery") || strings.Contains(fallbackRec.Body.String(), "deadline exceeded upstream") {
+		t.Fatalf("fallback response leaked private scoring detail: %s", fallbackRec.Body.String())
+	}
+
+	telemetrySnap := liveProvider.Telemetry().Snapshot()
+	if len(telemetrySnap) != 1 || telemetrySnap[0].Success != 1 || telemetrySnap[0].ObservationWindowS != 60 {
+		t.Fatalf("smoke telemetry = %+v, want one successful 60s attempt", telemetrySnap)
 	}
 }
 

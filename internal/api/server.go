@@ -60,7 +60,8 @@ func (s *Server) predict(w http.ResponseWriter, r *http.Request) {
 
 	checkpoint, err := s.provider.Predict(r.Context(), req.toSnapshot(s.now()), req.ObservationWindowS)
 	if err != nil {
-		log.Printf("prediction failed for run %q checkpoint %ds: %v", req.RunID, req.ObservationWindowS, err)
+		// Keep private diagnostic context in server logs; HTTP body stays public-safe.
+		log.Printf("prediction failed for run %q checkpoint %ds: %v; returning public-safe skipped fallback", req.RunID, req.ObservationWindowS, err)
 		writeJSON(w, http.StatusOK, PredictResponse{Checkpoint: skippedCheckpoint(req.ObservationWindowS, s.now())})
 		return
 	}
