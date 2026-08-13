@@ -38,6 +38,56 @@ jobs:
       - name: Run tests
         run: go test ./...
 
+      - name: Prove promotion gate determinism
+        run: |
+          set -euo pipefail
+          go test ./internal/promotion -count=3
+          mkdir -p /tmp/model-refresh-ci
+          go run ./cmd/model-refresh \
+            -dry-run \
+            -report internal/promotion/testdata/quality_report_mixed.json \
+            -registry internal/promotion/testdata/registry_previous.json \
+            | tee /tmp/model-refresh-ci/result.json
+          python3 - <<'PY'
+          import json
+
+          with open("/tmp/model-refresh-ci/result.json", encoding="utf-8") as handle:
+              result = json.load(handle)
+
+          decisions = {item["observation_window_s"]: item for item in result["decisions"]}
+          expected = {
+              60: ("promote", "pass"),
+              300: ("promote", "pass"),
+              600: ("retain", "fail"),
+              1200: ("retain", "fail"),
+          }
+          for window, (action, status) in expected.items():
+              decision = decisions[window]
+              if decision["action"] != action or decision["gate_status"] != status:
+                  raise SystemExit(f"{window}s expected {action}/{status}, got {decision}")
+
+          # Missing-evidence fixture must fail closed without promoting.
+          import subprocess
+          missing = subprocess.check_output(
+              [
+                  "go",
+                  "run",
+                  "./cmd/model-refresh",
+                  "-dry-run",
+                  "-report",
+                  "internal/promotion/testdata/quality_report_missing_evidence.json",
+                  "-registry",
+                  "internal/promotion/testdata/registry_previous.json",
+              ],
+              text=True,
+          )
+          missing_result = json.loads(missing)
+          for decision in missing_result["decisions"]:
+              if decision["gate_status"] != "missing_evidence" or decision.get("promoted"):
+                  raise SystemExit(f"missing-evidence not fail-closed: {decision}")
+          print("promotion gate determinism proved")
+          PY
+
       - name: Build predictive backend
         run: go build -trimpath -ldflags="-s -w" -o /tmp/predictive-backend ./cmd/predictive-backend
 

@@ -60,6 +60,7 @@ type Registry struct {
 type Decision struct {
 	ObservationWindowS int      `json:"observation_window_s"`
 	Action             string   `json:"action"`
+	GateStatus         string   `json:"gate_status"`
 	Promoted           bool     `json:"promoted"`
 	ModelVersion       string   `json:"model_version,omitempty"`
 	PreviousVersion    string   `json:"previous_version,omitempty"`

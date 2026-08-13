@@ -96,15 +96,17 @@ jobs:
           if "retain" not in actions.values():
               raise SystemExit(f"missing retain/no-promotion branch: {actions}")
 
-          # Mixed fixture: 60/300 promote, 600 sparse retain, 1200 failed gate retain.
-          if decisions[60]["action"] != "promote":
-              raise SystemExit(f"60s expected promote, got {decisions[60]}")
-          if decisions[300]["action"] != "promote":
-              raise SystemExit(f"300s expected promote, got {decisions[300]}")
-          if decisions[600]["action"] != "retain":
-              raise SystemExit(f"600s expected retain, got {decisions[600]}")
-          if decisions[1200]["action"] != "retain":
-              raise SystemExit(f"1200s expected retain, got {decisions[1200]}")
+          # Mixed fixture: 60/300 promote/pass, 600 sparse fail/retain, 1200 failed gate retain.
+          expected = {
+              60: ("promote", "pass"),
+              300: ("promote", "pass"),
+              600: ("retain", "fail"),
+              1200: ("retain", "fail"),
+          }
+          for window, (action, status) in expected.items():
+              decision = decisions[window]
+              if decision["action"] != action or decision.get("gate_status") != status:
+                  raise SystemExit(f"{window}s expected {action}/{status}, got {decision}")
 
           registry = {
               model["observation_window_s"]: model["model_version"]

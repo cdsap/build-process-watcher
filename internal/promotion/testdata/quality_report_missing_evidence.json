@@ -1,0 +1,37 @@
+{
+  "model_set_version": "fixture-set-missing-evidence",
+  "checkpoints": [
+    {
+      "observation_window_s": 60,
+      "cohort_size": 0,
+      "sparse": true,
+      "peak_rss_mape": 0.0,
+      "duration_mape": 0.0,
+      "risk_accuracy_rate": 0.0,
+      "candidate_model_version": "",
+      "notes": ["sparse checkpoint coverage", "no promotable candidate model"]
+    },
+    {
+      "observation_window_s": 300,
+      "cohort_size": 5,
+      "sparse": false,
+      "peak_rss_mape": 0.20,
+      "duration_mape": 0.22,
+      "risk_accuracy_rate": 0.80,
+      "baseline_peak_rss_mape": 0.30,
+      "baseline_duration_mape": 0.30,
+      "baseline_risk_accuracy_rate": 0.60,
+      "candidate_model_version": ""
+    },
+    {
+      "observation_window_s": 600,
+      "cohort_size": 0,
+      "sparse": true,
+      "peak_rss_mape": 0.0,
+      "duration_mape": 0.0,
+      "risk_accuracy_rate": 0.0,
+      "candidate_model_version": "cp-600s-incomplete",
+      "notes": ["sparse checkpoint coverage"]
+    }
+  ]
+}

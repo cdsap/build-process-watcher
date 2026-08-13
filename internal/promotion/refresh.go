@@ -54,6 +54,7 @@ func Refresh(previous Registry, report QualityReport, gate Gate, dryRun bool, no
 
 		if !found {
 			decision.Action = retainOrSkip(previousModel.ModelVersion)
+			decision.GateStatus = GateStatusMissingEvidence
 			decision.Reasons = []string{"missing checkpoint quality window"}
 			decision.ModelVersion = previousModel.ModelVersion
 			result.Decisions = append(result.Decisions, decision)
@@ -64,9 +65,10 @@ func Refresh(previous Registry, report QualityReport, gate Gate, dryRun bool, no
 		}
 
 		decision.CandidateVersion = checkpoint.CandidateModelVersion
-		pass, reasons := EvaluateGate(checkpoint, gate)
+		status, reasons := ClassifyGate(checkpoint, gate)
+		decision.GateStatus = status
 		decision.Reasons = reasons
-		if pass {
+		if status == GateStatusPass {
 			decision.Action = ActionPromote
 			decision.Promoted = true
 			decision.ModelVersion = checkpoint.CandidateModelVersion
@@ -80,6 +82,7 @@ func Refresh(previous Registry, report QualityReport, gate Gate, dryRun bool, no
 			continue
 		}
 
+		// Fail closed: threshold or missing-evidence failures retain the prior model.
 		decision.Action = retainOrSkip(previousModel.ModelVersion)
 		decision.ModelVersion = previousModel.ModelVersion
 		result.Decisions = append(result.Decisions, decision)

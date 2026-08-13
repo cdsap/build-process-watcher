@@ -86,20 +86,20 @@ func TestRefreshPromotesCheckpointsIndependently(t *testing.T) {
 	}
 
 	byWindow := decisionsByWindow(result)
-	if byWindow[60].Action != ActionPromote || byWindow[60].ModelVersion != "cp-60s-new" {
-		t.Fatalf("60s decision = %+v, want promote cp-60s-new", byWindow[60])
+	if byWindow[60].Action != ActionPromote || byWindow[60].GateStatus != GateStatusPass || byWindow[60].ModelVersion != "cp-60s-new" {
+		t.Fatalf("60s decision = %+v, want promote/pass cp-60s-new", byWindow[60])
 	}
-	if byWindow[300].Action != ActionRetain || byWindow[300].ModelVersion != "cp-300s-old" {
-		t.Fatalf("300s decision = %+v, want retain cp-300s-old", byWindow[300])
+	if byWindow[300].Action != ActionRetain || byWindow[300].GateStatus != GateStatusFail || byWindow[300].ModelVersion != "cp-300s-old" {
+		t.Fatalf("300s decision = %+v, want retain/fail cp-300s-old", byWindow[300])
 	}
-	if byWindow[600].Action != ActionRetain || byWindow[600].ModelVersion != "cp-600s-old" {
-		t.Fatalf("600s decision = %+v, want retain cp-600s-old", byWindow[600])
+	if byWindow[600].Action != ActionRetain || byWindow[600].GateStatus != GateStatusFail || byWindow[600].ModelVersion != "cp-600s-old" {
+		t.Fatalf("600s decision = %+v, want retain/fail cp-600s-old", byWindow[600])
 	}
 	if !contains(byWindow[600].Reasons, "sparse checkpoint coverage") {
 		t.Fatalf("600s reasons = %v, want sparse coverage", byWindow[600].Reasons)
 	}
-	if byWindow[1200].Action != ActionPromote || byWindow[1200].ModelVersion != "cp-1200s-new" {
-		t.Fatalf("1200s decision = %+v, want promote cp-1200s-new", byWindow[1200])
+	if byWindow[1200].Action != ActionPromote || byWindow[1200].GateStatus != GateStatusPass || byWindow[1200].ModelVersion != "cp-1200s-new" {
+		t.Fatalf("1200s decision = %+v, want promote/pass cp-1200s-new", byWindow[1200])
 	}
 
 	versions := result.Registry.VersionMap()
@@ -173,16 +173,16 @@ func TestRefreshFixtureDryRunPromotesAndRetainsIndependently(t *testing.T) {
 	}
 
 	byWindow := decisionsByWindow(result)
-	if byWindow[60].Action != ActionPromote || byWindow[60].ModelVersion != "cp-60s-fixture-new" {
+	if byWindow[60].Action != ActionPromote || byWindow[60].GateStatus != GateStatusPass || byWindow[60].ModelVersion != "cp-60s-fixture-new" {
 		t.Fatalf("60s = %+v", byWindow[60])
 	}
-	if byWindow[300].Action != ActionPromote || byWindow[300].ModelVersion != "cp-300s-fixture-new" {
+	if byWindow[300].Action != ActionPromote || byWindow[300].GateStatus != GateStatusPass || byWindow[300].ModelVersion != "cp-300s-fixture-new" {
 		t.Fatalf("300s = %+v", byWindow[300])
 	}
-	if byWindow[600].Action != ActionRetain || byWindow[600].ModelVersion != "cp-600s-fixture-old" {
+	if byWindow[600].Action != ActionRetain || byWindow[600].GateStatus != GateStatusFail || byWindow[600].ModelVersion != "cp-600s-fixture-old" {
 		t.Fatalf("600s = %+v", byWindow[600])
 	}
-	if byWindow[1200].Action != ActionRetain || byWindow[1200].ModelVersion != "cp-1200s-fixture-old" {
+	if byWindow[1200].Action != ActionRetain || byWindow[1200].GateStatus != GateStatusFail || byWindow[1200].ModelVersion != "cp-1200s-fixture-old" {
 		t.Fatalf("1200s = %+v", byWindow[1200])
 	}
 }

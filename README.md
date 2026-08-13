@@ -220,14 +220,32 @@ Private checkpoint models refresh through:
 .github/workflows/model-refresh.yml
 ```
 
-The workflow runs on a weekly schedule and can be started manually. Manual runs default to dry-run against fixture quality-report and registry inputs so promote and retain branches are proven without mutating live state.
+The workflow runs on a weekly schedule and can be started manually. Manual runs default to dry-run against fixture quality-report and registry inputs so promote and retain branches are proven without mutating live state. CI also re-runs the promotion package tests with `-count=3` and a dry-run against the mixed/missing-evidence fixtures so gate decisions stay deterministic on every PR.
+
+### Refresh and promotion checklist
+
+1. Produce a private quality report (`go run ./cmd/quality-report ...`) that includes per-window cohort size, peak RSS MAPE, duration MAPE, risk accuracy, baseline comparisons, sparse callouts, and candidate model versions.
+2. Dry-run the gate: `go run ./cmd/model-refresh -dry-run -report <quality-report.json> -registry <promoted-models.json>`.
+3. Confirm each window `gate_status` is evidence-based:
+   - `pass`: required metrics present and within threshold (and not worse than baseline when baselines are present).
+   - `fail`: metrics present but sparse, below cohort, above error thresholds, or worse than baseline.
+   - `missing_evidence`: cohort, candidate version, checkpoint window, or finite metric inputs are absent — fail closed, no promotion.
+4. Apply only after reviewing decisions: `go run ./cmd/model-refresh -report ... -registry ... -out promoted-models.json`.
+5. Point live scoring at the registry via `PREDICTIVE_PROMOTED_MODELS` (opaque window/version metadata only; no training corpus, SQL, thresholds, or feature formulas).
 
 Promotion behavior:
 
 - Each checkpoint window is evaluated independently against the private quality gate.
-- A window is promoted only when its quality gate passes and a candidate model version is present.
-- Failed gates or sparse coverage leave the previously promoted model in place.
+- A window is promoted only when its quality gate passes and required evaluation evidence is present.
+- Failed gates, sparse coverage, or missing evidence leave the previously promoted model in place.
 - Promotion metadata records `observation_window_s` and `model_version` for live scoring via `PREDICTIVE_PROMOTED_MODELS`.
+
+Checked-in gate fixtures for local/CI review:
+
+- `internal/promotion/testdata/quality_report_pass.json`
+- `internal/promotion/testdata/quality_report_fail.json`
+- `internal/promotion/testdata/quality_report_missing_evidence.json`
+- `internal/promotion/testdata/quality_report_mixed.json`
 
 ### Required secrets and configuration
 
@@ -243,8 +261,9 @@ Until those secrets and live quality-report paths are wired, scheduled runs rema
 
 ### Rollback
 
-Rollback is per checkpoint and does not require redeploying every window:
+Rollback is per checkpoint and does not require redeploying every window. Expectation after a bad provider release:
 
-1. Automatic: a failed or sparse refresh keeps the previous promoted model version for that window, so live scoring continues on the last good version.
+1. Automatic: a failed, sparse, or missing-evidence refresh keeps the previous promoted model version for that window, so live scoring continues on the last good version.
 2. Manual: restore the previous `promoted-models.json` registry artifact (or set `PREDICTIVE_PROMOTED_MODELS` to the prior window/version map) and redeploy or update the Cloud Run service env var.
 3. Fallback: clear a window from `PREDICTIVE_PROMOTED_MODELS` to fall back to `PREDICTIVE_MODEL_VERSION` for that checkpoint only.
+4. Do not republish proprietary training details while rolling back; only opaque model versions and checkpoint windows are required for recovery.
