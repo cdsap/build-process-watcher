@@ -1,0 +1,79 @@
+{
+  "period": "fixture-multi-window",
+  "predictions": [
+    {
+      "observation_window_s": 60,
+      "predicted_risk": "low",
+      "outcome": "success",
+      "predicted_peak_rss_mb": 1100,
+      "predicted_duration_s": 900,
+      "actual_risk": "low",
+      "actual_peak_rss_mb": 1000,
+      "actual_duration_s": 950
+    },
+    {
+      "observation_window_s": 60,
+      "predicted_risk": "elevated",
+      "outcome": "success",
+      "predicted_peak_rss_mb": 2100,
+      "predicted_duration_s": 1400,
+      "actual_risk": "elevated",
+      "actual_peak_rss_mb": 2000,
+      "actual_duration_s": 1500
+    },
+    {
+      "observation_window_s": 60,
+      "predicted_risk": "high",
+      "outcome": "success",
+      "state": "partial_data",
+      "incomplete_features": true,
+      "predicted_peak_rss_mb": 3200,
+      "predicted_duration_s": 1800,
+      "actual_risk": "elevated",
+      "actual_peak_rss_mb": 3000,
+      "actual_duration_s": 1700
+    },
+    {
+      "observation_window_s": 300,
+      "predicted_risk": "elevated",
+      "outcome": "success",
+      "predicted_peak_rss_mb": 2200,
+      "predicted_duration_s": 1450,
+      "actual_risk": "elevated",
+      "actual_peak_rss_mb": 2100,
+      "actual_duration_s": 1500
+    },
+    {
+      "observation_window_s": 300,
+      "predicted_risk": "unknown",
+      "outcome": "skipped"
+    },
+    {
+      "observation_window_s": 600,
+      "predicted_risk": "low",
+      "outcome": "timeout",
+      "state": "model_unavailable"
+    },
+    {
+      "observation_window_s": 600,
+      "predicted_risk": "elevated",
+      "outcome": "fallback",
+      "state": "provider_error"
+    },
+    {
+      "observation_window_s": 1200,
+      "predicted_risk": "high",
+      "outcome": "success",
+      "predicted_peak_rss_mb": 2800,
+      "predicted_duration_s": 1600,
+      "actual_risk": "high",
+      "actual_peak_rss_mb": 2700,
+      "actual_duration_s": 1550
+    },
+    {
+      "observation_window_s": 1200,
+      "outcome": "error",
+      "state": "no_data"
+    }
+  ]
+}

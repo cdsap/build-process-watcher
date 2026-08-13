@@ -5,7 +5,9 @@
 
 # Generated private quality-report artifacts
 /artifacts/quality-report/
+/artifacts/prediction-quality-report/
 /tmp-quality-report/
+/prediction-quality-report
 
 # OS files
 .DS_Store

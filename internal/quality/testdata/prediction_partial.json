@@ -1,0 +1,38 @@
+{
+  "period": "fixture-partial",
+  "predictions": [
+    {
+      "observation_window_s": 60,
+      "predicted_risk": "elevated",
+      "outcome": "success",
+      "predicted_peak_rss_mb": 2500,
+      "predicted_duration_s": 1450,
+      "actual_risk": "elevated",
+      "actual_peak_rss_mb": 2600,
+      "actual_duration_s": 1500
+    },
+    {
+      "observation_window_s": 60,
+      "predicted_risk": "unknown",
+      "outcome": "success",
+      "state": "partial_data",
+      "incomplete_features": true
+    },
+    {
+      "observation_window_s": 60,
+      "outcome": "fallback",
+      "state": "provider_error"
+    },
+    {
+      "observation_window_s": 300,
+      "predicted_risk": "low",
+      "outcome": "success"
+    },
+    {
+      "observation_window_s": 300,
+      "predicted_risk": "",
+      "outcome": "error",
+      "state": "provider_error"
+    }
+  ]
+}

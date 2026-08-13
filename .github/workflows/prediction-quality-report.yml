@@ -1,0 +1,128 @@
+name: Prediction Quality Report
+
+on:
+  schedule:
+    # Weekly Wednesday prediction-quality cadence for private ops health review.
+    - cron: "0 6 * * 3"
+  workflow_dispatch:
+    inputs:
+      input_path:
+        description: Path to a private prediction-attempt fixture or exported sample JSON
+        required: true
+        default: internal/quality/testdata/prediction_multi_window.json
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  GONOSUMDB: github.com/cdsap/build-process-watcher/backend
+
+jobs:
+  report:
+    name: Generate private prediction quality report
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Resolve report input
+        id: input
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "path=${{ inputs.input_path }}" >> "$GITHUB_OUTPUT"
+          else
+            # Scheduled runs stay on the checked-in multi-window fixture until live
+            # exported prediction sample paths are wired.
+            echo "path=internal/quality/testdata/prediction_multi_window.json" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate prediction quality report
+        env:
+          INPUT_PATH: ${{ steps.input.outputs.path }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/prediction-quality-report
+          go run ./cmd/prediction-quality-report \
+            -input "$INPUT_PATH" \
+            -out /tmp/prediction-quality-report \
+            -format markdown | tee /tmp/prediction-quality-report/stdout.md
+
+      - name: Prove report covers volume, risk, and ops signals
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("/tmp/prediction-quality-report/prediction-quality-report.json").read_text(encoding="utf-8"))
+          markdown = Path("/tmp/prediction-quality-report/prediction-quality-report.md").read_text(encoding="utf-8")
+          windows = {item["observation_window_s"] for item in report["checkpoints"]}
+          if windows != {60, 300, 600, 1200}:
+              raise SystemExit(f"unexpected windows: {sorted(windows)}")
+          for heading in ("## 60s", "## 5m", "## 10m", "## 20m"):
+              if heading not in markdown:
+                  raise SystemExit(f"missing heading {heading}")
+          for phrase in (
+              "Prediction volume:",
+              "Risk distribution:",
+              "Provider errors:",
+              "Fallback usage:",
+              "Incomplete feature records:",
+          ):
+              if phrase not in markdown:
+                  raise SystemExit(f"missing phrase {phrase}")
+          print("prediction quality report generated for v1 checkpoint windows")
+          PY
+
+      - name: Prove empty and partial fixture paths
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/prediction-quality-empty /tmp/prediction-quality-partial
+          go run ./cmd/prediction-quality-report \
+            -input internal/quality/testdata/prediction_empty.json \
+            -out /tmp/prediction-quality-empty \
+            -format json > /tmp/prediction-quality-empty/stdout.json
+          go run ./cmd/prediction-quality-report \
+            -input internal/quality/testdata/prediction_partial.json \
+            -out /tmp/prediction-quality-partial \
+            -format json > /tmp/prediction-quality-partial/stdout.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          empty = json.loads(Path("/tmp/prediction-quality-empty/prediction-quality-report.json").read_text(encoding="utf-8"))
+          for item in empty["checkpoints"]:
+              if item["prediction_volume"] != 0:
+                  raise SystemExit(f"empty fixture volume not zero: {item}")
+              if "no predictions in window" not in item.get("notes", []):
+                  raise SystemExit(f"empty fixture missing note: {item}")
+
+          partial = json.loads(Path("/tmp/prediction-quality-partial/prediction-quality-report.json").read_text(encoding="utf-8"))
+          by_window = {item["observation_window_s"]: item for item in partial["checkpoints"]}
+          if by_window[60]["prediction_volume"] != 3:
+              raise SystemExit("60s partial volume mismatch")
+          if by_window[600]["prediction_volume"] != 0 or by_window[1200]["prediction_volume"] != 0:
+              raise SystemExit("partial fixture should leave later windows empty")
+          if by_window[60]["fallback_usage"] < 1 or by_window[60]["provider_errors"] < 1:
+              raise SystemExit("partial fixture missing provider/fallback signals")
+          markdown = Path("/tmp/prediction-quality-partial/prediction-quality-report.md").read_text(encoding="utf-8")
+          if "Calibration: unavailable" not in markdown and "Risk-class accuracy:" not in markdown:
+              raise SystemExit("partial markdown missing calibration section")
+          print("empty and partial prediction fixtures proven")
+          PY
+
+      - name: Upload private prediction-quality-report artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prediction-quality-report
+          path: /tmp/prediction-quality-report/
+          if-no-files-found: warn

@@ -15,11 +15,12 @@ This repository owns proprietary model execution, feature derivation, scoring th
 
 - `internal/provider`: private implementation of the public `predictor.Provider` contract.
 - `internal/api`: private HTTP API that exposes health and prediction endpoints for the public backend to call.
-- `internal/quality`: private recurring quality report over finished-run checkpoint outcomes, including baseline comparison and sparse-coverage callouts.
+- `internal/quality`: private recurring quality reports over finished-run checkpoint outcomes (promotion review) and exported prediction attempts (production health), including baseline comparison, sparse-coverage callouts, risk distribution, and provider/fallback triage.
 - `internal/relprogress`: private relative-progress checkpoint prototype and fixture study (not wired into live `/predict`).
 - `internal/promotion`: private model refresh evaluation, independent checkpoint promotion gates, and promotion registry metadata for live scoring.
 - `cmd/predictive-backend`: Cloud Run entrypoint for the private provider API.
-- `cmd/quality-report`: generates the private markdown/JSON quality report from a controlled finished-run fixture or dataset.
+- `cmd/quality-report`: generates the private markdown/JSON model quality report from a controlled finished-run fixture or dataset.
+- `cmd/prediction-quality-report`: generates the private markdown/JSON prediction quality report from exported prediction attempts or fixtures.
 - `cmd/relprogress-eval`: renders a private relative-progress evaluation report from fixture JSON.
 - `cmd/model-refresh`: manual/scheduled dry-run and apply command for refresh and promotion decisions.
 
@@ -211,6 +212,41 @@ Usage:
 4. Use `artifacts/quality-report/quality-report.json` as the private quality-report input for promotion gates.
 
 Do not copy generated quality-report artifacts, dataset paths containing customer metadata, thresholds, or feature formulas into the public Build Process Watcher repository.
+
+## Recurring Prediction Quality Report
+
+Private production prediction health is reviewed through:
+
+```text
+.github/workflows/prediction-quality-report.yml
+```
+
+The workflow runs on a weekly schedule and can be started manually. Until live exported prediction sample paths are wired, scheduled runs use the checked-in multi-window fixture. Manual runs can point `-input` at another private fixture such as `internal/quality/testdata/prediction_empty.json` or `internal/quality/testdata/prediction_partial.json`.
+
+Generate the report locally:
+
+```bash
+mkdir -p artifacts/prediction-quality-report
+go run ./cmd/prediction-quality-report \
+  -input internal/quality/testdata/prediction_multi_window.json \
+  -out artifacts/prediction-quality-report
+```
+
+Empty and partial fixtures are also available:
+
+```bash
+go run ./cmd/prediction-quality-report -input internal/quality/testdata/prediction_empty.json -out artifacts/prediction-quality-report
+go run ./cmd/prediction-quality-report -input internal/quality/testdata/prediction_partial.json -out artifacts/prediction-quality-report
+```
+
+The command writes private artifacts to the `-out` directory:
+
+- `prediction-quality-report.json`: per-window prediction volume, risk distribution, outcome/state triage, and optional calibration summary
+- `prediction-quality-report.md`: human-readable production prediction health report
+
+The report summarizes prediction volume by checkpoint window, risk distribution (including missing/unknown), provider errors, fallback usage, incomplete feature records, and calibration or outcome-quality signals when labels are present. It does not include training corpus details, thresholds, feature formulas, or customer metadata.
+
+Generated files under `artifacts/prediction-quality-report/` are local/private review outputs and are gitignored.
 
 ## Automated Model Refresh And Promotion
 
