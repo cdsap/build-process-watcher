@@ -106,4 +106,17 @@ describe('predictive reliability public boundary', () => {
 
     expect(violations).toEqual([]);
   });
+
+  it('documents that relative-progress checkpoints need no public schema change', () => {
+    const readme = readRepoFile('README.md');
+    expect(readme).toContain('Relative-progress checkpoints (v2)');
+    expect(readme).toContain('No public schema or dashboard change is required');
+    expect(readme).toContain('observation_window_s');
+    expect(readme).toContain('Legacy runs that omit `prediction_checkpoints` remain valid');
+
+    const models = readRepoFile('backend/internal/models/models.go');
+    expect(models).toContain('No additional public fields are required for relative-progress results');
+    expect(models).not.toMatch(/\brelative_progress\b/);
+    expect(models).not.toMatch(/\bprogress_(ratio|pct|percent)\b/);
+  });
 });
