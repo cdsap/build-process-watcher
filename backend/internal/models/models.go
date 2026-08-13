@@ -58,6 +58,9 @@ type RunDoc struct {
 }
 
 // PredictionCheckpoint is a public-safe prediction result for one observation window.
+// Relative-progress scheduling is private provider policy; when such a gate fires,
+// results still use this shape with observation_window_s set to elapsed seconds at
+// evaluation. No additional public fields are required for relative-progress results.
 type PredictionCheckpoint struct {
 	ObservationWindowS int       `json:"observation_window_s" firestore:"observation_window_s"`
 	Status             string    `json:"status" firestore:"status"`

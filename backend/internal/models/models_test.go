@@ -219,6 +219,90 @@ func TestRunResponse_OmitsPredictionCheckpointsWhenAbsent(t *testing.T) {
 	}
 }
 
+func TestRunResponse_AcceptsLegacyJSONWithoutPredictionFields(t *testing.T) {
+	payload := []byte(`{"samples":[],"finished":true,"updated_at":"2026-01-01T00:00:00Z"}`)
+	var response RunResponse
+	if err := json.Unmarshal(payload, &response); err != nil {
+		t.Fatalf("legacy run JSON should unmarshal without prediction fields: %v", err)
+	}
+	if response.PredictionCheckpoints != nil {
+		t.Fatalf("PredictionCheckpoints = %v, want nil for legacy runs", response.PredictionCheckpoints)
+	}
+}
+
+func TestRunResponse_RelativeProgressResultsUseExistingCheckpointFields(t *testing.T) {
+	// Relative-progress gates remain private; public results still key by elapsed seconds.
+	riskScore := 18.0
+	peakRSS := 1536.0
+	duration := 420.0
+	createdAt := time.Unix(456, 0).UTC()
+	response := RunResponse{
+		Samples: []Sample{},
+		PredictionCheckpoints: []PredictionCheckpoint{
+			{
+				ObservationWindowS: 247,
+				Status:             "ready",
+				RiskLevel:          "low",
+				RiskScore:          &riskScore,
+				Confidence:         "medium",
+				PredictedPeakRSSMB: &peakRSS,
+				PredictedDurationS: &duration,
+				Signals:            []string{"stable memory trend"},
+				ProviderID:         "private",
+				ModelVersion:       "opaque-v2",
+				CreatedAt:          createdAt,
+				Message:            "checkpoint ready",
+			},
+		},
+		Finished: false,
+	}
+
+	jsonData, err := json.Marshal(response)
+	if err != nil {
+		t.Fatalf("Failed to marshal RunResponse: %v", err)
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(jsonData, &raw); err != nil {
+		t.Fatalf("Failed to unmarshal RunResponse map: %v", err)
+	}
+	checkpoints, ok := raw["prediction_checkpoints"].([]any)
+	if !ok || len(checkpoints) != 1 {
+		t.Fatalf("prediction_checkpoints = %v, want one checkpoint", raw["prediction_checkpoints"])
+	}
+	checkpoint, ok := checkpoints[0].(map[string]any)
+	if !ok {
+		t.Fatalf("checkpoint entry type = %T, want object", checkpoints[0])
+	}
+	for _, disallowed := range []string{
+		"relative_progress",
+		"progress_ratio",
+		"progress_pct",
+		"progress_percent",
+		"checkpoint_policy",
+		"evaluation_threshold",
+	} {
+		if _, present := checkpoint[disallowed]; present {
+			t.Fatalf("public checkpoint must not require %q: %s", disallowed, jsonData)
+		}
+	}
+
+	var unmarshaled RunResponse
+	if err := json.Unmarshal(jsonData, &unmarshaled); err != nil {
+		t.Fatalf("Failed to unmarshal RunResponse: %v", err)
+	}
+	if len(unmarshaled.PredictionCheckpoints) != 1 {
+		t.Fatalf("PredictionCheckpoints length = %d, want 1", len(unmarshaled.PredictionCheckpoints))
+	}
+	got := unmarshaled.PredictionCheckpoints[0]
+	if got.ObservationWindowS != 247 {
+		t.Fatalf("ObservationWindowS = %d, want 247", got.ObservationWindowS)
+	}
+	if got.Status != "ready" || got.RiskLevel != "low" || got.Confidence != "medium" {
+		t.Fatalf("unexpected checkpoint fields: %+v", got)
+	}
+}
+
 func TestRunDoc_PredictiveReliabilityDefaultsFalse(t *testing.T) {
 	var runDoc RunDoc
 	payload := []byte(`{"run_id":"run-1"}`)
