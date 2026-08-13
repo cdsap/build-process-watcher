@@ -114,14 +114,16 @@ Sparse and no-promotable-model fixtures are also available for local review:
 ```bash
 go run ./cmd/quality-report -input internal/quality/testdata/sparse.json -out artifacts/quality-report
 go run ./cmd/quality-report -input internal/quality/testdata/no_promotable.json -out artifacts/quality-report
+go run ./cmd/quality-report -input internal/quality/testdata/relative_sparse.json -out artifacts/quality-report
+go run ./cmd/quality-report -input internal/quality/testdata/relative_improved.json -out artifacts/quality-report
 ```
 
 The command writes private artifacts to the `-out` directory:
 
-- `quality-report.json`: checkpoint quality summary consumed by promotion review
-- `quality-report.md`: human-readable error, risk-class, and baseline comparison report
+- `quality-report.json`: live fixed-window checkpoint quality plus advisory relative-progress candidate summary for promotion review
+- `quality-report.md`: human-readable error, risk-class, and baseline comparison report with separated live and relative-progress sections
 
-Generated files under `artifacts/quality-report/` are local/private review outputs and are gitignored. The report summarizes cohort size, prediction MAPE, risk-class accuracy, baseline comparison, sparse coverage, and candidate model presence by checkpoint window. It does not include training corpus details, thresholds, feature formulas, or customer metadata.
+Generated files under `artifacts/quality-report/` are local/private review outputs and are gitignored. The report summarizes cohort size, prediction MAPE, risk-class accuracy, baseline comparison, sparse coverage, and candidate model presence by live checkpoint window, and separately summarizes advisory relative-progress candidates against fixed-window and baseline comparisons. Relative-progress evidence is advisory only and does not change live scoring. It does not include training corpus details, thresholds, feature formulas, or customer metadata.
 
 Run the private relative-progress fixture study (advisory only; does not change the live provider):
 
@@ -267,14 +269,15 @@ The workflow runs on a weekly schedule and can be started manually. Manual runs 
 
 ### Refresh and promotion checklist
 
-1. Produce a private quality report (`go run ./cmd/quality-report ...`) that includes per-window cohort size, peak RSS MAPE, duration MAPE, risk accuracy, baseline comparisons, sparse callouts, and candidate model versions.
+1. Produce a private quality report (`go run ./cmd/quality-report ...`) that includes per-window cohort size, peak RSS MAPE, duration MAPE, risk accuracy, baseline comparisons, sparse callouts, and candidate model versions for live fixed windows, plus an advisory relative-progress candidate section when present.
 2. Dry-run the gate: `go run ./cmd/model-refresh -dry-run -report <quality-report.json> -registry <promoted-models.json>`.
-3. Confirm each window `gate_status` is evidence-based:
+3. Confirm each live window `gate_status` is evidence-based:
    - `pass`: required metrics present and within threshold (and not worse than baseline when baselines are present).
    - `fail`: metrics present but sparse, below cohort, above error thresholds, or worse than baseline.
    - `missing_evidence`: cohort, candidate version, checkpoint window, or finite metric inputs are absent — fail closed, no promotion.
-4. Apply only after reviewing decisions: `go run ./cmd/model-refresh -report ... -registry ... -out promoted-models.json`.
-5. Point live scoring at the registry via `PREDICTIVE_PROMOTED_MODELS` (opaque window/version metadata only; no training corpus, SQL, thresholds, or feature formulas).
+4. Review `relative_progress_review` for advisory candidate evidence. Relative-progress candidates never enter the live registry; live fixed-window promote/retain decisions continue unchanged.
+5. Apply only after reviewing decisions: `go run ./cmd/model-refresh -report ... -registry ... -out promoted-models.json`.
+6. Point live scoring at the registry via `PREDICTIVE_PROMOTED_MODELS` (opaque window/version metadata only; no training corpus, SQL, thresholds, or feature formulas).
 
 Promotion behavior:
 

@@ -213,6 +213,166 @@ func TestRegistryRoundTripAndVersionLookup(t *testing.T) {
 	}
 }
 
+func TestRefreshRecordsRelativeProgressReviewWithoutChangingLivePromotion(t *testing.T) {
+	previous := Registry{Models: []PromotedModel{
+		{ObservationWindowS: 60, ModelVersion: "cp-60s-old", ModelSetVersion: "set-old"},
+		{ObservationWindowS: 300, ModelVersion: "cp-300s-old", ModelSetVersion: "set-old"},
+		{ObservationWindowS: 600, ModelVersion: "cp-600s-old", ModelSetVersion: "set-old"},
+		{ObservationWindowS: 1200, ModelVersion: "cp-1200s-old", ModelSetVersion: "set-old"},
+	}}
+
+	t.Run("no candidate", func(t *testing.T) {
+		report := QualityReport{
+			ModelSetVersion: "set-no-rel",
+			Checkpoints: []CheckpointQuality{
+				passingCheckpoint(60, "cp-60s-new"),
+				passingCheckpoint(300, "cp-300s-new"),
+				passingCheckpoint(600, "cp-600s-new"),
+				passingCheckpoint(1200, "cp-1200s-new"),
+			},
+			RelativeProgress: RelativeProgressQuality{
+				EvaluationRole:           EvaluationRoleAdvisory,
+				LiveFixedWindowsRetained: true,
+				Notes:                    []string{"no relative-progress candidates"},
+			},
+		}
+		result, err := Refresh(previous, report, DefaultGate(), true, time.Unix(1_700_000_300, 0).UTC())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.RelativeProgressReview.EvaluationRole != EvaluationRoleAdvisory {
+			t.Fatalf("role = %q", result.RelativeProgressReview.EvaluationRole)
+		}
+		if !result.RelativeProgressReview.LiveScoringUnchanged {
+			t.Fatal("expected live scoring unchanged")
+		}
+		if result.RelativeProgressReview.CandidateWindows != 0 {
+			t.Fatalf("CandidateWindows = %d", result.RelativeProgressReview.CandidateWindows)
+		}
+		if !contains(result.RelativeProgressReview.Notes, "no relative-progress candidates") {
+			t.Fatalf("notes = %v", result.RelativeProgressReview.Notes)
+		}
+		if !contains(result.RelativeProgressReview.Notes, "live fixed-window promotion retained") {
+			t.Fatalf("notes = %v", result.RelativeProgressReview.Notes)
+		}
+		for _, decision := range result.Decisions {
+			if decision.EvaluationRole != EvaluationRoleLive {
+				t.Fatalf("decision role = %q", decision.EvaluationRole)
+			}
+			if decision.Action != ActionPromote {
+				t.Fatalf("decision = %+v, want promote", decision)
+			}
+		}
+		if len(result.Registry.Models) != 4 {
+			t.Fatalf("registry size = %d", len(result.Registry.Models))
+		}
+	})
+
+	t.Run("sparse candidate", func(t *testing.T) {
+		report := QualityReport{
+			ModelSetVersion: "set-sparse-rel",
+			Checkpoints: []CheckpointQuality{
+				passingCheckpoint(60, "cp-60s-new"),
+				passingCheckpoint(300, "cp-300s-new"),
+				passingCheckpoint(600, "cp-600s-new"),
+				passingCheckpoint(1200, "cp-1200s-new"),
+			},
+			RelativeProgress: RelativeProgressQuality{
+				EvaluationRole:           EvaluationRoleAdvisory,
+				LiveFixedWindowsRetained: true,
+				CandidateWindows:         1,
+				SparseCandidateWindows:   1,
+				Notes:                    []string{"relative-progress candidate coverage is sparse"},
+				Candidates: []RelativeCandidateQuality{{
+					ObservationWindowS:    1800,
+					EvaluationRole:        EvaluationRoleAdvisory,
+					CohortSize:            1,
+					Sparse:                true,
+					CandidateModelVersion: "rp-1800s-sparse",
+					Notes:                 []string{"sparse relative-progress candidate coverage"},
+				}},
+			},
+		}
+		result, err := Refresh(previous, report, DefaultGate(), true, time.Unix(1_700_000_301, 0).UTC())
+		if err != nil {
+			t.Fatal(err)
+		}
+		review := result.RelativeProgressReview
+		if review.SparseCandidateWindows != 1 || review.CandidateWindows != 1 {
+			t.Fatalf("review = %+v", review)
+		}
+		if len(review.Candidates) != 1 || !review.Candidates[0].Sparse {
+			t.Fatalf("candidates = %+v", review.Candidates)
+		}
+		if review.Candidates[0].EvaluationRole != EvaluationRoleAdvisory {
+			t.Fatalf("candidate role = %q", review.Candidates[0].EvaluationRole)
+		}
+		if _, ok := result.Registry.VersionMap()[1800]; ok {
+			t.Fatal("relative candidate must not enter live registry")
+		}
+		for _, decision := range result.Decisions {
+			if decision.ObservationWindowS == 1800 {
+				t.Fatal("relative window must not appear in live decisions")
+			}
+			if decision.Action != ActionPromote {
+				t.Fatalf("live decision unexpectedly changed: %+v", decision)
+			}
+		}
+	})
+
+	t.Run("improved candidate", func(t *testing.T) {
+		report := QualityReport{
+			ModelSetVersion: "set-improved-rel",
+			Checkpoints: []CheckpointQuality{
+				passingCheckpoint(60, "cp-60s-new"),
+				failingCheckpoint(300, "cp-300s-new", false),
+				passingCheckpoint(600, "cp-600s-new"),
+				passingCheckpoint(1200, "cp-1200s-new"),
+			},
+			RelativeProgress: RelativeProgressQuality{
+				EvaluationRole:           EvaluationRoleAdvisory,
+				LiveFixedWindowsRetained: true,
+				CandidateWindows:         1,
+				ImprovedCandidateWindows: 1,
+				Notes:                    []string{"relative-progress candidates improve on fixed-window or baseline quality"},
+				Candidates: []RelativeCandidateQuality{{
+					ObservationWindowS:    1800,
+					EvaluationRole:        EvaluationRoleAdvisory,
+					CohortSize:            3,
+					ImprovedVsFixed:       true,
+					ImprovedVsBaseline:    true,
+					CandidateModelVersion: "rp-1800s-improved",
+					Notes:                 []string{"relative-progress candidate improves on compared fixed-window checkpoint"},
+				}},
+			},
+		}
+		result, err := Refresh(previous, report, DefaultGate(), true, time.Unix(1_700_000_302, 0).UTC())
+		if err != nil {
+			t.Fatal(err)
+		}
+		review := result.RelativeProgressReview
+		if review.ImprovedCandidateWindows != 1 {
+			t.Fatalf("ImprovedCandidateWindows = %d", review.ImprovedCandidateWindows)
+		}
+		if len(review.Candidates) != 1 || !review.Candidates[0].ImprovedVsFixed || !review.Candidates[0].ImprovedVsBaseline {
+			t.Fatalf("candidates = %+v", review.Candidates)
+		}
+		byWindow := decisionsByWindow(result)
+		if byWindow[300].Action != ActionRetain || byWindow[300].ModelVersion != "cp-300s-old" {
+			t.Fatalf("improved relative evidence must not override live retain: %+v", byWindow[300])
+		}
+		if byWindow[60].Action != ActionPromote || byWindow[60].ModelVersion != "cp-60s-new" {
+			t.Fatalf("live promote path changed: %+v", byWindow[60])
+		}
+		if _, ok := result.Registry.VersionMap()[1800]; ok {
+			t.Fatal("improved relative candidate must not enter live registry")
+		}
+		if !review.LiveScoringUnchanged {
+			t.Fatal("expected live scoring unchanged for improved candidate evidence")
+		}
+	})
+}
+
 func passingCheckpoint(window int, version string) CheckpointQuality {
 	return CheckpointQuality{
 		ObservationWindowS:       window,

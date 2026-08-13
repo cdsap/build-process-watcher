@@ -1,0 +1,77 @@
+{
+  "model_set_version": "fixture-set-relative-sparse",
+  "min_cohort": 3,
+  "runs": [
+    {
+      "checkpoints": [
+        {
+          "observation_window_s": 60,
+          "predicted_peak_rss_mb": 2500,
+          "predicted_duration_s": 1450,
+          "predicted_risk": "elevated",
+          "baseline_peak_rss_mb": 2900,
+          "baseline_duration_s": 1700,
+          "baseline_risk": "high",
+          "actual_peak_rss_mb": 2600,
+          "actual_duration_s": 1500,
+          "actual_risk": "elevated",
+          "candidate_model_version": "cp-60s-fixture"
+        },
+        {
+          "observation_window_s": 300,
+          "predicted_peak_rss_mb": 2520,
+          "predicted_duration_s": 1460,
+          "predicted_risk": "elevated",
+          "baseline_peak_rss_mb": 2910,
+          "baseline_duration_s": 1710,
+          "baseline_risk": "high",
+          "actual_peak_rss_mb": 2600,
+          "actual_duration_s": 1500,
+          "actual_risk": "elevated",
+          "candidate_model_version": "cp-300s-fixture"
+        },
+        {
+          "observation_window_s": 600,
+          "predicted_peak_rss_mb": 2540,
+          "predicted_duration_s": 1470,
+          "predicted_risk": "elevated",
+          "baseline_peak_rss_mb": 2920,
+          "baseline_duration_s": 1720,
+          "baseline_risk": "high",
+          "actual_peak_rss_mb": 2600,
+          "actual_duration_s": 1500,
+          "actual_risk": "elevated",
+          "candidate_model_version": "cp-600s-fixture"
+        },
+        {
+          "observation_window_s": 1200,
+          "predicted_peak_rss_mb": 2560,
+          "predicted_duration_s": 1480,
+          "predicted_risk": "elevated",
+          "baseline_peak_rss_mb": 2930,
+          "baseline_duration_s": 1730,
+          "baseline_risk": "high",
+          "actual_peak_rss_mb": 2600,
+          "actual_duration_s": 1500,
+          "actual_risk": "elevated",
+          "candidate_model_version": "cp-1200s-fixture"
+        }
+      ],
+      "relative_progress_candidates": [
+        {
+          "observation_window_s": 1800,
+          "predicted_peak_rss_mb": 2580,
+          "predicted_duration_s": 1490,
+          "predicted_risk": "elevated",
+          "baseline_peak_rss_mb": 3000,
+          "baseline_duration_s": 1800,
+          "baseline_risk": "high",
+          "actual_peak_rss_mb": 2600,
+          "actual_duration_s": 1500,
+          "actual_risk": "elevated",
+          "candidate_model_version": "rp-1800s-sparse"
+        }
+      ]
+    }
+  ]
+}

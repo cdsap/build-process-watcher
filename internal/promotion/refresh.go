@@ -49,6 +49,7 @@ func Refresh(previous Registry, report QualityReport, gate Gate, dryRun bool, no
 		checkpoint, found := byWindow[window]
 		decision := Decision{
 			ObservationWindowS: window,
+			EvaluationRole:     EvaluationRoleLive,
 			PreviousVersion:    previousModel.ModelVersion,
 		}
 
@@ -92,7 +93,57 @@ func Refresh(previous Registry, report QualityReport, gate Gate, dryRun bool, no
 	}
 
 	result.Registry = result.Registry.Normalize()
+	result.RelativeProgressReview = buildRelativeProgressReview(report.RelativeProgress)
 	return result, nil
+}
+
+func buildRelativeProgressReview(section RelativeProgressQuality) RelativeProgressReview {
+	review := RelativeProgressReview{
+		EvaluationRole:           firstNonEmpty(section.EvaluationRole, EvaluationRoleAdvisory),
+		LiveScoringUnchanged:     true,
+		CandidateWindows:         section.CandidateWindows,
+		SparseCandidateWindows:   section.SparseCandidateWindows,
+		ImprovedCandidateWindows: section.ImprovedCandidateWindows,
+		Candidates:               make([]RelativeCandidateEvidence, 0, len(section.Candidates)),
+		Notes:                    append([]string(nil), section.Notes...),
+	}
+	if review.CandidateWindows == 0 && len(review.Notes) == 0 {
+		review.Notes = append(review.Notes, "no relative-progress candidates")
+	}
+	if !containsString(review.Notes, "live fixed-window promotion retained") {
+		review.Notes = append(review.Notes, "live fixed-window promotion retained")
+	}
+	for _, candidate := range section.Candidates {
+		review.Candidates = append(review.Candidates, RelativeCandidateEvidence{
+			ObservationWindowS:    candidate.ObservationWindowS,
+			EvaluationRole:        firstNonEmpty(candidate.EvaluationRole, EvaluationRoleAdvisory),
+			CohortSize:            candidate.CohortSize,
+			Sparse:                candidate.Sparse,
+			ImprovedVsFixed:       candidate.ImprovedVsFixed,
+			ImprovedVsBaseline:    candidate.ImprovedVsBaseline,
+			CandidateModelVersion: candidate.CandidateModelVersion,
+			Notes:                 append([]string(nil), candidate.Notes...),
+		})
+	}
+	return review
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func retainOrSkip(previousVersion string) string {
