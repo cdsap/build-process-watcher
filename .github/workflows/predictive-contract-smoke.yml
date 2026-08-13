@@ -1,0 +1,183 @@
+name: Predictive Contract Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      backend_url:
+        description: Public Build Process Watcher backend URL
+        required: false
+        default: https://build-process-watcher-backend-685615422311.us-central1.run.app
+        type: string
+      expected_checkpoints:
+        description: Comma-separated checkpoint windows that must be ready
+        required: false
+        default: 30,60,180
+        type: string
+      action_ref:
+        description: Build Process Watcher ref to test
+        required: false
+        default: main
+        type: string
+      run_seconds:
+        description: Synthetic GradleDaemon runtime in seconds
+        required: false
+        default: '240'
+        type: string
+      interval:
+        description: Monitor interval in seconds
+        required: false
+        default: '2'
+        type: string
+  workflow_call:
+    inputs:
+      backend_url:
+        description: Public Build Process Watcher backend URL
+        required: false
+        default: https://build-process-watcher-backend-685615422311.us-central1.run.app
+        type: string
+      expected_checkpoints:
+        description: Comma-separated checkpoint windows that must be ready
+        required: false
+        default: 30,60,180
+        type: string
+      action_ref:
+        description: Build Process Watcher ref to test
+        required: false
+        default: main
+        type: string
+      run_seconds:
+        description: Synthetic GradleDaemon runtime in seconds
+        required: false
+        default: '240'
+        type: string
+      interval:
+        description: Monitor interval in seconds
+        required: false
+        default: '2'
+        type: string
+    outputs:
+      bpw_run_id:
+        description: Build Process Watcher run ID verified by the smoke
+        value: ${{ jobs.run-public-action.outputs.bpw_run_id }}
+
+permissions:
+  contents: read
+
+jobs:
+  run-public-action:
+    name: Run public action
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      bpw_run_id: ${{ steps.run-id.outputs.bpw_run_id }}
+
+    steps:
+      - name: Resolve run ID
+        id: run-id
+        run: echo "bpw_run_id=bpw-contract-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
+      - name: Check out Build Process Watcher action
+        uses: actions/checkout@v4
+        with:
+          repository: cdsap/build-process-watcher
+          ref: ${{ inputs.action_ref }}
+          path: bpw-action
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Start Build Process Watcher
+        uses: ./bpw-action
+        env:
+          BACKEND_URL: ${{ inputs.backend_url }}
+        with:
+          predictive_reliability: 'true'
+          interval: ${{ inputs.interval }}
+          debug: 'true'
+          run_id: ${{ steps.run-id.outputs.bpw_run_id }}
+
+      - name: Run synthetic GradleDaemon workload
+        env:
+          RUN_SECONDS: ${{ inputs.run_seconds }}
+        run: |
+          set -euo pipefail
+
+          if ! [[ "$RUN_SECONDS" =~ ^[0-9]+$ ]] || [ "$RUN_SECONDS" -lt 180 ]; then
+            echo "run_seconds must be an integer >= 180."
+            exit 1
+          fi
+
+          cat > GradleDaemon.java <<'EOF'
+          public class GradleDaemon {
+            public static void main(String[] args) throws Exception {
+              long end = System.currentTimeMillis() + (Long.parseLong(args[0]) * 1000L);
+              byte[][] retained = new byte[16][];
+              int i = 0;
+              while (System.currentTimeMillis() < end) {
+                retained[i % retained.length] = new byte[1024 * 1024];
+                Math.sqrt(System.nanoTime());
+                Thread.sleep(250);
+                i++;
+              }
+            }
+          }
+          EOF
+
+          javac GradleDaemon.java
+          java GradleDaemon "$RUN_SECONDS"
+
+  verify-backend-record:
+    name: Verify backend run
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: run-public-action
+
+    steps:
+      - name: Verify finished run and ready checkpoints
+        env:
+          BACKEND_URL: ${{ inputs.backend_url }}
+          BPW_RUN_ID: ${{ needs.run-public-action.outputs.bpw_run_id }}
+          EXPECTED_CHECKPOINTS: ${{ inputs.expected_checkpoints }}
+        run: |
+          set -euo pipefail
+
+          expected_checkpoints="$(jq -Rc '
+            split(",")
+            | map(gsub("^\\s+|\\s+$"; ""))
+            | map(select(length > 0))
+            | map(tonumber? // empty)
+          ' <<<"$EXPECTED_CHECKPOINTS")"
+
+          for attempt in {1..60}; do
+            if curl --fail --silent --show-error "$BACKEND_URL/runs/$BPW_RUN_ID" > /tmp/predictive-contract-run.json; then
+              if jq -e \
+                --argjson expected_checkpoints "$expected_checkpoints" \
+                '.finished == true
+                  and (.samples | type == "array" and length > 0)
+                  and ([
+                    .prediction_checkpoints[]?
+                    | select(.status == "ready")
+                    | .observation_window_s
+                  ] | sort) as $ready
+                  | ($expected_checkpoints | sort) as $expected
+                  | all($expected[]; . as $checkpoint | $ready | index($checkpoint))' \
+                /tmp/predictive-contract-run.json; then
+                jq \
+                  '{finished, finished_at, sample_count: (.samples | length), checkpoints: [.prediction_checkpoints[]? | {window: .observation_window_s, status, risk: .risk_level, score: .risk_score}]}' \
+                  /tmp/predictive-contract-run.json
+                exit 0
+              fi
+            fi
+
+            echo "Waiting for finished predictive contract run (${attempt}/60)."
+            sleep 10
+          done
+
+          echo "Predictive contract smoke did not produce a finished BPW run with ready checkpoints."
+          jq \
+            '{finished, finished_at, sample_count: (.samples | length), checkpoints: [.prediction_checkpoints[]? | {window: .observation_window_s, status, risk: .risk_level, score: .risk_score}]}' \
+            /tmp/predictive-contract-run.json || true
+          exit 1

@@ -69,6 +69,8 @@ When run data contains public-safe `prediction_checkpoints`, the dashboard rende
 
 The public backend sends only public run telemetry to `/predict` and stores only the returned public-safe checkpoint. Do not add private model names, thresholds, feature formulas, training data paths, or customer-specific tuning to this repository or to public frontend config.
 
+The reusable workflow `.github/workflows/predictive-contract-smoke.yml` validates this public contract end to end. It runs the public action with `predictive_reliability: 'true'`, waits for the action post-step to finish the backend run, and verifies that the public backend stores samples plus ready expected checkpoints. Provider deployment pipelines can call this workflow after deploy without exposing private provider internals.
+
 ---
 
 ## 🧭 Behavior Matrix
