@@ -286,3 +286,14 @@ jobs:
               and (.checkpoint.predicted_duration_s | not)
               and (.checkpoint.signals | not)' \
             /tmp/predict-response-300.json
+
+  external-predictive-smoke:
+    name: Gate external predictive smoke
+    needs: deploy
+    uses: cdsap/build-process-watcher/.github/workflows/predictive-contract-smoke.yml@main
+    with:
+      backend_url: ${{ vars.EXTERNAL_SMOKE_PUBLIC_BACKEND_URL || 'https://build-process-watcher-backend-685615422311.us-central1.run.app' }}
+      expected_checkpoints: ${{ vars.EXTERNAL_SMOKE_EXPECTED_CHECKPOINTS || '30,60,180' }}
+      action_ref: ${{ vars.EXTERNAL_SMOKE_ACTION_REF || 'main' }}
+      run_seconds: ${{ vars.EXTERNAL_SMOKE_RUN_SECONDS || '240' }}
+      interval: ${{ vars.EXTERNAL_SMOKE_INTERVAL || '2' }}

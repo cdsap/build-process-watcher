@@ -180,6 +180,8 @@ It builds the private Docker image, pushes it to Artifact Registry, and deploys 
 
 The deploy service account needs permissions to push to the selected Artifact Registry repository and deploy/update the selected Cloud Run service.
 
+The deployment workflow also gates each deploy with the public Build Process Watcher predictive contract smoke. The gate calls the reusable workflow in `cdsap/build-process-watcher` after the private provider deploy succeeds, then waits for the public action/backend path to produce a finished run with ready checkpoints.
+
 Manual workflow inputs define the public-safe runtime configuration. Automatic `main` deployments use the repository variable with the matching name when present, otherwise the listed default:
 
 - `GCP_PROJECT_ID`: Google Cloud project used by the public backend storage contract. Defaults to `process-watcher-473421`.
@@ -191,6 +193,11 @@ Manual workflow inputs define the public-safe runtime configuration. Automatic `
 - `PREDICTIVE_PROVIDER_ID`: opaque provider identifier stored with public-safe checkpoints. Defaults to `private-provider`.
 - `PREDICTIVE_MODEL_VERSION`: opaque model version stored with public-safe checkpoints. Defaults to `private-heuristic-v1`.
 - `ALLOW_UNAUTHENTICATED`: whether Cloud Run accepts unauthenticated HTTP requests. Defaults to `false`; production should keep this false.
+- `EXTERNAL_SMOKE_PUBLIC_BACKEND_URL`: public Build Process Watcher backend URL used to verify the generated run record.
+- `EXTERNAL_SMOKE_EXPECTED_CHECKPOINTS`: comma-separated checkpoint windows that must be `ready` in the generated BPW run. Defaults to `30,60,180`.
+- `EXTERNAL_SMOKE_ACTION_REF`: Build Process Watcher action ref used by the reusable contract smoke. Defaults to `main`.
+- `EXTERNAL_SMOKE_RUN_SECONDS`: synthetic GradleDaemon runtime used by the contract smoke. Defaults to `240`.
+- `EXTERNAL_SMOKE_INTERVAL`: public action monitor interval used by the contract smoke. Defaults to `2`.
 
 Do not put model internals, thresholds, feature formulas, training data locations, or customer-specific tuning in workflow inputs, repository variables, or Cloud Run environment variables.
 
