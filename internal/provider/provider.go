@@ -118,6 +118,12 @@ func New(config Config) *Provider {
 	}
 }
 
+// ValidateFeatureParity fails closed when live CheckpointRow features diverge
+// from the private training feature contract. Intended for provider startup/CI.
+func ValidateFeatureParity() error {
+	return features.ValidateTrainingParity()
+}
+
 func (p *Provider) modelVersionForWindow(observationWindowS int) string {
 	if version := strings.TrimSpace(p.promotedModels[observationWindowS]); version != "" {
 		return version

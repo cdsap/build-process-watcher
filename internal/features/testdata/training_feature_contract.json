@@ -1,0 +1,20 @@
+{
+  "checkpoint_windows_s": [60, 300, 600, 1200],
+  "features": [
+    {"name": "sample_count", "type": "int"},
+    {"name": "process_count", "type": "int"},
+    {"name": "max_elapsed_s", "type": "float64"},
+    {"name": "first_elapsed_s", "type": "float64"},
+    {"name": "peak_rss_mb", "type": "float64"},
+    {"name": "first_rss_mb", "type": "float64"},
+    {"name": "latest_rss_mb", "type": "float64"},
+    {"name": "rss_growth_mb_per_min", "type": "float64"},
+    {"name": "heap_utilization", "type": "float64"},
+    {"name": "gc_time_ratio", "type": "float64"},
+    {"name": "jit_compiled_methods", "type": "optional_int"},
+    {"name": "jit_failed_compilations", "type": "optional_int"},
+    {"name": "jit_compilation_time_ms", "type": "optional_int"},
+    {"name": "classes_loaded", "type": "optional_int"},
+    {"name": "class_load_time_ms", "type": "optional_int"}
+  ]
+}

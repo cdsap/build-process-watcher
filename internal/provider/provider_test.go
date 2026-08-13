@@ -8,6 +8,12 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
 
+func TestValidateFeatureParityPassesForLiveContract(t *testing.T) {
+	if err := ValidateFeatureParity(); err != nil {
+		t.Fatalf("ValidateFeatureParity() = %v", err)
+	}
+}
+
 func TestProviderSatisfiesPredictionContract(t *testing.T) {
 	now := time.Unix(123, 0).UTC()
 	checkpoint, err := New(Config{

@@ -15,6 +15,10 @@ func main() {
 		port = "8080"
 	}
 
+	if err := provider.ValidateFeatureParity(); err != nil {
+		log.Fatalf("feature parity guard failed closed: %v", err)
+	}
+
 	server := api.NewServer(provider.New(provider.ConfigFromEnv()))
 	log.Printf("Private predictive provider starting on port %s", port)
 	log.Printf("   - GET  /healthz")
