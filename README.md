@@ -16,7 +16,7 @@ This repository owns proprietary model execution, feature derivation, scoring th
 - `internal/provider`: private implementation of the public `predictor.Provider` contract.
 - `internal/api`: private HTTP API that exposes health and prediction endpoints for the public backend to call.
 - `internal/quality`: private recurring quality reports over finished-run checkpoint outcomes (promotion review) and exported prediction attempts (production health), including baseline comparison, sparse-coverage callouts, risk distribution, and provider/fallback triage.
-- `internal/relprogress`: private relative-progress checkpoint prototype, fixture study, finished-run corpus evaluation, and fail-closed live-scoring readiness gate (not wired into live `/predict`).
+- `internal/relprogress`: private relative-progress checkpoint prototype, fixture study, finished-run corpus evaluation, fail-closed live-scoring readiness gate, and private canary rollout path after readiness (not wired into live `/predict`).
 - `internal/promotion`: private model refresh evaluation, independent checkpoint promotion gates, and promotion registry metadata for live scoring.
 - `cmd/predictive-backend`: Cloud Run entrypoint for the private provider API.
 - `cmd/quality-report`: generates the private markdown/JSON model quality report from a controlled finished-run fixture or dataset.
@@ -37,6 +37,11 @@ The backend uses these public-safe environment variables:
 - `PREDICTIVE_MODEL_VERSION`
 - `PREDICTIVE_SCORING_TIMEOUT_MS` (optional; defaults to `2000`)
 - `PREDICTIVE_PROMOTED_MODELS`: optional per-checkpoint promoted model versions for live scoring. Accepts JSON registry shape `{"models":[{"observation_window_s":60,"model_version":"cp-60s-..."}]}`, JSON object `{"60":"cp-60s-..."}`, or comma-separated `60:cp-60s-...,300:cp-300s-...`. When a checkpoint window is absent, `PREDICTIVE_MODEL_VERSION` remains the fallback.
+- `PREDICTIVE_RELPROGRESS_CANARY_ENABLED`: optional private canary switch (`true`/`1`/`yes`/`on`). Defaults to disabled so fixed-window scoring remains the rollback path.
+- `PREDICTIVE_RELPROGRESS_CANARY_FRACTION`: optional `0.0`-`1.0` deterministic run-id rollout fraction used only when canary is enabled and readiness has passed.
+- `PREDICTIVE_RELPROGRESS_CANARY_RUN_IDS`: optional comma-separated controlled run allowlist for canary relative-progress scoring.
+
+Relative-progress canary settings are private ops controls. They do not change public checkpoint fields or dashboard behavior; canary telemetry (selected candidates, skipped candidates, fallback reasons) stays in the private scoring store.
 
 The deployment workflow also accepts `PREDICTIVE_RELIABILITY_CHECKPOINTS` as a Cloud Run environment variable so the public integration can keep checkpoint configuration aligned, but the private `/predict` request carries the checkpoint window to score.
 
