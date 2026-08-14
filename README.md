@@ -16,7 +16,7 @@ This repository owns proprietary model execution, feature derivation, scoring th
 - `internal/provider`: private implementation of the public `predictor.Provider` contract.
 - `internal/api`: private HTTP API that exposes health and prediction endpoints for the public backend to call.
 - `internal/quality`: private recurring quality reports over finished-run checkpoint outcomes (promotion review) and exported prediction attempts (production health), including baseline comparison, sparse-coverage callouts, risk distribution, and provider/fallback triage.
-- `internal/relprogress`: private relative-progress checkpoint prototype and fixture study (not wired into live `/predict`).
+- `internal/relprogress`: private relative-progress checkpoint prototype, fixture study, and fail-closed live-scoring readiness gate (not wired into live `/predict`).
 - `internal/promotion`: private model refresh evaluation, independent checkpoint promotion gates, and promotion registry metadata for live scoring.
 - `cmd/predictive-backend`: Cloud Run entrypoint for the private provider API.
 - `cmd/quality-report`: generates the private markdown/JSON model quality report from a controlled finished-run fixture or dataset.
