@@ -8,7 +8,8 @@ import { resolveMonitoringFeatureFlags } from './monitoring_features';
 
 async function run() {
   try {
-    let backendUrl = process.env.BACKEND_URL || '';
+    const requestedBackendUrl = process.env.BACKEND_URL || '';
+    const requestedFrontendUrl = process.env.FRONTEND_URL || '';
     const remoteMonitoringRequested = core.getInput('remote_monitoring') === 'true';
     const runId = core.getInput('run_id') || `run-${Date.now()}`;
     const debugMode = core.getInput('debug') === 'true';
@@ -35,28 +36,25 @@ async function run() {
     const exportToBigqueryRequested = core.getInput('export_to_bigquery') === 'true';
     const predictiveReliabilityRequested = core.getInput('predictive_reliability') === 'true';
 
-    const enableBackendRequested = remoteMonitoringRequested || predictiveReliabilityRequested;
-
-    // If backend is enabled but no URL provided, use the default Cloud Run URL
-    if (enableBackendRequested && !backendUrl) {
-      // Default production backend URL
-      backendUrl = 'https://build-process-watcher-backend-685615422311.us-central1.run.app';
-      if (debugMode) {
-        core.info(`🔧 Backend enabled but no URL provided, using default URL: ${backendUrl}`);
-      }
-    }
-
     const {
       enableBackend,
+      backendUrl,
+      frontendUrl,
       exportToBigquery,
       predictiveReliability,
     } = resolveMonitoringFeatureFlags({
       remoteMonitoringRequested,
       exportToBigqueryRequested,
       predictiveReliabilityRequested,
-      backendUrl,
+      backendUrl: requestedBackendUrl,
+      frontendUrl: requestedFrontendUrl,
+      runId,
     });
     const useBackend = enableBackend && !!backendUrl;
+
+    if (enableBackend && !requestedBackendUrl && debugMode) {
+      core.info(`🔧 Backend enabled but no URL provided, using default URL: ${backendUrl}`);
+    }
 
     if (predictiveReliabilityRequested && debugMode) {
       core.info(`🔮 predictive_reliability enables remote_monitoring and export_to_bigquery for this run`);
@@ -73,28 +71,7 @@ async function run() {
       core.info(`🌐 Backend URL: ${backendUrl || 'Not provided'}`);
       core.info(`⚙️  Remote Monitoring: ${enableBackend}`);
       core.info(`🐛 Debug Mode: ${debugMode}`);
-    }
-
-    // Build frontend URL if backend is enabled (do this before exporting)
-    let frontendUrl = '';
-    if (enableBackend && backendUrl) {
-      // Use FRONTEND_URL env var (from secrets) or default
-      const explicitFrontendUrl = process.env.FRONTEND_URL || '';
-      
-      if (explicitFrontendUrl) {
-        // Use explicitly provided frontend URL (from env var or input)
-        if (explicitFrontendUrl.endsWith('/runs') || explicitFrontendUrl.endsWith('/runs/')) {
-          frontendUrl = `${explicitFrontendUrl}/${runId}`;
-        } else {
-          frontendUrl = `${explicitFrontendUrl}/runs/${runId}`;
-        }
-        
-      } else {
-        const baseFrontendUrl = 'https://process-watcher.web.app';
-        frontendUrl = `${baseFrontendUrl}/runs/${runId}`;
-      }
-      
-      if (debugMode) {
+      if (frontendUrl) {
         core.info(`🌐 Frontend URL: ${frontendUrl}`);
       }
     }
