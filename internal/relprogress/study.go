@@ -57,7 +57,9 @@ type fixtureFile struct {
 	Runs   []FixtureRun `json:"runs"`
 }
 
-// LoadFixtureFile reads a private fixture study input.
+// LoadFixtureFile reads a private fixture or finished-run corpus study input.
+// The on-disk path stays out of rendered reports so private corpus locations
+// are not leaked into evaluation artifacts.
 func LoadFixtureFile(path string) (string, []FixtureRun, error) {
 	body, err := os.ReadFile(path)
 	if err != nil {
@@ -75,6 +77,7 @@ func LoadFixtureFile(path string) (string, []FixtureRun, error) {
 }
 
 // RunFixtureStudy compares fixed-window and relative-progress candidates.
+// Source labels such as "historical" mark a finished-run corpus evaluation.
 func RunFixtureStudy(ctx context.Context, source string, runs []FixtureRun, bar EvidenceBar) (StudyReport, error) {
 	if source == "" {
 		source = "fixture"
@@ -97,7 +100,7 @@ func RunFixtureStudy(ctx context.Context, source string, runs []FixtureRun, bar 
 		options.DurationHintS = run.FinalDurationS
 		options.IncludeUnreached = true
 
-		candidates := MapLiveCandidates(snapshot, options)
+		candidates := reachableCandidates(snapshot, MapLiveCandidates(snapshot, options))
 		scored, err := ScoreCandidates(ctx, scorer, snapshot, candidates)
 		if err != nil {
 			return StudyReport{}, err
@@ -116,9 +119,13 @@ func RunFixtureStudy(ctx context.Context, source string, runs []FixtureRun, bar 
 
 		assessment := AssessRun(run, fixed, relative)
 		report.Assessments = append(report.Assessments, assessment)
-		if assessment.LongBuild {
+		duration, _, _ := ClassifyRun(run)
+		switch duration {
+		case CohortLong:
 			report.LongBuildRuns++
-		} else {
+		case CohortMedium:
+			report.MediumBuildRuns++
+		default:
 			report.ShortBuildRuns++
 		}
 		if assessment.UniqueLateSignal {
@@ -127,8 +134,16 @@ func RunFixtureStudy(ctx context.Context, source string, runs []FixtureRun, bar 
 		if assessment.CollisionNoise {
 			report.CollisionNoiseRuns++
 		}
+		if assessment.SparseData {
+			report.SparseDataRuns++
+		}
+		if assessment.Incomplete {
+			report.IncompleteRuns++
+		}
 	}
 
+	report.Cohorts = AggregateCohorts(report.Assessments)
+	report = SummarizeCorpusImprovement(report)
 	return DecideRecommendation(report), nil
 }
 
@@ -140,9 +155,14 @@ func RenderMarkdown(report StudyReport) (string, error) {
 	fmt.Fprintf(&buffer, "- Fixed windows: `60s`, `5m`, `10m`, `20m`\n")
 	fmt.Fprintf(&buffer, "- Relative fractions: `25%%`, `50%%`, `75%%`\n")
 	fmt.Fprintf(&buffer, "- Long-build runs: %d\n", report.LongBuildRuns)
+	fmt.Fprintf(&buffer, "- Medium-build runs: %d\n", report.MediumBuildRuns)
 	fmt.Fprintf(&buffer, "- Unique late-signal runs: %d\n", report.UniqueLateSignalRuns)
 	fmt.Fprintf(&buffer, "- Short-build runs: %d\n", report.ShortBuildRuns)
+	fmt.Fprintf(&buffer, "- Sparse-data runs: %d\n", report.SparseDataRuns)
+	fmt.Fprintf(&buffer, "- Incomplete runs: %d\n", report.IncompleteRuns)
 	fmt.Fprintf(&buffer, "- Collision-noise runs: %d\n", report.CollisionNoiseRuns)
+	fmt.Fprintf(&buffer, "- Relative improves over fixed windows: %t\n", report.RelativeImprovesOverFixed)
+	fmt.Fprintf(&buffer, "- Improvement reason: %s\n", report.ImprovementReason)
 	fmt.Fprintf(&buffer, "- Evidence bar cleared: %t\n", report.EvidenceBarCleared)
 	fmt.Fprintf(&buffer, "- Recommendation: `%s`\n", report.Recommendation)
 	fmt.Fprintf(&buffer, "- Reason: %s\n\n", report.RecommendationReason)
@@ -154,10 +174,33 @@ func RenderMarkdown(report StudyReport) (string, error) {
 	fmt.Fprintf(&buffer, "3. Scoring that later window raises advisory risk versus the last fixed checkpoint.\n\n")
 	fmt.Fprintf(&buffer, "Peak/duration error may also improve at later relative windows, but the private evidence bar counts only late-stage risk lift.\n\n")
 
+	fmt.Fprintf(&buffer, "## Cohort summary\n\n")
+	fmt.Fprintf(&buffer, "Coverage, prediction error, risk-class accuracy, and sparse/incomplete cases by build cohort:\n\n")
+	for _, cohort := range report.Cohorts {
+		fmt.Fprintf(&buffer, "### %s\n\n", cohort.Name)
+		fmt.Fprintf(&buffer, "- Runs: %d\n", cohort.RunCount)
+		fmt.Fprintf(&buffer, "- Ready coverage: %d\n", cohort.CoverageReadyRuns)
+		fmt.Fprintf(&buffer, "- Sparse-data cases: %d\n", cohort.SparseDataCases)
+		fmt.Fprintf(&buffer, "- Incomplete cases: %d\n", cohort.IncompleteCases)
+		fmt.Fprintf(&buffer, "- Fixed peak RSS MAPE: %.4f\n", cohort.FixedPeakRSSMAPE)
+		fmt.Fprintf(&buffer, "- Relative peak RSS MAPE: %.4f\n", cohort.RelativePeakRSSMAPE)
+		fmt.Fprintf(&buffer, "- Fixed duration MAPE: %.4f\n", cohort.FixedDurationMAPE)
+		fmt.Fprintf(&buffer, "- Relative duration MAPE: %.4f\n", cohort.RelativeDurationMAPE)
+		fmt.Fprintf(&buffer, "- Fixed risk-class accuracy: %.4f\n", cohort.FixedRiskAccuracyRate)
+		fmt.Fprintf(&buffer, "- Relative risk-class accuracy: %.4f\n", cohort.RelativeRiskAccuracy)
+		fmt.Fprintf(&buffer, "- Unique late-signal runs: %d\n", cohort.UniqueLateSignalRuns)
+		fmt.Fprintf(&buffer, "- Improved versus fixed windows: %t\n", cohort.ImprovedVsFixed)
+		if len(cohort.Notes) > 0 {
+			fmt.Fprintf(&buffer, "- Notes: %s\n", strings.Join(cohort.Notes, "; "))
+		}
+		fmt.Fprintln(&buffer)
+	}
+
 	fmt.Fprintf(&buffer, "## Per-run assessments\n\n")
 	for _, assessment := range report.Assessments {
 		fmt.Fprintf(&buffer, "### %s\n\n", assessment.RunID)
 		fmt.Fprintf(&buffer, "- Duration: %.0fs\n", assessment.FinalDurationS)
+		fmt.Fprintf(&buffer, "- Cohorts: %s\n", strings.Join(assessment.Cohorts, ", "))
 		fmt.Fprintf(&buffer, "- Long build: %t\n", assessment.LongBuild)
 		fmt.Fprintf(&buffer, "- Relative candidates: %d\n", assessment.RelativeCandidateCount)
 		fmt.Fprintf(&buffer, "- Unique late signal: %t\n", assessment.UniqueLateSignal)
@@ -173,6 +216,33 @@ func RenderMarkdown(report StudyReport) (string, error) {
 		return "", err
 	}
 	return text, nil
+}
+
+// SaveStudyReportJSON writes the private study report JSON artifact.
+func SaveStudyReportJSON(path string, report StudyReport) error {
+	body, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		return err
+	}
+	body = append(body, '\n')
+	return os.WriteFile(path, body, 0o644)
+}
+
+func reachableCandidates(snapshot predictor.RunSnapshot, candidates []Candidate) []Candidate {
+	elapsed := int(maxElapsedS(snapshot.Samples))
+	out := make([]Candidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		// Finished-run corpus evaluation only scores windows reached by samples.
+		// Unreached late windows on incomplete exports must not invent late signal.
+		if candidate.ObservationWindowS > elapsed {
+			continue
+		}
+		if len(samplesThrough(snapshot.Samples, candidate.ObservationWindowS)) == 0 {
+			continue
+		}
+		out = append(out, candidate)
+	}
+	return out
 }
 
 func snapshotForRun(run FixtureRun) predictor.RunSnapshot {
@@ -198,9 +268,21 @@ func snapshotForRun(run FixtureRun) predictor.RunSnapshot {
 
 func validateAdvisoryLanguage(text string) error {
 	normalized := strings.ToLower(text)
-	for _, phrase := range []string{"guaranteed", "certain failure", "will fail", "will oom", "will time out", "must fail"} {
+	for _, phrase := range []string{
+		"guaranteed",
+		"certain failure",
+		"will fail",
+		"will oom",
+		"will time out",
+		"must fail",
+		"feature formula",
+		"training corpus",
+		"customer",
+		"/users/",
+		"gs://",
+	} {
 		if strings.Contains(normalized, phrase) {
-			return fmt.Errorf("report contains certainty phrase %q", phrase)
+			return fmt.Errorf("report contains private or certainty phrase %q", phrase)
 		}
 	}
 	return nil

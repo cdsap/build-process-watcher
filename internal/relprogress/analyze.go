@@ -38,12 +38,25 @@ func DefaultEvidenceBar() EvidenceBar {
 type RunAssessment struct {
 	RunID                  string
 	FinalDurationS         float64
+	FinalPeakRSSMB         float64
+	AdvisoryRisk           string
 	LongBuild              bool
 	RelativeCandidateCount int
 	UniqueLateSignal       bool
 	RiskLift               float64
 	PeakRSSErrorLift       float64
 	DurationErrorLift      float64
+	FixedPeakRSSMAPE       float64
+	RelativePeakRSSMAPE    float64
+	FixedDurationMAPE      float64
+	RelativeDurationMAPE   float64
+	FixedRiskMatch         bool
+	RelativeRiskMatch      bool
+	HasFixedReady          bool
+	HasRelativeReady       bool
+	SparseData             bool
+	Incomplete             bool
+	Cohorts                []string
 	CollisionNoise         bool
 	Reasons                []string
 }
@@ -56,31 +69,56 @@ func (a RunAssessment) AddsSignal() bool {
 
 // StudyReport summarizes the fixture/backtest comparison and v2 recommendation.
 type StudyReport struct {
-	Source               string
-	EvidenceBar          EvidenceBar
-	EvidenceBarCleared   bool
-	Recommendation       Recommendation
-	RecommendationReason string
-	LongBuildRuns        int
-	UniqueLateSignalRuns int
-	ShortBuildRuns       int
-	CollisionNoiseRuns   int
-	Assessments          []RunAssessment
+	Source                    string          `json:"source"`
+	EvidenceBar               EvidenceBar     `json:"-"`
+	EvidenceBarCleared        bool            `json:"evidence_bar_cleared"`
+	Recommendation            Recommendation  `json:"recommendation"`
+	RecommendationReason      string          `json:"recommendation_reason"`
+	RelativeImprovesOverFixed bool            `json:"relative_improves_over_fixed"`
+	ImprovementReason         string          `json:"improvement_reason"`
+	LongBuildRuns             int             `json:"long_build_runs"`
+	UniqueLateSignalRuns      int             `json:"unique_late_signal_runs"`
+	ShortBuildRuns            int             `json:"short_build_runs"`
+	MediumBuildRuns           int             `json:"medium_build_runs"`
+	CollisionNoiseRuns        int             `json:"collision_noise_runs"`
+	SparseDataRuns            int             `json:"sparse_data_runs"`
+	IncompleteRuns            int             `json:"incomplete_runs"`
+	Cohorts                   []CohortMetrics `json:"cohorts"`
+	Assessments               []RunAssessment `json:"assessments"`
 }
 
 // AssessRun compares fixed-window and relative-progress candidates for one run.
 func AssessRun(run FixtureRun, fixed []ScoredCandidate, relative []ScoredCandidate) RunAssessment {
 	lastFixedWindow := FixedWindows[len(FixedWindows)-1]
+	_, sparse, incomplete := ClassifyRun(run)
 	assessment := RunAssessment{
 		RunID:                  run.RunID,
 		FinalDurationS:         run.FinalDurationS,
+		FinalPeakRSSMB:         run.FinalPeakRSSMB,
+		AdvisoryRisk:           run.AdvisoryRisk,
 		LongBuild:              run.FinalDurationS > float64(lastFixedWindow),
 		RelativeCandidateCount: len(relative),
+		SparseData:             sparse,
+		Incomplete:             incomplete,
+		Cohorts:                RunCohorts(run),
 		Reasons:                make([]string, 0, 4),
 	}
 
 	lastFixed := lastReady(fixed)
 	bestRelative := bestReady(relative)
+	assessment.HasFixedReady = lastFixed.Checkpoint.Status == "ready"
+	assessment.HasRelativeReady = bestRelative.Checkpoint.Status == "ready"
+
+	if assessment.HasFixedReady {
+		assessment.FixedPeakRSSMAPE = absError(run.FinalPeakRSSMB, lastFixed.Checkpoint.PredictedPeakRSSMB)
+		assessment.FixedDurationMAPE = absError(run.FinalDurationS, lastFixed.Checkpoint.PredictedDurationS)
+		assessment.FixedRiskMatch = riskMatches(run.AdvisoryRisk, lastFixed.Checkpoint.RiskLevel)
+	}
+	if assessment.HasRelativeReady {
+		assessment.RelativePeakRSSMAPE = absError(run.FinalPeakRSSMB, bestRelative.Checkpoint.PredictedPeakRSSMB)
+		assessment.RelativeDurationMAPE = absError(run.FinalDurationS, bestRelative.Checkpoint.PredictedDurationS)
+		assessment.RelativeRiskMatch = riskMatches(run.AdvisoryRisk, bestRelative.Checkpoint.RiskLevel)
+	}
 
 	if !assessment.LongBuild {
 		assessment.Reasons = append(assessment.Reasons, "duration within fixed v1 coverage")
@@ -88,16 +126,34 @@ func AssessRun(run FixtureRun, fixed []ScoredCandidate, relative []ScoredCandida
 			assessment.CollisionNoise = true
 			assessment.Reasons = append(assessment.Reasons, "relative candidate collides with fixed window")
 		}
+		if assessment.Incomplete {
+			assessment.Reasons = append(assessment.Reasons, "incomplete finished-run coverage")
+		}
+		if assessment.SparseData {
+			assessment.Reasons = append(assessment.Reasons, "sparse finished-run telemetry")
+		}
 		return assessment
 	}
 
 	if len(relative) == 0 {
 		assessment.Reasons = append(assessment.Reasons, "no distinct relative candidates beyond fixed windows")
+		if assessment.Incomplete {
+			assessment.Reasons = append(assessment.Reasons, "incomplete finished-run coverage")
+		}
+		if assessment.SparseData {
+			assessment.Reasons = append(assessment.Reasons, "sparse finished-run telemetry")
+		}
 		return assessment
 	}
 
-	if lastFixed.Checkpoint.Status != "ready" || bestRelative.Checkpoint.Status != "ready" {
+	if !assessment.HasFixedReady || !assessment.HasRelativeReady {
 		assessment.Reasons = append(assessment.Reasons, "missing ready fixed or relative checkpoint")
+		if assessment.Incomplete {
+			assessment.Reasons = append(assessment.Reasons, "incomplete finished-run coverage")
+		}
+		if assessment.SparseData {
+			assessment.Reasons = append(assessment.Reasons, "sparse finished-run telemetry")
+		}
 		return assessment
 	}
 
@@ -105,13 +161,8 @@ func AssessRun(run FixtureRun, fixed []ScoredCandidate, relative []ScoredCandida
 	relativeRisk := riskRank(bestRelative.Checkpoint.RiskLevel)
 	assessment.RiskLift = float64(relativeRisk - fixedRisk)
 
-	fixedPeakErr := absError(run.FinalPeakRSSMB, lastFixed.Checkpoint.PredictedPeakRSSMB)
-	relativePeakErr := absError(run.FinalPeakRSSMB, bestRelative.Checkpoint.PredictedPeakRSSMB)
-	assessment.PeakRSSErrorLift = fixedPeakErr - relativePeakErr
-
-	fixedDurErr := absError(run.FinalDurationS, lastFixed.Checkpoint.PredictedDurationS)
-	relativeDurErr := absError(run.FinalDurationS, bestRelative.Checkpoint.PredictedDurationS)
-	assessment.DurationErrorLift = fixedDurErr - relativeDurErr
+	assessment.PeakRSSErrorLift = assessment.FixedPeakRSSMAPE - assessment.RelativePeakRSSMAPE
+	assessment.DurationErrorLift = assessment.FixedDurationMAPE - assessment.RelativeDurationMAPE
 
 	lateRisk := relativeRisk > fixedRisk
 	lateAfterFixed := bestRelative.Candidate.ObservationWindowS > lastFixedWindow
@@ -151,13 +202,14 @@ func DecideRecommendation(report StudyReport) StudyReport {
 		reasons = append(reasons, "unique late-stage signal below bar")
 	}
 	if report.CollisionNoiseRuns > 0 {
-		noiseRate := float64(report.CollisionNoiseRuns) / math.Max(float64(report.ShortBuildRuns), 1)
+		nonLongRuns := report.ShortBuildRuns + report.MediumBuildRuns
+		noiseRate := float64(report.CollisionNoiseRuns) / math.Max(float64(nonLongRuns), 1)
 		if noiseRate > bar.MaxShortBuildCollisionNoise {
 			cleared = false
 			reasons = append(reasons, "short-build relative collision noise")
 		}
 	}
-	if bar.RequireHistoricalCorpus && strings.EqualFold(report.Source, "fixture") {
+	if bar.RequireHistoricalCorpus && !IsHistoricalCorpusSource(report.Source) {
 		cleared = false
 		reasons = append(reasons, "historical corpus backtest not yet available")
 	}
@@ -246,4 +298,13 @@ func absError(actual float64, predicted *float64) float64 {
 		return 0
 	}
 	return math.Abs(actual-*predicted) / actual
+}
+
+func riskMatches(actual, predicted string) bool {
+	actual = strings.ToLower(strings.TrimSpace(actual))
+	predicted = strings.ToLower(strings.TrimSpace(predicted))
+	if actual == "" || actual == "unknown" {
+		return false
+	}
+	return actual == predicted
 }

@@ -6,6 +6,7 @@
 # Generated private quality-report artifacts
 /artifacts/quality-report/
 /artifacts/prediction-quality-report/
+/artifacts/relprogress-eval/
 /tmp-quality-report/
 /prediction-quality-report
 

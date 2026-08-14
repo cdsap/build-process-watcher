@@ -193,10 +193,15 @@ func TestFixtureStudyComparesFixedAndRelativeAndDefersV2(t *testing.T) {
 		"When relative-progress adds signal",
 		"Fixed windows: `60s`, `5m`, `10m`, `20m`",
 		"long-late-risk-1",
+		"## Cohort summary",
+		"Relative improves over fixed windows:",
 	} {
 		if !strings.Contains(markdown, needle) {
 			t.Fatalf("report missing %q:\n%s", needle, markdown)
 		}
+	}
+	if strings.Contains(strings.ToLower(markdown), "testdata") || strings.Contains(markdown, filepath.Join("testdata", "fixture_runs.json")) {
+		t.Fatalf("report leaked corpus path:\n%s", markdown)
 	}
 }
 

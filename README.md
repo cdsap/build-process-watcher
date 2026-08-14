@@ -16,12 +16,12 @@ This repository owns proprietary model execution, feature derivation, scoring th
 - `internal/provider`: private implementation of the public `predictor.Provider` contract.
 - `internal/api`: private HTTP API that exposes health and prediction endpoints for the public backend to call.
 - `internal/quality`: private recurring quality reports over finished-run checkpoint outcomes (promotion review) and exported prediction attempts (production health), including baseline comparison, sparse-coverage callouts, risk distribution, and provider/fallback triage.
-- `internal/relprogress`: private relative-progress checkpoint prototype, fixture study, and fail-closed live-scoring readiness gate (not wired into live `/predict`).
+- `internal/relprogress`: private relative-progress checkpoint prototype, fixture study, finished-run corpus evaluation, and fail-closed live-scoring readiness gate (not wired into live `/predict`).
 - `internal/promotion`: private model refresh evaluation, independent checkpoint promotion gates, and promotion registry metadata for live scoring.
 - `cmd/predictive-backend`: Cloud Run entrypoint for the private provider API.
 - `cmd/quality-report`: generates the private markdown/JSON model quality report from a controlled finished-run fixture or dataset.
 - `cmd/prediction-quality-report`: generates the private markdown/JSON prediction quality report from exported prediction attempts or fixtures.
-- `cmd/relprogress-eval`: renders a private relative-progress evaluation report from fixture JSON.
+- `cmd/relprogress-eval`: renders a private relative-progress evaluation report from fixture or finished-run corpus JSON.
 - `cmd/model-refresh`: manual/scheduled dry-run and apply command for refresh and promotion decisions.
 
 The current provider is a private heuristic scorer. It evaluates runtime telemetry for memory pressure, memory growth, heap saturation, GC pressure, and process fanout while keeping the stored checkpoint fields public-safe.
@@ -130,6 +130,17 @@ Run the private relative-progress fixture study (advisory only; does not change 
 ```bash
 go run ./cmd/relprogress-eval -input internal/relprogress/testdata/fixture_runs.json
 ```
+
+Evaluate against the controlled finished-run corpus (short/medium/long/sparse/incomplete cohorts). Point `-input` at a private finished-run export with the same JSON shape and `source: "historical"` when using a non-checked-in dataset. Corpus paths stay out of the rendered report:
+
+```bash
+mkdir -p artifacts/relprogress-eval
+go run ./cmd/relprogress-eval \
+  -input internal/relprogress/testdata/corpus_runs.json \
+  -out artifacts/relprogress-eval
+```
+
+The command prints whether relative-progress checkpoints improve over fixed windows, plus coverage, error, risk-class accuracy, and sparse/incomplete callouts by build cohort. Artifacts under `artifacts/relprogress-eval/` are local/private review outputs and are gitignored.
 
 Dry-run the automated model refresh and independent promotion gates against fixture quality-report input:
 
