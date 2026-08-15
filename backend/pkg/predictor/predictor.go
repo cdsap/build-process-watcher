@@ -66,7 +66,7 @@ func DefaultCheckpoints() []int {
 	return checkpoints
 }
 
-// PendingCheckpoints returns configured windows reached by samples and not yet stored.
+// PendingCheckpoints returns configured windows reached by samples and not yet ready.
 func PendingCheckpoints(samples []Sample, existing []PredictionCheckpoint, configured []int) []int {
 	if len(samples) == 0 || len(configured) == 0 {
 		return nil
@@ -79,9 +79,11 @@ func PendingCheckpoints(samples []Sample, existing []PredictionCheckpoint, confi
 		}
 	}
 
-	stored := make(map[int]bool, len(existing))
+	ready := make(map[int]bool, len(existing))
 	for _, checkpoint := range existing {
-		stored[checkpoint.ObservationWindowS] = true
+		if checkpoint.Status == "ready" {
+			ready[checkpoint.ObservationWindowS] = true
+		}
 	}
 
 	seen := make(map[int]bool, len(configured))
@@ -91,7 +93,7 @@ func PendingCheckpoints(samples []Sample, existing []PredictionCheckpoint, confi
 			continue
 		}
 		seen[checkpoint] = true
-		if maxElapsed >= checkpoint && !stored[checkpoint] {
+		if maxElapsed >= checkpoint && !ready[checkpoint] {
 			pending = append(pending, checkpoint)
 		}
 	}

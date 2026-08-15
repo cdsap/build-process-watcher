@@ -72,7 +72,7 @@ func TestDefaultCheckpoints(t *testing.T) {
 func TestPendingCheckpointsReturnsReachedMissingWindows(t *testing.T) {
 	pending := PendingCheckpoints(
 		[]Sample{{ElapsedTime: 10}, {ElapsedTime: 75}},
-		[]PredictionCheckpoint{{ObservationWindowS: 30}},
+		[]PredictionCheckpoint{{ObservationWindowS: 30, Status: "ready"}},
 		[]int{60, 30, 180, 60},
 	)
 
@@ -81,18 +81,19 @@ func TestPendingCheckpointsReturnsReachedMissingWindows(t *testing.T) {
 	}
 }
 
-func TestPendingCheckpointsTreatsAnyStoredStatusAsComplete(t *testing.T) {
+func TestPendingCheckpointsRetriesNonReadyStatuses(t *testing.T) {
 	pending := PendingCheckpoints(
 		[]Sample{{ElapsedTime: 180}},
 		[]PredictionCheckpoint{
 			{ObservationWindowS: 30, Status: "error"},
 			{ObservationWindowS: 60, Status: "skipped"},
+			{ObservationWindowS: 180, Status: "ready"},
 		},
 		[]int{30, 60, 180},
 	)
 
-	if len(pending) != 1 || pending[0] != 180 {
-		t.Fatalf("pending = %v, want [180]", pending)
+	if len(pending) != 2 || pending[0] != 30 || pending[1] != 60 {
+		t.Fatalf("pending = %v, want [30 60]", pending)
 	}
 }
 
