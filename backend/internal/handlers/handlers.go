@@ -275,7 +275,9 @@ func (h *Handlers) evaluatePredictionCheckpoints(ctx context.Context, runID stri
 		}
 		if err := h.storage.StorePredictionCheckpoint(runID, checkpoint); err != nil {
 			log.Printf("Prediction checkpoint store failed for run %s checkpoint %ds: %v", runID, checkpointWindow, err)
+			continue
 		}
+		runDoc.PredictionCheckpoints = storage.MergePredictionCheckpoint(runDoc.PredictionCheckpoints, checkpoint)
 	}
 }
 
