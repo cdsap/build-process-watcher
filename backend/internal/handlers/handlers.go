@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/internal/auth"
 	"github.com/cdsap/build-process-watcher/backend/internal/exportqueue"
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
+	"github.com/cdsap/build-process-watcher/backend/internal/scoring"
 	"github.com/cdsap/build-process-watcher/backend/internal/storage"
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
@@ -259,11 +261,12 @@ func (h *Handlers) evaluatePredictionCheckpoints(ctx context.Context, runID stri
 			Now:                   time.Now(),
 		}, checkpointWindow)
 		if err != nil {
+			fallbackStatus, fallbackMessage := classifyPredictionFallback(err)
 			checkpoint = models.PredictionCheckpoint{
 				ObservationWindowS: checkpointWindow,
-				Status:             "error",
+				Status:             fallbackStatus,
 				CreatedAt:          time.Now(),
-				Message:            "prediction provider error",
+				Message:            fallbackMessage,
 			}
 			log.Printf("Prediction provider failed for run %s checkpoint %ds: %v", runID, checkpointWindow, err)
 		}
@@ -278,6 +281,21 @@ func (h *Handlers) evaluatePredictionCheckpoints(ctx context.Context, runID stri
 			continue
 		}
 		runDoc.PredictionCheckpoints = storage.MergePredictionCheckpoint(runDoc.PredictionCheckpoints, checkpoint)
+	}
+}
+
+// classifyPredictionFallback maps provider failures onto the shared scoring
+// taxonomy without importing a concrete provider implementation.
+func classifyPredictionFallback(err error) (status string, message string) {
+	switch {
+	case errors.Is(err, scoring.ErrNoData):
+		return "no_data", "prediction data unavailable"
+	case errors.Is(err, scoring.ErrModelUnavailable):
+		return "model_unavailable", "prediction model unavailable"
+	case errors.Is(err, scoring.ErrScoringTimeout), errors.Is(err, scoring.ErrScoringFailed):
+		return "provider_error", "prediction provider error"
+	default:
+		return "provider_error", "prediction provider error"
 	}
 }
 
