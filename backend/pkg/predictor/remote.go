@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/cdsap/build-process-watcher/backend/internal/scoring"
 	"google.golang.org/api/idtoken"
 )
 
@@ -81,22 +84,68 @@ func (p *RemoteProvider) Predict(ctx context.Context, snapshot RunSnapshot, obse
 
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return PredictionCheckpoint{}, fmt.Errorf("remote prediction request failed: %w", err)
+		kind := scoring.ErrScoringFailed
+		if isTimeoutError(err) {
+			kind = scoring.ErrScoringTimeout
+		}
+		return PredictionCheckpoint{}, newScoringError(kind, fmt.Sprintf("remote prediction request failed: %v", err), err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return PredictionCheckpoint{}, fmt.Errorf("remote prediction provider returned status %d", resp.StatusCode)
+		return PredictionCheckpoint{}, newScoringError(classifyRemoteStatus(resp.StatusCode), fmt.Sprintf("remote prediction provider returned status %d", resp.StatusCode), nil)
 	}
 
 	decoder := json.NewDecoder(resp.Body)
 	var response remotePredictResponse
 	if err := decoder.Decode(&response); err != nil {
-		return PredictionCheckpoint{}, fmt.Errorf("decode prediction response: %w", err)
+		return PredictionCheckpoint{}, newScoringError(scoring.ErrScoringFailed, fmt.Sprintf("decode prediction response: %v", err), err)
 	}
 	if response.Checkpoint.ObservationWindowS == 0 {
 		response.Checkpoint.ObservationWindowS = observationWindowS
 	}
 	return response.Checkpoint, nil
+}
+
+type scoringError struct {
+	kind    error
+	message string
+	cause   error
+}
+
+func newScoringError(kind error, message string, cause error) error {
+	return scoringError{kind: kind, message: message, cause: cause}
+}
+
+func (e scoringError) Error() string {
+	return e.message
+}
+
+func (e scoringError) Unwrap() []error {
+	if e.cause == nil {
+		return []error{e.kind}
+	}
+	return []error{e.kind, e.cause}
+}
+
+func classifyRemoteStatus(statusCode int) error {
+	switch statusCode {
+	case http.StatusNotFound:
+		return scoring.ErrNoData
+	case http.StatusRequestTimeout, http.StatusGatewayTimeout:
+		return scoring.ErrScoringTimeout
+	case http.StatusServiceUnavailable:
+		return scoring.ErrModelUnavailable
+	default:
+		return scoring.ErrScoringFailed
+	}
+}
+
+func isTimeoutError(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 type remotePredictRequest struct {

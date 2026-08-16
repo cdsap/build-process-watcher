@@ -3,11 +3,14 @@ package predictor
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/cdsap/build-process-watcher/backend/internal/scoring"
 )
 
 func TestRemoteProviderPostsPublicPredictionRequest(t *testing.T) {
@@ -87,6 +90,43 @@ func TestRemoteProviderReturnsStatusError(t *testing.T) {
 	_, err = provider.Predict(context.Background(), RunSnapshot{}, 30)
 	if err == nil || !strings.Contains(err.Error(), "status 418") {
 		t.Fatalf("error = %v, want status 418", err)
+	}
+	if !errors.Is(err, scoring.ErrScoringFailed) {
+		t.Fatalf("error = %v, want scoring failed sentinel", err)
+	}
+}
+
+func TestRemoteProviderClassifiesSharedScoringErrors(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		want       error
+	}{
+		{name: "no data", statusCode: http.StatusNotFound, want: scoring.ErrNoData},
+		{name: "timeout", statusCode: http.StatusGatewayTimeout, want: scoring.ErrScoringTimeout},
+		{name: "model unavailable", statusCode: http.StatusServiceUnavailable, want: scoring.ErrModelUnavailable},
+		{name: "provider error", statusCode: http.StatusInternalServerError, want: scoring.ErrScoringFailed},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				http.Error(w, "nope", tt.statusCode)
+			}))
+			defer remote.Close()
+
+			provider, err := NewRemoteProvider(RemoteConfig{URL: remote.URL})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = provider.Predict(context.Background(), RunSnapshot{}, 30)
+			if err == nil {
+				t.Fatal("expected non-2xx status to return error")
+			}
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("error = %v, want sentinel %v", err, tt.want)
+			}
+		})
 	}
 }
 
