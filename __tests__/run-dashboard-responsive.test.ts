@@ -18,7 +18,9 @@ describe('run dashboard responsive layout', () => {
   it('renders predictive reliability when checkpoints are present even if config is disabled', () => {
     expect(source).toContain('prediction_checkpoints');
     expect(source).toContain('window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true || predictionCheckpoints.length > 0');
-    expect(source).toContain('predictionEnabled && predictionCheckpoints.length');
+    expect(source).toContain('predictionTabHtml');
+    expect(source).toContain('predictionPreviewHtml');
+    expect(source).toContain('data-run-tab="predictions"');
 
     const predicate = source.match(/const predictionEnabled = ([^;]+);/)?.[1];
     expect(predicate).toBeDefined();

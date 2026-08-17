@@ -217,6 +217,109 @@ input[type="file"] {
     box-shadow: var(--bpw-shadow);
 }
 
+.run-dashboard-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin: 0 0 1rem;
+    padding: 0.25rem;
+    border: 1px solid rgba(22, 26, 29, 0.09);
+    border-radius: 8px;
+    background: rgba(245, 247, 251, 0.9);
+}
+
+.run-dashboard-tab {
+    appearance: none;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--bpw-muted);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.86rem;
+    font-weight: 650;
+    min-height: 2.1rem;
+    min-width: 7.5rem;
+    padding: 0.4rem 0.85rem;
+}
+
+.run-dashboard-tab.is-active,
+.run-dashboard-tab[aria-selected="true"] {
+    background: #fff;
+    border-color: var(--bpw-line);
+    color: var(--bpw-ink);
+    box-shadow: 0 1px 2px rgba(22, 26, 29, 0.06);
+}
+
+.run-dashboard-panel[hidden] {
+    display: none !important;
+}
+
+.prediction-preview {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin: 0 0 1.2rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid rgba(22, 26, 29, 0.09);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: var(--bpw-shadow);
+    min-height: 3.6rem;
+}
+
+.prediction-preview-main {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.45rem 0.75rem;
+    min-width: 0;
+}
+
+.prediction-preview-main strong {
+    color: var(--bpw-ink);
+    font-size: 0.95rem;
+}
+
+.prediction-preview-main span:last-child {
+    color: var(--bpw-muted);
+    font-size: 0.82rem;
+}
+
+.prediction-panel-meta {
+    color: var(--bpw-muted);
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+.prediction-empty {
+    margin: 0;
+    padding: 1.25rem 1rem;
+    border: 1px solid rgba(22, 26, 29, 0.09);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: var(--bpw-shadow);
+    min-height: 8.5rem;
+}
+
+.prediction-empty h2 {
+    margin: 0.35rem 0 0.45rem;
+    color: var(--bpw-ink);
+    font-size: 1.05rem;
+}
+
+.prediction-empty p {
+    margin: 0;
+    color: var(--bpw-muted);
+    font-size: 0.88rem;
+    max-width: 42rem;
+}
+
+.prediction-timeline {
+    align-items: stretch;
+}
+
 .prediction-panel-head {
     display: flex;
     align-items: center;
@@ -240,6 +343,7 @@ input[type="file"] {
 
 .prediction-card {
     min-width: 0;
+    min-height: 11.5rem;
     padding: 0.85rem;
     border: 1px solid var(--bpw-line);
     border-radius: 8px;
@@ -258,6 +362,15 @@ input[type="file"] {
     border-color: #93c5a3;
 }
 
+.prediction-card.status-pending,
+.prediction-card.status-skipped {
+    opacity: 0.82;
+}
+
+.prediction-card.status-error {
+    border-color: #e8a0a0;
+}
+
 .prediction-card-top {
     display: flex;
     align-items: center;
@@ -270,18 +383,30 @@ input[type="file"] {
     font-size: 1rem;
 }
 
-.prediction-card-top span {
+.prediction-card-top span,
+.prediction-status {
     color: var(--bpw-muted);
     font-size: 0.78rem;
     text-transform: capitalize;
 }
 
 .prediction-risk {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
     margin-top: 0.5rem;
     color: var(--bpw-ink);
     font-size: 1.18rem;
     font-weight: 780;
     text-transform: capitalize;
+}
+
+.prediction-risk-score {
+    color: var(--bpw-muted);
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: none;
 }
 
 .prediction-metrics {
@@ -302,6 +427,7 @@ input[type="file"] {
     margin-top: 0.15rem;
     color: var(--bpw-ink);
     font-size: 0.84rem;
+    overflow-wrap: anywhere;
 }
 
 .prediction-signals {
@@ -318,6 +444,13 @@ input[type="file"] {
     background: #f5f7fb;
     color: var(--bpw-muted);
     font-size: 0.74rem;
+}
+
+.prediction-message {
+    margin: 0.65rem 0 0;
+    color: var(--bpw-muted);
+    font-size: 0.78rem;
+    line-height: 1.4;
 }
 
 .chart-container,
@@ -869,6 +1002,20 @@ footer {
 
     .run-kpi-strip,
     .status-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .prediction-preview {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .run-dashboard-tab {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .prediction-metrics {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
