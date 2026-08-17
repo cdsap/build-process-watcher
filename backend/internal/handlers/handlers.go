@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -261,10 +260,10 @@ func (h *Handlers) evaluatePredictionCheckpoints(ctx context.Context, runID stri
 			Now:                   time.Now(),
 		}, checkpointWindow)
 		if err != nil {
-			fallbackStatus, fallbackMessage := classifyPredictionFallback(err)
+			fallbackState, fallbackMessage := scoring.ClassifyFallback(err)
 			checkpoint = models.PredictionCheckpoint{
 				ObservationWindowS: checkpointWindow,
-				Status:             fallbackStatus,
+				Status:             string(fallbackState),
 				CreatedAt:          time.Now(),
 				Message:            fallbackMessage,
 			}
@@ -281,21 +280,6 @@ func (h *Handlers) evaluatePredictionCheckpoints(ctx context.Context, runID stri
 			continue
 		}
 		runDoc.PredictionCheckpoints = storage.MergePredictionCheckpoint(runDoc.PredictionCheckpoints, checkpoint)
-	}
-}
-
-// classifyPredictionFallback maps provider failures onto the shared scoring
-// taxonomy without importing a concrete provider implementation.
-func classifyPredictionFallback(err error) (status string, message string) {
-	switch {
-	case errors.Is(err, scoring.ErrNoData):
-		return "no_data", "prediction data unavailable"
-	case errors.Is(err, scoring.ErrModelUnavailable):
-		return "model_unavailable", "prediction model unavailable"
-	case errors.Is(err, scoring.ErrScoringTimeout), errors.Is(err, scoring.ErrScoringFailed):
-		return "provider_error", "prediction provider error"
-	default:
-		return "provider_error", "prediction provider error"
 	}
 }
 

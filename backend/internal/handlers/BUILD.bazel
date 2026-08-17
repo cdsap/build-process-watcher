@@ -21,6 +21,5 @@ go_test(
     embed = [":handlers"],
     deps = [
         "//internal/models",
-        "//internal/scoring",
     ],
 )
