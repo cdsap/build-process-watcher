@@ -14,7 +14,8 @@ describe('demo dashboard', () => {
     expect(html).toContain('Class Loading Activity');
     expect(html).toContain('window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true || predictionCheckpoints.length > 0');
     expect(html).toContain('prediction_checkpoints');
-    expect(html).toContain('predictionHtml');
+    expect(html).toContain('predictionTabHtml');
+    expect(html).toContain('data-run-tab="predictions"');
     expect(html).not.toContain('/runs/${runId}');
 
     const data = JSON.parse(fs.readFileSync(demoData, 'utf8'));

@@ -486,6 +486,7 @@
         let refreshInterval = parseInt(localStorage.getItem('refreshInterval')) || 60; // Default 60 seconds
         let refreshTimer = null;
         let lastRefreshTime = null;
+        let activeRunDashboardTab = 'dashboard';
         
         if (!runId || runId === 'runs' || runId === '') {
             document.getElementById('content').innerHTML = `
@@ -518,6 +519,53 @@
                 clearTimeout(refreshTimer);
                 refreshTimer = null;
             }
+        }
+
+        function resizeRunDashboardCharts() {
+            if (!window.Plotly || typeof Plotly.Plots?.resize !== 'function') return;
+            [
+                'chart',
+                'gc-chart',
+                'rss-heap-chart',
+                'jit-time-chart',
+                'classes-loaded-chart',
+                'class-rate-chart',
+            ].forEach((id) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                try {
+                    Plotly.Plots.resize(el);
+                } catch (_) {
+                    // Chart may not be initialized yet.
+                }
+            });
+        }
+
+        function setRunDashboardTab(tab) {
+            activeRunDashboardTab = tab === 'predictions' ? 'predictions' : 'dashboard';
+            const tabs = document.querySelectorAll('.run-dashboard-tab[data-run-tab]');
+            const dashboardPanel = document.getElementById('run-panel-dashboard');
+            const predictionsPanel = document.getElementById('run-panel-predictions');
+            tabs.forEach((button) => {
+                const selected = button.getAttribute('data-run-tab') === activeRunDashboardTab;
+                button.classList.toggle('is-active', selected);
+                button.setAttribute('aria-selected', selected ? 'true' : 'false');
+                button.tabIndex = selected ? 0 : -1;
+            });
+            if (dashboardPanel) dashboardPanel.hidden = activeRunDashboardTab !== 'dashboard';
+            if (predictionsPanel) predictionsPanel.hidden = activeRunDashboardTab !== 'predictions';
+            if (activeRunDashboardTab === 'dashboard') {
+                requestAnimationFrame(() => resizeRunDashboardCharts());
+            }
+        }
+
+        function bindRunDashboardTabs() {
+            document.querySelectorAll('[data-run-tab]').forEach((el) => {
+                el.addEventListener('click', () => {
+                    setRunDashboardTab(el.getAttribute('data-run-tab'));
+                });
+            });
+            setRunDashboardTab(activeRunDashboardTab || 'dashboard');
         }
 
         async function loadRunData(runId) {
@@ -661,36 +709,85 @@
             
             const formatDur = (s) => s < 60 ? s + 's' : (Math.floor(s / 60) + 'm' + (s % 60 ? ' ' + Math.round(s % 60) + 's' : ''));
             const formatPredictionValue = (value, unit) => Number.isFinite(Number(value)) ? `${Number(value).toFixed(Number(value) >= 1000 ? 0 : 1)} ${unit}` : 'N/A';
+            const formatRiskScore = (score) => {
+                if (!Number.isFinite(Number(score))) return 'N/A';
+                const n = Number(score);
+                if (n <= 1 && n >= 0) return n.toFixed(2);
+                return n >= 100 ? n.toFixed(0) : n.toFixed(1);
+            };
             const predictionRiskClass = (riskLevel) => ['low', 'elevated', 'high'].includes(riskLevel) ? riskLevel : 'unknown';
+            const predictionStatusClass = (status) => ['ready', 'pending', 'skipped', 'error'].includes(status) ? status : 'unknown';
             const predictionCheckpoints = Array.isArray(data.prediction_checkpoints)
                 ? [...data.prediction_checkpoints].sort((a, b) => Number(a.observation_window_s || 0) - Number(b.observation_window_s || 0))
                 : [];
             const predictionEnabled = window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true || predictionCheckpoints.length > 0;
-            const predictionHtml = predictionEnabled && predictionCheckpoints.length ? `
-                <section class="prediction-panel" aria-label="Predictive reliability">
+            const readyPredictionCount = predictionCheckpoints.filter(checkpoint => checkpoint.status === 'ready').length;
+            const latestReadyRisk = [...predictionCheckpoints].reverse().find(checkpoint => checkpoint.status === 'ready')?.risk_level;
+            const renderPredictionCard = (checkpoint) => {
+                const status = checkpoint.status || 'unknown';
+                const riskLevel = checkpoint.risk_level || 'unknown';
+                const providerBits = [];
+                if (checkpoint.provider_id) providerBits.push(`<div><span>Provider</span><strong>${escapeHtml(checkpoint.provider_id)}</strong></div>`);
+                if (checkpoint.model_version) providerBits.push(`<div><span>Model</span><strong>${escapeHtml(checkpoint.model_version)}</strong></div>`);
+                const signalHtml = Array.isArray(checkpoint.signals) && checkpoint.signals.length
+                    ? `<div class="prediction-signals">${checkpoint.signals.slice(0, 4).map(signal => `<span>${escapeHtml(signal)}</span>`).join('')}</div>`
+                    : '';
+                const messageHtml = checkpoint.message && (status === 'error' || status === 'skipped')
+                    ? `<p class="prediction-message">${escapeHtml(checkpoint.message)}</p>`
+                    : '';
+                return `
+                    <article class="prediction-card ${predictionRiskClass(riskLevel)} status-${predictionStatusClass(status)}">
+                        <div class="prediction-card-top">
+                            <strong>${escapeHtml(String(checkpoint.observation_window_s || 'N/A'))}s</strong>
+                            <span class="prediction-status">${escapeHtml(status)}</span>
+                        </div>
+                        <div class="prediction-risk">
+                            <span class="prediction-risk-level">${escapeHtml(riskLevel)}</span>
+                            ${Number.isFinite(Number(checkpoint.risk_score))
+                                ? `<span class="prediction-risk-score">score ${escapeHtml(formatRiskScore(checkpoint.risk_score))}</span>`
+                                : ''}
+                        </div>
+                        <div class="prediction-metrics">
+                            <div><span>Confidence</span><strong>${escapeHtml(checkpoint.confidence || 'N/A')}</strong></div>
+                            <div><span>Peak RSS</span><strong>${formatPredictionValue(checkpoint.predicted_peak_rss_mb, 'MB')}</strong></div>
+                            <div><span>Duration</span><strong>${formatPredictionValue(checkpoint.predicted_duration_s, 's')}</strong></div>
+                            ${providerBits.join('')}
+                        </div>
+                        ${signalHtml}
+                        ${messageHtml}
+                    </article>
+                `;
+            };
+            const predictionTabHtml = predictionCheckpoints.length ? `
+                <section class="prediction-panel prediction-tab-panel" aria-label="Prediction checkpoints">
                     <div class="prediction-panel-head">
                         <div>
-                            <span class="bpw-panel-badge">Prediction</span>
-                            <h2>Reliability Checkpoints</h2>
+                            <span class="bpw-panel-badge">Predictions</span>
+                            <h2>Checkpoint Windows</h2>
                         </div>
+                        <div class="prediction-panel-meta">${readyPredictionCount}/${predictionCheckpoints.length} ready</div>
                     </div>
-                    <div class="prediction-grid">
-                        ${predictionCheckpoints.map(checkpoint => `
-                            <article class="prediction-card ${predictionRiskClass(checkpoint.risk_level)}">
-                                <div class="prediction-card-top">
-                                    <strong>${escapeHtml(String(checkpoint.observation_window_s || 'N/A'))}s</strong>
-                                    <span>${escapeHtml(checkpoint.status || 'unknown')}</span>
-                                </div>
-                                <div class="prediction-risk">${escapeHtml(checkpoint.risk_level || 'unknown')}</div>
-                                <div class="prediction-metrics">
-                                    <div><span>Confidence</span><strong>${escapeHtml(checkpoint.confidence || 'N/A')}</strong></div>
-                                    <div><span>Peak RSS</span><strong>${formatPredictionValue(checkpoint.predicted_peak_rss_mb, 'MB')}</strong></div>
-                                    <div><span>Duration</span><strong>${formatPredictionValue(checkpoint.predicted_duration_s, 's')}</strong></div>
-                                </div>
-                                ${Array.isArray(checkpoint.signals) && checkpoint.signals.length ? `<div class="prediction-signals">${checkpoint.signals.slice(0, 3).map(signal => `<span>${escapeHtml(signal)}</span>`).join('')}</div>` : ''}
-                            </article>
-                        `).join('')}
+                    <div class="prediction-grid prediction-timeline">
+                        ${predictionCheckpoints.map(renderPredictionCard).join('')}
                     </div>
+                </section>
+            ` : `
+                <section class="prediction-empty" aria-label="Prediction checkpoints">
+                    <span class="bpw-panel-badge">Predictions</span>
+                    <h2>No prediction checkpoints</h2>
+                    <p>${predictionEnabled
+                        ? 'Checkpoints will appear here as observation windows complete.'
+                        : 'This run has no prediction_checkpoints. Legacy runs and deployments without predictive reliability omit this data.'}</p>
+                </section>
+            `;
+            const predictionPreviewHtml = predictionCheckpoints.length ? `
+                <section class="prediction-preview" aria-label="Prediction preview">
+                    <div class="prediction-preview-main">
+                        <span class="bpw-panel-badge">Predictions</span>
+                        <strong>${predictionCheckpoints.length} checkpoint${predictionCheckpoints.length === 1 ? '' : 's'}</strong>
+                        <span>${readyPredictionCount} ready${latestReadyRisk ? ` · latest risk ${escapeHtml(latestReadyRisk)}` : ''}</span>
+                    </div>
+                    <button type="button" class="btn secondary" data-run-tab="predictions">Open Predictions</button>
                 </section>
             ` : '';
 
@@ -826,6 +923,12 @@
                     </div>
                 </div>
 
+                <div class="run-dashboard-tabs" role="tablist" aria-label="Run dashboard views">
+                    <button type="button" class="run-dashboard-tab" role="tab" id="run-tab-dashboard" data-run-tab="dashboard" aria-controls="run-panel-dashboard">Dashboard</button>
+                    <button type="button" class="run-dashboard-tab" role="tab" id="run-tab-predictions" data-run-tab="predictions" aria-controls="run-panel-predictions">Predictions</button>
+                </div>
+
+                <div id="run-panel-dashboard" class="run-dashboard-panel" role="tabpanel" aria-labelledby="run-tab-dashboard">
                 <div class="run-kpi-strip">
                     <div class="run-kpi">
                         <div class="run-kpi-label">Peak RSS</div>
@@ -849,7 +952,7 @@
                     </div>
                 </div>
 
-                ${predictionHtml}
+                ${predictionPreviewHtml}
 
                 <!-- Compare runs hidden until ready -->
 
@@ -1152,6 +1255,11 @@
                 ` : ''}
 
                 <div id="compare-section" class="compare-section" style="display: none;"></div>
+                </div>
+
+                <div id="run-panel-predictions" class="run-dashboard-panel" role="tabpanel" aria-labelledby="run-tab-predictions" hidden>
+                    ${predictionTabHtml}
+                </div>
             `;
 
             if (samples.length > 0) {
@@ -1217,6 +1325,8 @@
                     BpwExperimentLayout.initPanelFocusButtons?.();
                 }
             }
+
+            bindRunDashboardTabs();
         }
 
         function shouldShowRssHeapRatioChart(samples) {
