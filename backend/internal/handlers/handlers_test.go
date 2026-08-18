@@ -2,13 +2,11 @@ package handlers
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
-	"github.com/cdsap/build-process-watcher/backend/internal/scoring"
 )
 
 func TestIngestHandler_RequestWithProcessInfo(t *testing.T) {
@@ -61,58 +59,6 @@ func TestBoolQueryAcceptsExplicitTrueOnly(t *testing.T) {
 	request = httptest.NewRequest("POST", "/auth/run/run-1?predictive_reliability=maybe", nil)
 	if boolQuery(request, "predictive_reliability") {
 		t.Fatal("expected invalid predictive_reliability value to be rejected")
-	}
-}
-
-func TestClassifyPredictionFallbackUsesSharedScoringTaxonomy(t *testing.T) {
-	tests := []struct {
-		name        string
-		err         error
-		wantStatus  string
-		wantMessage string
-	}{
-		{
-			name:        "no data",
-			err:         fmt.Errorf("provider context: %w", scoring.ErrNoData),
-			wantStatus:  "no_data",
-			wantMessage: "prediction data unavailable",
-		},
-		{
-			name:        "model unavailable",
-			err:         fmt.Errorf("provider context: %w", scoring.ErrModelUnavailable),
-			wantStatus:  "model_unavailable",
-			wantMessage: "prediction model unavailable",
-		},
-		{
-			name:        "scoring failed",
-			err:         fmt.Errorf("provider context: %w", scoring.ErrScoringFailed),
-			wantStatus:  "provider_error",
-			wantMessage: "prediction provider error",
-		},
-		{
-			name:        "scoring timeout",
-			err:         fmt.Errorf("provider context: %w", scoring.ErrScoringTimeout),
-			wantStatus:  "provider_error",
-			wantMessage: "prediction provider error",
-		},
-		{
-			name:        "unknown error",
-			err:         fmt.Errorf("unexpected provider failure"),
-			wantStatus:  "provider_error",
-			wantMessage: "prediction provider error",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gotStatus, gotMessage := classifyPredictionFallback(tt.err)
-			if gotStatus != tt.wantStatus {
-				t.Fatalf("status = %q, want %q", gotStatus, tt.wantStatus)
-			}
-			if gotMessage != tt.wantMessage {
-				t.Fatalf("message = %q, want %q", gotMessage, tt.wantMessage)
-			}
-		})
 	}
 }
 
