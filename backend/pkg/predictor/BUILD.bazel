@@ -22,4 +22,7 @@ go_test(
         "remote_test.go",
     ],
     embed = [":predictor"],
+    deps = [
+        "//internal/scoring",
+    ],
 )
