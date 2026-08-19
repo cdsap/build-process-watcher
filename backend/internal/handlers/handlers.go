@@ -13,10 +13,15 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/internal/auth"
 	"github.com/cdsap/build-process-watcher/backend/internal/exportqueue"
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
-	"github.com/cdsap/build-process-watcher/backend/internal/scoring"
 	"github.com/cdsap/build-process-watcher/backend/internal/storage"
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
+
+// fallbackClassifier is an optional provider capability for scoring-domain
+// fallback telemetry. Providers that own sentinel errors should implement it.
+type fallbackClassifier interface {
+	ClassifyFallback(err error) (state string, message string)
+}
 
 // Handlers contains all HTTP handlers
 type Handlers struct {
@@ -260,10 +265,10 @@ func (h *Handlers) evaluatePredictionCheckpoints(ctx context.Context, runID stri
 			Now:                   time.Now(),
 		}, checkpointWindow)
 		if err != nil {
-			fallbackState, fallbackMessage := scoring.ClassifyFallback(err)
+			fallbackState, fallbackMessage := classifyFallback(h.predictor, err)
 			checkpoint = models.PredictionCheckpoint{
 				ObservationWindowS: checkpointWindow,
-				Status:             string(fallbackState),
+				Status:             fallbackState,
 				CreatedAt:          time.Now(),
 				Message:            fallbackMessage,
 			}
@@ -281,6 +286,15 @@ func (h *Handlers) evaluatePredictionCheckpoints(ctx context.Context, runID stri
 		}
 		runDoc.PredictionCheckpoints = storage.MergePredictionCheckpoint(runDoc.PredictionCheckpoints, checkpoint)
 	}
+}
+
+// classifyFallback uses a provider-owned classifier when available, otherwise
+// records a generic provider_error without inspecting scoring sentinel errors.
+func classifyFallback(provider predictor.Provider, err error) (state string, message string) {
+	if classifier, ok := provider.(fallbackClassifier); ok {
+		return classifier.ClassifyFallback(err)
+	}
+	return "provider_error", "prediction provider error"
 }
 
 func boolQuery(r *http.Request, key string) bool {

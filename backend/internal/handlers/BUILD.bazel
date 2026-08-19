@@ -9,7 +9,6 @@ go_library(
         "//internal/auth",
         "//internal/exportqueue",
         "//internal/models",
-        "//internal/scoring",
         "//internal/storage",
         "//pkg/predictor",
     ],
@@ -21,5 +20,6 @@ go_test(
     embed = [":handlers"],
     deps = [
         "//internal/models",
+        "//pkg/predictor",
     ],
 )
