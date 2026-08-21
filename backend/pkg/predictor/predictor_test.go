@@ -2,8 +2,12 @@ package predictor
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/cdsap/build-process-watcher/backend/internal/scoring"
 )
 
 type fakeProvider struct{}
@@ -48,6 +52,95 @@ func TestEnabled(t *testing.T) {
 	}
 	if !Enabled(fakeProvider{}) {
 		t.Fatal("fake provider should be enabled")
+	}
+}
+
+func TestFallbackForErrorMapsSharedScoringTaxonomy(t *testing.T) {
+	now := time.Unix(456, 0).UTC()
+	tests := []struct {
+		name           string
+		err            error
+		wantState      string
+		wantDiagnostic string
+	}{
+		{
+			name:           "no data",
+			err:            fmt.Errorf("provider context: %w", scoring.ErrNoData),
+			wantState:      "no_data",
+			wantDiagnostic: "prediction data unavailable",
+		},
+		{
+			name:           "scoring timeout",
+			err:            fmt.Errorf("provider context: %w", scoring.ErrScoringTimeout),
+			wantState:      "provider_error",
+			wantDiagnostic: "prediction provider error",
+		},
+		{
+			name:           "model unavailable",
+			err:            fmt.Errorf("provider context: %w", scoring.ErrModelUnavailable),
+			wantState:      "model_unavailable",
+			wantDiagnostic: "prediction model unavailable",
+		},
+		{
+			name:           "scoring failed",
+			err:            fmt.Errorf("provider context: %w", scoring.ErrScoringFailed),
+			wantState:      "provider_error",
+			wantDiagnostic: "prediction provider error",
+		},
+		{
+			name:           "unknown error",
+			err:            fmt.Errorf("unexpected provider failure"),
+			wantState:      "provider_error",
+			wantDiagnostic: "prediction provider error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotState, gotDiagnostic, gotModelVersion, checkpoint := FallbackForError(tt.err, 180, now)
+			if gotState != tt.wantState {
+				t.Fatalf("state = %q, want %q", gotState, tt.wantState)
+			}
+			if gotDiagnostic != tt.wantDiagnostic {
+				t.Fatalf("diagnostic = %q, want %q", gotDiagnostic, tt.wantDiagnostic)
+			}
+			if gotModelVersion != "api-fallback" {
+				t.Fatalf("modelVersion = %q, want api-fallback", gotModelVersion)
+			}
+			if checkpoint.ObservationWindowS != 180 {
+				t.Fatalf("ObservationWindowS = %d, want 180", checkpoint.ObservationWindowS)
+			}
+			if checkpoint.Status != tt.wantState {
+				t.Fatalf("Status = %q, want %q", checkpoint.Status, tt.wantState)
+			}
+			if checkpoint.ModelVersion != "" {
+				t.Fatalf("checkpoint ModelVersion = %q, want empty", checkpoint.ModelVersion)
+			}
+			if checkpoint.Message != tt.wantDiagnostic {
+				t.Fatalf("Message = %q, want %q", checkpoint.Message, tt.wantDiagnostic)
+			}
+			if !checkpoint.CreatedAt.Equal(now) {
+				t.Fatalf("CreatedAt = %v, want %v", checkpoint.CreatedAt, now)
+			}
+			if checkpoint.ProviderID != "" {
+				t.Fatalf("ProviderID = %q, want empty fallback provider", checkpoint.ProviderID)
+			}
+		})
+	}
+}
+
+func TestFallbackForErrorDoesNotLeakPrivateDiagnosticToCheckpoint(t *testing.T) {
+	err := fmt.Errorf("private stack: customer id 123: %w", scoring.ErrScoringFailed)
+	_, diagnostic, _, checkpoint := FallbackForError(err, 60, time.Unix(789, 0).UTC())
+
+	if checkpoint.Message != "prediction provider error" {
+		t.Fatalf("Message = %q, want prediction provider error", checkpoint.Message)
+	}
+	if diagnostic != checkpoint.Message {
+		t.Fatalf("diagnostic = %q, want checkpoint message %q", diagnostic, checkpoint.Message)
+	}
+	if checkpoint.Message == err.Error() || strings.Contains(checkpoint.Message, "customer id") {
+		t.Fatal("fallback checkpoint leaked provider diagnostic text")
 	}
 }
 

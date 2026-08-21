@@ -106,13 +106,6 @@ func (p *RemoteProvider) Predict(ctx context.Context, snapshot RunSnapshot, obse
 	return response.Checkpoint, nil
 }
 
-// ClassifyFallback maps remote scoring failures onto public-safe telemetry.
-// Handlers prefer this optional method over generic provider_error defaults.
-func (*RemoteProvider) ClassifyFallback(err error) (state string, message string) {
-	fallbackState, fallbackMessage := scoring.ClassifyFallback(err)
-	return string(fallbackState), fallbackMessage
-}
-
 type scoringError struct {
 	kind    error
 	message string

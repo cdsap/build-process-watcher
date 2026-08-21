@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -126,59 +125,6 @@ func TestRemoteProviderClassifiesSharedScoringErrors(t *testing.T) {
 			}
 			if !errors.Is(err, tt.want) {
 				t.Fatalf("error = %v, want sentinel %v", err, tt.want)
-			}
-		})
-	}
-}
-
-func TestRemoteProviderClassifyFallbackMapsSharedTaxonomy(t *testing.T) {
-	provider := &RemoteProvider{}
-	tests := []struct {
-		name        string
-		err         error
-		wantState   string
-		wantMessage string
-	}{
-		{
-			name:        "no data",
-			err:         fmt.Errorf("provider context: %w", scoring.ErrNoData),
-			wantState:   string(scoring.StateNoData),
-			wantMessage: "prediction data unavailable",
-		},
-		{
-			name:        "model unavailable",
-			err:         fmt.Errorf("provider context: %w", scoring.ErrModelUnavailable),
-			wantState:   string(scoring.StateModelUnavailable),
-			wantMessage: "prediction model unavailable",
-		},
-		{
-			name:        "scoring failed",
-			err:         fmt.Errorf("provider context: %w", scoring.ErrScoringFailed),
-			wantState:   string(scoring.StateProviderError),
-			wantMessage: "prediction provider error",
-		},
-		{
-			name:        "scoring timeout",
-			err:         fmt.Errorf("provider context: %w", scoring.ErrScoringTimeout),
-			wantState:   string(scoring.StateProviderError),
-			wantMessage: "prediction provider error",
-		},
-		{
-			name:        "unknown error",
-			err:         fmt.Errorf("unexpected provider failure"),
-			wantState:   string(scoring.StateProviderError),
-			wantMessage: "prediction provider error",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gotState, gotMessage := provider.ClassifyFallback(tt.err)
-			if gotState != tt.wantState {
-				t.Fatalf("state = %q, want %q", gotState, tt.wantState)
-			}
-			if gotMessage != tt.wantMessage {
-				t.Fatalf("message = %q, want %q", gotMessage, tt.wantMessage)
 			}
 		})
 	}

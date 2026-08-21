@@ -1,15 +1,12 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
-	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
 
 func TestIngestHandler_RequestWithProcessInfo(t *testing.T) {
@@ -170,50 +167,5 @@ func TestRunResponse_WithPredictionCheckpoints(t *testing.T) {
 	}
 	if unmarshaled.PredictionCheckpoints[0].ObservationWindowS != 180 {
 		t.Fatalf("Prediction window = %d, want 180", unmarshaled.PredictionCheckpoints[0].ObservationWindowS)
-	}
-}
-
-// classifyingFakeProvider is a predictor.Provider test double that owns fallback
-// telemetry without importing scoring sentinel errors.
-type classifyingFakeProvider struct {
-	state   string
-	message string
-}
-
-func (classifyingFakeProvider) Predict(context.Context, predictor.RunSnapshot, int) (predictor.PredictionCheckpoint, error) {
-	return predictor.PredictionCheckpoint{}, errors.New("synthetic provider failure")
-}
-
-func (p classifyingFakeProvider) ClassifyFallback(error) (string, string) {
-	return p.state, p.message
-}
-
-type plainFakeProvider struct{}
-
-func (plainFakeProvider) Predict(context.Context, predictor.RunSnapshot, int) (predictor.PredictionCheckpoint, error) {
-	return predictor.PredictionCheckpoint{}, errors.New("synthetic provider failure")
-}
-
-func TestClassifyFallbackUsesProviderOwnedClassifier(t *testing.T) {
-	provider := classifyingFakeProvider{
-		state:   "no_data",
-		message: "prediction data unavailable",
-	}
-	state, message := classifyFallback(provider, errors.New("ignored by fake"))
-	if state != "no_data" {
-		t.Fatalf("state = %q, want no_data", state)
-	}
-	if message != "prediction data unavailable" {
-		t.Fatalf("message = %q, want prediction data unavailable", message)
-	}
-}
-
-func TestClassifyFallbackDefaultsWithoutClassifier(t *testing.T) {
-	state, message := classifyFallback(plainFakeProvider{}, errors.New("unexpected"))
-	if state != "provider_error" {
-		t.Fatalf("state = %q, want provider_error", state)
-	}
-	if message != "prediction provider error" {
-		t.Fatalf("message = %q, want prediction provider error", message)
 	}
 }

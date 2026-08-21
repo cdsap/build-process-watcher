@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
+	"github.com/cdsap/build-process-watcher/backend/internal/scoring"
 )
 
 type Sample = models.Sample
@@ -15,6 +16,8 @@ type ProcessInfo = models.ProcessInfo
 type PredictionCheckpoint = models.PredictionCheckpoint
 
 var defaultCheckpoints = []int{60, 300, 600, 1200}
+
+const fallbackModelVersion = "api-fallback"
 
 // RunSnapshot is the public input contract passed to prediction providers.
 type RunSnapshot struct {
@@ -29,6 +32,27 @@ type RunSnapshot struct {
 // Provider returns public-safe checkpoint predictions.
 type Provider interface {
 	Predict(ctx context.Context, snapshot RunSnapshot, observationWindowS int) (PredictionCheckpoint, error)
+}
+
+// FallbackForError maps provider-owned scoring errors to public-safe fallback
+// telemetry fields and a checkpoint safe to persist or return to callers.
+// modelVersion is the fallback telemetry label; it is not written onto the
+// checkpoint so public checkpoint JSON stays free of provider/model fields.
+func FallbackForError(err error, observationWindowS int, now time.Time) (state string, diagnostic string, modelVersion string, checkpoint PredictionCheckpoint) {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	fallbackState, fallbackMessage := scoring.ClassifyFallback(err)
+	state = string(fallbackState)
+	diagnostic = fallbackMessage
+	modelVersion = fallbackModelVersion
+	checkpoint = PredictionCheckpoint{
+		ObservationWindowS: observationWindowS,
+		Status:             state,
+		CreatedAt:          now,
+		Message:            fallbackMessage,
+	}
+	return state, diagnostic, modelVersion, checkpoint
 }
 
 // NoopProvider is the default public provider. It never produces predictions.
