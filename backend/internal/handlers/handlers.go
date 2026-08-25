@@ -23,23 +23,29 @@ type Handlers struct {
 	export               *exportqueue.Scheduler
 	predictor            predictor.Provider
 	predictorCheckpoints []int
+	fallbackClassifier   predictor.FallbackClassifier
 }
 
 // NewHandlers creates a new handlers instance. export may be nil (no BigQuery jobs).
 func NewHandlers(storageClient *storage.Client, export *exportqueue.Scheduler) *Handlers {
-	return NewHandlersWithPredictor(storageClient, export, predictor.NoopProvider{}, nil)
+	return NewHandlersWithPredictor(storageClient, export, predictor.NoopProvider{}, nil, nil)
 }
 
-// NewHandlersWithPredictor creates handlers with an optional prediction provider.
-func NewHandlersWithPredictor(storageClient *storage.Client, export *exportqueue.Scheduler, predictionProvider predictor.Provider, checkpoints []int) *Handlers {
+// NewHandlersWithPredictor creates handlers with an optional prediction provider
+// and optional fallback classifier supplied by the composition root.
+func NewHandlersWithPredictor(storageClient *storage.Client, export *exportqueue.Scheduler, predictionProvider predictor.Provider, checkpoints []int, fallbackClassifier predictor.FallbackClassifier) *Handlers {
 	if predictionProvider == nil {
 		predictionProvider = predictor.NoopProvider{}
+	}
+	if fallbackClassifier == nil {
+		fallbackClassifier = predictor.DefaultFallbackClassifier
 	}
 	return &Handlers{
 		storage:              storageClient,
 		export:               export,
 		predictor:            predictionProvider,
 		predictorCheckpoints: checkpoints,
+		fallbackClassifier:   fallbackClassifier,
 	}
 }
 
@@ -259,7 +265,7 @@ func (h *Handlers) evaluatePredictionCheckpoints(ctx context.Context, runID stri
 			Now:                   time.Now(),
 		}, checkpointWindow)
 		if err != nil {
-			_, _, _, checkpoint = predictor.FallbackForError(err, checkpointWindow, time.Now())
+			_, _, _, checkpoint = predictor.FallbackForError(err, checkpointWindow, time.Now(), h.fallbackClassifier)
 			log.Printf("Prediction provider failed for run %s checkpoint %ds: %v", runID, checkpointWindow, err)
 		}
 		if checkpoint.ObservationWindowS == 0 {

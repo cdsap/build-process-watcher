@@ -20,5 +20,6 @@ go_test(
     embed = [":handlers"],
     deps = [
         "//internal/models",
+        "//pkg/predictor",
     ],
 )

@@ -55,6 +55,11 @@ func TestEnabled(t *testing.T) {
 	}
 }
 
+func scoringFallbackClassifier(err error) (string, string) {
+	state, message := scoring.ClassifyFallback(err)
+	return string(state), message
+}
+
 func TestFallbackForErrorMapsSharedScoringTaxonomy(t *testing.T) {
 	now := time.Unix(456, 0).UTC()
 	tests := []struct {
@@ -97,7 +102,7 @@ func TestFallbackForErrorMapsSharedScoringTaxonomy(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotState, gotDiagnostic, gotModelVersion, checkpoint := FallbackForError(tt.err, 180, now)
+			gotState, gotDiagnostic, gotModelVersion, checkpoint := FallbackForError(tt.err, 180, now, scoringFallbackClassifier)
 			if gotState != tt.wantState {
 				t.Fatalf("state = %q, want %q", gotState, tt.wantState)
 			}
@@ -131,7 +136,7 @@ func TestFallbackForErrorMapsSharedScoringTaxonomy(t *testing.T) {
 
 func TestFallbackForErrorDoesNotLeakPrivateDiagnosticToCheckpoint(t *testing.T) {
 	err := fmt.Errorf("private stack: customer id 123: %w", scoring.ErrScoringFailed)
-	_, diagnostic, _, checkpoint := FallbackForError(err, 60, time.Unix(789, 0).UTC())
+	_, diagnostic, _, checkpoint := FallbackForError(err, 60, time.Unix(789, 0).UTC(), scoringFallbackClassifier)
 
 	if checkpoint.Message != "prediction provider error" {
 		t.Fatalf("Message = %q, want prediction provider error", checkpoint.Message)
@@ -141,6 +146,34 @@ func TestFallbackForErrorDoesNotLeakPrivateDiagnosticToCheckpoint(t *testing.T) 
 	}
 	if checkpoint.Message == err.Error() || strings.Contains(checkpoint.Message, "customer id") {
 		t.Fatal("fallback checkpoint leaked provider diagnostic text")
+	}
+}
+
+func TestFallbackForErrorUsesDefaultClassifierWhenNil(t *testing.T) {
+	err := fmt.Errorf("provider context: %w", scoring.ErrNoData)
+	state, diagnostic, _, checkpoint := FallbackForError(err, 60, time.Unix(1, 0).UTC(), nil)
+
+	if state != "provider_error" {
+		t.Fatalf("state = %q, want provider_error without injected classifier", state)
+	}
+	if diagnostic != "prediction provider error" {
+		t.Fatalf("diagnostic = %q, want prediction provider error", diagnostic)
+	}
+	if checkpoint.Message != diagnostic || checkpoint.Status != state {
+		t.Fatalf("checkpoint = %+v, want status/message matching default classifier", checkpoint)
+	}
+	if strings.Contains(checkpoint.Message, "no data") || strings.Contains(checkpoint.Message, err.Error()) {
+		t.Fatal("default fallback leaked scoring-specific or private diagnostic text")
+	}
+}
+
+func TestDefaultFallbackClassifierIsPublicSafe(t *testing.T) {
+	state, message := DefaultFallbackClassifier(fmt.Errorf("private stack: customer id 123: %w", scoring.ErrModelUnavailable))
+	if state != "provider_error" {
+		t.Fatalf("state = %q, want provider_error", state)
+	}
+	if message != "prediction provider error" {
+		t.Fatalf("message = %q, want prediction provider error", message)
 	}
 }
 

@@ -148,6 +148,29 @@ func TestOptionsCanCarryInjectedProvider(t *testing.T) {
 	}
 }
 
+func TestOptionsCanCarryFallbackClassifier(t *testing.T) {
+	options := Options{
+		FallbackClassifier: func(error) (string, string) {
+			return "no_data", "prediction data unavailable"
+		},
+	}
+	if options.FallbackClassifier == nil {
+		t.Fatal("FallbackClassifier should be injectable on Options")
+	}
+	state, message := options.FallbackClassifier(nil)
+	if state != "no_data" || message != "prediction data unavailable" {
+		t.Fatalf("classifier = (%q, %q), want no_data / prediction data unavailable", state, message)
+	}
+}
+
+func TestOptionsFromEnvLeavesFallbackClassifierUnset(t *testing.T) {
+	t.Setenv("PREDICTIVE_PROVIDER_ENABLED", "false")
+	options := OptionsFromEnv()
+	if options.FallbackClassifier != nil {
+		t.Fatal("OptionsFromEnv should leave FallbackClassifier unset for composition-root wiring")
+	}
+}
+
 func TestNewMuxRegistersPublicRoutes(t *testing.T) {
 	mux := NewMux(handlers.NewHandlers(nil, nil), cleanup.NewService(nil, nil))
 
