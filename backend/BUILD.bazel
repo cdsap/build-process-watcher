@@ -10,7 +10,7 @@ go_library(
     importpath = "github.com/cdsap/build-process-watcher/backend",
     visibility = ["//visibility:private"],
     deps = [
-        "//pkg/predictor",
+        "//internal/scoring",
         "//pkg/server",
     ],
 )
@@ -27,6 +27,7 @@ go_test(
         "export_test.go",
         "integration_test.go",
         "main_test.go",
+        "prediction_fallback_test.go",
     ],
     embed = [":backend_lib"],
     deps = [
@@ -34,6 +35,7 @@ go_test(
         "//internal/cleanup",
         "//internal/handlers",
         "//internal/models",
+        "//internal/scoring",
         "//internal/storage",
     ],
 )

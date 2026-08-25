@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
-	"github.com/cdsap/build-process-watcher/backend/internal/scoring"
 )
 
 type Sample = models.Sample
@@ -18,6 +17,17 @@ type PredictionCheckpoint = models.PredictionCheckpoint
 var defaultCheckpoints = []int{60, 300, 600, 1200}
 
 const fallbackModelVersion = "api-fallback"
+
+// FallbackClassifier maps a provider failure onto a public-safe telemetry state
+// and checkpoint message. Composition roots supply provider-specific mapping;
+// the predictor package itself stays free of concrete scoring sentinel imports.
+type FallbackClassifier func(err error) (state string, message string)
+
+// DefaultFallbackClassifier returns a generic public-safe provider_error without
+// inspecting provider-owned sentinel errors.
+func DefaultFallbackClassifier(error) (state string, message string) {
+	return "provider_error", "prediction provider error"
+}
 
 // RunSnapshot is the public input contract passed to prediction providers.
 type RunSnapshot struct {
@@ -34,23 +44,26 @@ type Provider interface {
 	Predict(ctx context.Context, snapshot RunSnapshot, observationWindowS int) (PredictionCheckpoint, error)
 }
 
-// FallbackForError maps provider-owned scoring errors to public-safe fallback
-// telemetry fields and a checkpoint safe to persist or return to callers.
+// FallbackForError maps a provider failure to public-safe fallback telemetry
+// fields and a checkpoint safe to persist or return to callers.
+// classify carries provider-specific sentinel mapping from the composition root;
+// a nil classifier uses DefaultFallbackClassifier.
 // modelVersion is the fallback telemetry label; it is not written onto the
 // checkpoint so public checkpoint JSON stays free of provider/model fields.
-func FallbackForError(err error, observationWindowS int, now time.Time) (state string, diagnostic string, modelVersion string, checkpoint PredictionCheckpoint) {
+func FallbackForError(err error, observationWindowS int, now time.Time, classify FallbackClassifier) (state string, diagnostic string, modelVersion string, checkpoint PredictionCheckpoint) {
 	if now.IsZero() {
 		now = time.Now()
 	}
-	fallbackState, fallbackMessage := scoring.ClassifyFallback(err)
-	state = string(fallbackState)
-	diagnostic = fallbackMessage
+	if classify == nil {
+		classify = DefaultFallbackClassifier
+	}
+	state, diagnostic = classify(err)
 	modelVersion = fallbackModelVersion
 	checkpoint = PredictionCheckpoint{
 		ObservationWindowS: observationWindowS,
 		Status:             state,
 		CreatedAt:          now,
-		Message:            fallbackMessage,
+		Message:            diagnostic,
 	}
 	return state, diagnostic, modelVersion, checkpoint
 }

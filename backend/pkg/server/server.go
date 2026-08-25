@@ -28,6 +28,10 @@ type Options struct {
 	BigQueryProcessesTable string
 	PredictionProvider     predictor.Provider
 	PredictionCheckpoints  []int
+	// FallbackClassifier maps provider failures onto public-safe telemetry.
+	// Composition roots (for example backend main) supply provider-specific
+	// sentinel mapping; nil uses predictor.DefaultFallbackClassifier.
+	FallbackClassifier predictor.FallbackClassifier
 }
 
 // OptionsFromEnv reads public backend configuration from environment variables.
@@ -101,7 +105,7 @@ func Run(ctx context.Context, options Options) error {
 		log.Printf("🔮 Predictive reliability disabled (set private provider and PREDICTIVE_RELIABILITY_CHECKPOINTS to enable)")
 	}
 
-	h := handlers.NewHandlersWithPredictor(storageClient, exportSched, provider, options.PredictionCheckpoints)
+	h := handlers.NewHandlersWithPredictor(storageClient, exportSched, provider, options.PredictionCheckpoints, options.FallbackClassifier)
 	cleanupService := cleanup.NewService(storageClient, exportSched)
 	mux := NewMux(h, cleanupService)
 	port := portOrDefault(options.Port)
