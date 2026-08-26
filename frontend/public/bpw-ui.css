@@ -453,6 +453,54 @@ input[type="file"] {
     line-height: 1.4;
 }
 
+.prediction-details {
+    margin-top: 0.65rem;
+    color: var(--bpw-muted);
+    font-size: 0.74rem;
+}
+
+.prediction-details summary {
+    cursor: pointer;
+    list-style: none;
+    width: fit-content;
+    color: var(--bpw-muted);
+    font-weight: 600;
+}
+
+.prediction-details summary::-webkit-details-marker {
+    display: none;
+}
+
+.prediction-details summary::before {
+    content: '▸ ';
+}
+
+.prediction-details[open] summary::before {
+    content: '▾ ';
+}
+
+.prediction-details-body {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem;
+    margin-top: 0.45rem;
+}
+
+.prediction-details-body span {
+    display: block;
+    color: var(--bpw-muted);
+    font-size: 0.7rem;
+}
+
+.prediction-details-body strong {
+    display: block;
+    margin-top: 0.1rem;
+    color: var(--bpw-ink);
+    font-size: 0.78rem;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
 .chart-container,
 .process-info-section,
 .compare-controls,
@@ -1017,6 +1065,10 @@ footer {
 
     .prediction-metrics {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .prediction-details-body {
+        grid-template-columns: 1fr;
     }
 
     .chart-container {

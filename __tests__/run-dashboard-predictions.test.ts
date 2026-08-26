@@ -16,6 +16,50 @@ function extractPredictionHelpers(source: string) {
     'window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true || predictionCheckpoints.length > 0',
   );
 
+  const renderMatch = source.match(
+    /const renderPredictionCard = \(checkpoint\) => \{([\s\S]*?)\n            \};/,
+  );
+  expect(renderMatch).not.toBeNull();
+
+  const formatPredictionValue = (value: unknown, unit: string) => (
+    Number.isFinite(Number(value))
+      ? `${Number(value).toFixed(Number(value) >= 1000 ? 0 : 1)} ${unit}`
+      : 'N/A'
+  );
+  const formatRiskScore = (score: unknown) => {
+    if (!Number.isFinite(Number(score))) return 'N/A';
+    const n = Number(score);
+    if (n <= 1 && n >= 0) return n.toFixed(2);
+    return n >= 100 ? n.toFixed(0) : n.toFixed(1);
+  };
+  const predictionRiskClass = (riskLevel: unknown) => (
+    ['low', 'elevated', 'high'].includes(String(riskLevel)) ? String(riskLevel) : 'unknown'
+  );
+  const predictionStatusClass = (status: unknown) => (
+    ['ready', 'pending', 'skipped', 'error'].includes(String(status)) ? String(status) : 'unknown'
+  );
+  const escapeHtml = (value: unknown) => String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  const renderPredictionCard = Function(
+    'formatPredictionValue',
+    'formatRiskScore',
+    'predictionRiskClass',
+    'predictionStatusClass',
+    'escapeHtml',
+    `return (checkpoint) => {${renderMatch?.[1]}\n};`,
+  )(
+    formatPredictionValue,
+    formatRiskScore,
+    predictionRiskClass,
+    predictionStatusClass,
+    escapeHtml,
+  ) as (checkpoint: Record<string, unknown>) => string;
+
   return {
     sortCheckpoints: (data: { prediction_checkpoints?: Array<Record<string, unknown>> }) => (
       Array.isArray(data.prediction_checkpoints)
@@ -32,6 +76,7 @@ function extractPredictionHelpers(source: string) {
       { BUILD_PROCESS_WATCHER_CONFIG: { predictiveReliability } },
       { length: checkpointCount },
     ),
+    renderPredictionCard,
   };
 }
 
@@ -54,11 +99,14 @@ describe('run dashboard predictions tab', () => {
     expect(source).toContain('risk_score');
     expect(source).toContain('provider_id');
     expect(source).toContain('model_version');
+    expect(source).toContain('prediction-details');
+    expect(source).toContain('<summary>Details</summary>');
+    expect(source).not.toMatch(/prediction-metrics[\s\S]*?\$\{providerBits/);
     expect(source).not.toContain('${predictionHtml}');
   });
 
   it('renders ready checkpoints when prediction_checkpoints are present', () => {
-    const { sortCheckpoints, evaluateEnabled } = extractPredictionHelpers(sources[0].source);
+    const { sortCheckpoints, evaluateEnabled, renderPredictionCard } = extractPredictionHelpers(sources[0].source);
     const checkpoints = sortCheckpoints({
       prediction_checkpoints: [
         {
@@ -96,6 +144,33 @@ describe('run dashboard predictions tab', () => {
     expect(evaluateEnabled(false, checkpoints.length)).toBe(true);
     expect(sources[0].source).toContain('Open Predictions');
     expect(sources[0].source).toContain('Checkpoint Windows');
+
+    const withProvider = renderPredictionCard(checkpoints[2] as Record<string, unknown>);
+    expect(withProvider).toContain('180s');
+    expect(withProvider).toContain('elevated');
+    expect(withProvider).toContain('score 0.40');
+    expect(withProvider).toContain('medium');
+    expect(withProvider).toContain('3081 MB');
+    expect(withProvider).toContain('199.7 s');
+    expect(withProvider).toContain('memory pressure');
+    expect(withProvider).toContain('prediction-details');
+    expect(withProvider).toContain('<summary>Details</summary>');
+    expect(withProvider).toContain('private-provider');
+    expect(withProvider).toContain('private-heuristic-v1');
+    const metricsHtml = withProvider.match(/<div class="prediction-metrics">([\s\S]*?)<\/div>\s*(?:<div class="prediction-signals"|<details)/)?.[1] ?? '';
+    expect(metricsHtml).toContain('Confidence');
+    expect(metricsHtml).toContain('Peak RSS');
+    expect(metricsHtml).toContain('Duration');
+    expect(metricsHtml).not.toContain('Provider');
+    expect(metricsHtml).not.toContain('Model');
+    expect(metricsHtml).not.toContain('private-provider');
+    expect(metricsHtml).not.toContain('private-heuristic-v1');
+
+    const withoutProvider = renderPredictionCard(checkpoints[0] as Record<string, unknown>);
+    expect(withoutProvider).toContain('30s');
+    expect(withoutProvider).not.toContain('prediction-details');
+    expect(withoutProvider).not.toContain('Provider');
+    expect(withoutProvider).not.toContain('Model');
   });
 
   it('keeps legacy runs without prediction_checkpoints valid and empty-state ready', () => {
