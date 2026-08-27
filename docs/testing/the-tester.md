@@ -12,12 +12,20 @@ TheTester must validate observable user behavior, not only process exit codes.
 ## Safety
 
 Prefer existing recent GitHub Actions runs when they satisfy the scenario under
-test. Trigger a new workflow run only when the user explicitly asks for a fresh
-run or the current acceptance criteria require fresh build identifiers.
+test.
+
+TheTester is authorized to dispatch GitHub Actions workflows for this repository
+when no suitable current-commit run exists for a required remote scenario.
+Allowed dispatches include `test-action.yml`, `test-e2e-action.yml`, and
+`predictive-contract-smoke.yml` (and equivalent Process Action / predictive
+smoke workflows). Prefer `workflow_dispatch` on the commit or ref under test.
+Wait for the dispatched run to finish and use its URLs, artifacts, and dashboard
+links as evidence.
 
 Do not merge changes, publish releases, delete remote data, or modify production
-configuration. If remote credentials, workflow permissions, or Firebase access
-are unavailable, report `BLOCKED` with the missing dependency and the evidence.
+configuration. Do not dispatch deploy workflows. If remote credentials, workflow
+permissions, or Firebase access are unavailable, report `BLOCKED` with the
+missing dependency and the evidence.
 
 When a scenario uses remote data, retain the GitHub Actions run URL, dashboard
 run URL, compare URL, replay URL, build identifiers, screenshots, and relevant
