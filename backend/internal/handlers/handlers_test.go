@@ -4,14 +4,22 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/cdsap/build-process-watcher/backend/internal/auth"
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
+
+func TestMain(m *testing.M) {
+	auth.Initialize()
+	os.Exit(m.Run())
+}
 
 func TestIngestHandler_RequestWithProcessInfo(t *testing.T) {
 	// Test that IngestRequest with ProcessInfo can be properly parsed
@@ -193,5 +201,82 @@ func TestNewHandlersWithPredictorDefaultsFallbackClassifier(t *testing.T) {
 	}
 	if strings.Contains(message, "customer id") || message == err.Error() {
 		t.Fatal("default fallback classifier leaked private diagnostic text")
+	}
+}
+
+func TestValidateRunBearerToken(t *testing.T) {
+	const runID = "run-bearer-auth-1"
+
+	validToken, _, err := auth.GenerateToken(runID)
+	if err != nil {
+		t.Fatalf("GenerateToken failed: %v", err)
+	}
+	otherToken, _, err := auth.GenerateToken("other-run")
+	if err != nil {
+		t.Fatalf("GenerateToken for other run failed: %v", err)
+	}
+
+	tests := []struct {
+		name       string
+		header     string
+		wantStatus int
+		wantMsg    string
+		wantOK     bool
+	}{
+		{
+			name:       "missing authorization header",
+			header:     "",
+			wantStatus: http.StatusUnauthorized,
+			wantMsg:    "Authorization header required",
+		},
+		{
+			name:       "invalid authorization header format",
+			header:     "Token " + validToken,
+			wantStatus: http.StatusUnauthorized,
+			wantMsg:    "Invalid authorization header format",
+		},
+		{
+			name:       "invalid token",
+			header:     "Bearer not-a-valid-token",
+			wantStatus: http.StatusUnauthorized,
+			wantMsg:    "Token validation failed",
+		},
+		{
+			name:       "mismatched run id",
+			header:     "Bearer " + otherToken,
+			wantStatus: http.StatusUnauthorized,
+			wantMsg:    "Token validation failed",
+		},
+		{
+			name:   "valid bearer token",
+			header: "Bearer " + validToken,
+			wantOK: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/ingest", nil)
+			if tt.header != "" {
+				req.Header.Set("Authorization", tt.header)
+			}
+
+			status, message, ok := validateRunBearerToken(req, runID)
+			if ok != tt.wantOK {
+				t.Fatalf("ok = %v, want %v (status=%d message=%q)", ok, tt.wantOK, status, message)
+			}
+			if tt.wantOK {
+				if status != 0 || message != "" {
+					t.Fatalf("status/message = (%d, %q), want zero values on success", status, message)
+				}
+				return
+			}
+			if status != tt.wantStatus {
+				t.Fatalf("status = %d, want %d", status, tt.wantStatus)
+			}
+			if message != tt.wantMsg {
+				t.Fatalf("message = %q, want %q", message, tt.wantMsg)
+			}
+		})
 	}
 }
