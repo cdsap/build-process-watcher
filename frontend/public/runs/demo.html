@@ -737,6 +737,9 @@
                 const providerBits = [];
                 if (checkpoint.provider_id) providerBits.push(`<div><span>Provider</span><strong>${escapeHtml(checkpoint.provider_id)}</strong></div>`);
                 if (checkpoint.model_version) providerBits.push(`<div><span>Model</span><strong>${escapeHtml(checkpoint.model_version)}</strong></div>`);
+                const detailsHtml = providerBits.length
+                    ? `<details class="prediction-details"><summary>Details</summary><div class="prediction-details-body">${providerBits.join('')}</div></details>`
+                    : '';
                 const signalHtml = Array.isArray(checkpoint.signals) && checkpoint.signals.length
                     ? `<div class="prediction-signals">${checkpoint.signals.slice(0, 4).map(signal => `<span>${escapeHtml(signal)}</span>`).join('')}</div>`
                     : '';
@@ -759,10 +762,10 @@
                             <div><span>Confidence</span><strong>${escapeHtml(checkpoint.confidence || 'N/A')}</strong></div>
                             <div><span>Peak RSS</span><strong>${formatPredictionValue(checkpoint.predicted_peak_rss_mb, 'MB')}</strong></div>
                             <div><span>Duration</span><strong>${formatPredictionValue(checkpoint.predicted_duration_s, 's')}</strong></div>
-                            ${providerBits.join('')}
                         </div>
                         ${signalHtml}
                         ${messageHtml}
+                        ${detailsHtml}
                     </article>
                 `;
             };
