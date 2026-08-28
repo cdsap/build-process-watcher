@@ -4,7 +4,11 @@ import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { resolveMonitoringFeatureFlags } from './monitoring_features';
+import {
+  DEFAULT_LOG_FILE_NAME,
+  resolveActionRuntimePaths,
+  resolveMonitoringFeatureFlags,
+} from './monitoring_features';
 
 async function run() {
   try {
@@ -13,23 +17,23 @@ async function run() {
     const remoteMonitoringRequested = core.getInput('remote_monitoring') === 'true';
     const runId = core.getInput('run_id') || `run-${Date.now()}`;
     const debugMode = core.getInput('debug') === 'true';
-    const logFileInput = core.getInput('log_file') || 'build_process_watcher.log';
+    const logFileInput = core.getInput('log_file') || DEFAULT_LOG_FILE_NAME;
     const workspaceDir = process.env.GITHUB_WORKSPACE;
     const runnerTempRoot = process.env.RUNNER_TEMP || os.tmpdir();
-    const runnerTempDir = path.join(runnerTempRoot, 'build-process-watcher', runId);
+    const { runnerTempDir, logFilePath, defaultLogFile } = resolveActionRuntimePaths({
+      runId,
+      logFileInput,
+      workspaceDir,
+      runnerTempRoot,
+      logFileExists: fs.existsSync,
+    });
     fs.mkdirSync(runnerTempDir, { recursive: true });
-    const defaultLogFile = logFileInput === 'build_process_watcher.log';
-    let logFilePath = defaultLogFile
-      ? path.join(runnerTempDir, logFileInput)
-      : !path.isAbsolute(logFileInput) && workspaceDir
-        ? path.join(workspaceDir, logFileInput)
-        : logFileInput;
-    if (logFileInput === 'build_process_watcher.log' && fs.existsSync(logFilePath)) {
-      const logDir = path.dirname(logFilePath);
-      logFilePath = path.join(logDir, `build_process_watcher-${runId}.log`);
-      if (debugMode) {
-        core.info(`🧭 Log file already exists, using: ${logFilePath}`);
-      }
+    if (
+      debugMode &&
+      defaultLogFile &&
+      path.basename(logFilePath) === `build_process_watcher-${runId}.log`
+    ) {
+      core.info(`🧭 Log file already exists, using: ${logFilePath}`);
     }
     const interval = core.getInput('interval') || '5';
     const disableSummaryOutput = core.getInput('disable_summary_output') === 'true';
