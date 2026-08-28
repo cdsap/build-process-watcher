@@ -1,6 +1,9 @@
+import * as path from 'path';
+
 export const DEFAULT_BACKEND_URL =
   'https://build-process-watcher-backend-685615422311.us-central1.run.app';
 export const DEFAULT_FRONTEND_BASE_URL = 'https://process-watcher.web.app';
+export const DEFAULT_LOG_FILE_NAME = 'build_process_watcher.log';
 
 export interface MonitoringFeatureFlags {
   enableBackend: boolean;
@@ -8,6 +11,43 @@ export interface MonitoringFeatureFlags {
   frontendUrl: string;
   exportToBigquery: boolean;
   predictiveReliability: boolean;
+}
+
+export interface ActionRuntimePaths {
+  runnerTempDir: string;
+  logFilePath: string;
+  defaultLogFile: boolean;
+}
+
+export function resolveActionRuntimePaths(inputs: {
+  runId: string;
+  logFileInput: string;
+  workspaceDir?: string;
+  runnerTempRoot: string;
+  logFileExists: (candidatePath: string) => boolean;
+}): ActionRuntimePaths {
+  const runnerTempDir = path.join(
+    inputs.runnerTempRoot,
+    'build-process-watcher',
+    inputs.runId
+  );
+  const defaultLogFile = inputs.logFileInput === DEFAULT_LOG_FILE_NAME;
+  let logFilePath = defaultLogFile
+    ? path.join(runnerTempDir, inputs.logFileInput)
+    : !path.isAbsolute(inputs.logFileInput) && inputs.workspaceDir
+      ? path.join(inputs.workspaceDir, inputs.logFileInput)
+      : inputs.logFileInput;
+
+  if (defaultLogFile && inputs.logFileExists(logFilePath)) {
+    const logDir = path.dirname(logFilePath);
+    logFilePath = path.join(logDir, `build_process_watcher-${inputs.runId}.log`);
+  }
+
+  return {
+    runnerTempDir,
+    logFilePath,
+    defaultLogFile,
+  };
 }
 
 function buildFrontendRunUrl(frontendBaseUrl: string, runId: string): string {
