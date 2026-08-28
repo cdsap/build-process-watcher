@@ -19,6 +19,7 @@ go_test(
     srcs = ["handlers_test.go"],
     embed = [":handlers"],
     deps = [
+        "//internal/auth",
         "//internal/models",
         "//pkg/predictor",
     ],

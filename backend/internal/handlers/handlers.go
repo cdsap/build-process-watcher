@@ -49,6 +49,36 @@ func NewHandlersWithPredictor(storageClient *storage.Client, export *exportqueue
 	}
 }
 
+// validateRunBearerToken verifies the Authorization Bearer token for a run write.
+// Callers write the HTTP response using the returned status and message when ok is false.
+func validateRunBearerToken(r *http.Request, runID string) (status int, message string, ok bool) {
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		log.Printf("No authorization header provided for run_id: %s from %s", runID, r.RemoteAddr)
+		return http.StatusUnauthorized, "Authorization header required", false
+	}
+
+	tokenParts := strings.Split(authHeader, " ")
+	if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
+		log.Printf("Invalid authorization header format for run_id: %s from %s", runID, r.RemoteAddr)
+		return http.StatusUnauthorized, "Invalid authorization header format", false
+	}
+
+	token := tokenParts[1]
+	valid, err := auth.ValidateToken(token, runID)
+	if err != nil {
+		log.Printf("Token validation failed for run_id: %s: %v", runID, err)
+		return http.StatusUnauthorized, "Token validation failed", false
+	}
+
+	if !valid {
+		log.Printf("Invalid token for run_id: %s from %s", runID, r.RemoteAddr)
+		return http.StatusUnauthorized, "Invalid token", false
+	}
+
+	return 0, "", true
+}
+
 // Health returns a simple health check
 func (h *Handlers) Health(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -128,33 +158,8 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify token
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" {
-		log.Printf("No authorization header provided")
-		http.Error(w, "Authorization header required", http.StatusUnauthorized)
-		return
-	}
-
-	// Extract token from "Bearer <token>"
-	tokenParts := strings.Split(authHeader, " ")
-	if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
-		log.Printf("Invalid authorization header format")
-		http.Error(w, "Invalid authorization header format", http.StatusUnauthorized)
-		return
-	}
-
-	token := tokenParts[1]
-	valid, err := auth.ValidateToken(token, req.RunID)
-	if err != nil {
-		log.Printf("Token validation failed: %v", err)
-		http.Error(w, "Token validation failed", http.StatusUnauthorized)
-		return
-	}
-
-	if !valid {
-		log.Printf("Invalid token for run_id: %s", req.RunID)
-		http.Error(w, "Invalid token", http.StatusUnauthorized)
+	if status, message, ok := validateRunBearerToken(r, req.RunID); !ok {
+		http.Error(w, message, status)
 		return
 	}
 
@@ -399,33 +404,8 @@ func (h *Handlers) FinishRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify JWT token
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" {
-		log.Printf("⚠️  Finish request without authorization from %s for run: %s", r.RemoteAddr, runID)
-		http.Error(w, "Authorization header required", http.StatusUnauthorized)
-		return
-	}
-
-	// Extract token from "Bearer <token>"
-	tokenParts := strings.Split(authHeader, " ")
-	if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
-		log.Printf("⚠️  Invalid authorization header format from %s", r.RemoteAddr)
-		http.Error(w, "Invalid authorization header format", http.StatusUnauthorized)
-		return
-	}
-
-	token := tokenParts[1]
-	valid, err := auth.ValidateToken(token, runID)
-	if err != nil {
-		log.Printf("⚠️  Token validation failed for run %s: %v", runID, err)
-		http.Error(w, "Token validation failed", http.StatusUnauthorized)
-		return
-	}
-
-	if !valid {
-		log.Printf("⚠️  Invalid token for run %s from %s", runID, r.RemoteAddr)
-		http.Error(w, "Invalid token", http.StatusUnauthorized)
+	if status, message, ok := validateRunBearerToken(r, runID); !ok {
+		http.Error(w, message, status)
 		return
 	}
 
