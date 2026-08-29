@@ -6,7 +6,9 @@ import * as path from 'path';
 import * as os from 'os';
 import {
   DEFAULT_LOG_FILE_NAME,
-  resolveActionRuntimePaths,
+  resolveActionLogFileTarget,
+} from './action_config';
+import {
   resolveMonitoringFeatureFlags,
 } from './monitoring_features';
 
@@ -20,19 +22,28 @@ async function run() {
     const logFileInput = core.getInput('log_file') || DEFAULT_LOG_FILE_NAME;
     const workspaceDir = process.env.GITHUB_WORKSPACE;
     const runnerTempRoot = process.env.RUNNER_TEMP || os.tmpdir();
-    const { runnerTempDir, logFilePath, defaultLogFile } = resolveActionRuntimePaths({
+    const defaultLogPath = path.join(
+      runnerTempRoot,
+      'build-process-watcher',
+      runId,
+      DEFAULT_LOG_FILE_NAME
+    );
+    const defaultLogPathExists =
+      logFileInput === DEFAULT_LOG_FILE_NAME && fs.existsSync(defaultLogPath);
+    const {
+      runnerTempDir,
+      logFilePath,
+      defaultLogFile,
+      collisionFallbackUsed,
+    } = resolveActionLogFileTarget({
       runId,
       logFileInput,
       workspaceDir,
       runnerTempRoot,
-      logFileExists: fs.existsSync,
+      defaultLogPathExists,
     });
     fs.mkdirSync(runnerTempDir, { recursive: true });
-    if (
-      debugMode &&
-      defaultLogFile &&
-      path.basename(logFilePath) === `build_process_watcher-${runId}.log`
-    ) {
+    if (debugMode && collisionFallbackUsed) {
       core.info(`🧭 Log file already exists, using: ${logFilePath}`);
     }
     const interval = core.getInput('interval') || '5';
