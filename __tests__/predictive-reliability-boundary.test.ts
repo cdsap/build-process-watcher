@@ -119,4 +119,42 @@ describe('predictive reliability public boundary', () => {
     expect(models).not.toMatch(/\brelative_progress\b/);
     expect(models).not.toMatch(/\bprogress_(ratio|pct|percent)\b/);
   });
+
+  it('aligns predictive contract smoke expectations with reachable production defaults', () => {
+    const predictorSource = readRepoFile('backend/pkg/predictor/predictor.go');
+    const defaultMatch = predictorSource.match(
+      /var defaultCheckpoints = \[\]int\{([^}]+)\}/,
+    );
+    expect(defaultMatch).not.toBeNull();
+
+    const productionDefaults = defaultMatch![1]
+      .split(',')
+      .map(part => Number(part.trim()))
+      .filter(value => Number.isFinite(value) && value > 0);
+    expect(productionDefaults).toEqual([60, 300, 600, 1200]);
+
+    const smokeWorkflow = readRepoFile('.github/workflows/predictive-contract-smoke.yml');
+    const expectedDefaults = [...smokeWorkflow.matchAll(
+      /expected_checkpoints:\n(?:[ \t]+.*\n)*?[ \t]+default:\s*['"]?([0-9,\s]+)['"]?/g,
+    )].map(match => match[1].replace(/\s+/g, ''));
+    expect(expectedDefaults.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(expectedDefaults)).toEqual(new Set(['60,300,600,1200']));
+
+    const runSecondsMatch = smokeWorkflow.match(
+      /run_seconds:\n(?:[ \t]+.*\n)*?[ \t]+default:\s*['"]?(\d+)['"]?/,
+    );
+    expect(runSecondsMatch).not.toBeNull();
+    const runSeconds = Number(runSecondsMatch![1]);
+    expect(runSeconds).toBeGreaterThanOrEqual(1200);
+
+    const reachable = productionDefaults.filter(window => window <= runSeconds);
+    for (const expected of expectedDefaults[0].split(',').map(Number)) {
+      expect(reachable).toContain(expected);
+    }
+
+    const deployWorkflow = readRepoFile('.github/workflows/deploy-backend.yml');
+    expect(deployWorkflow).toContain(
+      'CHECKPOINT_WINDOWS="${PREDICTIVE_RELIABILITY_CHECKPOINTS:-60,300,600,1200}"',
+    );
+  });
 });

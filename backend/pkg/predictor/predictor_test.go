@@ -207,6 +207,20 @@ func TestPendingCheckpointsReturnsReachedMissingWindows(t *testing.T) {
 	}
 }
 
+func TestPendingCheckpointsForDefaultSmokeRuntime(t *testing.T) {
+	// Predictive contract smoke runs long enough for every v1 default
+	// checkpoint window to become reachable.
+	pending := PendingCheckpoints(
+		[]Sample{{ElapsedTime: 1250}},
+		nil,
+		DefaultCheckpoints(),
+	)
+
+	if len(pending) != 4 || pending[0] != 60 || pending[1] != 300 || pending[2] != 600 || pending[3] != 1200 {
+		t.Fatalf("pending = %v, want [60 300 600 1200]", pending)
+	}
+}
+
 func TestPendingCheckpointsRetriesNonReadyStatuses(t *testing.T) {
 	pending := PendingCheckpoints(
 		[]Sample{{ElapsedTime: 180}},

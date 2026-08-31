@@ -9,7 +9,7 @@ on:
         default: https://build-process-watcher-backend-685615422311.us-central1.run.app
         type: string
       expected_checkpoints:
-        description: Comma-separated checkpoint windows that must be ready
+        description: Ready checkpoint windows to require (subset of production defaults 60,300,600,1200 reachable within run_seconds)
         required: false
         default: 60,300,600,1200
         type: string
@@ -36,7 +36,7 @@ on:
         default: https://build-process-watcher-backend-685615422311.us-central1.run.app
         type: string
       expected_checkpoints:
-        description: Comma-separated checkpoint windows that must be ready
+        description: Ready checkpoint windows to require (subset of production defaults 60,300,600,1200 reachable within run_seconds)
         required: false
         default: 60,300,600,1200
         type: string

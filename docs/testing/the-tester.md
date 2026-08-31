@@ -132,6 +132,12 @@ Run the Process Action using the remote server with prediction enabled.
 This scenario must follow the behavior supported by the current prediction
 implementation rather than assuming a future prediction workflow.
 
+Prefer dispatching `.github/workflows/predictive-contract-smoke.yml` for the
+ref under test and use that workflow's defaults. Do not assume legacy
+checkpoint lists such as `30,60,180`. Production defaults are
+`60,300,600,1200`; the smoke workflow runs long enough for all of those v1
+checkpoint windows to become ready.
+
 ### Expected Behavior
 
 TheTester must validate that:
@@ -141,6 +147,7 @@ TheTester must validate that:
 - Data is successfully sent to and retrieved from the remote server.
 - Prediction is executed according to the current implementation.
 - Prediction results are associated with the correct build/process data.
+- Ready prediction checkpoints match the smoke contract for the run duration.
 - The application continues to work correctly with prediction enabled.
 
 TheTester must inspect all relevant UI produced by this flow, including:
