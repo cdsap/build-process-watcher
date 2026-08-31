@@ -138,14 +138,14 @@ describe('predictive reliability public boundary', () => {
       /expected_checkpoints:\n(?:[ \t]+.*\n)*?[ \t]+default:\s*['"]?([0-9,\s]+)['"]?/g,
     )].map(match => match[1].replace(/\s+/g, ''));
     expect(expectedDefaults.length).toBeGreaterThanOrEqual(2);
-    expect(new Set(expectedDefaults)).toEqual(new Set(['60']));
+    expect(new Set(expectedDefaults)).toEqual(new Set(['60,300,600,1200']));
 
     const runSecondsMatch = smokeWorkflow.match(
       /run_seconds:\n(?:[ \t]+.*\n)*?[ \t]+default:\s*['"]?(\d+)['"]?/,
     );
     expect(runSecondsMatch).not.toBeNull();
     const runSeconds = Number(runSecondsMatch![1]);
-    expect(runSeconds).toBeGreaterThanOrEqual(180);
+    expect(runSeconds).toBeGreaterThanOrEqual(1200);
 
     const reachable = productionDefaults.filter(window => window <= runSeconds);
     for (const expected of expectedDefaults[0].split(',').map(Number)) {

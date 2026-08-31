@@ -135,8 +135,8 @@ implementation rather than assuming a future prediction workflow.
 Prefer dispatching `.github/workflows/predictive-contract-smoke.yml` for the
 ref under test and use that workflow's defaults. Do not assume legacy
 checkpoint lists such as `30,60,180`. Production defaults are
-`60,300,600,1200`; a smoke run of about 180-240 seconds is only expected to
-produce the reachable ready checkpoint(s) from that list (currently `60`).
+`60,300,600,1200`; the smoke workflow runs long enough for all of those v1
+checkpoint windows to become ready.
 
 ### Expected Behavior
 

@@ -11,7 +11,7 @@ on:
       expected_checkpoints:
         description: Ready checkpoint windows to require (subset of production defaults 60,300,600,1200 reachable within run_seconds)
         required: false
-        default: '60'
+        default: 60,300,600,1200
         type: string
       action_ref:
         description: Build Process Watcher ref to test
@@ -21,7 +21,7 @@ on:
       run_seconds:
         description: Synthetic GradleDaemon runtime in seconds
         required: false
-        default: '240'
+        default: '1250'
         type: string
       interval:
         description: Monitor interval in seconds
@@ -38,7 +38,7 @@ on:
       expected_checkpoints:
         description: Ready checkpoint windows to require (subset of production defaults 60,300,600,1200 reachable within run_seconds)
         required: false
-        default: '60'
+        default: 60,300,600,1200
         type: string
       action_ref:
         description: Build Process Watcher ref to test
@@ -48,7 +48,7 @@ on:
       run_seconds:
         description: Synthetic GradleDaemon runtime in seconds
         required: false
-        default: '240'
+        default: '1250'
         type: string
       interval:
         description: Monitor interval in seconds
@@ -67,7 +67,7 @@ jobs:
   run-public-action:
     name: Run public action
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     outputs:
       bpw_run_id: ${{ steps.run-id.outputs.bpw_run_id }}
 
