@@ -9,6 +9,7 @@ go_library(
         "//internal/auth",
         "//internal/exportqueue",
         "//internal/models",
+        "//internal/prediction",
         "//internal/storage",
         "//pkg/predictor",
     ],

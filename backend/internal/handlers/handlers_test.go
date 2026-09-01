@@ -182,20 +182,21 @@ func TestRunResponse_WithPredictionCheckpoints(t *testing.T) {
 	}
 }
 
-func TestNewHandlersWithPredictorUsesInjectedFallbackClassifier(t *testing.T) {
-	h := NewHandlersWithPredictor(nil, nil, predictor.NoopProvider{}, nil, func(error) (string, string) {
+func TestNewHandlersWithPredictorWiresCheckpointEvaluator(t *testing.T) {
+	h := NewHandlersWithPredictor(nil, nil, predictor.NoopProvider{}, []int{60}, func(error) (string, string) {
 		return "no_data", "prediction data unavailable"
 	})
-	state, message := h.fallbackClassifier(errors.New("ignored"))
+	if h.checkpointEvaluator == nil {
+		t.Fatal("expected checkpoint evaluator to be constructed")
+	}
+	state, message := h.checkpointEvaluator.FallbackClassifier()(errors.New("ignored"))
 	if state != "no_data" || message != "prediction data unavailable" {
 		t.Fatalf("classifier = (%q, %q), want injected mapping", state, message)
 	}
-}
 
-func TestNewHandlersWithPredictorDefaultsFallbackClassifier(t *testing.T) {
-	h := NewHandlersWithPredictor(nil, nil, nil, nil, nil)
+	h = NewHandlersWithPredictor(nil, nil, nil, nil, nil)
 	err := fmt.Errorf("private stack: customer id 9: boom")
-	state, message := h.fallbackClassifier(err)
+	state, message = h.checkpointEvaluator.FallbackClassifier()(err)
 	if state != "provider_error" || message != "prediction provider error" {
 		t.Fatalf("classifier = (%q, %q), want default public-safe mapping", state, message)
 	}
