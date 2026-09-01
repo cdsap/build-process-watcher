@@ -577,6 +577,130 @@
             setRunDashboardTab(activeRunDashboardTab || 'dashboard');
         }
 
+        function focusPredictionsTabFromChart() {
+            setRunDashboardTab('predictions');
+            requestAnimationFrame(() => {
+                const tab = document.getElementById('run-tab-predictions');
+                if (tab && typeof tab.focus === 'function') tab.focus({ preventScroll: true });
+                document.getElementById('run-panel-predictions')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+            });
+        }
+
+        function attachPredictionMarkerInteractions(chartId) {
+            const chart = document.getElementById(chartId);
+            if (!chart || typeof chart.on !== 'function') return;
+            if (chart.__bpwPredictionMarkerClickBound) return;
+            chart.__bpwPredictionMarkerClickBound = true;
+            chart.on('plotly_click', (event) => {
+                const points = Array.isArray(event?.points) ? event.points : [];
+                if (points.some(point => point?.data?.name === 'Prediction checkpoints')) {
+                    focusPredictionsTabFromChart();
+                }
+            });
+        }
+
+        const formatPredictionValue = (value, unit) => Number.isFinite(Number(value)) ? `${Number(value).toFixed(Number(value) >= 1000 ? 0 : 1)} ${unit}` : 'N/A';
+        const predictionRiskClass = (riskLevel) => ['low', 'elevated', 'high'].includes(riskLevel) ? riskLevel : 'unknown';
+        const predictionMarkerColor = (checkpoint) => {
+            if ((checkpoint.status || 'unknown') !== 'ready') return '#94a3b8';
+            const risk = predictionRiskClass(checkpoint.risk_level || 'unknown');
+            return {
+                low: '#16a34a',
+                elevated: '#d97706',
+                high: '#dc2626',
+                unknown: '#64748b'
+            }[risk] || '#64748b';
+        };
+        const buildPredictionMarkerHoverText = (checkpoint) => {
+            const bits = [
+                `Window: ${escapeHtml(String(checkpoint.observation_window_s || 'N/A'))}s`,
+                `Status: ${escapeHtml(checkpoint.status || 'unknown')}`,
+                `Risk: ${escapeHtml(checkpoint.risk_level || 'unknown')}`
+            ];
+            if (checkpoint.confidence) bits.push(`Confidence: ${escapeHtml(checkpoint.confidence)}`);
+            if (Number.isFinite(Number(checkpoint.predicted_peak_rss_mb))) bits.push(`Predicted peak RSS: ${formatPredictionValue(checkpoint.predicted_peak_rss_mb, 'MB')}`);
+            if (Number.isFinite(Number(checkpoint.predicted_duration_s))) bits.push(`Predicted duration: ${formatPredictionValue(checkpoint.predicted_duration_s, 's')}`);
+            if (Array.isArray(checkpoint.signals) && checkpoint.signals.length) {
+                bits.push(`Top signals: ${checkpoint.signals.slice(0, 3).map(signal => escapeHtml(signal)).join(', ')}`);
+            }
+            return bits.join('<br>');
+        };
+        const buildPredictionMarkerData = (checkpoints, timestamps, options = {}) => {
+            if (!Array.isArray(checkpoints) || !checkpoints.length || !Array.isArray(timestamps) || !timestamps.length) {
+                return { shapes: [], annotations: [], traces: [] };
+            }
+            const firstTimestamp = Number(timestamps[0]);
+            const elapsedAxis = options.axisMode === 'elapsed';
+            if (!elapsedAxis && !Number.isFinite(firstTimestamp)) {
+                return { shapes: [], annotations: [], traces: [] };
+            }
+            const markers = checkpoints
+                .map(checkpoint => {
+                    const windowSeconds = Number(checkpoint.observation_window_s);
+                    if (!Number.isFinite(windowSeconds) || windowSeconds < 0) return null;
+                    const status = checkpoint.status || 'unknown';
+                    const ready = status === 'ready';
+                    const color = predictionMarkerColor(checkpoint);
+                    const x = elapsedAxis ? windowSeconds : new Date(firstTimestamp + windowSeconds * 1000);
+                    return {
+                        checkpoint,
+                        windowSeconds,
+                        status,
+                        ready,
+                        color,
+                        x,
+                        label: ready ? `P ${windowSeconds}s` : `${status} ${windowSeconds}s`
+                    };
+                })
+                .filter(Boolean);
+            if (!markers.length) return { shapes: [], annotations: [], traces: [] };
+            return {
+                shapes: markers.map(marker => ({
+                    type: 'line',
+                    xref: 'x',
+                    yref: 'paper',
+                    x0: marker.x,
+                    x1: marker.x,
+                    y0: 0,
+                    y1: 1,
+                    line: { color: marker.color, width: marker.ready ? 2 : 1, dash: 'dot' },
+                    opacity: marker.ready ? 0.85 : 0.45
+                })),
+                annotations: markers.map(marker => ({
+                    x: marker.x,
+                    y: 1.02,
+                    xref: 'x',
+                    yref: 'paper',
+                    text: escapeHtml(marker.label),
+                    showarrow: false,
+                    font: { size: 11, color: marker.color },
+                    bgcolor: 'rgba(255,255,255,0.86)',
+                    bordercolor: marker.color,
+                    borderwidth: 1,
+                    borderpad: 2
+                })),
+                traces: [{
+                    x: markers.map(marker => marker.x),
+                    y: markers.map(() => 0.98),
+                    yaxis: 'y2',
+                    type: 'scatter',
+                    mode: 'markers',
+                    name: 'Prediction checkpoints',
+                    marker: {
+                        symbol: 'triangle-down',
+                        size: markers.map(marker => marker.ready ? 12 : 10),
+                        color: markers.map(marker => marker.color),
+                        line: { color: '#ffffff', width: 1 }
+                    },
+                    text: markers.map(marker => buildPredictionMarkerHoverText(marker.checkpoint)),
+                    hoverinfo: 'text',
+                    hovertemplate: '%{text}<extra>Prediction checkpoint</extra>',
+                    customdata: markers.map(() => 'prediction-checkpoint'),
+                    showlegend: true
+                }]
+            };
+        };
+
         async function loadRunData(runId) {
             let response;
 
@@ -716,14 +840,12 @@
             });
 
             const formatDur = (s) => s < 60 ? s + 's' : (Math.floor(s / 60) + 'm' + (s % 60 ? ' ' + Math.round(s % 60) + 's' : ''));
-            const formatPredictionValue = (value, unit) => Number.isFinite(Number(value)) ? `${Number(value).toFixed(Number(value) >= 1000 ? 0 : 1)} ${unit}` : 'N/A';
             const formatRiskScore = (score) => {
                 if (!Number.isFinite(Number(score))) return 'N/A';
                 const n = Number(score);
                 if (n <= 1 && n >= 0) return n.toFixed(2);
                 return n >= 100 ? n.toFixed(0) : n.toFixed(1);
             };
-            const predictionRiskClass = (riskLevel) => ['low', 'elevated', 'high'].includes(riskLevel) ? riskLevel : 'unknown';
             const predictionStatusClass = (status) => ['ready', 'pending', 'skipped', 'error'].includes(status) ? status : 'unknown';
             const predictionCheckpoints = Array.isArray(data.prediction_checkpoints)
                 ? [...data.prediction_checkpoints].sort((a, b) => Number(a.observation_window_s || 0) - Number(b.observation_window_s || 0))
@@ -1274,7 +1396,7 @@
             `;
 
             if (samples.length > 0) {
-                renderChart(samples);
+                renderChart(samples, predictionCheckpoints);
                 setupMainChartFilters();
                 if (hasGCData(samples)) {
                     renderGCChart(samples);
@@ -2493,7 +2615,7 @@
             return CompareShared.getRatioConfig(`build-monitor-rss-heap-${runId}`);
         }
 
-        function renderChart(samples) {
+        function renderChart(samples, predictionCheckpoints = []) {
             // Process data for chart - group by both Name and PID to handle multiple processes with same name
             const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
             // Create unique process keys (Name + PID combination)
@@ -2577,11 +2699,38 @@
             // Detect if mobile
             const isMobile = window.innerWidth < 768;
 
-            const layout = getMemoryLayout();
+            const predictionMarkers = buildPredictionMarkerData(predictionCheckpoints, chartTimestamps);
+            chartTraces.push(...predictionMarkers.traces);
+            const baseMemoryLayout = getMemoryLayout();
+            const layout = {
+                ...baseMemoryLayout,
+                shapes: [
+                    ...(baseMemoryLayout.shapes || []),
+                    ...predictionMarkers.shapes
+                ],
+                annotations: [
+                    ...(baseMemoryLayout.annotations || []),
+                    ...predictionMarkers.annotations
+                ],
+                margin: {
+                    ...baseMemoryLayout.margin,
+                    t: Math.max(Number(baseMemoryLayout.margin?.t) || 0, predictionMarkers.annotations.length ? 56 : 0)
+                },
+                yaxis2: {
+                    overlaying: 'y',
+                    side: 'right',
+                    range: [0, 1],
+                    visible: false,
+                    showgrid: false,
+                    zeroline: false,
+                    fixedrange: true
+                }
+            };
             const config = getMemoryConfig();
 
             Plotly.newPlot('chart', applyVisibilityToTraces('chart', chartTraces), layout, config);
             attachLegendVisibilityHandlers('chart', updateMainChartFilterCheckboxes);
+            attachPredictionMarkerInteractions('chart');
 
             // Handle window resize
             window.addEventListener('resize', function() {
