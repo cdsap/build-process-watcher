@@ -21,6 +21,21 @@ function extractPredictionHelpers(source: string) {
   );
   expect(renderMatch).not.toBeNull();
 
+  const colorMatch = source.match(
+    /const predictionMarkerColor = \(checkpoint\) => \{([\s\S]*?)\n        \};/,
+  );
+  expect(colorMatch).not.toBeNull();
+
+  const hoverMatch = source.match(
+    /const buildPredictionMarkerHoverText = \(checkpoint\) => \{([\s\S]*?)\n        \};/,
+  );
+  expect(hoverMatch).not.toBeNull();
+
+  const markerMatch = source.match(
+    /const buildPredictionMarkerData = \(checkpoints, timestamps, options = \{\}\) => \{([\s\S]*?)\n        \};/,
+  );
+  expect(markerMatch).not.toBeNull();
+
   const formatPredictionValue = (value: unknown, unit: string) => (
     Number.isFinite(Number(value))
       ? `${Number(value).toFixed(Number(value) >= 1000 ? 0 : 1)} ${unit}`
@@ -60,6 +75,37 @@ function extractPredictionHelpers(source: string) {
     escapeHtml,
   ) as (checkpoint: Record<string, unknown>) => string;
 
+  const predictionMarkerColor = Function(
+    'predictionRiskClass',
+    `return (checkpoint) => {${colorMatch?.[1]}\n};`,
+  )(
+    predictionRiskClass,
+  ) as (checkpoint: Record<string, unknown>) => string;
+
+  const buildPredictionMarkerHoverText = Function(
+    'formatPredictionValue',
+    'escapeHtml',
+    `return (checkpoint) => {${hoverMatch?.[1]}\n};`,
+  )(
+    formatPredictionValue,
+    escapeHtml,
+  ) as (checkpoint: Record<string, unknown>) => string;
+
+  const buildPredictionMarkerData = Function(
+    'predictionMarkerColor',
+    'buildPredictionMarkerHoverText',
+    'escapeHtml',
+    `return (checkpoints, timestamps, options = {}) => {${markerMatch?.[1]}\n};`,
+  )(
+    predictionMarkerColor,
+    buildPredictionMarkerHoverText,
+    escapeHtml,
+  ) as (
+    checkpoints: Array<Record<string, unknown>>,
+    timestamps: number[],
+    options?: { axisMode?: string },
+  ) => { shapes: any[], annotations: any[], traces: any[] };
+
   return {
     sortCheckpoints: (data: { prediction_checkpoints?: Array<Record<string, unknown>> }) => (
       Array.isArray(data.prediction_checkpoints)
@@ -77,6 +123,9 @@ function extractPredictionHelpers(source: string) {
       { length: checkpointCount },
     ),
     renderPredictionCard,
+    predictionMarkerColor,
+    buildPredictionMarkerHoverText,
+    buildPredictionMarkerData,
   };
 }
 
@@ -101,6 +150,12 @@ describe('run dashboard predictions tab', () => {
     expect(source).toContain('model_version');
     expect(source).toContain('prediction-details');
     expect(source).toContain('<summary>Details</summary>');
+    expect(source).toContain('buildPredictionMarkerData');
+    expect(source).toContain('Prediction checkpoints');
+    expect(source).toContain('attachPredictionMarkerInteractions');
+    expect(source).toContain('__bpwPredictionMarkerClickBound');
+    expect(source).toContain('renderChart(samples, predictionCheckpoints)');
+    expect(source).toContain('function renderChart(samples, predictionCheckpoints = [])');
     expect(source).not.toMatch(/prediction-metrics[\s\S]*?\$\{providerBits/);
     expect(source).not.toContain('${predictionHtml}');
   });
@@ -174,15 +229,91 @@ describe('run dashboard predictions tab', () => {
   });
 
   it('keeps legacy runs without prediction_checkpoints valid and empty-state ready', () => {
-    const { sortCheckpoints, evaluateEnabled } = extractPredictionHelpers(sources[0].source);
+    const { sortCheckpoints, evaluateEnabled, buildPredictionMarkerData } = extractPredictionHelpers(sources[0].source);
     const demoData = JSON.parse(fs.readFileSync(demoDataPath, 'utf8'));
 
     expect(demoData.prediction_checkpoints).toBeUndefined();
     expect(sortCheckpoints({})).toEqual([]);
     expect(sortCheckpoints({ prediction_checkpoints: undefined })).toEqual([]);
+    expect(buildPredictionMarkerData([], [1700000000000])).toEqual({ shapes: [], annotations: [], traces: [] });
+    expect(buildPredictionMarkerData([{ observation_window_s: 30 }], [])).toEqual({ shapes: [], annotations: [], traces: [] });
     expect(evaluateEnabled(false, 0)).toBe(false);
     expect(evaluateEnabled(true, 0)).toBe(true);
     expect(sources[0].source).toContain('Legacy runs and deployments without predictive reliability omit this data.');
     expect(sources[0].source).toContain('Checkpoints will appear here as observation windows complete.');
+  });
+
+  it('builds timestamp-axis memory chart markers for ready checkpoints', () => {
+    const {
+      buildPredictionMarkerData,
+      buildPredictionMarkerHoverText,
+      predictionMarkerColor,
+    } = extractPredictionHelpers(sources[0].source);
+    const firstTimestamp = 1700000000000;
+    const checkpoints = [
+      {
+        observation_window_s: 60,
+        status: 'ready',
+        risk_level: 'high',
+        confidence: 'high',
+        predicted_peak_rss_mb: 4096.25,
+        predicted_duration_s: 182.3,
+        signals: ['rss slope', 'gc churn', 'heap pressure', 'ignored extra'],
+      },
+    ];
+
+    const markerData = buildPredictionMarkerData(checkpoints, [firstTimestamp, firstTimestamp + 90_000]);
+
+    expect(predictionMarkerColor(checkpoints[0])).toBe('#dc2626');
+    expect(markerData.shapes).toHaveLength(1);
+    expect(markerData.annotations).toHaveLength(1);
+    expect(markerData.traces).toHaveLength(1);
+    expect(markerData.shapes[0]).toMatchObject({
+      type: 'line',
+      xref: 'x',
+      yref: 'paper',
+      y0: 0,
+      y1: 1,
+      line: { color: '#dc2626', width: 2, dash: 'dot' },
+    });
+    expect(markerData.shapes[0].x0).toEqual(new Date(firstTimestamp + 60_000));
+    expect(markerData.shapes[0].x1).toEqual(new Date(firstTimestamp + 60_000));
+    expect(markerData.annotations[0]).toMatchObject({ text: 'P 60s', showarrow: false });
+    expect(markerData.traces[0]).toMatchObject({
+      name: 'Prediction checkpoints',
+      yaxis: 'y2',
+      mode: 'markers',
+      hoverinfo: 'text',
+      customdata: ['prediction-checkpoint'],
+    });
+    expect(markerData.traces[0].x).toEqual([new Date(firstTimestamp + 60_000)]);
+    expect(markerData.traces[0].text[0]).toContain('Window: 60s');
+    expect(markerData.traces[0].text[0]).toContain('Status: ready');
+    expect(markerData.traces[0].text[0]).toContain('Risk: high');
+    expect(markerData.traces[0].text[0]).toContain('Confidence: high');
+    expect(markerData.traces[0].text[0]).toContain('Predicted peak RSS: 4096 MB');
+    expect(markerData.traces[0].text[0]).toContain('Predicted duration: 182.3 s');
+    expect(markerData.traces[0].text[0]).toContain('Top signals: rss slope, gc churn, heap pressure');
+    expect(markerData.traces[0].text[0]).not.toContain('ignored extra');
+    expect(buildPredictionMarkerHoverText(checkpoints[0])).toContain('Window: 60s');
+  });
+
+  it('builds elapsed-axis and muted non-ready checkpoint markers', () => {
+    const { buildPredictionMarkerData, predictionMarkerColor } = extractPredictionHelpers(sources[0].source);
+    const checkpoints = [
+      { observation_window_s: 30, status: 'pending', risk_level: 'high' },
+      { observation_window_s: 90, status: 'ready', risk_level: 'unknown' },
+    ];
+
+    const markerData = buildPredictionMarkerData(checkpoints, [1700000000000], { axisMode: 'elapsed' });
+
+    expect(predictionMarkerColor(checkpoints[0])).toBe('#94a3b8');
+    expect(predictionMarkerColor(checkpoints[1])).toBe('#64748b');
+    expect(markerData.shapes.map(shape => shape.x0)).toEqual([30, 90]);
+    expect(markerData.annotations.map(annotation => annotation.text)).toEqual(['pending 30s', 'P 90s']);
+    expect(markerData.shapes[0].line).toMatchObject({ color: '#94a3b8', width: 1, dash: 'dot' });
+    expect(markerData.shapes[0].opacity).toBe(0.45);
+    expect(markerData.traces[0].marker.color).toEqual(['#94a3b8', '#64748b']);
+    expect(markerData.traces[0].text[0]).toContain('Status: pending');
   });
 });
