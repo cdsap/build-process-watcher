@@ -8,6 +8,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { parseTimestampSeconds, generateJsonReport } from './lib/report';
 import { generateCombinedMermaidChart, MermaidProcessData } from './lib/mermaid';
 import { artifactSummary, existingArtifactPaths } from './lib/artifacts';
+import { parseMonitorLogText, parseOptionalMetric } from './lib/monitor_log';
 
 const execAsync = promisify(exec);
 
@@ -20,23 +21,19 @@ function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, t
     let hasJitData = false;
     let hasClassData = false;
 
-    const lines = fs.readFileSync(logFile, 'utf8').split('\n');
-    // Skip header lines
-    lines.slice(2).forEach(line => {
-        const parts = line.trim().split('|').map(p => p.trim());
-        // Support historical 6/7-column records and extended JVM metric records.
-        if (parts.length !== 6 && parts.length !== 7 && parts.length !== 14) return;
-
-        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime, jitCompiled, jitFailed, , , classesLoaded, classesUnloaded] = parts;
-        const rssValue = parseFloat(rss.replace('MB', ''));
-        const heapUsedValue = parseFloat(heapUsed.replace('MB', ''));
-        const heapCapValue = parseFloat(heapCap.replace('MB', ''));
-        const processKey = `${pid}-${name}`;
-        const parseOptionalMetric = (value: string | undefined): number | null => {
-            if (!value || value === 'N/A') return null;
-            const parsed = Number(value.replace(/s$/, ''));
-            return Number.isFinite(parsed) ? parsed : null;
-        };
+    parseMonitorLogText(fs.readFileSync(logFile, 'utf8')).forEach(row => {
+        const rssValue = parseFloat(row.rssMb);
+        const heapUsedValue = parseFloat(row.heapUsedMb);
+        const heapCapValue = parseFloat(row.heapCapMb);
+        const processKey = `${row.pid}-${row.name}`;
+        const [
+            jitCompiled,
+            jitFailed,
+            ,
+            ,
+            classesLoaded,
+            classesUnloaded
+        ] = row.optionalMetricRaws;
 
         if (!processes.has(processKey)) {
             processes.set(processKey, {
@@ -54,9 +51,9 @@ function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, t
         }
 
         const processData = processes.get(processKey)!;
-        processData.timestamps.push(timestamp);
+        processData.timestamps.push(row.timestamp);
         processData.rss.push(rssValue);
-        timestamps.add(timestamp);
+        timestamps.add(row.timestamp);
         processData.heapUsed.push(heapUsedValue);
         processData.heapCap.push(heapCapValue);
 
@@ -74,11 +71,11 @@ function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, t
         if (classesLoadedValue !== null) {
             hasClassData = true;
         }
-        
+
         // Parse GC time if available (7th column)
-        if (parts.length >= 7 && gcTime) {
+        if (row.columnCount >= 7 && row.gcTimeRaw) {
             // Remove 's' suffix if present and parse as float
-            const gcTimeValue = parseFloat(gcTime.replace('s', ''));
+            const gcTimeValue = parseFloat(row.gcTimeRaw.replace('s', ''));
             if (!isNaN(gcTimeValue)) {
                 hasGcData = true;
                 processData.gcTime!.push(gcTimeValue);
@@ -92,7 +89,7 @@ function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, t
             processData.gcTime.push(0);
             processData.gcAvailable!.push(false);
         }
-        });
+    });
 
     const orderedTimestamps = Array.from(timestamps)
         .sort((a, b) => parseTimestampSeconds(a) - parseTimestampSeconds(b));
@@ -100,25 +97,24 @@ function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, t
 }
 
 function generateCsvReport(logFile: string, outputFile: string, hasGcData: boolean): void {
-    const lines = fs.readFileSync(logFile, 'utf8').split('\n');
-    const dataLines = lines.slice(2).filter(line => line.trim().length > 0);
     const header = ['elapsed_time', 'pid', 'name', 'heap_used_mb', 'heap_capacity_mb', 'rss_mb', 'gc_time_s', 'jit_compiled_methods', 'jit_failed_compilations', 'jit_invalidated_compilations', 'jit_compilation_time_s', 'classes_loaded', 'classes_unloaded', 'class_load_time_s'];
     const rows = [header.join(',')];
 
-    dataLines.forEach(line => {
-        const parts = line.trim().split('|').map(p => p.trim());
-        if (parts.length !== 6 && parts.length !== 7 && parts.length !== 14) return;
-        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime, ...optionalMetrics] = parts;
+    parseMonitorLogText(fs.readFileSync(logFile, 'utf8')).forEach(row => {
         const baseRow = [
-            timestamp,
-            pid,
-            name,
-            heapUsed.replace('MB', ''),
-            heapCap.replace('MB', ''),
-            rss.replace('MB', '')
+            row.timestamp,
+            row.pid,
+            row.name,
+            row.heapUsedMb,
+            row.heapCapMb,
+            row.rssMb
         ];
-        baseRow.push(parts.length >= 7 && hasGcData ? gcTime.replace('s', '').replace('N/A', '') : '');
-        baseRow.push(...Array.from({ length: 7 }, (_, index) => optionalMetrics[index]?.replace('N/A', '') ?? ''));
+        baseRow.push(
+            row.columnCount >= 7 && hasGcData
+                ? (row.gcTimeRaw ?? '').replace('s', '').replace('N/A', '')
+                : ''
+        );
+        baseRow.push(...Array.from({ length: 7 }, (_, index) => row.optionalMetricRaws[index]?.replace('N/A', '') ?? ''));
         rows.push(baseRow.join(','));
     });
 

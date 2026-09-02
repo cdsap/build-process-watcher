@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { parseMonitorLogText, parseOptionalMetric } from './monitor_log';
 
 const SAMPLE_FIELDS = [
     'Timestamp', 'ElapsedTime', 'PID', 'Name', 'RSS', 'HeapUsed', 'HeapCap',
@@ -63,8 +64,6 @@ export function loadProcessInfoFromFile(logFile: string): Record<string, { name:
  * Generate JSON report from log file, merging vm_flags from process_info when available.
  */
 export function generateJsonReport(logFile: string, outputFile: string, hasGcData: boolean): void {
-    const lines = fs.readFileSync(logFile, 'utf8').split('\n');
-    const dataLines = lines.slice(2).filter(line => line.trim().length > 0);
     const samples: Array<{
         Timestamp: number;
         ElapsedTime: number;
@@ -86,51 +85,53 @@ export function generateJsonReport(logFile: string, outputFile: string, hasGcDat
     const processInfoFromFile = loadProcessInfoFromFile(logFile);
     const processInfo: Record<string, { name: string; vm_flags: string[] }> = {};
 
-    dataLines.forEach(line => {
-        const parts = line.trim().split('|').map(p => p.trim());
-        if (parts.length !== 6 && parts.length !== 7 && parts.length !== 14) return;
-        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime, jitCompiled, jitFailed, jitInvalid, jitTime, classesLoaded, classesUnloaded, classTime] = parts;
-        const elapsedSeconds = parseTimestampSeconds(timestamp);
-        const rssValue = parseFloat(rss.replace('MB', ''));
-        const heapUsedValue = parseFloat(heapUsed.replace('MB', ''));
-        const heapCapValue = parseFloat(heapCap.replace('MB', ''));
-        const gcSeconds = parts.length >= 7 && hasGcData
-            ? parseFloat(gcTime.replace('s', ''))
+    const optionalMillis = (value: string | undefined): number | null => {
+        const seconds = parseOptionalMetric(value);
+        return seconds === null ? null : seconds * 1000;
+    };
+
+    parseMonitorLogText(fs.readFileSync(logFile, 'utf8')).forEach(row => {
+        const elapsedSeconds = parseTimestampSeconds(row.timestamp);
+        const rssValue = parseFloat(row.rssMb);
+        const heapUsedValue = parseFloat(row.heapUsedMb);
+        const heapCapValue = parseFloat(row.heapCapMb);
+        const [
+            jitCompiled,
+            jitFailed,
+            jitInvalid,
+            jitTime,
+            classesLoaded,
+            classesUnloaded,
+            classTime
+        ] = row.optionalMetricRaws;
+        const gcSeconds = row.columnCount >= 7 && hasGcData
+            ? parseFloat((row.gcTimeRaw ?? '').replace('s', ''))
             : NaN;
         const gcSecondsValue = Number.isNaN(gcSeconds) ? null : gcSeconds;
-        const optionalNumber = (value: string | undefined): number | null => {
-            if (!value || value === 'N/A') return null;
-            const parsed = Number(value.replace(/s$/, ''));
-            return Number.isFinite(parsed) ? parsed : null;
-        };
-        const optionalMillis = (value: string | undefined): number | null => {
-            const seconds = optionalNumber(value);
-            return seconds === null ? null : seconds * 1000;
-        };
 
         samples.push({
             Timestamp: Math.max(0, elapsedSeconds * 1000),
             ElapsedTime: Math.max(0, elapsedSeconds),
-            PID: pid,
-            Name: name,
+            PID: row.pid,
+            Name: row.name,
             RSS: Number.isNaN(rssValue) ? 0 : rssValue,
             HeapUsed: Number.isNaN(heapUsedValue) ? 0 : heapUsedValue,
             HeapCap: Number.isNaN(heapCapValue) ? 0 : heapCapValue,
             GCTime: gcSecondsValue !== null ? gcSecondsValue * 1000 : null,
             GCTimeSeconds: gcSecondsValue,
-            JITCompiledMethods: optionalNumber(jitCompiled),
-            JITFailedCompilations: optionalNumber(jitFailed),
-            JITInvalidatedCompilations: optionalNumber(jitInvalid),
+            JITCompiledMethods: parseOptionalMetric(jitCompiled),
+            JITFailedCompilations: parseOptionalMetric(jitFailed),
+            JITInvalidatedCompilations: parseOptionalMetric(jitInvalid),
             JITCompilationTimeMs: optionalMillis(jitTime),
-            ClassesLoaded: optionalNumber(classesLoaded),
-            ClassesUnloaded: optionalNumber(classesUnloaded),
+            ClassesLoaded: parseOptionalMetric(classesLoaded),
+            ClassesUnloaded: parseOptionalMetric(classesUnloaded),
             ClassLoadTimeMs: optionalMillis(classTime)
         });
 
-        if (!processInfo[pid]) {
-            const fromFile = processInfoFromFile[pid];
-            processInfo[pid] = {
-                name,
+        if (!processInfo[row.pid]) {
+            const fromFile = processInfoFromFile[row.pid];
+            processInfo[row.pid] = {
+                name: row.name,
                 vm_flags: fromFile?.vm_flags ?? []
             };
         }
