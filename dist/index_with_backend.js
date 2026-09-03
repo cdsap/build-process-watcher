@@ -25643,6 +25643,72 @@ module.exports = {
 
 /***/ }),
 
+/***/ 4838:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.DEFAULT_LOG_FILE_NAME = void 0;
+exports.resolveActionLogFileTarget = resolveActionLogFileTarget;
+const path = __importStar(__nccwpck_require__(6928));
+exports.DEFAULT_LOG_FILE_NAME = 'build_process_watcher.log';
+function resolveActionLogFileTarget(inputs) {
+    const runnerTempDir = path.join(inputs.runnerTempRoot, 'build-process-watcher', inputs.runId);
+    const defaultLogFile = inputs.logFileInput === exports.DEFAULT_LOG_FILE_NAME;
+    const defaultLogFilePath = path.join(runnerTempDir, inputs.logFileInput);
+    const collisionFallbackUsed = defaultLogFile && inputs.defaultLogPathExists;
+    const logFilePath = collisionFallbackUsed
+        ? path.join(runnerTempDir, `build_process_watcher-${inputs.runId}.log`)
+        : defaultLogFile
+            ? defaultLogFilePath
+            : !path.isAbsolute(inputs.logFileInput) && inputs.workspaceDir
+                ? path.join(inputs.workspaceDir, inputs.logFileInput)
+                : inputs.logFileInput;
+    return {
+        runnerTempDir,
+        logFilePath,
+        defaultLogFile,
+        collisionFallbackUsed,
+    };
+}
+
+
+/***/ }),
+
 /***/ 8877:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -25688,51 +25754,48 @@ const child_process_1 = __nccwpck_require__(5317);
 const fs = __importStar(__nccwpck_require__(9896));
 const path = __importStar(__nccwpck_require__(6928));
 const os = __importStar(__nccwpck_require__(857));
+const action_config_1 = __nccwpck_require__(4838);
 const monitoring_features_1 = __nccwpck_require__(4647);
+const monitor_spawn_1 = __nccwpck_require__(1677);
 async function run() {
     try {
-        let backendUrl = process.env.BACKEND_URL || '';
+        const requestedBackendUrl = process.env.BACKEND_URL || '';
+        const requestedFrontendUrl = process.env.FRONTEND_URL || '';
         const remoteMonitoringRequested = core.getInput('remote_monitoring') === 'true';
         const runId = core.getInput('run_id') || `run-${Date.now()}`;
         const debugMode = core.getInput('debug') === 'true';
-        const logFileInput = core.getInput('log_file') || 'build_process_watcher.log';
+        const logFileInput = core.getInput('log_file') || action_config_1.DEFAULT_LOG_FILE_NAME;
         const workspaceDir = process.env.GITHUB_WORKSPACE;
         const runnerTempRoot = process.env.RUNNER_TEMP || os.tmpdir();
-        const runnerTempDir = path.join(runnerTempRoot, 'build-process-watcher', runId);
+        const defaultLogPath = path.join(runnerTempRoot, 'build-process-watcher', runId, action_config_1.DEFAULT_LOG_FILE_NAME);
+        const defaultLogPathExists = logFileInput === action_config_1.DEFAULT_LOG_FILE_NAME && fs.existsSync(defaultLogPath);
+        const { runnerTempDir, logFilePath, defaultLogFile, collisionFallbackUsed, } = (0, action_config_1.resolveActionLogFileTarget)({
+            runId,
+            logFileInput,
+            workspaceDir,
+            runnerTempRoot,
+            defaultLogPathExists,
+        });
         fs.mkdirSync(runnerTempDir, { recursive: true });
-        const defaultLogFile = logFileInput === 'build_process_watcher.log';
-        let logFilePath = defaultLogFile
-            ? path.join(runnerTempDir, logFileInput)
-            : !path.isAbsolute(logFileInput) && workspaceDir
-                ? path.join(workspaceDir, logFileInput)
-                : logFileInput;
-        if (logFileInput === 'build_process_watcher.log' && fs.existsSync(logFilePath)) {
-            const logDir = path.dirname(logFilePath);
-            logFilePath = path.join(logDir, `build_process_watcher-${runId}.log`);
-            if (debugMode) {
-                core.info(`🧭 Log file already exists, using: ${logFilePath}`);
-            }
+        if (debugMode && collisionFallbackUsed) {
+            core.info(`🧭 Log file already exists, using: ${logFilePath}`);
         }
         const interval = core.getInput('interval') || '5';
         const disableSummaryOutput = core.getInput('disable_summary_output') === 'true';
         const exportToBigqueryRequested = core.getInput('export_to_bigquery') === 'true';
         const predictiveReliabilityRequested = core.getInput('predictive_reliability') === 'true';
-        const enableBackendRequested = remoteMonitoringRequested || predictiveReliabilityRequested;
-        // If backend is enabled but no URL provided, use the default Cloud Run URL
-        if (enableBackendRequested && !backendUrl) {
-            // Default production backend URL
-            backendUrl = 'https://build-process-watcher-backend-685615422311.us-central1.run.app';
-            if (debugMode) {
-                core.info(`🔧 Backend enabled but no URL provided, using default URL: ${backendUrl}`);
-            }
-        }
-        const { enableBackend, exportToBigquery, predictiveReliability, } = (0, monitoring_features_1.resolveMonitoringFeatureFlags)({
+        const { enableBackend, backendUrl, frontendUrl, exportToBigquery, predictiveReliability, } = (0, monitoring_features_1.resolveMonitoringFeatureFlags)({
             remoteMonitoringRequested,
             exportToBigqueryRequested,
             predictiveReliabilityRequested,
-            backendUrl,
+            backendUrl: requestedBackendUrl,
+            frontendUrl: requestedFrontendUrl,
+            runId,
         });
         const useBackend = enableBackend && !!backendUrl;
+        if (enableBackend && !requestedBackendUrl && debugMode) {
+            core.info(`🔧 Backend enabled but no URL provided, using default URL: ${backendUrl}`);
+        }
         if (predictiveReliabilityRequested && debugMode) {
             core.info(`🔮 predictive_reliability enables remote_monitoring and export_to_bigquery for this run`);
         }
@@ -25747,26 +25810,7 @@ async function run() {
             core.info(`🌐 Backend URL: ${backendUrl || 'Not provided'}`);
             core.info(`⚙️  Remote Monitoring: ${enableBackend}`);
             core.info(`🐛 Debug Mode: ${debugMode}`);
-        }
-        // Build frontend URL if backend is enabled (do this before exporting)
-        let frontendUrl = '';
-        if (enableBackend && backendUrl) {
-            // Use FRONTEND_URL env var (from secrets) or default
-            const explicitFrontendUrl = process.env.FRONTEND_URL || '';
-            if (explicitFrontendUrl) {
-                // Use explicitly provided frontend URL (from env var or input)
-                if (explicitFrontendUrl.endsWith('/runs') || explicitFrontendUrl.endsWith('/runs/')) {
-                    frontendUrl = `${explicitFrontendUrl}/${runId}`;
-                }
-                else {
-                    frontendUrl = `${explicitFrontendUrl}/runs/${runId}`;
-                }
-            }
-            else {
-                const baseFrontendUrl = 'https://process-watcher.web.app';
-                frontendUrl = `${baseFrontendUrl}/runs/${runId}`;
-            }
-            if (debugMode) {
+            if (frontendUrl) {
                 core.info(`🌐 Frontend URL: ${frontendUrl}`);
             }
         }
@@ -25849,18 +25893,21 @@ async function run() {
             core.setFailed(`❌ Monitor script not found: ${scriptPath}`);
             return;
         }
-        // Make the script executable
-        try {
-            await exec.exec('chmod', ['+x', scriptPath]);
-            if (debugMode) {
-                core.info(`✅ Made script executable: ${scriptPath}`);
+        // Make the script executable on POSIX; Windows launches via bash instead
+        if ((0, monitor_spawn_1.shouldMakeScriptExecutable)()) {
+            try {
+                await exec.exec('chmod', ['+x', scriptPath]);
+                if (debugMode) {
+                    core.info(`✅ Made script executable: ${scriptPath}`);
+                }
+            }
+            catch (error) {
+                core.warning(`⚠️  Could not make script executable: ${error}`);
             }
         }
-        catch (error) {
-            core.warning(`⚠️  Could not make script executable: ${error}`);
-        }
+        const { command: spawnCommand, args: spawnArgs } = (0, monitor_spawn_1.resolveMonitorSpawnInvocation)(scriptPath, args);
         if (debugMode) {
-            core.info(`▶️  Executing: ${scriptPath} ${args.join(' ')}`);
+            core.info(`▶️  Executing: ${spawnCommand} ${spawnArgs.join(' ')}`);
         }
         if (enableBackend && backendUrl) {
             if (debugMode) {
@@ -25884,7 +25931,7 @@ async function run() {
             PREDICTIVE_RELIABILITY: predictiveReliability ? 'true' : 'false',
             COLLECT_GC: 'true'
         };
-        const child = (0, child_process_1.spawn)(scriptPath, args, {
+        const child = (0, child_process_1.spawn)(spawnCommand, spawnArgs, {
             cwd: path.join(actionDir, '..'), // Run in the repository root, not dist/
             env: env,
             detached: true,
@@ -25943,18 +25990,78 @@ run();
 
 /***/ }),
 
-/***/ 4647:
+/***/ 1677:
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.resolveMonitorSpawnInvocation = resolveMonitorSpawnInvocation;
+exports.shouldMakeScriptExecutable = shouldMakeScriptExecutable;
+/**
+ * Resolve how to launch monitor_with_backend.sh.
+ *
+ * Windows cannot execute shebang .sh files via child_process.spawn (EFTYPE).
+ * GitHub Actions Windows runners include Git Bash on PATH, so invoke via bash.
+ */
+function resolveMonitorSpawnInvocation(scriptPath, scriptArgs, platform = process.platform) {
+    if (platform === 'win32') {
+        return {
+            command: 'bash',
+            args: [scriptPath, ...scriptArgs],
+        };
+    }
+    return {
+        command: scriptPath,
+        args: scriptArgs,
+    };
+}
+function shouldMakeScriptExecutable(platform = process.platform) {
+    return platform !== 'win32';
+}
+
+
+/***/ }),
+
+/***/ 4647:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.DEFAULT_LOG_FILE_NAME = exports.DEFAULT_FRONTEND_BASE_URL = exports.DEFAULT_BACKEND_URL = void 0;
 exports.resolveMonitoringFeatureFlags = resolveMonitoringFeatureFlags;
+exports.DEFAULT_BACKEND_URL = 'https://build-process-watcher-backend-685615422311.us-central1.run.app';
+exports.DEFAULT_FRONTEND_BASE_URL = 'https://process-watcher.web.app';
+var action_config_1 = __nccwpck_require__(4838);
+Object.defineProperty(exports, "DEFAULT_LOG_FILE_NAME", ({ enumerable: true, get: function () { return action_config_1.DEFAULT_LOG_FILE_NAME; } }));
+function buildFrontendRunUrl(frontendBaseUrl, runId) {
+    if (frontendBaseUrl.endsWith('/runs') || frontendBaseUrl.endsWith('/runs/')) {
+        return `${frontendBaseUrl}/${runId}`;
+    }
+    return `${frontendBaseUrl}/runs/${runId}`;
+}
 function resolveMonitoringFeatureFlags(inputs) {
     const enableBackend = inputs.remoteMonitoringRequested || inputs.predictiveReliabilityRequested;
-    const useBackend = enableBackend && !!inputs.backendUrl;
+    let backendUrl = inputs.backendUrl || '';
+    if (enableBackend && !backendUrl) {
+        backendUrl = exports.DEFAULT_BACKEND_URL;
+    }
+    const useBackend = enableBackend && !!backendUrl;
+    let frontendUrl = '';
+    if (useBackend) {
+        const explicitFrontendUrl = inputs.frontendUrl || '';
+        if (explicitFrontendUrl) {
+            frontendUrl = buildFrontendRunUrl(explicitFrontendUrl, inputs.runId);
+        }
+        else {
+            frontendUrl = buildFrontendRunUrl(exports.DEFAULT_FRONTEND_BASE_URL, inputs.runId);
+        }
+    }
     return {
         enableBackend,
+        backendUrl,
+        frontendUrl,
         exportToBigquery: (inputs.exportToBigqueryRequested || inputs.predictiveReliabilityRequested) && useBackend,
         predictiveReliability: inputs.predictiveReliabilityRequested && useBackend,
     };

@@ -11,6 +11,10 @@ import {
 import {
   resolveMonitoringFeatureFlags,
 } from './monitoring_features';
+import {
+  resolveMonitorSpawnInvocation,
+  shouldMakeScriptExecutable,
+} from './monitor_spawn';
 
 async function run() {
   try {
@@ -177,18 +181,23 @@ async function run() {
       return;
     }
     
-    // Make the script executable
-    try {
-      await exec.exec('chmod', ['+x', scriptPath]);
-      if (debugMode) {
-        core.info(`✅ Made script executable: ${scriptPath}`);
+    // Make the script executable on POSIX; Windows launches via bash instead
+    if (shouldMakeScriptExecutable()) {
+      try {
+        await exec.exec('chmod', ['+x', scriptPath]);
+        if (debugMode) {
+          core.info(`✅ Made script executable: ${scriptPath}`);
+        }
+      } catch (error) {
+        core.warning(`⚠️  Could not make script executable: ${error}`);
       }
-    } catch (error) {
-      core.warning(`⚠️  Could not make script executable: ${error}`);
     }
-    
+
+    const { command: spawnCommand, args: spawnArgs } =
+      resolveMonitorSpawnInvocation(scriptPath, args);
+
     if (debugMode) {
-      core.info(`▶️  Executing: ${scriptPath} ${args.join(' ')}`);
+      core.info(`▶️  Executing: ${spawnCommand} ${spawnArgs.join(' ')}`);
     }
     
     if (enableBackend && backendUrl) {
@@ -214,7 +223,7 @@ async function run() {
       COLLECT_GC: 'true'
     };
 
-    const child = spawn(scriptPath, args, {
+    const child = spawn(spawnCommand, spawnArgs, {
       cwd: path.join(actionDir, '..'),  // Run in the repository root, not dist/
       env: env,
       detached: true,
