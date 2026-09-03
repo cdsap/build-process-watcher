@@ -6,6 +6,7 @@ import * as path from 'path';
 import * as os from 'os';
 import {
   DEFAULT_LOG_FILE_NAME,
+  resolveActionRuntimeStatePaths,
   resolveActionLogFileTarget,
 } from './action_config';
 import {
@@ -26,12 +27,8 @@ async function run() {
     const logFileInput = core.getInput('log_file') || DEFAULT_LOG_FILE_NAME;
     const workspaceDir = process.env.GITHUB_WORKSPACE;
     const runnerTempRoot = process.env.RUNNER_TEMP || os.tmpdir();
-    const defaultLogPath = path.join(
-      runnerTempRoot,
-      'build-process-watcher',
-      runId,
-      DEFAULT_LOG_FILE_NAME
-    );
+    const runtimeStatePaths = resolveActionRuntimeStatePaths({ runnerTempRoot, runId });
+    const defaultLogPath = path.join(runtimeStatePaths.runnerTempDir, DEFAULT_LOG_FILE_NAME);
     const defaultLogPathExists =
       logFileInput === DEFAULT_LOG_FILE_NAME && fs.existsSync(defaultLogPath);
     const {
@@ -107,7 +104,7 @@ async function run() {
     // Also write RUN_ID to a file as a backup for the post step
     // This ensures the post step can always find the RUN_ID even if env vars aren't available
     try {
-      const runIdFile = path.join(runnerTempDir, '.build-process-watcher-run-id');
+      const runIdFile = runtimeStatePaths.runIdFile;
       fs.writeFileSync(runIdFile, runId, 'utf8');
       if (debugMode) {
         core.info(`💾 Saved RUN_ID to file: ${runIdFile}`);
@@ -121,11 +118,11 @@ async function run() {
     if (frontendUrl || backendUrl) {
       try {
         if (backendUrl) {
-          fs.writeFileSync(path.join(runnerTempDir, '.build-process-watcher-backend-url'), backendUrl, 'utf8');
+          fs.writeFileSync(runtimeStatePaths.backendUrlFile, backendUrl, 'utf8');
         }
         if (frontendUrl) {
           const baseFrontendUrl = frontendUrl.replace(/\/runs\/.*$/, '');
-          fs.writeFileSync(path.join(runnerTempDir, '.build-process-watcher-frontend-url'), baseFrontendUrl, 'utf8');
+          fs.writeFileSync(runtimeStatePaths.frontendUrlFile, baseFrontendUrl, 'utf8');
         }
       } catch (error) {
         if (debugMode) {
