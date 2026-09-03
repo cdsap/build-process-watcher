@@ -9,6 +9,15 @@ import { parseTimestampSeconds, generateJsonReport } from './lib/report';
 import { generateCombinedMermaidChart, MermaidProcessData } from './lib/mermaid';
 import { artifactSummary, existingArtifactPaths } from './lib/artifacts';
 import { parseMonitorLogText, parseOptionalMetric } from './lib/monitor_log';
+import {
+    ACTION_RUNTIME_STATE_FILE_NAMES,
+    ACTION_RUNTIME_STATE_FILES,
+    actionRuntimeStateFilePath,
+    getActionRuntimeTempRoot,
+    getActionRunTempDir,
+    resolveActionRuntimeStateCandidateDirs,
+    resolveRunIdBackupCandidateFiles,
+} from './action_config';
 
 const execAsync = promisify(exec);
 
@@ -635,10 +644,14 @@ async function markProcessAsFinished(runId: string): Promise<void> {
         let backendUrl = '';
         const workspaceDir = process.env.GITHUB_WORKSPACE;
         const runnerTempDir = process.env.RUNNER_TEMP;
-        const runIdTempDir = runnerTempDir && runId ? path.join(runnerTempDir, 'build-process-watcher', runId) : '';
-        const candidateDirs = [process.cwd(), workspaceDir, runIdTempDir].filter(Boolean) as string[];
+        const candidateDirs = resolveActionRuntimeStateCandidateDirs({
+            cwd: process.cwd(),
+            workspaceDir,
+            runnerTempRoot: runnerTempDir,
+            runId,
+        });
         for (const dir of candidateDirs) {
-            const backendFile = path.join(dir, '.build-process-watcher-backend-url');
+            const backendFile = actionRuntimeStateFilePath(dir, ACTION_RUNTIME_STATE_FILES.backendUrl);
             if (fs.existsSync(backendFile)) {
                 backendUrl = fs.readFileSync(backendFile, 'utf8').trim();
                 break;
@@ -812,16 +825,16 @@ function cleanupWorkspaceLeftovers(logFile: string | null, debugMode: boolean): 
     const runnerTempDir = process.env.RUNNER_TEMP;
     const runId = process.env.RUN_ID;
     const defaultLogFile = process.env.BPW_LOG_FILE_DEFAULT !== 'false';
-    const runTempDir = runnerTempDir && runId ? path.join(runnerTempDir, 'build-process-watcher', runId) : '';
-    const candidateDirs = [process.cwd(), workspaceDir, runnerTempDir, runTempDir].filter((dir): dir is string => Boolean(dir));
-    const stateFiles = [
-        '.build-process-watcher-backend-url',
-        '.build-process-watcher-frontend-url',
-        '.build-process-watcher-run-id'
-    ];
+    const candidateDirs = resolveActionRuntimeStateCandidateDirs({
+        cwd: process.cwd(),
+        workspaceDir,
+        runnerTempRoot: runnerTempDir,
+        runId,
+        includeRunnerTempRoot: true,
+    });
 
     candidateDirs.forEach(dir => {
-        stateFiles.forEach(file => removeIfExists(path.join(dir, file), debugMode));
+        ACTION_RUNTIME_STATE_FILE_NAMES.forEach(file => removeIfExists(actionRuntimeStateFilePath(dir, file), debugMode));
     });
 
     if (logFile && defaultLogFile) {
@@ -877,7 +890,7 @@ async function run() {
         // Mark the process as finished in Firestore if we have a run ID
         // Try multiple ways to get the RUN_ID (in order of preference):
         // 1. From environment variable (exported by main step)
-        // 2. From .build-process-watcher-run-id file (backup written by main step)
+        // 2. From the backup file written by the main step
         // 3. From backend debug log (if it exists and contains run_id)
         // 4. From GitHub run ID (last resort fallback)
         let runId = process.env.RUN_ID;
@@ -885,18 +898,18 @@ async function run() {
         // Try to read from file if not in env var
         if (!runId) {
             try {
-                const cwdRunIdFile = path.join(process.cwd(), '.build-process-watcher-run-id');
                 const workspaceDir = process.env.GITHUB_WORKSPACE;
                 const runnerTempDir = process.env.RUNNER_TEMP;
-                const tempRunIdDir = runnerTempDir ? path.join(runnerTempDir, 'build-process-watcher') : '';
-                const workspaceRunIdFile = workspaceDir
-                    ? path.join(workspaceDir, '.build-process-watcher-run-id')
-                    : '';
-                const tempRunIdFiles = tempRunIdDir && fs.existsSync(tempRunIdDir)
-                    ? fs.readdirSync(tempRunIdDir)
-                        .map(entry => path.join(tempRunIdDir, entry, '.build-process-watcher-run-id'))
+                const runtimeTempRoot = runnerTempDir ? getActionRuntimeTempRoot(runnerTempDir) : '';
+                const tempRunEntries = runtimeTempRoot && fs.existsSync(runtimeTempRoot)
+                    ? fs.readdirSync(runtimeTempRoot)
                     : [];
-                const candidateFiles = [cwdRunIdFile, workspaceRunIdFile, ...tempRunIdFiles].filter(Boolean);
+                const candidateFiles = resolveRunIdBackupCandidateFiles({
+                    cwd: process.cwd(),
+                    workspaceDir,
+                    runnerTempRoot: runnerTempDir,
+                    runnerTempRunEntries: tempRunEntries,
+                });
 
                 for (const runIdFile of candidateFiles) {
                     if (fs.existsSync(runIdFile)) {
@@ -1035,7 +1048,7 @@ async function run() {
         if (!path.isAbsolute(logFileName)) {
             const workspaceDir = process.env.GITHUB_WORKSPACE;
             const runnerTempDir = process.env.RUNNER_TEMP;
-            const runTempDir = runnerTempDir && runId ? path.join(runnerTempDir, 'build-process-watcher', runId) : '';
+            const runTempDir = runnerTempDir && runId ? getActionRunTempDir(runnerTempDir, runId) : '';
             const candidates = [
                 runTempDir ? path.join(runTempDir, logFileName) : '',
                 path.join(actionDir, '..', logFileName),
@@ -1069,10 +1082,14 @@ async function run() {
                 let explicitFrontendUrl = '';
                 const workspaceDir = process.env.GITHUB_WORKSPACE;
                 const runnerTempDir = process.env.RUNNER_TEMP;
-                const runTempDir = runnerTempDir && runId ? path.join(runnerTempDir, 'build-process-watcher', runId) : '';
-                const candidateDirs = [process.cwd(), workspaceDir, runTempDir].filter(Boolean) as string[];
+                const candidateDirs = resolveActionRuntimeStateCandidateDirs({
+                    cwd: process.cwd(),
+                    workspaceDir,
+                    runnerTempRoot: runnerTempDir,
+                    runId,
+                });
                 for (const dir of candidateDirs) {
-                    const frontendFile = path.join(dir, '.build-process-watcher-frontend-url');
+                    const frontendFile = actionRuntimeStateFilePath(dir, ACTION_RUNTIME_STATE_FILES.frontendUrl);
                     if (fs.existsSync(frontendFile)) {
                         explicitFrontendUrl = fs.readFileSync(frontendFile, 'utf8').trim();
                         break;
