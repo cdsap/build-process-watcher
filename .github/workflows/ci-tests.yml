@@ -24,9 +24,13 @@ jobs:
     name: 🚀 E2E Tests
     uses: ./.github/workflows/test-e2e-action.yml
 
+  windows-tests:
+    name: 🪟 Windows Action Tests
+    uses: ./.github/workflows/test-action-windows.yml
+
   all-tests-summary:
     name: 📊 Test Summary
-    needs: [backend-tests, action-build, frontend-validation, e2e-tests]
+    needs: [backend-tests, action-build, frontend-validation, e2e-tests, windows-tests]
     runs-on: ubuntu-latest
     if: always()
     
@@ -41,6 +45,7 @@ jobs:
         echo "| Action Build | ${{ needs.action-build.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
         echo "| Frontend Validation | ${{ needs.frontend-validation.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
         echo "| E2E Tests | ${{ needs.e2e-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Windows Action Tests | ${{ needs.windows-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         
         cat $GITHUB_STEP_SUMMARY
@@ -49,7 +54,8 @@ jobs:
         if [ "${{ needs.backend-tests.result }}" != "success" ] || \
            [ "${{ needs.action-build.result }}" != "success" ] || \
            [ "${{ needs.frontend-validation.result }}" != "success" ] || \
-           [ "${{ needs.e2e-tests.result }}" != "success" ]; then
+           [ "${{ needs.e2e-tests.result }}" != "success" ] || \
+           [ "${{ needs.windows-tests.result }}" != "success" ]; then
           echo "❌ Some tests failed - PR should not be merged"
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "⚠️ **Some tests failed. Please review the failures above.**" >> $GITHUB_STEP_SUMMARY

@@ -199,11 +199,14 @@ get_auth_token() {
     
     # Request token from /auth/run/{run_id} endpoint
     # Add timeout and connection diagnostics
+    # -d '' forces Content-Length: 0. Empty POSTs without a body omit that header on
+    # some curl builds (notably Windows), and Google Front End returns HTTP 411.
     log_script "get_auth_token: Starting curl request with timeout ${CURL_TIMEOUT}s, connect timeout ${CURL_CONNECT_TIMEOUT}s"
     auth_response=$(curl -s --max-time "$CURL_TIMEOUT" --connect-timeout "$CURL_CONNECT_TIMEOUT" \
         -w "\nHTTP_CODE:%{http_code}\nTIME_TOTAL:%{time_total}\nTIME_CONNECT:%{time_connect}" \
         -X POST "$auth_path" \
-        -H "Content-Type: application/json" 2>&1)
+        -H "Content-Type: application/json" \
+        -d '' 2>&1)
     local curl_exit=$?
     
     log_script "get_auth_token: curl exit code: $curl_exit"
