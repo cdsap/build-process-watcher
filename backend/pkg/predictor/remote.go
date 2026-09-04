@@ -11,11 +11,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cdsap/build-process-watcher/backend/internal/scoring"
 	"google.golang.org/api/idtoken"
 )
 
 const defaultRemoteTimeout = 1500 * time.Millisecond
+
+// Remote transport failure kinds. Composition roots map these onto public-safe
+// fallback taxonomy; the HTTP adapter does not own scoring sentinel imports.
+var (
+	ErrRemoteTimeout     = errors.New("remote prediction timeout")
+	ErrRemoteNoData      = errors.New("remote prediction no data")
+	ErrRemoteUnavailable = errors.New("remote prediction unavailable")
+	ErrRemoteFailed      = errors.New("remote prediction failed")
+)
 
 // RemoteConfig configures the public-safe remote prediction provider.
 type RemoteConfig struct {
@@ -84,21 +92,21 @@ func (p *RemoteProvider) Predict(ctx context.Context, snapshot RunSnapshot, obse
 
 	resp, err := p.client.Do(req)
 	if err != nil {
-		kind := scoring.ErrScoringFailed
+		kind := ErrRemoteFailed
 		if isTimeoutError(err) {
-			kind = scoring.ErrScoringTimeout
+			kind = ErrRemoteTimeout
 		}
-		return PredictionCheckpoint{}, newScoringError(kind, fmt.Sprintf("remote prediction request failed: %v", err), err)
+		return PredictionCheckpoint{}, newRemoteError(kind, fmt.Sprintf("remote prediction request failed: %v", err), err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return PredictionCheckpoint{}, newScoringError(classifyRemoteStatus(resp.StatusCode), fmt.Sprintf("remote prediction provider returned status %d", resp.StatusCode), nil)
+		return PredictionCheckpoint{}, newRemoteError(classifyRemoteStatus(resp.StatusCode), fmt.Sprintf("remote prediction provider returned status %d", resp.StatusCode), nil)
 	}
 
 	decoder := json.NewDecoder(resp.Body)
 	var response remotePredictResponse
 	if err := decoder.Decode(&response); err != nil {
-		return PredictionCheckpoint{}, newScoringError(scoring.ErrScoringFailed, fmt.Sprintf("decode prediction response: %v", err), err)
+		return PredictionCheckpoint{}, newRemoteError(ErrRemoteFailed, fmt.Sprintf("decode prediction response: %v", err), err)
 	}
 	if response.Checkpoint.ObservationWindowS == 0 {
 		response.Checkpoint.ObservationWindowS = observationWindowS
@@ -106,21 +114,21 @@ func (p *RemoteProvider) Predict(ctx context.Context, snapshot RunSnapshot, obse
 	return response.Checkpoint, nil
 }
 
-type scoringError struct {
+type remoteError struct {
 	kind    error
 	message string
 	cause   error
 }
 
-func newScoringError(kind error, message string, cause error) error {
-	return scoringError{kind: kind, message: message, cause: cause}
+func newRemoteError(kind error, message string, cause error) error {
+	return remoteError{kind: kind, message: message, cause: cause}
 }
 
-func (e scoringError) Error() string {
+func (e remoteError) Error() string {
 	return e.message
 }
 
-func (e scoringError) Unwrap() []error {
+func (e remoteError) Unwrap() []error {
 	if e.cause == nil {
 		return []error{e.kind}
 	}
@@ -130,13 +138,13 @@ func (e scoringError) Unwrap() []error {
 func classifyRemoteStatus(statusCode int) error {
 	switch statusCode {
 	case http.StatusNotFound:
-		return scoring.ErrNoData
+		return ErrRemoteNoData
 	case http.StatusRequestTimeout, http.StatusGatewayTimeout:
-		return scoring.ErrScoringTimeout
+		return ErrRemoteTimeout
 	case http.StatusServiceUnavailable:
-		return scoring.ErrModelUnavailable
+		return ErrRemoteUnavailable
 	default:
-		return scoring.ErrScoringFailed
+		return ErrRemoteFailed
 	}
 }
 
