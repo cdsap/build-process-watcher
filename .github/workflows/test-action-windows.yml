@@ -50,7 +50,7 @@ jobs:
 
     - name: Build the action
       shell: bash
-      run: npm run build
+      run: bash build.sh
 
     - name: Verify auth POST includes empty body (HTTP 411 guard)
       shell: bash
@@ -142,7 +142,7 @@ jobs:
 
     - name: Build the action
       shell: bash
-      run: npm run build
+      run: bash build.sh
 
     - name: Test action in remote mode (unreachable backend)
       uses: ./
