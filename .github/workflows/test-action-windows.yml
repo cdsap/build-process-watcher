@@ -54,13 +54,7 @@ jobs:
 
     - name: Verify auth POST includes empty body (HTTP 411 guard)
       shell: bash
-      run: |
-        echo "🧪 Verifying auth curl sends empty body for Content-Length..."
-        if ! grep -A20 'get_auth_token()' monitor_with_backend.sh | grep -q "\-d ''"; then
-          echo "❌ FAIL: get_auth_token must use -d '' so Content-Length is set on Windows"
-          exit 1
-        fi
-        echo "✅ PASS: auth token curl includes -d ''"
+      run: npm test -- --runInBand __tests__/auth-post-content-length.test.ts
 
     - name: Test action in local mode
       uses: ./
