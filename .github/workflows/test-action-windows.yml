@@ -49,6 +49,7 @@ jobs:
       run: npm ci
 
     - name: Build the action
+      shell: bash
       run: npm run build
 
     - name: Verify auth POST includes empty body (HTTP 411 guard)
@@ -140,6 +141,7 @@ jobs:
       run: npm ci
 
     - name: Build the action
+      shell: bash
       run: npm run build
 
     - name: Test action in remote mode (unreachable backend)
