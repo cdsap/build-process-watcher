@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
-
-	"github.com/cdsap/build-process-watcher/backend/internal/models"
 )
 
 func TestParseDataHistoricalAndExtendedRecords(t *testing.T) {
@@ -67,35 +65,6 @@ func TestSampleJSONRoundTripOptionalMetrics(t *testing.T) {
 	}
 	if decoded["JITCompiledMethods"] != float64(5) || decoded["JITFailedCompilations"] != nil {
 		t.Fatalf("unexpected JSON: %s", encoded)
-	}
-}
-
-func TestMergePredictionCheckpointAppendsInWindowOrder(t *testing.T) {
-	merged := MergePredictionCheckpoint([]models.PredictionCheckpoint{
-		{ObservationWindowS: 180, Status: "ready"},
-		{ObservationWindowS: 30, Status: "ready"},
-	}, models.PredictionCheckpoint{ObservationWindowS: 60, Status: "error"})
-
-	windows := []int{merged[0].ObservationWindowS, merged[1].ObservationWindowS, merged[2].ObservationWindowS}
-	expected := []int{30, 60, 180}
-	for i := range expected {
-		if windows[i] != expected[i] {
-			t.Fatalf("windows = %v, want %v", windows, expected)
-		}
-	}
-}
-
-func TestMergePredictionCheckpointReplacesExistingWindow(t *testing.T) {
-	merged := MergePredictionCheckpoint([]models.PredictionCheckpoint{
-		{ObservationWindowS: 30, Status: "ready"},
-		{ObservationWindowS: 60, Status: "ready"},
-	}, models.PredictionCheckpoint{ObservationWindowS: 60, Status: "error"})
-
-	if len(merged) != 2 {
-		t.Fatalf("len = %d, want 2", len(merged))
-	}
-	if merged[1].ObservationWindowS != 60 || merged[1].Status != "error" {
-		t.Fatalf("replacement failed: %+v", merged)
 	}
 }
 

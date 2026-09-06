@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
-	"github.com/cdsap/build-process-watcher/backend/internal/storage"
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
 
@@ -99,6 +98,6 @@ func (e *CheckpointEvaluator) Evaluate(ctx context.Context, runID string) {
 			log.Printf("Prediction checkpoint store failed for run %s checkpoint %ds: %v", runID, checkpointWindow, err)
 			continue
 		}
-		runDoc.PredictionCheckpoints = storage.MergePredictionCheckpoint(runDoc.PredictionCheckpoints, checkpoint)
+		runDoc.PredictionCheckpoints = predictor.MergePredictionCheckpoint(runDoc.PredictionCheckpoints, checkpoint)
 	}
 }

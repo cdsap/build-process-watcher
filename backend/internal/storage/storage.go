@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"cloud.google.com/go/firestore"
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
+	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 	"google.golang.org/api/iterator"
 )
 
@@ -180,7 +180,7 @@ func (c *Client) StorePredictionCheckpoint(runID string, checkpoint models.Predi
 	now := time.Now()
 	_, err = doc.Set(c.ctx, map[string]interface{}{
 		"run_id":                 runID,
-		"prediction_checkpoints": MergePredictionCheckpoint(existing, checkpoint),
+		"prediction_checkpoints": predictor.MergePredictionCheckpoint(existing, checkpoint),
 		"updated_at":             now,
 		"updated_at_timestamp":   ToMillis(now),
 	}, firestore.MergeAll)
@@ -188,27 +188,6 @@ func (c *Client) StorePredictionCheckpoint(runID string, checkpoint models.Predi
 		return fmt.Errorf("store prediction checkpoint for run %s: %w", runID, err)
 	}
 	return nil
-}
-
-// MergePredictionCheckpoint returns checkpoints sorted by window with one record per window.
-func MergePredictionCheckpoint(existing []models.PredictionCheckpoint, checkpoint models.PredictionCheckpoint) []models.PredictionCheckpoint {
-	merged := make([]models.PredictionCheckpoint, 0, len(existing)+1)
-	replaced := false
-	for _, item := range existing {
-		if item.ObservationWindowS == checkpoint.ObservationWindowS {
-			merged = append(merged, checkpoint)
-			replaced = true
-			continue
-		}
-		merged = append(merged, item)
-	}
-	if !replaced {
-		merged = append(merged, checkpoint)
-	}
-	sort.SliceStable(merged, func(i, j int) bool {
-		return merged[i].ObservationWindowS < merged[j].ObservationWindowS
-	})
-	return merged
 }
 
 // StoreProcessInfo stores or updates process information (VM flags) for a process in the processes collection
