@@ -243,6 +243,35 @@ func TestPendingCheckpointsSkipsWhenNoSamples(t *testing.T) {
 	}
 }
 
+func TestMergePredictionCheckpointAppendsInWindowOrder(t *testing.T) {
+	merged := MergePredictionCheckpoint([]PredictionCheckpoint{
+		{ObservationWindowS: 180, Status: "ready"},
+		{ObservationWindowS: 30, Status: "ready"},
+	}, PredictionCheckpoint{ObservationWindowS: 60, Status: "error"})
+
+	windows := []int{merged[0].ObservationWindowS, merged[1].ObservationWindowS, merged[2].ObservationWindowS}
+	expected := []int{30, 60, 180}
+	for i := range expected {
+		if windows[i] != expected[i] {
+			t.Fatalf("windows = %v, want %v", windows, expected)
+		}
+	}
+}
+
+func TestMergePredictionCheckpointReplacesExistingWindow(t *testing.T) {
+	merged := MergePredictionCheckpoint([]PredictionCheckpoint{
+		{ObservationWindowS: 30, Status: "ready"},
+		{ObservationWindowS: 60, Status: "ready"},
+	}, PredictionCheckpoint{ObservationWindowS: 60, Status: "error"})
+
+	if len(merged) != 2 {
+		t.Fatalf("len = %d, want 2", len(merged))
+	}
+	if merged[1].ObservationWindowS != 60 || merged[1].Status != "error" {
+		t.Fatalf("replacement failed: %+v", merged)
+	}
+}
+
 func TestParseCheckpoints(t *testing.T) {
 	checkpoints := ParseCheckpoints("30, 60, bad, 0, 180, 60")
 	expected := []int{30, 60, 180}
