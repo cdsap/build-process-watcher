@@ -11,6 +11,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//internal/scoring",
+        "//pkg/predictor",
         "//pkg/server",
     ],
 )
@@ -37,5 +38,6 @@ go_test(
         "//internal/models",
         "//internal/scoring",
         "//internal/storage",
+        "//pkg/predictor",
     ],
 )

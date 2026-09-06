@@ -9,8 +9,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/cdsap/build-process-watcher/backend/internal/scoring"
 )
 
 func TestRemoteProviderPostsPublicPredictionRequest(t *testing.T) {
@@ -91,21 +89,21 @@ func TestRemoteProviderReturnsStatusError(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "status 418") {
 		t.Fatalf("error = %v, want status 418", err)
 	}
-	if !errors.Is(err, scoring.ErrScoringFailed) {
-		t.Fatalf("error = %v, want scoring failed sentinel", err)
+	if !errors.Is(err, ErrRemoteFailed) {
+		t.Fatalf("error = %v, want remote failed sentinel", err)
 	}
 }
 
-func TestRemoteProviderClassifiesSharedScoringErrors(t *testing.T) {
+func TestRemoteProviderClassifiesTransportFailures(t *testing.T) {
 	tests := []struct {
 		name       string
 		statusCode int
 		want       error
 	}{
-		{name: "no data", statusCode: http.StatusNotFound, want: scoring.ErrNoData},
-		{name: "timeout", statusCode: http.StatusGatewayTimeout, want: scoring.ErrScoringTimeout},
-		{name: "model unavailable", statusCode: http.StatusServiceUnavailable, want: scoring.ErrModelUnavailable},
-		{name: "provider error", statusCode: http.StatusInternalServerError, want: scoring.ErrScoringFailed},
+		{name: "no data", statusCode: http.StatusNotFound, want: ErrRemoteNoData},
+		{name: "timeout", statusCode: http.StatusGatewayTimeout, want: ErrRemoteTimeout},
+		{name: "model unavailable", statusCode: http.StatusServiceUnavailable, want: ErrRemoteUnavailable},
+		{name: "provider error", statusCode: http.StatusInternalServerError, want: ErrRemoteFailed},
 	}
 
 	for _, tt := range tests {

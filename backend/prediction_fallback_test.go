@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/cdsap/build-process-watcher/backend/internal/scoring"
+	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
 
 func TestPredictionFallbackClassifierMapsScoringTaxonomyWithoutLeaking(t *testing.T) {
@@ -30,6 +31,30 @@ func TestPredictionFallbackClassifierMapsScoringTaxonomyWithoutLeaking(t *testin
 		{
 			name:        "scoring failed",
 			err:         fmt.Errorf("private stack: customer id 123: %w", scoring.ErrScoringFailed),
+			wantState:   "provider_error",
+			wantMessage: "prediction provider error",
+		},
+		{
+			name:        "remote no data",
+			err:         fmt.Errorf("provider context: %w", predictor.ErrRemoteNoData),
+			wantState:   "no_data",
+			wantMessage: "prediction data unavailable",
+		},
+		{
+			name:        "remote timeout",
+			err:         fmt.Errorf("provider context: %w", predictor.ErrRemoteTimeout),
+			wantState:   "provider_error",
+			wantMessage: "prediction provider error",
+		},
+		{
+			name:        "remote unavailable",
+			err:         fmt.Errorf("provider context: %w", predictor.ErrRemoteUnavailable),
+			wantState:   "model_unavailable",
+			wantMessage: "prediction model unavailable",
+		},
+		{
+			name:        "remote failed",
+			err:         fmt.Errorf("private stack: customer id 123: %w", predictor.ErrRemoteFailed),
 			wantState:   "provider_error",
 			wantMessage: "prediction provider error",
 		},

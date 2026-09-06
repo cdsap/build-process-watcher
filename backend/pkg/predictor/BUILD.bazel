@@ -10,7 +10,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//internal/models",
-        "//internal/scoring",
         "@org_golang_google_api//idtoken",
     ],
 )
