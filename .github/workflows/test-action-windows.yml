@@ -1,0 +1,198 @@
+name: Test Action (Windows)
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'src/**'
+      - 'dist/**'
+      - 'action.yaml'
+      - 'monitor_with_backend.sh'
+      - '__tests__/auth-post-content-length.test.ts'
+      - '__tests__/monitor-spawn.test.ts'
+      - '.github/workflows/test-action-windows.yml'
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'src/**'
+      - 'dist/**'
+      - 'action.yaml'
+      - 'monitor_with_backend.sh'
+      - '__tests__/auth-post-content-length.test.ts'
+      - '__tests__/monitor-spawn.test.ts'
+      - '.github/workflows/test-action-windows.yml'
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  test-local-mode-windows:
+    name: Test Action (Local Mode - Windows)
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Set up Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build the action
+      shell: bash
+      run: bash build.sh
+
+    - name: Verify auth POST includes empty body (HTTP 411 guard)
+      shell: bash
+      run: npm test -- --runInBand __tests__/auth-post-content-length.test.ts
+
+    - name: Test action in local mode
+      uses: ./
+      with:
+        remote_monitoring: 'false'
+        log_file: '${{ github.workspace }}/test_local_windows.log'
+        interval: '2'
+        debug: 'true'
+
+    - name: Simulate build workload
+      shell: bash
+      run: |
+        echo "🏗️  Simulating build workload on Windows..."
+        cat > "$RUNNER_TEMP/GradleDaemon.java" <<'EOF'
+        public class GradleDaemon {
+          public static void main(String[] args) throws Exception {
+            long end = System.currentTimeMillis() + 10000;
+            while (System.currentTimeMillis() < end) {
+              Class.forName("java.util.ArrayList");
+              Math.sqrt(System.nanoTime());
+              Thread.sleep(10);
+            }
+          }
+        }
+        EOF
+        javac "$RUNNER_TEMP/GradleDaemon.java"
+        java -cp "$RUNNER_TEMP" GradleDaemon &
+        wait $!
+        echo "✅ Build simulation completed"
+
+    - name: Verify local log file
+      shell: bash
+      run: |
+        echo "📋 Checking for log file..."
+        LOG_FILE="${{ github.workspace }}/test_local_windows.log"
+
+        if [ -f "$LOG_FILE" ]; then
+          echo "✅ Log file created successfully at: $LOG_FILE"
+          echo "📄 Log file content:"
+          head -20 "$LOG_FILE"
+
+          if grep -q "Elapsed_Time" "$LOG_FILE"; then
+            echo "✅ Log file has correct header"
+          else
+            echo "❌ Log file missing expected header"
+            cat "$LOG_FILE"
+            exit 1
+          fi
+        else
+          echo "⚠️  Log file not found at expected location: $LOG_FILE"
+          if [ -f "test_local_windows.log" ]; then
+            echo "✅ Found log file in current directory"
+            head -20 test_local_windows.log
+          elif [ -f "build_process_watcher.log" ]; then
+            echo "✅ Found default log file"
+            head -20 build_process_watcher.log
+          else
+            echo "⚠️  No log files found (acceptable if no Java processes were attached)"
+            echo "Action executed without fatal errors on Windows."
+          fi
+        fi
+
+  test-remote-mode-dry-run-windows:
+    name: Test Action (Remote Mode Dry Run - Windows)
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build the action
+      shell: bash
+      run: bash build.sh
+
+    - name: Test action in remote mode (unreachable backend)
+      uses: ./
+      env:
+        BACKEND_URL: 'https://test-backend.example.com'
+      with:
+        remote_monitoring: 'true'
+        run_id: 'test-run-windows-${{ github.run_id }}'
+        log_file: '${{ github.workspace }}/test_remote_windows.log'
+        interval: '2'
+        debug: 'true'
+      continue-on-error: true
+
+    - name: Simulate short workload
+      shell: bash
+      run: |
+        echo "🏗️  Simulating short workload..."
+        sleep 8
+        echo "✅ Workload completed"
+
+    - name: Check monitoring attempted to start
+      shell: bash
+      run: |
+        echo "🔍 Verifying Windows remote-mode monitoring attempted to start..."
+
+        if [ -f "${{ github.workspace }}/test_remote_windows.log" ] || [ -f "test_remote_windows.log" ]; then
+          echo "✅ Log file created"
+        else
+          echo "⚠️  Main log file not created (may be expected without Java processes)"
+        fi
+
+        if [ -f "${{ github.workspace }}/backend_debug.log" ] || [ -f "backend_debug.log" ]; then
+          echo "✅ Backend debug log created"
+          head -30 "${{ github.workspace }}/backend_debug.log" 2>/dev/null || head -30 backend_debug.log
+        else
+          echo "⚠️  Backend debug log not created (may be expected for unreachable backend)"
+        fi
+
+        echo "✅ Remote mode Windows dry-run completed"
+
+  summary:
+    name: Windows Test Summary
+    needs: [test-local-mode-windows, test-remote-mode-dry-run-windows]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+    - name: Check test results
+      run: |
+        echo "📊 Windows Action Test Summary:"
+        echo "  Local mode: ${{ needs.test-local-mode-windows.result }}"
+        echo "  Remote dry-run: ${{ needs.test-remote-mode-dry-run-windows.result }}"
+
+        if [ "${{ needs.test-local-mode-windows.result }}" != "success" ]; then
+          echo "❌ Windows local-mode test failed!"
+          exit 1
+        fi
+
+        echo "✅ Critical Windows tests passed!"

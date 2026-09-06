@@ -670,11 +670,13 @@ async function markProcessAsFinished(runId: string): Promise<void> {
             
             // Get JWT token for this run
             console.log(`🔐 Requesting JWT token for run ${runId}...`);
+            // Empty body ensures Content-Length is sent (avoids HTTP 411 on some proxies).
             const authResponse = await fetch(`${backendUrl}/auth/run/${runId}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
+                body: '',
             });
             
             if (!authResponse.ok) {
@@ -691,12 +693,14 @@ async function markProcessAsFinished(runId: string): Promise<void> {
             console.log(`✅ JWT token obtained for run ${runId}`);
             
             // Call finish endpoint with JWT token
+            // Empty body ensures Content-Length is sent (avoids HTTP 411 on some proxies).
             const response = await fetch(`${backendUrl}/finish/${runId}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`,
                 },
+                body: '',
             });
             
             if (response.ok) {
