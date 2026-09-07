@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { parseMonitorLogText, parseOptionalMetric } from './monitor_log';
+import { parseMonitorLogText } from './monitor_log';
 
 const SAMPLE_FIELDS = [
     'Timestamp', 'ElapsedTime', 'PID', 'Name', 'RSS', 'HeapUsed', 'HeapCap',
@@ -85,29 +85,12 @@ export function generateJsonReport(logFile: string, outputFile: string, hasGcDat
     const processInfoFromFile = loadProcessInfoFromFile(logFile);
     const processInfo: Record<string, { name: string; vm_flags: string[] }> = {};
 
-    const optionalMillis = (value: string | undefined): number | null => {
-        const seconds = parseOptionalMetric(value);
-        return seconds === null ? null : seconds * 1000;
-    };
-
     parseMonitorLogText(fs.readFileSync(logFile, 'utf8')).forEach(row => {
         const elapsedSeconds = parseTimestampSeconds(row.timestamp);
         const rssValue = parseFloat(row.rssMb);
         const heapUsedValue = parseFloat(row.heapUsedMb);
         const heapCapValue = parseFloat(row.heapCapMb);
-        const [
-            jitCompiled,
-            jitFailed,
-            jitInvalid,
-            jitTime,
-            classesLoaded,
-            classesUnloaded,
-            classTime
-        ] = row.optionalMetricRaws;
-        const gcSeconds = row.columnCount >= 7 && hasGcData
-            ? parseFloat((row.gcTimeRaw ?? '').replace('s', ''))
-            : NaN;
-        const gcSecondsValue = Number.isNaN(gcSeconds) ? null : gcSeconds;
+        const gcSecondsValue = hasGcData ? row.gcTimeSeconds : null;
 
         samples.push({
             Timestamp: Math.max(0, elapsedSeconds * 1000),
@@ -119,13 +102,13 @@ export function generateJsonReport(logFile: string, outputFile: string, hasGcDat
             HeapCap: Number.isNaN(heapCapValue) ? 0 : heapCapValue,
             GCTime: gcSecondsValue !== null ? gcSecondsValue * 1000 : null,
             GCTimeSeconds: gcSecondsValue,
-            JITCompiledMethods: parseOptionalMetric(jitCompiled),
-            JITFailedCompilations: parseOptionalMetric(jitFailed),
-            JITInvalidatedCompilations: parseOptionalMetric(jitInvalid),
-            JITCompilationTimeMs: optionalMillis(jitTime),
-            ClassesLoaded: parseOptionalMetric(classesLoaded),
-            ClassesUnloaded: parseOptionalMetric(classesUnloaded),
-            ClassLoadTimeMs: optionalMillis(classTime)
+            JITCompiledMethods: row.jitCompiledMethods,
+            JITFailedCompilations: row.jitFailedCompilations,
+            JITInvalidatedCompilations: row.jitInvalidatedCompilations,
+            JITCompilationTimeMs: row.jitCompilationTimeSeconds !== null ? row.jitCompilationTimeSeconds * 1000 : null,
+            ClassesLoaded: row.classesLoaded,
+            ClassesUnloaded: row.classesUnloaded,
+            ClassLoadTimeMs: row.classLoadTimeSeconds !== null ? row.classLoadTimeSeconds * 1000 : null
         });
 
         if (!processInfo[row.pid]) {

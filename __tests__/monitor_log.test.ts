@@ -1,4 +1,6 @@
 import {
+  monitorLogCsvGcTime,
+  monitorLogCsvOptionalMetricFields,
   parseMonitorLogLine,
   parseMonitorLogText,
   parseOptionalMetric,
@@ -19,6 +21,14 @@ describe('parseMonitorLogLine', () => {
       columnCount: 6,
       gcTimeRaw: undefined,
       optionalMetricRaws: [],
+      gcTimeSeconds: null,
+      jitCompiledMethods: null,
+      jitFailedCompilations: null,
+      jitInvalidatedCompilations: null,
+      jitCompilationTimeSeconds: null,
+      classesLoaded: null,
+      classesUnloaded: null,
+      classLoadTimeSeconds: null,
     });
   });
 
@@ -36,6 +46,14 @@ describe('parseMonitorLogLine', () => {
       columnCount: 7,
       gcTimeRaw: '0.123s',
       optionalMetricRaws: [],
+      gcTimeSeconds: 0.123,
+      jitCompiledMethods: null,
+      jitFailedCompilations: null,
+      jitInvalidatedCompilations: null,
+      jitCompilationTimeSeconds: null,
+      classesLoaded: null,
+      classesUnloaded: null,
+      classLoadTimeSeconds: null,
     });
   });
 
@@ -53,7 +71,41 @@ describe('parseMonitorLogLine', () => {
       columnCount: 14,
       gcTimeRaw: '0.123s',
       optionalMetricRaws: ['42', '1', '2', '0.456', '900', '12', '0.789'],
+      gcTimeSeconds: 0.123,
+      jitCompiledMethods: 42,
+      jitFailedCompilations: 1,
+      jitInvalidatedCompilations: 2,
+      jitCompilationTimeSeconds: 0.456,
+      classesLoaded: 900,
+      classesUnloaded: 12,
+      classLoadTimeSeconds: 0.789,
     });
+  });
+
+  it('parses malformed optional metrics as null while preserving real zero values', () => {
+    const row = parseMonitorLogLine(
+      '00:00:05 | 1 | Proc | 10MB | 100MB | 50MB | N/A | N/A | bad | N/A | N/A | 0 | N/A | broken'
+    );
+
+    expect(row).toMatchObject({
+      gcTimeSeconds: null,
+      jitCompiledMethods: null,
+      jitFailedCompilations: null,
+      jitInvalidatedCompilations: null,
+      jitCompilationTimeSeconds: null,
+      classesLoaded: 0,
+      classesUnloaded: null,
+      classLoadTimeSeconds: null,
+    });
+  });
+
+  it('preserves legacy GC parseFloat behavior for GC cells only', () => {
+    const row = parseMonitorLogLine(
+      '00:00:05 | 1 | Proc | 10MB | 100MB | 50MB | 0.123sec | N/A | bad | N/A | N/A | 0 | N/A | broken'
+    );
+
+    expect(row?.gcTimeSeconds).toBe(0.123);
+    expect(row?.jitFailedCompilations).toBeNull();
   });
 
   it('rejects malformed column counts', () => {
@@ -75,6 +127,26 @@ describe('parseMonitorLogText', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0].columnCount).toBe(6);
     expect(rows[1].columnCount).toBe(7);
+  });
+});
+
+describe('monitor log CSV metric formatting', () => {
+  it('removes legacy N/A markers and GC second suffixes', () => {
+    const row = parseMonitorLogLine(
+      '00:00:05 | 1 | Proc | 10MB | 100MB | 50MB | 0.123s | N/A | bad | N/A | 0.456s | 0 | N/A | broken'
+    );
+
+    expect(row).not.toBeNull();
+    expect(monitorLogCsvGcTime(row!, true)).toBe('0.123');
+    expect(monitorLogCsvOptionalMetricFields(row!)).toEqual([
+      '',
+      'bad',
+      '',
+      '0.456s',
+      '0',
+      '',
+      'broken',
+    ]);
   });
 });
 

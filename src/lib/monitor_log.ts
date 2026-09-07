@@ -13,6 +13,14 @@ export interface MonitorLogRow {
     gcTimeRaw: string | undefined;
     /** Extended JVM metric cells for 14-column rows; otherwise empty. */
     optionalMetricRaws: readonly string[];
+    gcTimeSeconds: number | null;
+    jitCompiledMethods: number | null;
+    jitFailedCompilations: number | null;
+    jitInvalidatedCompilations: number | null;
+    jitCompilationTimeSeconds: number | null;
+    classesLoaded: number | null;
+    classesUnloaded: number | null;
+    classLoadTimeSeconds: number | null;
 }
 
 /**
@@ -30,6 +38,15 @@ export function parseMonitorLogLine(line: string): MonitorLogRow | null {
 
     const columnCount = parts.length as MonitorLogColumnCount;
     const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime, ...optionalMetrics] = parts;
+    const [
+        jitCompiled,
+        jitFailed,
+        jitInvalid,
+        jitTime,
+        classesLoaded,
+        classesUnloaded,
+        classTime
+    ] = optionalMetrics;
 
     return {
         timestamp,
@@ -40,7 +57,15 @@ export function parseMonitorLogLine(line: string): MonitorLogRow | null {
         rssMb: rss.replace('MB', ''),
         columnCount,
         gcTimeRaw: columnCount >= 7 ? gcTime : undefined,
-        optionalMetricRaws: columnCount === 14 ? optionalMetrics : []
+        optionalMetricRaws: columnCount === 14 ? optionalMetrics : [],
+        gcTimeSeconds: columnCount >= 7 ? parseGcTimeSeconds(gcTime) : null,
+        jitCompiledMethods: parseOptionalMetric(jitCompiled),
+        jitFailedCompilations: parseOptionalMetric(jitFailed),
+        jitInvalidatedCompilations: parseOptionalMetric(jitInvalid),
+        jitCompilationTimeSeconds: parseOptionalMetric(jitTime),
+        classesLoaded: parseOptionalMetric(classesLoaded),
+        classesUnloaded: parseOptionalMetric(classesUnloaded),
+        classLoadTimeSeconds: parseOptionalMetric(classTime)
     };
 }
 
@@ -57,6 +82,29 @@ export function parseMonitorLogText(logText: string): MonitorLogRow[] {
         }
     }
     return rows;
+}
+
+export function monitorLogCsvGcTime(row: MonitorLogRow, hasGcData: boolean): string {
+    if (row.columnCount < 7 || !hasGcData) return '';
+    return normalizeCsvGcCell(row.gcTimeRaw);
+}
+
+export function monitorLogCsvOptionalMetricFields(row: MonitorLogRow): string[] {
+    return Array.from({ length: 7 }, (_, index) => normalizeCsvOptionalMetricCell(row.optionalMetricRaws[index]));
+}
+
+function normalizeCsvGcCell(value: string | undefined): string {
+    return value?.replace('s', '').replace('N/A', '') ?? '';
+}
+
+function normalizeCsvOptionalMetricCell(value: string | undefined): string {
+    return value?.replace('N/A', '') ?? '';
+}
+
+function parseGcTimeSeconds(value: string | undefined): number | null {
+    if (!value) return null;
+    const parsed = parseFloat(value.replace('s', ''));
+    return Number.isNaN(parsed) ? null : parsed;
 }
 
 /**

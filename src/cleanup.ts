@@ -8,7 +8,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { parseTimestampSeconds, generateJsonReport } from './lib/report';
 import { generateCombinedMermaidChart, MermaidProcessData } from './lib/mermaid';
 import { artifactSummary, existingArtifactPaths } from './lib/artifacts';
-import { parseMonitorLogText, parseOptionalMetric } from './lib/monitor_log';
+import { monitorLogCsvGcTime, monitorLogCsvOptionalMetricFields, parseMonitorLogText } from './lib/monitor_log';
 import {
     ACTION_RUNTIME_STATE_FILE_NAMES,
     ACTION_RUNTIME_STATE_FILES,
@@ -35,14 +35,6 @@ function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, t
         const heapUsedValue = parseFloat(row.heapUsedMb);
         const heapCapValue = parseFloat(row.heapCapMb);
         const processKey = `${row.pid}-${row.name}`;
-        const [
-            jitCompiled,
-            jitFailed,
-            ,
-            ,
-            classesLoaded,
-            classesUnloaded
-        ] = row.optionalMetricRaws;
 
         if (!processes.has(processKey)) {
             processes.set(processKey, {
@@ -66,35 +58,22 @@ function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, t
         processData.heapUsed.push(heapUsedValue);
         processData.heapCap.push(heapCapValue);
 
-        const jitCompiledValue = parseOptionalMetric(jitCompiled);
-        const jitFailedValue = parseOptionalMetric(jitFailed);
-        const classesLoadedValue = parseOptionalMetric(classesLoaded);
-        const classesUnloadedValue = parseOptionalMetric(classesUnloaded);
-        processData.jitCompiledMethods.push(jitCompiledValue);
-        processData.jitFailedCompilations.push(jitFailedValue);
-        processData.classesLoaded.push(classesLoadedValue);
-        processData.classesUnloaded.push(classesUnloadedValue);
-        if (jitCompiledValue !== null) {
+        processData.jitCompiledMethods.push(row.jitCompiledMethods);
+        processData.jitFailedCompilations.push(row.jitFailedCompilations);
+        processData.classesLoaded.push(row.classesLoaded);
+        processData.classesUnloaded.push(row.classesUnloaded);
+        if (row.jitCompiledMethods !== null) {
             hasJitData = true;
         }
-        if (classesLoadedValue !== null) {
+        if (row.classesLoaded !== null) {
             hasClassData = true;
         }
 
-        // Parse GC time if available (7th column)
-        if (row.columnCount >= 7 && row.gcTimeRaw) {
-            // Remove 's' suffix if present and parse as float
-            const gcTimeValue = parseFloat(row.gcTimeRaw.replace('s', ''));
-            if (!isNaN(gcTimeValue)) {
-                hasGcData = true;
-                processData.gcTime!.push(gcTimeValue);
-                processData.gcAvailable!.push(true);
-            } else {
-                processData.gcTime!.push(0);
-                processData.gcAvailable!.push(false);
-            }
+        if (row.gcTimeSeconds !== null) {
+            hasGcData = true;
+            processData.gcTime!.push(row.gcTimeSeconds);
+            processData.gcAvailable!.push(true);
         } else if (processData.gcTime) {
-            // If GC data was expected but missing, push 0
             processData.gcTime.push(0);
             processData.gcAvailable!.push(false);
         }
@@ -118,12 +97,8 @@ function generateCsvReport(logFile: string, outputFile: string, hasGcData: boole
             row.heapCapMb,
             row.rssMb
         ];
-        baseRow.push(
-            row.columnCount >= 7 && hasGcData
-                ? (row.gcTimeRaw ?? '').replace('s', '').replace('N/A', '')
-                : ''
-        );
-        baseRow.push(...Array.from({ length: 7 }, (_, index) => row.optionalMetricRaws[index]?.replace('N/A', '') ?? ''));
+        baseRow.push(monitorLogCsvGcTime(row, hasGcData));
+        baseRow.push(...monitorLogCsvOptionalMetricFields(row));
         rows.push(baseRow.join(','));
     });
 
