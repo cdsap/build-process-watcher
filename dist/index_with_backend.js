@@ -25682,12 +25682,73 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.DEFAULT_LOG_FILE_NAME = void 0;
+exports.ACTION_RUNTIME_STATE_FILE_NAMES = exports.ACTION_RUNTIME_STATE_FILES = exports.DEFAULT_LOG_FILE_NAME = void 0;
+exports.getActionRuntimeTempRoot = getActionRuntimeTempRoot;
+exports.getActionRunTempDir = getActionRunTempDir;
+exports.resolveActionRuntimeStatePaths = resolveActionRuntimeStatePaths;
+exports.actionRuntimeStateFilePath = actionRuntimeStateFilePath;
+exports.resolveActionRuntimeStateCandidateDirs = resolveActionRuntimeStateCandidateDirs;
+exports.resolveRunIdBackupCandidateFiles = resolveRunIdBackupCandidateFiles;
 exports.resolveActionLogFileTarget = resolveActionLogFileTarget;
 const path = __importStar(__nccwpck_require__(6928));
 exports.DEFAULT_LOG_FILE_NAME = 'build_process_watcher.log';
+const ACTION_RUNTIME_TEMP_DIR_NAME = 'build-process-watcher';
+exports.ACTION_RUNTIME_STATE_FILES = {
+    runId: '.build-process-watcher-run-id',
+    backendUrl: '.build-process-watcher-backend-url',
+    frontendUrl: '.build-process-watcher-frontend-url',
+};
+exports.ACTION_RUNTIME_STATE_FILE_NAMES = [
+    exports.ACTION_RUNTIME_STATE_FILES.backendUrl,
+    exports.ACTION_RUNTIME_STATE_FILES.frontendUrl,
+    exports.ACTION_RUNTIME_STATE_FILES.runId,
+];
+function getActionRuntimeTempRoot(runnerTempRoot) {
+    return path.join(runnerTempRoot, ACTION_RUNTIME_TEMP_DIR_NAME);
+}
+function getActionRunTempDir(runnerTempRoot, runId) {
+    return path.join(getActionRuntimeTempRoot(runnerTempRoot), runId);
+}
+function resolveActionRuntimeStatePaths(inputs) {
+    const runnerTempDir = getActionRunTempDir(inputs.runnerTempRoot, inputs.runId);
+    return {
+        runnerTempDir,
+        runIdFile: path.join(runnerTempDir, exports.ACTION_RUNTIME_STATE_FILES.runId),
+        backendUrlFile: path.join(runnerTempDir, exports.ACTION_RUNTIME_STATE_FILES.backendUrl),
+        frontendUrlFile: path.join(runnerTempDir, exports.ACTION_RUNTIME_STATE_FILES.frontendUrl),
+    };
+}
+function actionRuntimeStateFilePath(dir, fileName) {
+    return path.join(dir, fileName);
+}
+function resolveActionRuntimeStateCandidateDirs(inputs) {
+    const runTempDir = inputs.runnerTempRoot && inputs.runId
+        ? getActionRunTempDir(inputs.runnerTempRoot, inputs.runId)
+        : '';
+    const candidateDirs = [
+        inputs.cwd,
+        inputs.workspaceDir,
+        inputs.includeRunnerTempRoot ? inputs.runnerTempRoot : '',
+        runTempDir,
+    ];
+    return candidateDirs.filter((dir) => Boolean(dir));
+}
+function resolveRunIdBackupCandidateFiles(inputs) {
+    const runtimeTempRoot = inputs.runnerTempRoot
+        ? getActionRuntimeTempRoot(inputs.runnerTempRoot)
+        : '';
+    const tempRunIdFiles = runtimeTempRoot
+        ? (inputs.runnerTempRunEntries || []).map(entry => path.join(runtimeTempRoot, entry, exports.ACTION_RUNTIME_STATE_FILES.runId))
+        : [];
+    const candidateFiles = [
+        path.join(inputs.cwd, exports.ACTION_RUNTIME_STATE_FILES.runId),
+        inputs.workspaceDir ? path.join(inputs.workspaceDir, exports.ACTION_RUNTIME_STATE_FILES.runId) : '',
+        ...tempRunIdFiles,
+    ];
+    return candidateFiles.filter((file) => Boolean(file));
+}
 function resolveActionLogFileTarget(inputs) {
-    const runnerTempDir = path.join(inputs.runnerTempRoot, 'build-process-watcher', inputs.runId);
+    const runnerTempDir = getActionRunTempDir(inputs.runnerTempRoot, inputs.runId);
     const defaultLogFile = inputs.logFileInput === exports.DEFAULT_LOG_FILE_NAME;
     const defaultLogFilePath = path.join(runnerTempDir, inputs.logFileInput);
     const collisionFallbackUsed = defaultLogFile && inputs.defaultLogPathExists;
@@ -25767,7 +25828,8 @@ async function run() {
         const logFileInput = core.getInput('log_file') || action_config_1.DEFAULT_LOG_FILE_NAME;
         const workspaceDir = process.env.GITHUB_WORKSPACE;
         const runnerTempRoot = process.env.RUNNER_TEMP || os.tmpdir();
-        const defaultLogPath = path.join(runnerTempRoot, 'build-process-watcher', runId, action_config_1.DEFAULT_LOG_FILE_NAME);
+        const runtimeStatePaths = (0, action_config_1.resolveActionRuntimeStatePaths)({ runnerTempRoot, runId });
+        const defaultLogPath = path.join(runtimeStatePaths.runnerTempDir, action_config_1.DEFAULT_LOG_FILE_NAME);
         const defaultLogPathExists = logFileInput === action_config_1.DEFAULT_LOG_FILE_NAME && fs.existsSync(defaultLogPath);
         const { runnerTempDir, logFilePath, defaultLogFile, collisionFallbackUsed, } = (0, action_config_1.resolveActionLogFileTarget)({
             runId,
@@ -25825,7 +25887,7 @@ async function run() {
         // Also write RUN_ID to a file as a backup for the post step
         // This ensures the post step can always find the RUN_ID even if env vars aren't available
         try {
-            const runIdFile = path.join(runnerTempDir, '.build-process-watcher-run-id');
+            const runIdFile = runtimeStatePaths.runIdFile;
             fs.writeFileSync(runIdFile, runId, 'utf8');
             if (debugMode) {
                 core.info(`💾 Saved RUN_ID to file: ${runIdFile}`);
@@ -25840,11 +25902,11 @@ async function run() {
         if (frontendUrl || backendUrl) {
             try {
                 if (backendUrl) {
-                    fs.writeFileSync(path.join(runnerTempDir, '.build-process-watcher-backend-url'), backendUrl, 'utf8');
+                    fs.writeFileSync(runtimeStatePaths.backendUrlFile, backendUrl, 'utf8');
                 }
                 if (frontendUrl) {
                     const baseFrontendUrl = frontendUrl.replace(/\/runs\/.*$/, '');
-                    fs.writeFileSync(path.join(runnerTempDir, '.build-process-watcher-frontend-url'), baseFrontendUrl, 'utf8');
+                    fs.writeFileSync(runtimeStatePaths.frontendUrlFile, baseFrontendUrl, 'utf8');
                 }
             }
             catch (error) {
