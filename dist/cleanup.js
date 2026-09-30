@@ -213841,6 +213841,133 @@ ZipStream.prototype.finalize = function() {
 
 /***/ }),
 
+/***/ 54838:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.ACTION_RUNTIME_STATE_FILE_NAMES = exports.ACTION_RUNTIME_STATE_FILES = exports.DEFAULT_LOG_FILE_NAME = void 0;
+exports.getActionRuntimeTempRoot = getActionRuntimeTempRoot;
+exports.getActionRunTempDir = getActionRunTempDir;
+exports.resolveActionRuntimeStatePaths = resolveActionRuntimeStatePaths;
+exports.actionRuntimeStateFilePath = actionRuntimeStateFilePath;
+exports.resolveActionRuntimeStateCandidateDirs = resolveActionRuntimeStateCandidateDirs;
+exports.resolveRunIdBackupCandidateFiles = resolveRunIdBackupCandidateFiles;
+exports.resolveActionLogFileTarget = resolveActionLogFileTarget;
+const path = __importStar(__nccwpck_require__(16928));
+exports.DEFAULT_LOG_FILE_NAME = 'build_process_watcher.log';
+const ACTION_RUNTIME_TEMP_DIR_NAME = 'build-process-watcher';
+exports.ACTION_RUNTIME_STATE_FILES = {
+    runId: '.build-process-watcher-run-id',
+    backendUrl: '.build-process-watcher-backend-url',
+    frontendUrl: '.build-process-watcher-frontend-url',
+};
+exports.ACTION_RUNTIME_STATE_FILE_NAMES = [
+    exports.ACTION_RUNTIME_STATE_FILES.backendUrl,
+    exports.ACTION_RUNTIME_STATE_FILES.frontendUrl,
+    exports.ACTION_RUNTIME_STATE_FILES.runId,
+];
+function getActionRuntimeTempRoot(runnerTempRoot) {
+    return path.join(runnerTempRoot, ACTION_RUNTIME_TEMP_DIR_NAME);
+}
+function getActionRunTempDir(runnerTempRoot, runId) {
+    return path.join(getActionRuntimeTempRoot(runnerTempRoot), runId);
+}
+function resolveActionRuntimeStatePaths(inputs) {
+    const runnerTempDir = getActionRunTempDir(inputs.runnerTempRoot, inputs.runId);
+    return {
+        runnerTempDir,
+        runIdFile: path.join(runnerTempDir, exports.ACTION_RUNTIME_STATE_FILES.runId),
+        backendUrlFile: path.join(runnerTempDir, exports.ACTION_RUNTIME_STATE_FILES.backendUrl),
+        frontendUrlFile: path.join(runnerTempDir, exports.ACTION_RUNTIME_STATE_FILES.frontendUrl),
+    };
+}
+function actionRuntimeStateFilePath(dir, fileName) {
+    return path.join(dir, fileName);
+}
+function resolveActionRuntimeStateCandidateDirs(inputs) {
+    const runTempDir = inputs.runnerTempRoot && inputs.runId
+        ? getActionRunTempDir(inputs.runnerTempRoot, inputs.runId)
+        : '';
+    const candidateDirs = [
+        inputs.cwd,
+        inputs.workspaceDir,
+        inputs.includeRunnerTempRoot ? inputs.runnerTempRoot : '',
+        runTempDir,
+    ];
+    return candidateDirs.filter((dir) => Boolean(dir));
+}
+function resolveRunIdBackupCandidateFiles(inputs) {
+    const runtimeTempRoot = inputs.runnerTempRoot
+        ? getActionRuntimeTempRoot(inputs.runnerTempRoot)
+        : '';
+    const tempRunIdFiles = runtimeTempRoot
+        ? (inputs.runnerTempRunEntries || []).map(entry => path.join(runtimeTempRoot, entry, exports.ACTION_RUNTIME_STATE_FILES.runId))
+        : [];
+    const candidateFiles = [
+        path.join(inputs.cwd, exports.ACTION_RUNTIME_STATE_FILES.runId),
+        inputs.workspaceDir ? path.join(inputs.workspaceDir, exports.ACTION_RUNTIME_STATE_FILES.runId) : '',
+        ...tempRunIdFiles,
+    ];
+    return candidateFiles.filter((file) => Boolean(file));
+}
+function resolveActionLogFileTarget(inputs) {
+    const runnerTempDir = getActionRunTempDir(inputs.runnerTempRoot, inputs.runId);
+    const defaultLogFile = inputs.logFileInput === exports.DEFAULT_LOG_FILE_NAME;
+    const defaultLogFilePath = path.join(runnerTempDir, inputs.logFileInput);
+    const collisionFallbackUsed = defaultLogFile && inputs.defaultLogPathExists;
+    const logFilePath = collisionFallbackUsed
+        ? path.join(runnerTempDir, `build_process_watcher-${inputs.runId}.log`)
+        : defaultLogFile
+            ? defaultLogFilePath
+            : !path.isAbsolute(inputs.logFileInput) && inputs.workspaceDir
+                ? path.join(inputs.workspaceDir, inputs.logFileInput)
+                : inputs.logFileInput;
+    return {
+        runnerTempDir,
+        logFilePath,
+        defaultLogFile,
+        collisionFallbackUsed,
+    };
+}
+
+
+/***/ }),
+
 /***/ 72691:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -213889,6 +214016,8 @@ const firestore_1 = __nccwpck_require__(27157);
 const report_1 = __nccwpck_require__(47185);
 const mermaid_1 = __nccwpck_require__(71588);
 const artifacts_1 = __nccwpck_require__(42480);
+const monitor_log_1 = __nccwpck_require__(91244);
+const action_config_1 = __nccwpck_require__(54838);
 const execAsync = (0, util_1.promisify)(child_process_1.exec);
 function parseLogFile(logFile) {
     const processes = new Map();
@@ -213896,24 +214025,11 @@ function parseLogFile(logFile) {
     let hasGcData = false;
     let hasJitData = false;
     let hasClassData = false;
-    const lines = fs.readFileSync(logFile, 'utf8').split('\n');
-    // Skip header lines
-    lines.slice(2).forEach(line => {
-        const parts = line.trim().split('|').map(p => p.trim());
-        // Support historical 6/7-column records and extended JVM metric records.
-        if (parts.length !== 6 && parts.length !== 7 && parts.length !== 14)
-            return;
-        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime, jitCompiled, jitFailed, , , classesLoaded, classesUnloaded] = parts;
-        const rssValue = parseFloat(rss.replace('MB', ''));
-        const heapUsedValue = parseFloat(heapUsed.replace('MB', ''));
-        const heapCapValue = parseFloat(heapCap.replace('MB', ''));
-        const processKey = `${pid}-${name}`;
-        const parseOptionalMetric = (value) => {
-            if (!value || value === 'N/A')
-                return null;
-            const parsed = Number(value.replace(/s$/, ''));
-            return Number.isFinite(parsed) ? parsed : null;
-        };
+    (0, monitor_log_1.parseMonitorLogText)(fs.readFileSync(logFile, 'utf8')).forEach(row => {
+        const rssValue = parseFloat(row.rssMb);
+        const heapUsedValue = parseFloat(row.heapUsedMb);
+        const heapCapValue = parseFloat(row.heapCapMb);
+        const processKey = `${row.pid}-${row.name}`;
         if (!processes.has(processKey)) {
             processes.set(processKey, {
                 timestamps: [],
@@ -213929,41 +214045,27 @@ function parseLogFile(logFile) {
             });
         }
         const processData = processes.get(processKey);
-        processData.timestamps.push(timestamp);
+        processData.timestamps.push(row.timestamp);
         processData.rss.push(rssValue);
-        timestamps.add(timestamp);
+        timestamps.add(row.timestamp);
         processData.heapUsed.push(heapUsedValue);
         processData.heapCap.push(heapCapValue);
-        const jitCompiledValue = parseOptionalMetric(jitCompiled);
-        const jitFailedValue = parseOptionalMetric(jitFailed);
-        const classesLoadedValue = parseOptionalMetric(classesLoaded);
-        const classesUnloadedValue = parseOptionalMetric(classesUnloaded);
-        processData.jitCompiledMethods.push(jitCompiledValue);
-        processData.jitFailedCompilations.push(jitFailedValue);
-        processData.classesLoaded.push(classesLoadedValue);
-        processData.classesUnloaded.push(classesUnloadedValue);
-        if (jitCompiledValue !== null) {
+        processData.jitCompiledMethods.push(row.jitCompiledMethods);
+        processData.jitFailedCompilations.push(row.jitFailedCompilations);
+        processData.classesLoaded.push(row.classesLoaded);
+        processData.classesUnloaded.push(row.classesUnloaded);
+        if (row.jitCompiledMethods !== null) {
             hasJitData = true;
         }
-        if (classesLoadedValue !== null) {
+        if (row.classesLoaded !== null) {
             hasClassData = true;
         }
-        // Parse GC time if available (7th column)
-        if (parts.length >= 7 && gcTime) {
-            // Remove 's' suffix if present and parse as float
-            const gcTimeValue = parseFloat(gcTime.replace('s', ''));
-            if (!isNaN(gcTimeValue)) {
-                hasGcData = true;
-                processData.gcTime.push(gcTimeValue);
-                processData.gcAvailable.push(true);
-            }
-            else {
-                processData.gcTime.push(0);
-                processData.gcAvailable.push(false);
-            }
+        if (row.gcTimeSeconds !== null) {
+            hasGcData = true;
+            processData.gcTime.push(row.gcTimeSeconds);
+            processData.gcAvailable.push(true);
         }
         else if (processData.gcTime) {
-            // If GC data was expected but missing, push 0
             processData.gcTime.push(0);
             processData.gcAvailable.push(false);
         }
@@ -213973,25 +214075,19 @@ function parseLogFile(logFile) {
     return { processes, timestamps: orderedTimestamps, hasGcData, hasJitData, hasClassData };
 }
 function generateCsvReport(logFile, outputFile, hasGcData) {
-    const lines = fs.readFileSync(logFile, 'utf8').split('\n');
-    const dataLines = lines.slice(2).filter(line => line.trim().length > 0);
     const header = ['elapsed_time', 'pid', 'name', 'heap_used_mb', 'heap_capacity_mb', 'rss_mb', 'gc_time_s', 'jit_compiled_methods', 'jit_failed_compilations', 'jit_invalidated_compilations', 'jit_compilation_time_s', 'classes_loaded', 'classes_unloaded', 'class_load_time_s'];
     const rows = [header.join(',')];
-    dataLines.forEach(line => {
-        const parts = line.trim().split('|').map(p => p.trim());
-        if (parts.length !== 6 && parts.length !== 7 && parts.length !== 14)
-            return;
-        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime, ...optionalMetrics] = parts;
+    (0, monitor_log_1.parseMonitorLogText)(fs.readFileSync(logFile, 'utf8')).forEach(row => {
         const baseRow = [
-            timestamp,
-            pid,
-            name,
-            heapUsed.replace('MB', ''),
-            heapCap.replace('MB', ''),
-            rss.replace('MB', '')
+            row.timestamp,
+            row.pid,
+            row.name,
+            row.heapUsedMb,
+            row.heapCapMb,
+            row.rssMb
         ];
-        baseRow.push(parts.length >= 7 && hasGcData ? gcTime.replace('s', '').replace('N/A', '') : '');
-        baseRow.push(...Array.from({ length: 7 }, (_, index) => { var _a, _b; return (_b = (_a = optionalMetrics[index]) === null || _a === void 0 ? void 0 : _a.replace('N/A', '')) !== null && _b !== void 0 ? _b : ''; }));
+        baseRow.push((0, monitor_log_1.monitorLogCsvGcTime)(row, hasGcData));
+        baseRow.push(...(0, monitor_log_1.monitorLogCsvOptionalMetricFields)(row));
         rows.push(baseRow.join(','));
     });
     fs.writeFileSync(outputFile, rows.join('\n'));
@@ -214443,10 +214539,14 @@ async function markProcessAsFinished(runId) {
         let backendUrl = '';
         const workspaceDir = process.env.GITHUB_WORKSPACE;
         const runnerTempDir = process.env.RUNNER_TEMP;
-        const runIdTempDir = runnerTempDir && runId ? path.join(runnerTempDir, 'build-process-watcher', runId) : '';
-        const candidateDirs = [process.cwd(), workspaceDir, runIdTempDir].filter(Boolean);
+        const candidateDirs = (0, action_config_1.resolveActionRuntimeStateCandidateDirs)({
+            cwd: process.cwd(),
+            workspaceDir,
+            runnerTempRoot: runnerTempDir,
+            runId,
+        });
         for (const dir of candidateDirs) {
-            const backendFile = path.join(dir, '.build-process-watcher-backend-url');
+            const backendFile = (0, action_config_1.actionRuntimeStateFilePath)(dir, action_config_1.ACTION_RUNTIME_STATE_FILES.backendUrl);
             if (fs.existsSync(backendFile)) {
                 backendUrl = fs.readFileSync(backendFile, 'utf8').trim();
                 break;
@@ -214462,11 +214562,13 @@ async function markProcessAsFinished(runId) {
             console.log(`🏁 Marking run ${runId} as finished via backend API...`);
             // Get JWT token for this run
             console.log(`🔐 Requesting JWT token for run ${runId}...`);
+            // Empty body ensures Content-Length is sent (avoids HTTP 411 on some proxies).
             const authResponse = await fetch(`${backendUrl}/auth/run/${runId}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
+                body: '',
             });
             if (!authResponse.ok) {
                 const errorText = await authResponse.text().catch(() => 'Unknown error');
@@ -214480,12 +214582,14 @@ async function markProcessAsFinished(runId) {
             const token = authData.token;
             console.log(`✅ JWT token obtained for run ${runId}`);
             // Call finish endpoint with JWT token
+            // Empty body ensures Content-Length is sent (avoids HTTP 411 on some proxies).
             const response = await fetch(`${backendUrl}/finish/${runId}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`,
                 },
+                body: '',
             });
             if (response.ok) {
                 const result = await response.json();
@@ -214612,15 +214716,15 @@ function cleanupWorkspaceLeftovers(logFile, debugMode) {
     const runnerTempDir = process.env.RUNNER_TEMP;
     const runId = process.env.RUN_ID;
     const defaultLogFile = process.env.BPW_LOG_FILE_DEFAULT !== 'false';
-    const runTempDir = runnerTempDir && runId ? path.join(runnerTempDir, 'build-process-watcher', runId) : '';
-    const candidateDirs = [process.cwd(), workspaceDir, runnerTempDir, runTempDir].filter((dir) => Boolean(dir));
-    const stateFiles = [
-        '.build-process-watcher-backend-url',
-        '.build-process-watcher-frontend-url',
-        '.build-process-watcher-run-id'
-    ];
+    const candidateDirs = (0, action_config_1.resolveActionRuntimeStateCandidateDirs)({
+        cwd: process.cwd(),
+        workspaceDir,
+        runnerTempRoot: runnerTempDir,
+        runId,
+        includeRunnerTempRoot: true,
+    });
     candidateDirs.forEach(dir => {
-        stateFiles.forEach(file => removeIfExists(path.join(dir, file), debugMode));
+        action_config_1.ACTION_RUNTIME_STATE_FILE_NAMES.forEach(file => removeIfExists((0, action_config_1.actionRuntimeStateFilePath)(dir, file), debugMode));
     });
     if (logFile && defaultLogFile) {
         removeIfExists(logFile, debugMode);
@@ -214670,25 +214774,25 @@ async function run() {
         // Mark the process as finished in Firestore if we have a run ID
         // Try multiple ways to get the RUN_ID (in order of preference):
         // 1. From environment variable (exported by main step)
-        // 2. From .build-process-watcher-run-id file (backup written by main step)
+        // 2. From the backup file written by the main step
         // 3. From backend debug log (if it exists and contains run_id)
         // 4. From GitHub run ID (last resort fallback)
         let runId = process.env.RUN_ID;
         // Try to read from file if not in env var
         if (!runId) {
             try {
-                const cwdRunIdFile = path.join(process.cwd(), '.build-process-watcher-run-id');
                 const workspaceDir = process.env.GITHUB_WORKSPACE;
                 const runnerTempDir = process.env.RUNNER_TEMP;
-                const tempRunIdDir = runnerTempDir ? path.join(runnerTempDir, 'build-process-watcher') : '';
-                const workspaceRunIdFile = workspaceDir
-                    ? path.join(workspaceDir, '.build-process-watcher-run-id')
-                    : '';
-                const tempRunIdFiles = tempRunIdDir && fs.existsSync(tempRunIdDir)
-                    ? fs.readdirSync(tempRunIdDir)
-                        .map(entry => path.join(tempRunIdDir, entry, '.build-process-watcher-run-id'))
+                const runtimeTempRoot = runnerTempDir ? (0, action_config_1.getActionRuntimeTempRoot)(runnerTempDir) : '';
+                const tempRunEntries = runtimeTempRoot && fs.existsSync(runtimeTempRoot)
+                    ? fs.readdirSync(runtimeTempRoot)
                     : [];
-                const candidateFiles = [cwdRunIdFile, workspaceRunIdFile, ...tempRunIdFiles].filter(Boolean);
+                const candidateFiles = (0, action_config_1.resolveRunIdBackupCandidateFiles)({
+                    cwd: process.cwd(),
+                    workspaceDir,
+                    runnerTempRoot: runnerTempDir,
+                    runnerTempRunEntries: tempRunEntries,
+                });
                 for (const runIdFile of candidateFiles) {
                     if (fs.existsSync(runIdFile)) {
                         runId = fs.readFileSync(runIdFile, 'utf8').trim();
@@ -214821,7 +214925,7 @@ async function run() {
         if (!path.isAbsolute(logFileName)) {
             const workspaceDir = process.env.GITHUB_WORKSPACE;
             const runnerTempDir = process.env.RUNNER_TEMP;
-            const runTempDir = runnerTempDir && runId ? path.join(runnerTempDir, 'build-process-watcher', runId) : '';
+            const runTempDir = runnerTempDir && runId ? (0, action_config_1.getActionRunTempDir)(runnerTempDir, runId) : '';
             const candidates = [
                 runTempDir ? path.join(runTempDir, logFileName) : '',
                 path.join(actionDir, '..', logFileName),
@@ -214853,10 +214957,14 @@ async function run() {
                 let explicitFrontendUrl = '';
                 const workspaceDir = process.env.GITHUB_WORKSPACE;
                 const runnerTempDir = process.env.RUNNER_TEMP;
-                const runTempDir = runnerTempDir && runId ? path.join(runnerTempDir, 'build-process-watcher', runId) : '';
-                const candidateDirs = [process.cwd(), workspaceDir, runTempDir].filter(Boolean);
+                const candidateDirs = (0, action_config_1.resolveActionRuntimeStateCandidateDirs)({
+                    cwd: process.cwd(),
+                    workspaceDir,
+                    runnerTempRoot: runnerTempDir,
+                    runId,
+                });
                 for (const dir of candidateDirs) {
-                    const frontendFile = path.join(dir, '.build-process-watcher-frontend-url');
+                    const frontendFile = (0, action_config_1.actionRuntimeStateFilePath)(dir, action_config_1.ACTION_RUNTIME_STATE_FILES.frontendUrl);
                     if (fs.existsSync(frontendFile)) {
                         explicitFrontendUrl = fs.readFileSync(frontendFile, 'utf8').trim();
                         break;
@@ -215340,6 +215448,102 @@ flowchart LR
 
 /***/ }),
 
+/***/ 91244:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.parseMonitorLogLine = parseMonitorLogLine;
+exports.parseMonitorLogText = parseMonitorLogText;
+exports.monitorLogCsvGcTime = monitorLogCsvGcTime;
+exports.monitorLogCsvOptionalMetricFields = monitorLogCsvOptionalMetricFields;
+exports.parseOptionalMetric = parseOptionalMetric;
+/**
+ * Parse a single pipe-delimited monitor log line into a normalized row.
+ * Accepts legacy 6/7-column records and extended 14-column JVM metric records.
+ */
+function parseMonitorLogLine(line) {
+    const trimmed = line.trim();
+    if (!trimmed)
+        return null;
+    const parts = trimmed.split('|').map(part => part.trim());
+    if (parts.length !== 6 && parts.length !== 7 && parts.length !== 14) {
+        return null;
+    }
+    const columnCount = parts.length;
+    const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime, ...optionalMetrics] = parts;
+    const [jitCompiled, jitFailed, jitInvalid, jitTime, classesLoaded, classesUnloaded, classTime] = optionalMetrics;
+    return {
+        timestamp,
+        pid,
+        name,
+        heapUsedMb: heapUsed.replace('MB', ''),
+        heapCapMb: heapCap.replace('MB', ''),
+        rssMb: rss.replace('MB', ''),
+        columnCount,
+        gcTimeRaw: columnCount >= 7 ? gcTime : undefined,
+        optionalMetricRaws: columnCount === 14 ? optionalMetrics : [],
+        gcTimeSeconds: columnCount >= 7 ? parseGcTimeSeconds(gcTime) : null,
+        jitCompiledMethods: parseOptionalMetric(jitCompiled),
+        jitFailedCompilations: parseOptionalMetric(jitFailed),
+        jitInvalidatedCompilations: parseOptionalMetric(jitInvalid),
+        jitCompilationTimeSeconds: parseOptionalMetric(jitTime),
+        classesLoaded: parseOptionalMetric(classesLoaded),
+        classesUnloaded: parseOptionalMetric(classesUnloaded),
+        classLoadTimeSeconds: parseOptionalMetric(classTime)
+    };
+}
+/**
+ * Parse raw monitor log text into typed normalized rows.
+ * Skips the two header lines and any malformed data rows.
+ */
+function parseMonitorLogText(logText) {
+    const rows = [];
+    for (const line of logText.split('\n').slice(2)) {
+        const row = parseMonitorLogLine(line);
+        if (row) {
+            rows.push(row);
+        }
+    }
+    return rows;
+}
+function monitorLogCsvGcTime(row, hasGcData) {
+    if (row.columnCount < 7 || !hasGcData)
+        return '';
+    return normalizeCsvGcCell(row.gcTimeRaw);
+}
+function monitorLogCsvOptionalMetricFields(row) {
+    return Array.from({ length: 7 }, (_, index) => normalizeCsvOptionalMetricCell(row.optionalMetricRaws[index]));
+}
+function normalizeCsvGcCell(value) {
+    var _a;
+    return (_a = value === null || value === void 0 ? void 0 : value.replace('s', '').replace('N/A', '')) !== null && _a !== void 0 ? _a : '';
+}
+function normalizeCsvOptionalMetricCell(value) {
+    var _a;
+    return (_a = value === null || value === void 0 ? void 0 : value.replace('N/A', '')) !== null && _a !== void 0 ? _a : '';
+}
+function parseGcTimeSeconds(value) {
+    if (!value)
+        return null;
+    const parsed = parseFloat(value.replace('s', ''));
+    return Number.isNaN(parsed) ? null : parsed;
+}
+/**
+ * Parse optional JVM metric cells (N/A, missing, or non-finite -> null).
+ * Strips a trailing `s` suffix used by some time fields.
+ */
+function parseOptionalMetric(value) {
+    if (!value || value === 'N/A')
+        return null;
+    const parsed = Number(value.replace(/s$/, ''));
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+
+/***/ }),
+
 /***/ 47185:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -215383,6 +215587,7 @@ exports.parseTimestampSeconds = parseTimestampSeconds;
 exports.loadProcessInfoFromFile = loadProcessInfoFromFile;
 exports.generateJsonReport = generateJsonReport;
 const fs = __importStar(__nccwpck_require__(79896));
+const monitor_log_1 = __nccwpck_require__(91244);
 const SAMPLE_FIELDS = [
     'Timestamp', 'ElapsedTime', 'PID', 'Name', 'RSS', 'HeapUsed', 'HeapCap',
     'GCTime', 'GCTimeSeconds', 'JITCompiledMethods', 'JITFailedCompilations',
@@ -215450,57 +215655,38 @@ function loadProcessInfoFromFile(logFile) {
  * Generate JSON report from log file, merging vm_flags from process_info when available.
  */
 function generateJsonReport(logFile, outputFile, hasGcData) {
-    const lines = fs.readFileSync(logFile, 'utf8').split('\n');
-    const dataLines = lines.slice(2).filter(line => line.trim().length > 0);
     const samples = [];
     const processInfoFromFile = loadProcessInfoFromFile(logFile);
     const processInfo = {};
-    dataLines.forEach(line => {
+    (0, monitor_log_1.parseMonitorLogText)(fs.readFileSync(logFile, 'utf8')).forEach(row => {
         var _a;
-        const parts = line.trim().split('|').map(p => p.trim());
-        if (parts.length !== 6 && parts.length !== 7 && parts.length !== 14)
-            return;
-        const [timestamp, pid, name, heapUsed, heapCap, rss, gcTime, jitCompiled, jitFailed, jitInvalid, jitTime, classesLoaded, classesUnloaded, classTime] = parts;
-        const elapsedSeconds = parseTimestampSeconds(timestamp);
-        const rssValue = parseFloat(rss.replace('MB', ''));
-        const heapUsedValue = parseFloat(heapUsed.replace('MB', ''));
-        const heapCapValue = parseFloat(heapCap.replace('MB', ''));
-        const gcSeconds = parts.length >= 7 && hasGcData
-            ? parseFloat(gcTime.replace('s', ''))
-            : NaN;
-        const gcSecondsValue = Number.isNaN(gcSeconds) ? null : gcSeconds;
-        const optionalNumber = (value) => {
-            if (!value || value === 'N/A')
-                return null;
-            const parsed = Number(value.replace(/s$/, ''));
-            return Number.isFinite(parsed) ? parsed : null;
-        };
-        const optionalMillis = (value) => {
-            const seconds = optionalNumber(value);
-            return seconds === null ? null : seconds * 1000;
-        };
+        const elapsedSeconds = parseTimestampSeconds(row.timestamp);
+        const rssValue = parseFloat(row.rssMb);
+        const heapUsedValue = parseFloat(row.heapUsedMb);
+        const heapCapValue = parseFloat(row.heapCapMb);
+        const gcSecondsValue = hasGcData ? row.gcTimeSeconds : null;
         samples.push({
             Timestamp: Math.max(0, elapsedSeconds * 1000),
             ElapsedTime: Math.max(0, elapsedSeconds),
-            PID: pid,
-            Name: name,
+            PID: row.pid,
+            Name: row.name,
             RSS: Number.isNaN(rssValue) ? 0 : rssValue,
             HeapUsed: Number.isNaN(heapUsedValue) ? 0 : heapUsedValue,
             HeapCap: Number.isNaN(heapCapValue) ? 0 : heapCapValue,
             GCTime: gcSecondsValue !== null ? gcSecondsValue * 1000 : null,
             GCTimeSeconds: gcSecondsValue,
-            JITCompiledMethods: optionalNumber(jitCompiled),
-            JITFailedCompilations: optionalNumber(jitFailed),
-            JITInvalidatedCompilations: optionalNumber(jitInvalid),
-            JITCompilationTimeMs: optionalMillis(jitTime),
-            ClassesLoaded: optionalNumber(classesLoaded),
-            ClassesUnloaded: optionalNumber(classesUnloaded),
-            ClassLoadTimeMs: optionalMillis(classTime)
+            JITCompiledMethods: row.jitCompiledMethods,
+            JITFailedCompilations: row.jitFailedCompilations,
+            JITInvalidatedCompilations: row.jitInvalidatedCompilations,
+            JITCompilationTimeMs: row.jitCompilationTimeSeconds !== null ? row.jitCompilationTimeSeconds * 1000 : null,
+            ClassesLoaded: row.classesLoaded,
+            ClassesUnloaded: row.classesUnloaded,
+            ClassLoadTimeMs: row.classLoadTimeSeconds !== null ? row.classLoadTimeSeconds * 1000 : null
         });
-        if (!processInfo[pid]) {
-            const fromFile = processInfoFromFile[pid];
-            processInfo[pid] = {
-                name,
+        if (!processInfo[row.pid]) {
+            const fromFile = processInfoFromFile[row.pid];
+            processInfo[row.pid] = {
+                name: row.name,
                 vm_flags: (_a = fromFile === null || fromFile === void 0 ? void 0 : fromFile.vm_flags) !== null && _a !== void 0 ? _a : []
             };
         }
