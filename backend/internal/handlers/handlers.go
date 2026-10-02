@@ -19,19 +19,32 @@ import (
 
 // Handlers contains all HTTP handlers
 type Handlers struct {
-	storage             *storage.Client
+	storage             Storage
 	export              *exportqueue.Scheduler
 	checkpointEvaluator *prediction.CheckpointEvaluator
 }
 
+// Storage is the persistence port used by the HTTP handlers and checkpoint
+// evaluator. The production implementation is storage.Client.
+type Storage interface {
+	GetRun(runID string) (*models.RunDoc, error)
+	GetProcesses(runID string) (*models.ProcessDoc, error)
+	StoreSamples(runID string, samples []models.Sample) error
+	StoreProcessInfo(runID string, processInfo models.ProcessInfo) error
+	StorePredictionCheckpoint(runID string, checkpoint models.PredictionCheckpoint) error
+	SetRunExportToBigquery(runID string, enabled bool) error
+	SetRunPredictiveReliability(runID string, enabled bool) error
+	MarkRunAsFinished(runID string) (bool, error)
+}
+
 // NewHandlers creates a new handlers instance. export may be nil (no BigQuery jobs).
-func NewHandlers(storageClient *storage.Client, export *exportqueue.Scheduler) *Handlers {
+func NewHandlers(storageClient Storage, export *exportqueue.Scheduler) *Handlers {
 	return NewHandlersWithPredictor(storageClient, export, predictor.NoopProvider{}, nil, nil)
 }
 
 // NewHandlersWithPredictor creates handlers with an optional prediction provider
 // and optional fallback classifier supplied by the composition root.
-func NewHandlersWithPredictor(storageClient *storage.Client, export *exportqueue.Scheduler, predictionProvider predictor.Provider, checkpoints []int, fallbackClassifier predictor.FallbackClassifier) *Handlers {
+func NewHandlersWithPredictor(storageClient Storage, export *exportqueue.Scheduler, predictionProvider predictor.Provider, checkpoints []int, fallbackClassifier predictor.FallbackClassifier) *Handlers {
 	var repo prediction.CheckpointRepository
 	if storageClient != nil {
 		repo = storageClient
