@@ -16,6 +16,88 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
 
+type fakeStorage struct {
+	runs                  map[string]*models.RunDoc
+	processes             map[string]*models.ProcessDoc
+	exportToBigQuery      map[string]bool
+	predictiveReliability map[string]bool
+	storedSamples         []models.Sample
+	storedProcessInfo     []models.ProcessInfo
+	finishedRuns          []string
+}
+
+func newFakeStorage() *fakeStorage {
+	return &fakeStorage{
+		runs:                  make(map[string]*models.RunDoc),
+		processes:             make(map[string]*models.ProcessDoc),
+		exportToBigQuery:      make(map[string]bool),
+		predictiveReliability: make(map[string]bool),
+	}
+}
+
+func (f *fakeStorage) GetRun(runID string) (*models.RunDoc, error) {
+	run, ok := f.runs[runID]
+	if !ok {
+		return nil, fmt.Errorf("run %s not found", runID)
+	}
+	return run, nil
+}
+
+func (f *fakeStorage) GetProcesses(runID string) (*models.ProcessDoc, error) {
+	processes, ok := f.processes[runID]
+	if !ok {
+		return nil, fmt.Errorf("processes for run %s not found", runID)
+	}
+	return processes, nil
+}
+
+func (f *fakeStorage) StoreSamples(runID string, samples []models.Sample) error {
+	f.storedSamples = append(f.storedSamples, samples...)
+	if _, ok := f.runs[runID]; !ok {
+		f.runs[runID] = &models.RunDoc{RunID: runID, StartTime: time.Now()}
+	}
+	f.runs[runID].Samples = append(f.runs[runID].Samples, samples...)
+	return nil
+}
+
+func (f *fakeStorage) StoreProcessInfo(runID string, processInfo models.ProcessInfo) error {
+	f.storedProcessInfo = append(f.storedProcessInfo, processInfo)
+	processes := f.processes[runID]
+	if processes == nil {
+		processes = &models.ProcessDoc{RunID: runID, ProcessInfo: make(map[string]models.ProcessInfo)}
+		f.processes[runID] = processes
+	}
+	processes.ProcessInfo[processInfo.PID] = processInfo
+	return nil
+}
+
+func (f *fakeStorage) StorePredictionCheckpoint(string, models.PredictionCheckpoint) error {
+	return nil
+}
+
+func (f *fakeStorage) SetRunExportToBigquery(runID string, enabled bool) error {
+	f.exportToBigQuery[runID] = enabled
+	return nil
+}
+
+func (f *fakeStorage) SetRunPredictiveReliability(runID string, enabled bool) error {
+	f.predictiveReliability[runID] = enabled
+	return nil
+}
+
+func (f *fakeStorage) MarkRunAsFinished(runID string) (bool, error) {
+	run, ok := f.runs[runID]
+	if !ok {
+		return false, fmt.Errorf("run %s not found", runID)
+	}
+	if run.Finished {
+		return false, nil
+	}
+	run.Finished = true
+	f.finishedRuns = append(f.finishedRuns, runID)
+	return true, nil
+}
+
 func TestMain(m *testing.M) {
 	auth.Initialize()
 	os.Exit(m.Run())
@@ -202,6 +284,74 @@ func TestNewHandlersWithPredictorWiresCheckpointEvaluator(t *testing.T) {
 	}
 	if strings.Contains(message, "customer id") || message == err.Error() {
 		t.Fatal("default fallback classifier leaked private diagnostic text")
+	}
+}
+
+func TestAuthUsesStoragePortForRunOptions(t *testing.T) {
+	store := newFakeStorage()
+	h := NewHandlers(store, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/run/run-auth?export_to_bigquery=true&predictive_reliability=true", nil)
+	recorder := httptest.NewRecorder()
+	h.Auth(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if !store.exportToBigQuery["run-auth"] || !store.predictiveReliability["run-auth"] {
+		t.Fatalf("auth did not persist requested run options: %#v", store)
+	}
+}
+
+func TestIngestUsesStoragePortWithoutFirestore(t *testing.T) {
+	store := newFakeStorage()
+	h := NewHandlers(store, nil)
+	const runID = "run-ingest"
+	token, _, err := auth.GenerateToken(runID)
+	if err != nil {
+		t.Fatalf("GenerateToken failed: %v", err)
+	}
+
+	body := `{"run_id":"run-ingest","data":"00:00:01 | 12345 | GradleDaemon | 100MB | 200MB | 300MB","process_info":{"pid":"12345","name":"GradleDaemon","vm_flags":["-Xmx2g"]}}`
+	req := httptest.NewRequest(http.MethodPost, "/ingest", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	recorder := httptest.NewRecorder()
+	h.Ingest(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s; want %d", recorder.Code, recorder.Body.String(), http.StatusOK)
+	}
+	if len(store.storedSamples) != 1 || len(store.storedProcessInfo) != 1 {
+		t.Fatalf("stored samples/process info = %d/%d, want 1/1", len(store.storedSamples), len(store.storedProcessInfo))
+	}
+}
+
+func TestGetRunUsesStoragePort(t *testing.T) {
+	store := newFakeStorage()
+	store.runs["run-retrieve"] = &models.RunDoc{
+		RunID:    "run-retrieve",
+		Samples:  []models.Sample{{PID: "12345", Name: "GradleDaemon"}},
+		Finished: true,
+	}
+	store.processes["run-retrieve"] = &models.ProcessDoc{
+		RunID: "run-retrieve",
+		ProcessInfo: map[string]models.ProcessInfo{
+			"12345": {PID: "12345", Name: "GradleDaemon", VMFlags: []string{"-Xmx2g"}},
+		},
+	}
+	h := NewHandlers(store, nil)
+	recorder := httptest.NewRecorder()
+	h.GetRun(recorder, httptest.NewRequest(http.MethodGet, "/runs/run-retrieve", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	var response models.RunResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(response.Samples) != 1 || response.ProcessInfo["12345"].VMFlags[0] != "-Xmx2g" {
+		t.Fatalf("unexpected response: %#v", response)
 	}
 }
 
