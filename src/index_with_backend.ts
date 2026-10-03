@@ -1,6 +1,5 @@
 import * as core from '@actions/core';
 import * as exec from '@actions/exec';
-import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -13,9 +12,12 @@ import {
   resolveMonitoringFeatureFlags,
 } from './monitoring_features';
 import {
-  resolveMonitorSpawnInvocation,
   shouldMakeScriptExecutable,
 } from './monitor_spawn';
+import {
+  createMonitoringProcessLaunchPlan,
+  startMonitoringProcess,
+} from './monitoring_process';
 
 async function run() {
   try {
@@ -146,7 +148,7 @@ async function run() {
 
     // Start monitoring
     const monitoringScript = 'monitor_with_backend.sh';
-    
+
     if (debugMode) {
       core.info(`📜 Using monitoring script: ${monitoringScript}`);
     }
@@ -162,15 +164,20 @@ async function run() {
       }
     }
 
-    // Execute the monitoring script
-    const args = enableBackend && backendUrl 
-      ? [interval, backendUrl, runId]  // interval, backend_url, run_id
-      : [interval];
-
-    // Get the action's directory (where the dist folder is located)
     const actionDir = __dirname;
-    // The monitor scripts are in the parent directory of dist/
-    const scriptPath = path.join(actionDir, '..', monitoringScript);
+    const launchPlan = createMonitoringProcessLaunchPlan({
+      actionDir,
+      interval,
+      backendUrl,
+      runId,
+      logFilePath,
+      defaultLogFile,
+      debugMode,
+      exportToBigquery,
+      predictiveReliability,
+      enableBackend,
+    });
+    const scriptPath = launchPlan.scriptPath;
     
     // Check if script exists
     if (!fs.existsSync(scriptPath)) {
@@ -190,11 +197,8 @@ async function run() {
       }
     }
 
-    const { command: spawnCommand, args: spawnArgs } =
-      resolveMonitorSpawnInvocation(scriptPath, args);
-
     if (debugMode) {
-      core.info(`▶️  Executing: ${spawnCommand} ${spawnArgs.join(' ')}`);
+      core.info(`▶️  Executing: ${launchPlan.command} ${launchPlan.args.join(' ')}`);
     }
     
     if (enableBackend && backendUrl) {
@@ -207,48 +211,7 @@ async function run() {
       }
     }
 
-    // Start monitoring process in background
-    const env = {
-      ...process.env,
-      RUN_ID: runId,
-      LOG_FILE: logFilePath,
-      BPW_LOG_FILE_DEFAULT: defaultLogFile.toString(),
-      DEBUG_MODE: debugMode.toString(),
-      REMOTE_MONITORING: (enableBackend && backendUrl) ? 'true' : 'false',
-      EXPORT_TO_BIGQUERY: exportToBigquery ? 'true' : 'false',
-      PREDICTIVE_RELIABILITY: predictiveReliability ? 'true' : 'false',
-      COLLECT_GC: 'true'
-    };
-
-    const child = spawn(spawnCommand, spawnArgs, {
-      cwd: path.join(actionDir, '..'),  // Run in the repository root, not dist/
-      env: env,
-      detached: true,
-      stdio: 'inherit'
-    });
-
-    // Store the PID for cleanup
-    const pid = child.pid;
-    if (debugMode) {
-      core.info(`🔄 Monitoring process started with PID: ${pid}`);
-    }
-    
-    // Add error handling
-    child.on('error', (error) => {
-      core.error(`❌ Failed to start monitoring process: ${error.message}`);
-      core.setFailed(`Monitor script failed to start: ${error.message}`);
-    });
-
-    child.on('exit', (code, signal) => {
-      if (code !== 0) {
-        core.error(`❌ Monitoring process exited with code ${code} and signal ${signal}`);
-      } else {
-        core.info(`✅ Monitoring process completed successfully`);
-      }
-    });
-    
-    // Don't wait for the process to complete - let it run in background
-    child.unref();
+    startMonitoringProcess(launchPlan, debugMode);
 
     if (enableBackend && backendUrl) {
       if (debugMode) {
