@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/cdsap/build-process-watcher/backend/internal/auth"
-	"github.com/cdsap/build-process-watcher/backend/internal/exportqueue"
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
 	"github.com/cdsap/build-process-watcher/backend/internal/prediction"
 	"github.com/cdsap/build-process-watcher/backend/internal/storage"
@@ -20,7 +19,7 @@ import (
 // Handlers contains all HTTP handlers
 type Handlers struct {
 	storage             Storage
-	export              *exportqueue.Scheduler
+	export              Exporter
 	checkpointEvaluator *prediction.CheckpointEvaluator
 }
 
@@ -37,14 +36,20 @@ type Storage interface {
 	MarkRunAsFinished(runID string) (bool, error)
 }
 
+// Exporter is the export scheduling port used by the HTTP handlers. The
+// production implementation is exportqueue.Scheduler.
+type Exporter interface {
+	Run(runID string)
+}
+
 // NewHandlers creates a new handlers instance. export may be nil (no BigQuery jobs).
-func NewHandlers(storageClient Storage, export *exportqueue.Scheduler) *Handlers {
+func NewHandlers(storageClient Storage, export Exporter) *Handlers {
 	return NewHandlersWithPredictor(storageClient, export, predictor.NoopProvider{}, nil, nil)
 }
 
 // NewHandlersWithPredictor creates handlers with an optional prediction provider
 // and optional fallback classifier supplied by the composition root.
-func NewHandlersWithPredictor(storageClient Storage, export *exportqueue.Scheduler, predictionProvider predictor.Provider, checkpoints []int, fallbackClassifier predictor.FallbackClassifier) *Handlers {
+func NewHandlersWithPredictor(storageClient Storage, export Exporter, predictionProvider predictor.Provider, checkpoints []int, fallbackClassifier predictor.FallbackClassifier) *Handlers {
 	var repo prediction.CheckpointRepository
 	if storageClient != nil {
 		repo = storageClient
