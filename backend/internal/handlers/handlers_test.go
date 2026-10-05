@@ -26,6 +26,14 @@ type fakeStorage struct {
 	finishedRuns          []string
 }
 
+type fakeExporter struct {
+	runIDs []string
+}
+
+func (f *fakeExporter) Run(runID string) {
+	f.runIDs = append(f.runIDs, runID)
+}
+
 func newFakeStorage() *fakeStorage {
 	return &fakeStorage{
 		runs:                  make(map[string]*models.RunDoc),
@@ -352,6 +360,30 @@ func TestGetRunUsesStoragePort(t *testing.T) {
 	}
 	if len(response.Samples) != 1 || response.ProcessInfo["12345"].VMFlags[0] != "-Xmx2g" {
 		t.Fatalf("unexpected response: %#v", response)
+	}
+}
+
+func TestFinishRunUsesExportPort(t *testing.T) {
+	store := newFakeStorage()
+	exporter := &fakeExporter{}
+	h := NewHandlers(store, exporter)
+	const runID = "run-finish"
+	store.runs[runID] = &models.RunDoc{RunID: runID}
+	token, _, err := auth.GenerateToken(runID)
+	if err != nil {
+		t.Fatalf("GenerateToken failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/finish/"+runID, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	recorder := httptest.NewRecorder()
+	h.FinishRun(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s; want %d", recorder.Code, recorder.Body.String(), http.StatusOK)
+	}
+	if len(exporter.runIDs) != 1 || exporter.runIDs[0] != runID {
+		t.Fatalf("exporter run IDs = %v, want [%s]", exporter.runIDs, runID)
 	}
 }
 
