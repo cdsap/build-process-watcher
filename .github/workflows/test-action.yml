@@ -137,7 +137,7 @@ jobs:
           exit 1
         fi
         echo "✅ PASS: Script includes GC_Time_S in log header"
-        if ! grep -q "COLLECT_GC: 'true'" src/index_with_backend.ts; then
+        if ! grep -q "COLLECT_GC: 'true'" src/monitoring_process.ts; then
           echo "❌ FAIL: TypeScript should always set COLLECT_GC to true"
           exit 1
         fi
