@@ -14,10 +14,13 @@ import {
     ACTION_RUNTIME_STATE_FILES,
     actionRuntimeStateFilePath,
     getActionRuntimeTempRoot,
-    getActionRunTempDir,
     resolveActionRuntimeStateCandidateDirs,
     resolveRunIdBackupCandidateFiles,
 } from './action_config';
+import {
+    resolveCleanupLogFile,
+    resolveCleanupLogFileCandidates,
+} from './cleanup_config';
 
 const execAsync = promisify(exec);
 
@@ -1023,18 +1026,17 @@ async function run() {
         // Check if we have a log file
         // The monitor script creates files in the action directory, not the project directory
         const logFileName = process.env.LOG_FILE || 'build_process_watcher.log';
-        let logFile = logFileName;
-        if (!path.isAbsolute(logFileName)) {
-            const workspaceDir = process.env.GITHUB_WORKSPACE;
-            const runnerTempDir = process.env.RUNNER_TEMP;
-            const runTempDir = runnerTempDir && runId ? getActionRunTempDir(runnerTempDir, runId) : '';
-            const candidates = [
-                runTempDir ? path.join(runTempDir, logFileName) : '',
-                path.join(actionDir, '..', logFileName),
-                workspaceDir ? path.join(workspaceDir, logFileName) : ''
-            ].filter(Boolean);
-            logFile = candidates.find(candidate => fs.existsSync(candidate)) || candidates[0];
-        }
+        const workspaceDir = process.env.GITHUB_WORKSPACE;
+        const runnerTempDir = process.env.RUNNER_TEMP;
+        const logFileCandidates = resolveCleanupLogFileCandidates({
+            logFileName,
+            actionDir,
+            workspaceDir,
+            runnerTempRoot: runnerTempDir,
+            runId,
+        });
+        const existingLogFileCandidates = logFileCandidates.filter(candidate => fs.existsSync(candidate));
+        const logFile = resolveCleanupLogFile(logFileCandidates, existingLogFileCandidates);
         resolvedLogFile = logFile;
         const backendMode = process.env.ENABLE_BACKEND === 'true';
         
@@ -1158,8 +1160,8 @@ async function run() {
         generateCsvReport(logFile, path.join(outputDir, csvFile), hasGcData);
         generateJsonReport(logFile, path.join(outputDir, jsonFile), hasGcData);
 
-        const workspaceDir = process.env.GITHUB_WORKSPACE;
-        if (workspaceDir && path.resolve(outputDir) !== path.resolve(workspaceDir)) {
+        const workspaceOutputDir = process.env.GITHUB_WORKSPACE;
+        if (workspaceOutputDir && path.resolve(outputDir) !== path.resolve(workspaceOutputDir)) {
             [
                 logFile,
                 logFile.replace(/\.log$/, '.process_info'),
@@ -1169,7 +1171,7 @@ async function run() {
                 path.join(outputDir, classSvgFile),
                 path.join(outputDir, csvFile),
                 path.join(outputDir, jsonFile)
-            ].forEach(file => copyIfExists(file, workspaceDir, debugMode));
+            ].forEach(file => copyIfExists(file, workspaceOutputDir, debugMode));
         }
 
         // Upload artifacts (only if files exist)
