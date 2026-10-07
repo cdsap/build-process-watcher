@@ -26,14 +26,14 @@ const execAsync = promisify(exec);
 
 type ProcessData = MermaidProcessData;
 
-function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, timestamps: string[], hasGcData: boolean, hasJitData: boolean, hasClassData: boolean } {
+export function parseLogContents(contents: string): { processes: Map<string, ProcessData>, timestamps: string[], hasGcData: boolean, hasJitData: boolean, hasClassData: boolean } {
     const processes = new Map<string, ProcessData>();
     const timestamps = new Set<string>();
     let hasGcData = false;
     let hasJitData = false;
     let hasClassData = false;
 
-    parseMonitorLogText(fs.readFileSync(logFile, 'utf8')).forEach(row => {
+    parseMonitorLogText(contents).forEach(row => {
         const rssValue = parseFloat(row.rssMb);
         const heapUsedValue = parseFloat(row.heapUsedMb);
         const heapCapValue = parseFloat(row.heapCapMb);
@@ -85,6 +85,10 @@ function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, t
     const orderedTimestamps = Array.from(timestamps)
         .sort((a, b) => parseTimestampSeconds(a) - parseTimestampSeconds(b));
     return { processes, timestamps: orderedTimestamps, hasGcData, hasJitData, hasClassData };
+}
+
+function parseLogFile(logFile: string): { processes: Map<string, ProcessData>, timestamps: string[], hasGcData: boolean, hasJitData: boolean, hasClassData: boolean } {
+    return parseLogContents(fs.readFileSync(logFile, 'utf8'));
 }
 
 function generateCsvReport(logFile: string, outputFile: string, hasGcData: boolean): void {
@@ -1384,4 +1388,6 @@ ${artifactStatus}`;
     }
 }
 
-run();
+if (require.main === module) {
+    run();
+}
