@@ -8,6 +8,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { parseTimestampSeconds, generateJsonReport } from './lib/report';
 import { generateCombinedMermaidChart, MermaidProcessData } from './lib/mermaid';
 import { artifactSummary, existingArtifactPaths } from './lib/artifacts';
+import { finishRunViaBackend, RunFinisherError } from './lib/run_finisher';
 import { monitorLogCsvGcTime, monitorLogCsvOptionalMetricFields, parseMonitorLogText } from './lib/monitor_log';
 import {
     ACTION_RUNTIME_STATE_FILE_NAMES,
@@ -649,52 +650,25 @@ async function markProcessAsFinished(runId: string): Promise<void> {
         if (backendUrl) {
             // Use backend API to mark as finished
             console.log(`🏁 Marking run ${runId} as finished via backend API...`);
-            
-            // Get JWT token for this run
-            console.log(`🔐 Requesting JWT token for run ${runId}...`);
-            // Empty body ensures Content-Length is sent (avoids HTTP 411 on some proxies).
-            const authResponse = await fetch(`${backendUrl}/auth/run/${runId}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: '',
-            });
-            
-            if (!authResponse.ok) {
-                const errorText = await authResponse.text().catch(() => 'Unknown error');
-                console.error(`❌ Failed to get JWT token: ${authResponse.status} ${authResponse.statusText}`);
-                console.error(`   Error details: ${errorText}`);
-                console.log(`🔄 Falling back to direct Firestore update...`);
-                await markProcessAsFinishedDirect(runId);
-                return;
-            }
-            
-            const authData = await authResponse.json();
-            const token = authData.token;
-            console.log(`✅ JWT token obtained for run ${runId}`);
-            
-            // Call finish endpoint with JWT token
-            // Empty body ensures Content-Length is sent (avoids HTTP 411 on some proxies).
-            const response = await fetch(`${backendUrl}/finish/${runId}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
-                },
-                body: '',
-            });
-            
-            if (response.ok) {
-                const result = await response.json();
+
+            try {
+                console.log(`🔐 Requesting JWT token for run ${runId}...`);
+                const result = await finishRunViaBackend(backendUrl, runId);
+                console.log(`✅ JWT token obtained for run ${runId}`);
                 console.log(`✅ Successfully marked run ${runId} as finished via backend: ${result.message || 'OK'}`);
-            } else {
-                const errorText = await response.text().catch(() => 'Unknown error');
-                console.error(`❌ Backend API failed to mark run as finished: ${response.status} ${response.statusText}`);
-                console.error(`   Error details: ${errorText}`);
-                console.log(`🔄 Falling back to direct Firestore update...`);
-                // Fall back to direct Firestore update
-                await markProcessAsFinishedDirect(runId);
+            } catch (error) {
+                if (error instanceof RunFinisherError) {
+                    if (error.phase === 'auth') {
+                        console.error(`❌ Failed to get JWT token: ${error.status} ${error.statusText}`);
+                    } else {
+                        console.error(`❌ Backend API failed to mark run as finished: ${error.status} ${error.statusText}`);
+                    }
+                    console.error(`   Error details: ${error.errorText}`);
+                    console.log(`🔄 Falling back to direct Firestore update...`);
+                    await markProcessAsFinishedDirect(runId);
+                } else {
+                    throw error;
+                }
             }
         } else {
             console.log(`🏁 Backend URL not available, using direct Firestore update for run ${runId}...`);
