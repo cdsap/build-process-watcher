@@ -10,7 +10,6 @@ import (
 
 	"cloud.google.com/go/firestore"
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
-	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 	"google.golang.org/api/iterator"
 )
 
@@ -180,7 +179,7 @@ func (c *Client) StorePredictionCheckpoint(runID string, checkpoint models.Predi
 	now := time.Now()
 	_, err = doc.Set(c.ctx, map[string]interface{}{
 		"run_id":                 runID,
-		"prediction_checkpoints": predictor.MergePredictionCheckpoint(existing, checkpoint),
+		"prediction_checkpoints": models.MergePredictionCheckpoint(existing, checkpoint),
 		"updated_at":             now,
 		"updated_at_timestamp":   ToMillis(now),
 	}, firestore.MergeAll)

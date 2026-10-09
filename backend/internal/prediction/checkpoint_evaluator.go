@@ -98,6 +98,6 @@ func (e *CheckpointEvaluator) Evaluate(ctx context.Context, runID string) {
 			log.Printf("Prediction checkpoint store failed for run %s checkpoint %ds: %v", runID, checkpointWindow, err)
 			continue
 		}
-		runDoc.PredictionCheckpoints = predictor.MergePredictionCheckpoint(runDoc.PredictionCheckpoints, checkpoint)
+		runDoc.PredictionCheckpoints = models.MergePredictionCheckpoint(runDoc.PredictionCheckpoints, checkpoint)
 	}
 }
