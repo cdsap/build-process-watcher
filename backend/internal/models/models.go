@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"sort"
+	"time"
+)
 
 // Sample represents a single monitoring sample
 type Sample struct {
@@ -74,6 +77,27 @@ type PredictionCheckpoint struct {
 	ModelVersion       string    `json:"model_version,omitempty" firestore:"model_version,omitempty"`
 	CreatedAt          time.Time `json:"created_at" firestore:"created_at"`
 	Message            string    `json:"message,omitempty" firestore:"message,omitempty"`
+}
+
+// MergePredictionCheckpoint returns checkpoints sorted by window with one record per window.
+func MergePredictionCheckpoint(existing []PredictionCheckpoint, checkpoint PredictionCheckpoint) []PredictionCheckpoint {
+	merged := make([]PredictionCheckpoint, 0, len(existing)+1)
+	replaced := false
+	for _, item := range existing {
+		if item.ObservationWindowS == checkpoint.ObservationWindowS {
+			merged = append(merged, checkpoint)
+			replaced = true
+			continue
+		}
+		merged = append(merged, item)
+	}
+	if !replaced {
+		merged = append(merged, checkpoint)
+	}
+	sort.SliceStable(merged, func(i, j int) bool {
+		return merged[i].ObservationWindowS < merged[j].ObservationWindowS
+	})
+	return merged
 }
 
 // RunResponse is the API response for a run

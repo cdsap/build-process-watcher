@@ -138,25 +138,10 @@ func PendingCheckpoints(samples []Sample, existing []PredictionCheckpoint, confi
 	return pending
 }
 
-// MergePredictionCheckpoint returns checkpoints sorted by window with one record per window.
+// MergePredictionCheckpoint forwards to the prediction model invariant.
+// Deprecated: use models.MergePredictionCheckpoint.
 func MergePredictionCheckpoint(existing []PredictionCheckpoint, checkpoint PredictionCheckpoint) []PredictionCheckpoint {
-	merged := make([]PredictionCheckpoint, 0, len(existing)+1)
-	replaced := false
-	for _, item := range existing {
-		if item.ObservationWindowS == checkpoint.ObservationWindowS {
-			merged = append(merged, checkpoint)
-			replaced = true
-			continue
-		}
-		merged = append(merged, item)
-	}
-	if !replaced {
-		merged = append(merged, checkpoint)
-	}
-	sort.SliceStable(merged, func(i, j int) bool {
-		return merged[i].ObservationWindowS < merged[j].ObservationWindowS
-	})
-	return merged
+	return models.MergePredictionCheckpoint(existing, checkpoint)
 }
 
 // ParseCheckpoints parses a comma-separated checkpoint list.
