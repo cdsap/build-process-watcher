@@ -17,17 +17,17 @@ describe('empty auth POST Content-Length contract', () => {
   });
 
   it('sends an empty body on cleanup auth and finish fetch calls', () => {
-    const cleanup = fs.readFileSync(path.join(__dirname, '../src/cleanup.ts'), 'utf8');
+    const finisher = fs.readFileSync(path.join(__dirname, '../src/lib/run_finisher.ts'), 'utf8');
 
-    const authFetch = cleanup.match(
-      /fetch\(`\$\{backendUrl\}\/auth\/run\/\$\{runId\}`,\s*\{[\s\S]*?\}\)/
+    const authFetch = finisher.match(
+      /fetchImpl\(`\$\{backendUrl\}\/auth\/run\/\$\{runId\}`,\s*\{[\s\S]*?\}\)/
     );
     expect(authFetch).not.toBeNull();
     expect(authFetch![0]).toMatch(/method:\s*'POST'/);
     expect(authFetch![0]).toMatch(/body:\s*''/);
 
-    const finishFetch = cleanup.match(
-      /fetch\(`\$\{backendUrl\}\/finish\/\$\{runId\}`,\s*\{[\s\S]*?\}\)/
+    const finishFetch = finisher.match(
+      /fetchImpl\(`\$\{backendUrl\}\/finish\/\$\{runId\}`,\s*\{[\s\S]*?\}\)/
     );
     expect(finishFetch).not.toBeNull();
     expect(finishFetch![0]).toMatch(/method:\s*'POST'/);
