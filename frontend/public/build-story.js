@@ -508,8 +508,8 @@
                 const phase = state.phases.find((candidate) => candidate.id === button.getAttribute('data-bpw-phase'));
                 if (!phase) return;
                 global.BpwExperimentLayout?.pauseUnifiedReplay?.();
-                selectPhase(phase.id);
                 global.BpwExperimentLayout?.selectUnifiedFrame?.(phase.start);
+                selectPhase(phase.id);
             });
         });
     }
