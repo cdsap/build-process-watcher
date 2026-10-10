@@ -6,6 +6,44 @@ import {
   generateJsonReport,
   parseTimestampSeconds,
 } from '../src/lib/report';
+import { parseLogSample, parseLogSamples } from '../src/lib/log_samples';
+
+describe('log sample parser', () => {
+  it.each([6, 7, 14])('accepts %s-column records', columnCount => {
+    const suffix = columnCount === 6
+      ? ''
+      : columnCount === 7
+        ? ' | 0.123s'
+        : ' | 0.123s | 42 | 1 | 2 | 0.456 | 900 | 12 | 0.789';
+    const sample = parseLogSample(`00:00:05 | 1 | Proc | 10MB | 100MB | 50MB${suffix}`);
+
+    expect(sample?.columnCount).toBe(columnCount);
+    expect(sample?.heapUsedMb).toBe(10);
+    expect(sample?.heapCapMb).toBe(100);
+    expect(sample?.rssMb).toBe(50);
+  });
+
+  it('normalizes numeric and unavailable optional metrics', () => {
+    const sample = parseLogSample(
+      '00:00:05 | 1 | Proc | 10MB | 100MB | 50MB | N/A | N/A | bad | N/A | N/A | 0 | N/A | broken'
+    );
+
+    expect(sample).toMatchObject({
+      gcTimeSeconds: null,
+      jitCompiledMethods: null,
+      jitFailedCompilations: null,
+      jitInvalidatedCompilations: null,
+      jitCompilationTimeSeconds: null,
+      classesLoaded: 0,
+      classesUnloaded: null,
+      classLoadTimeSeconds: null,
+    });
+  });
+
+  it('skips malformed records while parsing log text', () => {
+    expect(parseLogSamples('header\n\nnot-a-row\n1 | 2 | 3')).toEqual([]);
+  });
+});
 
 describe('parseTimestampSeconds', () => {
   it('parses HH:MM:SS format', () => {
