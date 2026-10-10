@@ -9,7 +9,7 @@ import { parseTimestampSeconds, generateJsonReport } from './lib/report';
 import { generateCombinedMermaidChart, MermaidProcessData } from './lib/mermaid';
 import { artifactSummary, existingArtifactPaths } from './lib/artifacts';
 import { finishRunViaBackend, RunFinisherError } from './lib/run_finisher';
-import { monitorLogCsvGcTime, monitorLogCsvOptionalMetricFields, parseMonitorLogText } from './lib/monitor_log';
+import { parseLogSamples } from './lib/log_samples';
 import {
     ACTION_RUNTIME_STATE_FILE_NAMES,
     ACTION_RUNTIME_STATE_FILES,
@@ -34,10 +34,7 @@ export function parseLogContents(contents: string): { processes: Map<string, Pro
     let hasJitData = false;
     let hasClassData = false;
 
-    parseMonitorLogText(contents).forEach(row => {
-        const rssValue = parseFloat(row.rssMb);
-        const heapUsedValue = parseFloat(row.heapUsedMb);
-        const heapCapValue = parseFloat(row.heapCapMb);
+    parseLogSamples(contents).forEach(row => {
         const processKey = `${row.pid}-${row.name}`;
 
         if (!processes.has(processKey)) {
@@ -57,10 +54,10 @@ export function parseLogContents(contents: string): { processes: Map<string, Pro
 
         const processData = processes.get(processKey)!;
         processData.timestamps.push(row.timestamp);
-        processData.rss.push(rssValue);
+        processData.rss.push(row.rssMb);
         timestamps.add(row.timestamp);
-        processData.heapUsed.push(heapUsedValue);
-        processData.heapCap.push(heapCapValue);
+        processData.heapUsed.push(row.heapUsedMb);
+        processData.heapCap.push(row.heapCapMb);
 
         processData.jitCompiledMethods.push(row.jitCompiledMethods);
         processData.jitFailedCompilations.push(row.jitFailedCompilations);
@@ -96,17 +93,20 @@ function generateCsvReport(logFile: string, outputFile: string, hasGcData: boole
     const header = ['elapsed_time', 'pid', 'name', 'heap_used_mb', 'heap_capacity_mb', 'rss_mb', 'gc_time_s', 'jit_compiled_methods', 'jit_failed_compilations', 'jit_invalidated_compilations', 'jit_compilation_time_s', 'classes_loaded', 'classes_unloaded', 'class_load_time_s'];
     const rows = [header.join(',')];
 
-    parseMonitorLogText(fs.readFileSync(logFile, 'utf8')).forEach(row => {
+    parseLogSamples(fs.readFileSync(logFile, 'utf8')).forEach(row => {
         const baseRow = [
             row.timestamp,
             row.pid,
             row.name,
-            row.heapUsedMb,
-            row.heapCapMb,
-            row.rssMb
+            row.raw.heapUsedMb,
+            row.raw.heapCapMb,
+            row.raw.rssMb
         ];
-        baseRow.push(monitorLogCsvGcTime(row, hasGcData));
-        baseRow.push(...monitorLogCsvOptionalMetricFields(row));
+        baseRow.push(row.columnCount < 7 || !hasGcData
+            ? ''
+            : (row.raw.gcTime ?? '').replace('s', '').replace('N/A', ''));
+        baseRow.push(...Array.from({ length: 7 }, (_, index) =>
+            (row.raw.optionalMetrics[index] ?? '').replace('N/A', '')));
         rows.push(baseRow.join(','));
     });
 

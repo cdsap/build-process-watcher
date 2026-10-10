@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { parseMonitorLogText } from './monitor_log';
+import { parseLogSamples } from './log_samples';
 
 const SAMPLE_FIELDS = [
     'Timestamp', 'ElapsedTime', 'PID', 'Name', 'RSS', 'HeapUsed', 'HeapCap',
@@ -85,11 +85,8 @@ export function generateJsonReport(logFile: string, outputFile: string, hasGcDat
     const processInfoFromFile = loadProcessInfoFromFile(logFile);
     const processInfo: Record<string, { name: string; vm_flags: string[] }> = {};
 
-    parseMonitorLogText(fs.readFileSync(logFile, 'utf8')).forEach(row => {
+    parseLogSamples(fs.readFileSync(logFile, 'utf8')).forEach(row => {
         const elapsedSeconds = parseTimestampSeconds(row.timestamp);
-        const rssValue = parseFloat(row.rssMb);
-        const heapUsedValue = parseFloat(row.heapUsedMb);
-        const heapCapValue = parseFloat(row.heapCapMb);
         const gcSecondsValue = hasGcData ? row.gcTimeSeconds : null;
 
         samples.push({
@@ -97,9 +94,9 @@ export function generateJsonReport(logFile: string, outputFile: string, hasGcDat
             ElapsedTime: Math.max(0, elapsedSeconds),
             PID: row.pid,
             Name: row.name,
-            RSS: Number.isNaN(rssValue) ? 0 : rssValue,
-            HeapUsed: Number.isNaN(heapUsedValue) ? 0 : heapUsedValue,
-            HeapCap: Number.isNaN(heapCapValue) ? 0 : heapCapValue,
+            RSS: Number.isNaN(row.rssMb) ? 0 : row.rssMb,
+            HeapUsed: Number.isNaN(row.heapUsedMb) ? 0 : row.heapUsedMb,
+            HeapCap: Number.isNaN(row.heapCapMb) ? 0 : row.heapCapMb,
             GCTime: gcSecondsValue !== null ? gcSecondsValue * 1000 : null,
             GCTimeSeconds: gcSecondsValue,
             JITCompiledMethods: row.jitCompiledMethods,
