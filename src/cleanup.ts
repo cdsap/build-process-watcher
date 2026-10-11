@@ -10,6 +10,7 @@ import { generateCombinedMermaidChart, MermaidProcessData } from './lib/mermaid'
 import { artifactSummary, existingArtifactPaths } from './lib/artifacts';
 import { finishRunViaBackend, RunFinisherError } from './lib/run_finisher';
 import { parseLogSamples } from './lib/log_samples';
+import { resolveRunIdentity } from './lib/run_identity';
 import {
     ACTION_RUNTIME_STATE_FILE_NAMES,
     ACTION_RUNTIME_STATE_FILES,
@@ -847,71 +848,32 @@ async function run() {
             }
         }
 
-        // Mark the process as finished in Firestore if we have a run ID
-        // Try multiple ways to get the RUN_ID (in order of preference):
-        // 1. From environment variable (exported by main step)
-        // 2. From the backup file written by the main step
-        // 3. From backend debug log (if it exists and contains run_id)
-        // 4. From GitHub run ID (last resort fallback)
-        let runId = process.env.RUN_ID;
-        
-        // Try to read from file if not in env var
-        if (!runId) {
-            try {
-                const workspaceDir = process.env.GITHUB_WORKSPACE;
-                const runnerTempDir = process.env.RUNNER_TEMP;
-                const runtimeTempRoot = runnerTempDir ? getActionRuntimeTempRoot(runnerTempDir) : '';
-                const tempRunEntries = runtimeTempRoot && fs.existsSync(runtimeTempRoot)
-                    ? fs.readdirSync(runtimeTempRoot)
-                    : [];
-                const candidateFiles = resolveRunIdBackupCandidateFiles({
-                    cwd: process.cwd(),
-                    workspaceDir,
-                    runnerTempRoot: runnerTempDir,
-                    runnerTempRunEntries: tempRunEntries,
-                });
+        // Mark the process as finished in Firestore if we have a run ID.
+        const identityWorkspaceDir = process.env.GITHUB_WORKSPACE;
+        const identityRunnerTempDir = process.env.RUNNER_TEMP;
+        const runtimeTempRoot = identityRunnerTempDir ? getActionRuntimeTempRoot(identityRunnerTempDir) : '';
+        const tempRunEntries = runtimeTempRoot && fs.existsSync(runtimeTempRoot)
+            ? fs.readdirSync(runtimeTempRoot)
+            : [];
+        const runIdentity = resolveRunIdentity({
+            environmentRunId: process.env.RUN_ID,
+            backupFiles: resolveRunIdBackupCandidateFiles({
+                cwd: process.cwd(),
+                workspaceDir: identityWorkspaceDir,
+                runnerTempRoot: identityRunnerTempDir,
+                runnerTempRunEntries: tempRunEntries,
+            }),
+            debugLogFile: path.join(process.env.GITHUB_ACTION_PATH || __dirname, '..', 'backend_debug.log'),
+            githubRunId: process.env.GITHUB_RUN_ID,
+        });
+        const runId = runIdentity.runId;
 
-                for (const runIdFile of candidateFiles) {
-                    if (fs.existsSync(runIdFile)) {
-                        runId = fs.readFileSync(runIdFile, 'utf8').trim();
-                        console.log(`📋 Read RUN_ID from file: ${runId}`);
-                        break;
-                    }
-                }
-            } catch (error) {
-                // Ignore errors when reading file
-            }
-        }
-        
-        // Try to extract RUN_ID from backend debug log if still not found
-        if (!runId) {
-            const actionDir = process.env.GITHUB_ACTION_PATH || __dirname;
-            const backendDebugLog = path.join(actionDir, '..', 'backend_debug.log');
-            if (fs.existsSync(backendDebugLog)) {
-                try {
-                    const logContent = fs.readFileSync(backendDebugLog, 'utf8');
-                    // Look for "Run ID: run-xxxxx" pattern in the log
-                    const runIdMatch = logContent.match(/Run ID:\s*(run-\d+)/i) || 
-                                     logContent.match(/run_id[":\s]+(run-\d+)/i) ||
-                                     logContent.match(/Run ID:\s*(build-\d+)/i);
-                    if (runIdMatch && runIdMatch[1]) {
-                        runId = runIdMatch[1];
-                        console.log(`📋 Extracted RUN_ID from log file: ${runId}`);
-                    }
-                } catch (error) {
-                    // Ignore errors when reading log file
-                }
-            }
-        }
-        
-        // Last resort: use GitHub run ID (but only if it looks like our format)
-        if (!runId && process.env.GITHUB_RUN_ID) {
-            // Only use GITHUB_RUN_ID if it matches our pattern (run-xxx or build-xxx)
-            const githubRunId = process.env.GITHUB_RUN_ID;
-            if (githubRunId.match(/^(run-|build-)\d+$/)) {
-                runId = githubRunId;
-                console.log(`📋 Using GITHUB_RUN_ID as fallback: ${runId}`);
-            }
+        if (runId && runIdentity.source === 'backup-file') {
+            console.log(`📋 Read RUN_ID from file: ${runId}`);
+        } else if (runId && runIdentity.source === 'debug-log') {
+            console.log(`📋 Extracted RUN_ID from log file: ${runId}`);
+        } else if (runId && runIdentity.source === 'github-run') {
+            console.log(`📋 Using GITHUB_RUN_ID as fallback: ${runId}`);
         }
         
         // Only mark as finished for remote monitoring runs
