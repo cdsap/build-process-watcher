@@ -1,4 +1,4 @@
-import { parseLogContents } from '../src/cleanup';
+import { parseLogContents } from '../src/lib/log_parser';
 
 const headers = 'Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB\n\n';
 
