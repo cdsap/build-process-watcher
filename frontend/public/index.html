@@ -245,6 +245,63 @@
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
         }
 
+        .news-grid,
+        .option-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 1rem;
+            margin-top: 1.8rem;
+        }
+
+        .news-card,
+        .option-card {
+            padding: 1.15rem;
+            border: 1px solid rgba(22, 26, 29, 0.09);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.92);
+            box-shadow: var(--bpw-shadow);
+        }
+
+        .news-card h3,
+        .option-card h3 {
+            color: var(--bpw-ink);
+            font-size: 1.1rem;
+            font-weight: 800;
+        }
+
+        .news-card p,
+        .option-card p {
+            margin-top: 0.45rem;
+            color: var(--bpw-muted);
+            font-size: 0.94rem;
+        }
+
+        .news-card a,
+        .option-card a {
+            display: inline-block;
+            margin-top: 0.85rem;
+            color: var(--bpw-teal);
+            font-weight: 800;
+            text-decoration: none;
+        }
+
+        .option-card strong {
+            color: var(--bpw-ink);
+        }
+
+        .callout {
+            margin-top: 1.2rem;
+            padding: 1rem 1.15rem;
+            border-left: 4px solid var(--bpw-gold);
+            border-radius: 0 8px 8px 0;
+            background: #fff9e8;
+            color: var(--bpw-ink);
+        }
+
+        .callout strong {
+            color: var(--bpw-gold);
+        }
+
         .feature-grid {
             grid-template-columns: repeat(4, minmax(0, 1fr));
         }
@@ -415,6 +472,8 @@
 
             .home-hero-content,
             .snippet-grid,
+            .news-grid,
+            .option-grid,
             .media-grid,
             .home-cta {
                 grid-template-columns: 1fr;
@@ -464,7 +523,7 @@
                 <div>
                     <span class="version-pill">Action snippets updated for v0.7.0</span>
                     <h1>Build Process Watcher</h1>
-                    <p>Capture Gradle, Kotlin, and JVM memory pressure while CI is running, then replay or compare the build with enough context to explain what changed.</p>
+                    <p>Capture Gradle, Kotlin, and JVM build-process metrics in Local Mode, watch a Remote Mode run live, then replay or compare the exported data when you need to explain what changed.</p>
                     <div class="hero-actions">
                         <a href="#" id="hero-demo-link" class="btn">Open Demo Dashboard</a>
                         <a href="https://github.com/cdsap/build-process-watcher" class="btn secondary">View Repository</a>
@@ -482,15 +541,38 @@
             </div>
         </section>
 
+        <section class="home-section" id="whats-new">
+            <div class="section-kicker">What is new</div>
+            <h2 class="section-heading">More context at the end of every build.</h2>
+            <p class="section-copy">The current release makes the monitoring choices explicit while keeping the JSON and dashboard workflows compatible with older runs.</p>
+            <div class="news-grid">
+                <article class="news-card">
+                    <h3>Richer run dashboards</h3>
+                    <p>Remote runs show memory, heap, GC, JIT, class-loading, process metadata, and VM flags when the JVM exposes them. Hosted reports are retained for 24 hours.</p>
+                    <a href="#quick-start">See the mode options →</a>
+                </article>
+                <article class="news-card">
+                    <h3>Replay and Compare</h3>
+                    <p>Local JSON artifacts can be opened offline in Replay or lined up against another build in Compare. Remote Mode is not required for either workflow.</p>
+                    <a href="#analysis-tools">Explore the analysis tools →</a>
+                </article>
+                <article class="news-card">
+                    <h3>Experimental prediction</h3>
+                    <p>Opt-in predictive reliability checkpoints are available as advisory signals for triage. They are disabled by default and may change while experimental.</p>
+                    <a href="#prediction">Read the safeguards →</a>
+                </article>
+            </div>
+        </section>
+
         <section class="home-section" id="quick-start">
-            <div class="section-kicker">Quick Start</div>
-            <h2 class="section-heading">Two modes, one action.</h2>
-            <p class="section-copy">Use local mode for artifacts only, remote mode for the hosted dashboard, or optionally export metrics to BigQuery. Every snippet is pinned to `v0.7.0`.</p>
+            <div class="section-kicker">Collection modes</div>
+            <h2 class="section-heading">Choose where a run should live.</h2>
+            <p class="section-copy">Every snippet uses the same action. Local Mode keeps outputs in GitHub Actions artifacts; Remote Mode adds the live hosted dashboard. Every snippet is pinned to <code>v0.7.0</code>.</p>
 
             <div class="snippet-grid">
                 <article class="snippet-card">
-                    <h3>Local artifacts</h3>
-                    <p>Generates logs, JSON, SVG charts, and the Actions summary inside the workflow.</p>
+                    <h3>Local Mode · artifacts only</h3>
+                    <p>Generates logs, JSON, CSV, SVG charts, and the Actions summary in the workflow. Download the JSON later for Replay or Compare; nothing is sent to the hosted dashboard.</p>
                     <pre><code>- name: Build Process Watcher
   uses: cdsap/build-process-watcher@v0.7.0
 
@@ -499,8 +581,8 @@
                 </article>
 
                 <article class="snippet-card">
-                    <h3>Remote dashboard</h3>
-                    <p>Streams samples to the hosted dashboard and keeps reports available for 24 hours.</p>
+                    <h3>Remote Mode · live dashboard</h3>
+                    <p>Streams samples to the hosted dashboard, prints a dashboard URL, and retains the hosted report for 24 hours. The action can still produce local artifacts when available.</p>
                     <pre><code>- name: Build Process Watcher
   uses: cdsap/build-process-watcher@v0.7.0
   with:
@@ -511,8 +593,8 @@
                 </article>
 
                 <article class="snippet-card">
-                    <h3>Optional BigQuery metrics</h3>
-                    <p>Not required for monitoring. Enable only when you want finished-run metrics collected in BigQuery.</p>
+                    <h3>BigQuery export · optional</h3>
+                    <p>Not another monitoring mode. It is an independent export choice that requires Remote Mode and asks the backend to store finished-run metrics in your configured dataset.</p>
                     <pre><code>- name: Build Process Watcher
   uses: cdsap/build-process-watcher@v0.7.0
   with:
@@ -523,6 +605,29 @@
   run: ./gradlew clean build</code></pre>
                 </article>
             </div>
+        </section>
+
+        <section class="home-section" id="analysis-tools">
+            <div class="section-kicker">Analysis tools</div>
+            <h2 class="section-heading">The action inputs work together in predictable ways.</h2>
+            <div class="option-grid">
+                <article class="option-card">
+                    <h3>Replay</h3>
+                    <p><strong>Input:</strong> one exported <code>build_process_watcher.json</code>. <strong>Needs:</strong> no Remote Mode. Scrub metrics offline in the browser.</p>
+                    <a href="#" id="analysis-replay-link">Open Replay →</a>
+                </article>
+                <article class="option-card">
+                    <h3>Compare</h3>
+                    <p><strong>Input:</strong> two exported JSON files. <strong>Needs:</strong> no Remote Mode. Compare processes and timelines side by side.</p>
+                    <a href="#" id="analysis-compare-link">Open Compare →</a>
+                </article>
+                <article class="option-card" id="prediction">
+                    <h3>Prediction <span class="version-pill" style="margin: 0; color: var(--bpw-gold); border-color: rgba(184, 132, 20, 0.28); background: #fff9e8;">Experimental</span></h3>
+                    <p><strong>Input:</strong> <code>predictive_reliability: 'true'</code>. Opt in to advisory predictive reliability checkpoints; this implies Remote Mode and requests BigQuery export. It is disabled by default.</p>
+                    <a href="https://github.com/cdsap/build-process-watcher#inputs">Read the public contract →</a>
+                </article>
+            </div>
+            <div class="callout"><strong>Experimental prediction:</strong> prediction is an opt-in advisory signal for triage, not a guaranteed OOM, timeout, or build-failure outcome. Availability and behavior may change while experimental. Do not use it as a production decision or reliability guarantee, and do not infer private model details from the public dashboard.</div>
         </section>
 
         <section class="home-section">
@@ -581,7 +686,7 @@
         <section class="home-section">
             <div class="section-kicker">Inputs</div>
             <h2 class="section-heading">Configuration that matters most.</h2>
-            <p class="section-copy">See the repository README for the full contract and backend deployment details.</p>
+            <p class="section-copy">These inputs are independent unless noted. See the <a href="https://github.com/cdsap/build-process-watcher#inputs">README input contract</a> for backend deployment details.</p>
             <div class="table-card" tabindex="0" aria-label="Configuration inputs; scroll horizontally to view all columns">
                 <table class="input-table">
                     <thead>
@@ -601,13 +706,13 @@
                         </tr>
                         <tr>
                             <td><code>export_to_bigquery</code></td>
-                            <td>Optional metrics export to BigQuery for finished remote runs.</td>
+                            <td>Optional finished-run metrics export; requires <code>remote_monitoring: 'true'</code>.</td>
                             <td><code>false</code></td>
                             <td>No</td>
                         </tr>
                         <tr>
                             <td><code>predictive_reliability</code></td>
-                            <td>Opt in to advisory predictive reliability checkpoints for remote runs.</td>
+                            <td>Experimental, opt-in advisory signals; implies Remote Mode and requests BigQuery export.</td>
                             <td><code>false</code></td>
                             <td>No</td>
                         </tr>
@@ -653,8 +758,8 @@
                 });
             };
             setHref('#nav-demo-link, #hero-demo-link, #demo-link', '/runs/demo.html');
-            setHref('#nav-replay-link, #replay-link', '/replay.html');
-            setHref('#nav-compare-link, #compare-link', '/compare.html');
+            setHref('#nav-replay-link, #replay-link, #analysis-replay-link', '/replay.html');
+            setHref('#nav-compare-link, #compare-link, #analysis-compare-link', '/compare.html');
         });
 
         if (window.location.pathname.startsWith('/runs/')) {
