@@ -1,12 +1,20 @@
 import * as path from 'path';
 
-export function resolveCleanupLogFileCandidates(inputs: {
+export interface CleanupLogFileResolutionInputs {
     logFileName: string;
     actionDir: string;
     workspaceDir?: string;
     runnerTempRoot?: string;
     runId?: string;
-}): string[] {
+    exists: (filePath: string) => boolean;
+}
+
+export function resolveCleanupLogFile(inputs: CleanupLogFileResolutionInputs): string {
+    const candidates = resolveCleanupLogFileCandidates(inputs);
+    return candidates.find(candidate => inputs.exists(candidate)) || candidates[0];
+}
+
+function resolveCleanupLogFileCandidates(inputs: CleanupLogFileResolutionInputs): string[] {
     if (path.isAbsolute(inputs.logFileName)) {
         return [inputs.logFileName];
     }
@@ -20,11 +28,4 @@ export function resolveCleanupLogFileCandidates(inputs: {
         path.join(inputs.actionDir, '..', inputs.logFileName),
         inputs.workspaceDir ? path.join(inputs.workspaceDir, inputs.logFileName) : '',
     ].filter((candidate): candidate is string => Boolean(candidate));
-}
-
-export function resolveCleanupLogFile(
-    candidates: string[],
-    existingCandidates: string[],
-): string {
-    return candidates.find(candidate => existingCandidates.includes(candidate)) || candidates[0];
 }

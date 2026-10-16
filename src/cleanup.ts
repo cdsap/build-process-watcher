@@ -21,10 +21,7 @@ import {
     resolveActionRuntimeStateCandidateDirs,
     resolveRunIdBackupCandidateFiles,
 } from './action_config';
-import {
-    resolveCleanupLogFile,
-    resolveCleanupLogFileCandidates,
-} from './cleanup_config';
+import { resolveCleanupLogFile } from './cleanup_context';
 
 const execAsync = promisify(exec);
 
@@ -912,15 +909,14 @@ async function run() {
         const logFileName = process.env.LOG_FILE || 'build_process_watcher.log';
         const workspaceDir = process.env.GITHUB_WORKSPACE;
         const runnerTempDir = process.env.RUNNER_TEMP;
-        const logFileCandidates = resolveCleanupLogFileCandidates({
+        const logFile = resolveCleanupLogFile({
             logFileName,
             actionDir,
             workspaceDir,
             runnerTempRoot: runnerTempDir,
             runId,
+            exists: filePath => fs.existsSync(filePath),
         });
-        const existingLogFileCandidates = logFileCandidates.filter(candidate => fs.existsSync(candidate));
-        const logFile = resolveCleanupLogFile(logFileCandidates, existingLogFileCandidates);
         resolvedLogFile = logFile;
         const backendMode = process.env.ENABLE_BACKEND === 'true';
         
