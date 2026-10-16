@@ -1265,7 +1265,7 @@
                     </select>
                 </label>
             </div>
-            <div class="replay-controls" id="compare-replay-controls">
+            <div class="replay-controls compare-replay-controls" id="compare-replay-controls">
                 <div class="buttons">
                     <button class="btn" id="btn-compare-replay-play">Play</button>
                     <button class="btn secondary" id="btn-compare-replay-pause">Pause</button>
