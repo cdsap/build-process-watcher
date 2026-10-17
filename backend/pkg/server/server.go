@@ -34,35 +34,68 @@ type Options struct {
 	FallbackClassifier predictor.FallbackClassifier
 }
 
+type serverConfig struct {
+	projectID                 string
+	port                      string
+	bigQueryDataset           string
+	bigQueryTable             string
+	bigQueryProcessesTable    string
+	predictionProviderEnabled bool
+	predictionProviderURL     string
+	predictionProviderAuth    string
+	predictionProviderTime    time.Duration
+	predictionCheckpoints     string
+}
+
 // OptionsFromEnv reads public backend configuration from environment variables.
 func OptionsFromEnv() Options {
-	predictionProvider := predictor.Provider(predictor.NoopProvider{})
-	if predictionProviderEnabled(os.Getenv("PREDICTIVE_PROVIDER_ENABLED")) {
-		if remoteProvider, err := predictor.NewRemoteProvider(predictor.RemoteConfig{
-			URL:          os.Getenv("PREDICTIVE_PROVIDER_URL"),
-			Timeout:      parseRemoteProviderTimeout(os.Getenv("PREDICTIVE_PROVIDER_TIMEOUT_MS")),
-			AuthAudience: os.Getenv("PREDICTIVE_PROVIDER_AUTH_AUDIENCE"),
-		}); err == nil {
-			predictionProvider = remoteProvider
-		} else {
-			log.Printf("🔮 Remote predictive provider disabled: %v", err)
+	options, err := buildOptions(serverConfig{
+		projectID:                 strings.TrimSpace(os.Getenv("GOOGLE_CLOUD_PROJECT")),
+		port:                      os.Getenv("PORT"),
+		bigQueryDataset:           strings.TrimSpace(os.Getenv("BIGQUERY_EXPORT_DATASET")),
+		bigQueryTable:             strings.TrimSpace(os.Getenv("BIGQUERY_EXPORT_TABLE")),
+		bigQueryProcessesTable:    strings.TrimSpace(os.Getenv("BIGQUERY_EXPORT_PROCESSES_TABLE")),
+		predictionProviderEnabled: predictionProviderEnabled(os.Getenv("PREDICTIVE_PROVIDER_ENABLED")),
+		predictionProviderURL:     os.Getenv("PREDICTIVE_PROVIDER_URL"),
+		predictionProviderAuth:    os.Getenv("PREDICTIVE_PROVIDER_AUTH_AUDIENCE"),
+		predictionProviderTime:    parseRemoteProviderTimeout(os.Getenv("PREDICTIVE_PROVIDER_TIMEOUT_MS")),
+		predictionCheckpoints:     os.Getenv("PREDICTIVE_RELIABILITY_CHECKPOINTS"),
+	})
+	if err != nil {
+		log.Printf("🔮 Remote predictive provider disabled: %v", err)
+	}
+	return options
+}
+
+func buildOptions(config serverConfig) (Options, error) {
+	provider := predictor.Provider(predictor.NoopProvider{})
+	var providerErr error
+	if config.predictionProviderEnabled {
+		provider, providerErr = predictor.NewRemoteProvider(predictor.RemoteConfig{
+			URL:          config.predictionProviderURL,
+			Timeout:      config.predictionProviderTime,
+			AuthAudience: config.predictionProviderAuth,
+		})
+		if providerErr != nil {
+			provider = predictor.NoopProvider{}
 		}
 	}
-	predictionCheckpointsValue := strings.TrimSpace(os.Getenv("PREDICTIVE_RELIABILITY_CHECKPOINTS"))
-	predictionCheckpoints := predictor.ParseCheckpoints(predictionCheckpointsValue)
-	if predictionCheckpointsValue == "" && predictor.Enabled(predictionProvider) {
-		predictionCheckpoints = predictor.DefaultCheckpoints()
+
+	checkpointValue := strings.TrimSpace(config.predictionCheckpoints)
+	checkpoints := predictor.ParseCheckpoints(checkpointValue)
+	if checkpointValue == "" && predictor.Enabled(provider) {
+		checkpoints = predictor.DefaultCheckpoints()
 	}
 
 	return Options{
-		ProjectID:              strings.TrimSpace(os.Getenv("GOOGLE_CLOUD_PROJECT")),
-		Port:                   portOrDefault(os.Getenv("PORT")),
-		BigQueryDataset:        strings.TrimSpace(os.Getenv("BIGQUERY_EXPORT_DATASET")),
-		BigQueryTable:          strings.TrimSpace(os.Getenv("BIGQUERY_EXPORT_TABLE")),
-		BigQueryProcessesTable: strings.TrimSpace(os.Getenv("BIGQUERY_EXPORT_PROCESSES_TABLE")),
-		PredictionProvider:     predictionProvider,
-		PredictionCheckpoints:  predictionCheckpoints,
-	}
+		ProjectID:              strings.TrimSpace(config.projectID),
+		Port:                   portOrDefault(config.port),
+		BigQueryDataset:        strings.TrimSpace(config.bigQueryDataset),
+		BigQueryTable:          strings.TrimSpace(config.bigQueryTable),
+		BigQueryProcessesTable: strings.TrimSpace(config.bigQueryProcessesTable),
+		PredictionProvider:     provider,
+		PredictionCheckpoints:  checkpoints,
+	}, providerErr
 }
 
 // Run initializes backend dependencies and starts the HTTP server.
@@ -97,10 +130,7 @@ func Run(ctx context.Context, options Options) error {
 	defer storageClient.Close()
 
 	exportSched := exportqueue.New(bqExporter, storageClient.GetRunWithContext, storageClient.GetProcessesWithContext)
-	provider := options.PredictionProvider
-	if provider == nil {
-		provider = predictor.NoopProvider{}
-	}
+	provider := providerOrNoop(options.PredictionProvider)
 	if len(options.PredictionCheckpoints) == 0 || !predictor.Enabled(provider) {
 		log.Printf("🔮 Predictive reliability disabled (set private provider and PREDICTIVE_RELIABILITY_CHECKPOINTS to enable)")
 	}
@@ -120,6 +150,13 @@ func Run(ctx context.Context, options Options) error {
 	log.Printf("   - POST /cleanup/stale (Admin required)")
 
 	return http.ListenAndServe(":"+port, mux)
+}
+
+func providerOrNoop(provider predictor.Provider) predictor.Provider {
+	if provider == nil {
+		return predictor.NoopProvider{}
+	}
+	return provider
 }
 
 // NewMux registers backend routes on a new ServeMux.
