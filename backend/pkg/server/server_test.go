@@ -141,6 +141,74 @@ func TestOptionsFromEnvDoesNotDefaultInvalidExplicitCheckpoints(t *testing.T) {
 	}
 }
 
+func TestBuildOptionsNormalizesProviderAndCheckpoints(t *testing.T) {
+	tests := []struct {
+		name                 string
+		providerEnabled      bool
+		providerURL          string
+		checkpoints          string
+		wantProviderEnabled  bool
+		wantCheckpoints      []int
+		wantProviderBuildErr bool
+	}{
+		{
+			name:            "disabled provider",
+			wantCheckpoints: nil,
+		},
+		{
+			name:                 "missing provider URL",
+			providerEnabled:      true,
+			wantProviderBuildErr: true,
+			wantCheckpoints:      nil,
+		},
+		{
+			name:                "default checkpoints",
+			providerEnabled:     true,
+			providerURL:         "http://127.0.0.1:8081",
+			checkpoints:         "",
+			wantProviderEnabled: true,
+			wantCheckpoints:     []int{60, 300, 600, 1200},
+		},
+		{
+			name:                "explicit checkpoints",
+			providerEnabled:     true,
+			providerURL:         "http://127.0.0.1:8081",
+			checkpoints:         "30,60,bad,60",
+			wantProviderEnabled: true,
+			wantCheckpoints:     []int{30, 60},
+		},
+		{
+			name:            "invalid checkpoints",
+			checkpoints:     "bad,0",
+			wantCheckpoints: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			options, err := buildOptions(serverConfig{
+				predictionProviderEnabled: tt.providerEnabled,
+				predictionProviderURL:     tt.providerURL,
+				predictionCheckpoints:     tt.checkpoints,
+			})
+			if (err != nil) != tt.wantProviderBuildErr {
+				t.Fatalf("buildOptions error = %v, want error: %t", err, tt.wantProviderBuildErr)
+			}
+			if predictor.Enabled(options.PredictionProvider) != tt.wantProviderEnabled {
+				t.Fatalf("provider enabled = %t, want %t", predictor.Enabled(options.PredictionProvider), tt.wantProviderEnabled)
+			}
+			if len(options.PredictionCheckpoints) != len(tt.wantCheckpoints) {
+				t.Fatalf("PredictionCheckpoints = %v, want %v", options.PredictionCheckpoints, tt.wantCheckpoints)
+			}
+			for i, want := range tt.wantCheckpoints {
+				if options.PredictionCheckpoints[i] != want {
+					t.Fatalf("PredictionCheckpoints = %v, want %v", options.PredictionCheckpoints, tt.wantCheckpoints)
+				}
+			}
+		})
+	}
+}
+
 func TestOptionsCanCarryInjectedProvider(t *testing.T) {
 	options := Options{PredictionProvider: fakeProvider{}}
 	if !predictor.Enabled(options.PredictionProvider) {
