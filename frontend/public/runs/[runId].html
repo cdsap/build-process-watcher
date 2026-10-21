@@ -9,6 +9,7 @@
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
     <script src="/config.js"></script>
     <script src="/compare-shared.js"></script>
+    <script src="/prediction-view.js"></script>
     <script>
         // Set all links dynamically based on config
         (function() {
@@ -399,7 +400,7 @@
             .status-grid {
                 grid-template-columns: repeat(2, 1fr);
             }
-            
+
             .chart-container {
                 padding: 1rem;
                 margin: 0 -10px 2rem -10px;
@@ -487,6 +488,7 @@
         let refreshTimer = null;
         let lastRefreshTime = null;
         let activeRunDashboardTab = 'dashboard';
+        let predictionSelectedWindow = null;
         
         if (!runId || runId === 'runs' || runId === '') {
             document.getElementById('content').innerHTML = `
@@ -577,6 +579,19 @@
             });
         }
 
+        function focusPredictionOnChart(windowSeconds) {
+            predictionSelectedWindow = Number(windowSeconds);
+            setRunDashboardTab('dashboard');
+            requestAnimationFrame(() => {
+                const chart = document.getElementById('chart');
+                const traceIndex = chart?.data?.findIndex(trace => trace?.name === 'Prediction checkpoints') ?? -1;
+                const pointIndex = traceIndex >= 0 ? chart.data[traceIndex].customdata?.findIndex(value => Number(value) === Number(windowSeconds)) : -1;
+                if (traceIndex >= 0 && pointIndex >= 0 && window.Plotly?.Fx?.hover) {
+                    Plotly.Fx.hover(chart, { curveNumber: traceIndex, pointNumber: pointIndex });
+                }
+            });
+        }
+
         function attachPredictionMarkerInteractions(chartId) {
             const chart = document.getElementById(chartId);
             if (!chart || typeof chart.on !== 'function') return;
@@ -584,7 +599,10 @@
             chart.__bpwPredictionMarkerClickBound = true;
             chart.on('plotly_click', (event) => {
                 const points = Array.isArray(event?.points) ? event.points : [];
-                if (points.some(point => point?.data?.name === 'Prediction checkpoints')) {
+                const marker = points.find(point => point?.data?.name === 'Prediction checkpoints');
+                if (marker) {
+                    predictionSelectedWindow = Number(marker.customdata);
+                    if (window.currentRunData) renderDashboard(runId, window.currentRunData);
                     focusPredictionsTabFromChart();
                 }
             });
@@ -686,7 +704,7 @@
                     text: markers.map(marker => buildPredictionMarkerHoverText(marker.checkpoint)),
                     hoverinfo: 'text',
                     hovertemplate: '%{text}<extra>Prediction checkpoint</extra>',
-                    customdata: markers.map(() => 'prediction-checkpoint'),
+                    customdata: markers.map(marker => marker.windowSeconds),
                     showlegend: true
                 }]
             };
@@ -832,86 +850,16 @@
             });
             
             const formatDur = (s) => s < 60 ? s + 's' : (Math.floor(s / 60) + 'm' + (s % 60 ? ' ' + Math.round(s % 60) + 's' : ''));
-            const formatRiskScore = (score) => {
-                if (!Number.isFinite(Number(score))) return 'N/A';
-                const n = Number(score);
-                if (n <= 1 && n >= 0) return n.toFixed(2);
-                return n >= 100 ? n.toFixed(0) : n.toFixed(1);
-            };
-            const predictionStatusClass = (status) => ['ready', 'pending', 'skipped', 'error'].includes(status) ? status : 'unknown';
-            const predictionCheckpoints = Array.isArray(data.prediction_checkpoints)
-                ? [...data.prediction_checkpoints].sort((a, b) => Number(a.observation_window_s || 0) - Number(b.observation_window_s || 0))
-                : [];
+            const predictionCheckpoints = BpwPredictionView.normalizeCheckpoints(data.prediction_checkpoints);
             const predictionEnabled = window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true || predictionCheckpoints.length > 0;
             const readyPredictionCount = predictionCheckpoints.filter(checkpoint => checkpoint.status === 'ready').length;
             const latestReadyRisk = [...predictionCheckpoints].reverse().find(checkpoint => checkpoint.status === 'ready')?.risk_level;
-            const renderPredictionCard = (checkpoint) => {
-                const status = checkpoint.status || 'unknown';
-                const riskLevel = checkpoint.risk_level || 'unknown';
-                const providerBits = [];
-                if (checkpoint.provider_id) providerBits.push(`<div><span>Provider</span><strong>${escapeHtml(checkpoint.provider_id)}</strong></div>`);
-                if (checkpoint.model_version) providerBits.push(`<div><span>Model</span><strong>${escapeHtml(checkpoint.model_version)}</strong></div>`);
-                const detailsHtml = providerBits.length
-                    ? `<details class="prediction-details"><summary>Details</summary><div class="prediction-details-body">${providerBits.join('')}</div></details>`
-                    : '';
-                const signalHtml = Array.isArray(checkpoint.signals) && checkpoint.signals.length
-                    ? `<div class="prediction-signals">${checkpoint.signals.slice(0, 4).map(signal => `<span>${escapeHtml(signal)}</span>`).join('')}</div>`
-                    : '';
-                const messageHtml = checkpoint.message && (status === 'error' || status === 'skipped')
-                    ? `<p class="prediction-message">${escapeHtml(checkpoint.message)}</p>`
-                    : '';
-                return `
-                    <article class="prediction-card ${predictionRiskClass(riskLevel)} status-${predictionStatusClass(status)}">
-                        <div class="prediction-card-top">
-                            <strong>${escapeHtml(String(checkpoint.observation_window_s || 'N/A'))}s</strong>
-                            <span class="prediction-status">${escapeHtml(status)}</span>
-                        </div>
-                        <div class="prediction-risk">
-                            <span class="prediction-risk-level">${escapeHtml(riskLevel)}</span>
-                            ${Number.isFinite(Number(checkpoint.risk_score))
-                                ? `<span class="prediction-risk-score">score ${escapeHtml(formatRiskScore(checkpoint.risk_score))}</span>`
-                                : ''}
-                        </div>
-                        <div class="prediction-metrics">
-                            <div><span>Confidence</span><strong>${escapeHtml(checkpoint.confidence || 'N/A')}</strong></div>
-                            <div><span>Peak RSS</span><strong>${formatPredictionValue(checkpoint.predicted_peak_rss_mb, 'MB')}</strong></div>
-                            <div><span>Duration</span><strong>${formatPredictionValue(checkpoint.predicted_duration_s, 's')}</strong></div>
-                        </div>
-                        ${signalHtml}
-                        ${messageHtml}
-                        ${detailsHtml}
-                    </article>
-                `;
-            };
-            const predictionTabHtml = predictionCheckpoints.length ? `
-                <section class="prediction-panel prediction-tab-panel" aria-label="Prediction checkpoints">
-                    <div class="prediction-panel-head">
-                        <div>
-                            <span class="bpw-panel-badge">Predictions</span>
-                            <h2>Checkpoint Windows</h2>
-                        </div>
-                        <div class="prediction-panel-meta">${readyPredictionCount}/${predictionCheckpoints.length} ready</div>
-                    </div>
-                    <div class="prediction-grid prediction-timeline">
-                        ${predictionCheckpoints.map(renderPredictionCard).join('')}
-                    </div>
-                </section>
-            ` : `
-                <section class="prediction-empty" aria-label="Prediction checkpoints">
-                    <span class="bpw-panel-badge">Predictions</span>
-                    <h2>No prediction checkpoints</h2>
-                    <p>${predictionEnabled
-                        ? 'Checkpoints will appear here as observation windows complete.'
-                        : 'This run has no prediction_checkpoints. Legacy runs and deployments without predictive reliability omit this data.'}</p>
-                </section>
-            `;
+            const predictionView = BpwPredictionView.render({ ...data, predictionEnabled }, predictionSelectedWindow);
+            predictionSelectedWindow = predictionView.selectedWindow;
+            const predictionTabHtml = predictionView.html;
             const predictionPreviewHtml = predictionCheckpoints.length ? `
                 <section class="prediction-preview" aria-label="Prediction preview">
-                    <div class="prediction-preview-main">
-                        <span class="bpw-panel-badge">Predictions</span>
-                        <strong>${predictionCheckpoints.length} checkpoint${predictionCheckpoints.length === 1 ? '' : 's'}</strong>
-                        <span>${readyPredictionCount} ready${latestReadyRisk ? ` · latest risk ${escapeHtml(latestReadyRisk)}` : ''}</span>
-                    </div>
+                    <div class="prediction-preview-main"><span class="bpw-panel-badge">Predictions</span><strong>Latest ${escapeHtml(latestReadyRisk || 'not available')}</strong><span>${readyPredictionCount} of ${predictionCheckpoints.length} checkpoints ready</span></div>
                     <button type="button" class="btn secondary" data-run-tab="predictions">Open Predictions</button>
                 </section>
             ` : '';
@@ -1452,6 +1400,16 @@
             }
 
             bindRunDashboardTabs();
+            document.querySelectorAll('[data-prediction-window]').forEach((button) => {
+                button.addEventListener('click', () => {
+                    predictionSelectedWindow = Number(button.getAttribute('data-prediction-window'));
+                    renderDashboard(runId, data);
+                    setRunDashboardTab('predictions');
+                });
+            });
+            document.querySelectorAll('[data-prediction-chart-window]').forEach((button) => {
+                button.addEventListener('click', () => focusPredictionOnChart(Number(button.getAttribute('data-prediction-chart-window'))));
+            });
         }
 
         function shouldShowRssHeapRatioChart(samples) {
