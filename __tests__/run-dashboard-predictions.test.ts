@@ -23,6 +23,9 @@ describe('run dashboard prediction evolution integration', () => {
     expect(source).toContain('customdata: markers.map(marker => marker.windowSeconds)');
     expect(source).toContain('predictionSelectedWindow = Number(marker.customdata)');
     expect(source).toContain('focusPredictionOnChart');
+    expect(source).toContain('renderPredictionPanel(window.currentRunData, predictionSelectedWindow)');
+    expect(source).not.toContain('renderDashboard(runId, data);\n                    setRunDashboardTab(\'predictions\')');
+    expect(source).toContain("['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']");
   });
 
   it('keeps legacy runs without prediction checkpoints valid', () => {

@@ -48,10 +48,20 @@ describe('prediction view model', () => {
 
   it('aligns observed RSS to the latest sample at or before the checkpoint', () => {
     const observed = view.observedAtCheckpoint([
-      { Timestamp: 1000, RSS: 10 },
-      { Timestamp: 30000, RSS: 20 },
-      { Timestamp: 70000, RSS: 40 },
+      { Timestamp: 1000, RSS: 10, Name: 'GradleDaemon', PID: 1 },
+      { Timestamp: 1000, RSS: 20, Name: 'KotlinCompileDaemon', PID: 2 },
+      { Timestamp: 30000, RSS: 20, Name: 'GradleDaemon', PID: 1 },
+      { Timestamp: 70000, RSS: 40, Name: 'GradleDaemon', PID: 1 },
     ], { observation_window_s: 60 });
-    expect(observed).toEqual({ timestamp: 30000, rss: 20 });
+    expect(observed).toEqual({ timestamp: 30000, rss: 40 });
+  });
+
+  it('forward-fills processes when calculating aggregate peak RSS', () => {
+    expect(view.peakAggregateRss([
+      { Timestamp: 1000, RSS: 10, Name: 'GradleDaemon', PID: 1 },
+      { Timestamp: 1000, RSS: 20, Name: 'KotlinCompileDaemon', PID: 2 },
+      { Timestamp: 2000, RSS: 15, Name: 'GradleDaemon', PID: 1 },
+      { Timestamp: 3000, RSS: 25, Name: 'KotlinCompileDaemon', PID: 2 },
+    ])).toBe(40);
   });
 });

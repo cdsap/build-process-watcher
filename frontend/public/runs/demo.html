@@ -601,6 +601,51 @@
             });
         }
 
+        function renderPredictionPanel(data, focusWindow = null) {
+            const panel = document.getElementById('run-panel-predictions');
+            const content = document.getElementById('prediction-panel-content');
+            if (!panel || !content) return;
+            const checkpoints = BpwPredictionView.normalizeCheckpoints(data?.prediction_checkpoints);
+            const predictionEnabled = window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true || checkpoints.length > 0;
+            const view = BpwPredictionView.render({ ...data, predictionEnabled }, predictionSelectedWindow);
+            predictionSelectedWindow = view.selectedWindow;
+            content.innerHTML = view.html;
+            if (focusWindow !== null) {
+                const selected = content.querySelector(`[data-prediction-window="${Number(focusWindow)}"]`);
+                if (selected && typeof selected.focus === 'function') selected.focus({ preventScroll: true });
+            }
+        }
+
+        function bindPredictionPanel(data) {
+            const panel = document.getElementById('run-panel-predictions');
+            if (!panel) return;
+            panel.onclick = (event) => {
+                const checkpointButton = event.target.closest('[data-prediction-window]');
+                if (checkpointButton && panel.contains(checkpointButton)) {
+                    const windowSeconds = Number(checkpointButton.getAttribute('data-prediction-window'));
+                    predictionSelectedWindow = windowSeconds;
+                    renderPredictionPanel(data, windowSeconds);
+                    setRunDashboardTab('predictions');
+                    return;
+                }
+                const chartButton = event.target.closest('[data-prediction-chart-window]');
+                if (chartButton && panel.contains(chartButton)) {
+                    focusPredictionOnChart(Number(chartButton.getAttribute('data-prediction-chart-window')));
+                }
+            };
+            panel.onkeydown = (event) => {
+                const current = event.target.closest('.prediction-event[data-prediction-window]');
+                if (!current || !panel.contains(current)) return;
+                if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+                const buttons = [...panel.querySelectorAll('.prediction-event[data-prediction-window]')];
+                const index = buttons.indexOf(current);
+                const nextIndex = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? index - 1 : index + 1;
+                if (nextIndex < 0 || nextIndex >= buttons.length) return;
+                event.preventDefault();
+                buttons[nextIndex].focus();
+            };
+        }
+
         function attachPredictionMarkerInteractions(chartId) {
             const chart = document.getElementById(chartId);
             if (!chart || typeof chart.on !== 'function') return;
@@ -611,7 +656,7 @@
                 const marker = points.find(point => point?.data?.name === 'Prediction checkpoints');
                 if (marker) {
                     predictionSelectedWindow = Number(marker.customdata);
-                    if (window.currentRunData) renderDashboard(runId, window.currentRunData);
+                    if (window.currentRunData) renderPredictionPanel(window.currentRunData, predictionSelectedWindow);
                     focusPredictionsTabFromChart();
                 }
             });
@@ -1339,7 +1384,7 @@
                 </div>
 
                 <div id="run-panel-predictions" class="run-dashboard-panel" role="tabpanel" aria-labelledby="run-tab-predictions" hidden>
-                    ${predictionTabHtml}
+                    <div id="prediction-panel-content">${predictionTabHtml}</div>
                 </div>
             `;
 
@@ -1408,16 +1453,7 @@
             }
 
             bindRunDashboardTabs();
-            document.querySelectorAll('[data-prediction-window]').forEach((button) => {
-                button.addEventListener('click', () => {
-                    predictionSelectedWindow = Number(button.getAttribute('data-prediction-window'));
-                    renderDashboard(runId, data);
-                    setRunDashboardTab('predictions');
-                });
-            });
-            document.querySelectorAll('[data-prediction-chart-window]').forEach((button) => {
-                button.addEventListener('click', () => focusPredictionOnChart(Number(button.getAttribute('data-prediction-chart-window'))));
-            });
+            bindPredictionPanel(data);
         }
 
         function shouldShowRssHeapRatioChart(samples) {
