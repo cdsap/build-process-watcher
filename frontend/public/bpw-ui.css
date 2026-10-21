@@ -217,6 +217,158 @@ input[type="file"] {
     box-shadow: var(--bpw-shadow);
 }
 
+.prediction-summary {
+    display: grid;
+    grid-template-columns: minmax(12rem, 0.8fr) minmax(0, 1.8fr);
+    gap: 1rem;
+}
+
+.prediction-summary h2,
+.prediction-details-panel h2,
+.prediction-evolution h2,
+.prediction-outcome h2 {
+    margin: 0.3rem 0 0.2rem;
+    color: var(--bpw-ink);
+    font-size: 1.05rem;
+}
+
+.prediction-summary p,
+.prediction-summary small,
+.prediction-outcome p,
+.prediction-evolution-row span,
+.prediction-detail-grid span {
+    color: var(--bpw-muted);
+    font-size: 0.8rem;
+}
+
+.prediction-summary-metrics,
+.prediction-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.7rem;
+}
+
+.prediction-summary-metrics span,
+.prediction-detail-grid span {
+    display: block;
+    font-size: 0.72rem;
+}
+
+.prediction-summary-metrics strong,
+.prediction-detail-grid strong {
+    display: block;
+    margin-top: 0.15rem;
+    color: var(--bpw-ink);
+    overflow-wrap: anywhere;
+}
+
+.prediction-summary-metrics .risk-low { color: #247b5b; }
+.prediction-summary-metrics .risk-elevated { color: #b88414; }
+.prediction-summary-metrics .risk-high { color: #d44932; }
+
+.prediction-summary small {
+    grid-column: 1 / -1;
+}
+
+.prediction-timeline {
+    display: flex;
+    gap: 0.55rem;
+    overflow-x: auto;
+    padding: 0.2rem 0.1rem 0.45rem;
+}
+
+.prediction-event {
+    flex: 1 0 8.5rem;
+    min-width: 8.5rem;
+    padding: 0.7rem;
+    border: 1px solid var(--bpw-line);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--bpw-ink);
+    cursor: pointer;
+    text-align: left;
+}
+
+.prediction-event:focus-visible,
+.prediction-evolution-value:focus-visible,
+.prediction-detail-actions button:focus-visible {
+    outline: 3px solid rgba(37, 99, 235, 0.35);
+    outline-offset: 2px;
+}
+
+.prediction-event.is-selected {
+    border-color: var(--bpw-teal);
+    box-shadow: 0 0 0 2px rgba(36, 123, 91, 0.16);
+}
+
+.prediction-event-time,
+.prediction-event-status,
+.prediction-event-risk {
+    display: block;
+}
+
+.prediction-event-time { font-weight: 760; }
+.prediction-event-status,
+.prediction-event-risk { color: var(--bpw-muted); font-size: 0.76rem; text-transform: capitalize; }
+.prediction-event.status-pending,
+.prediction-event.status-skipped,
+.prediction-event.status-error { border-style: dashed; }
+
+.prediction-detail-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.prediction-signals {
+    align-items: center;
+}
+
+.prediction-signals > strong {
+    width: 100%;
+    color: var(--bpw-muted);
+    font-size: 0.76rem;
+}
+
+.prediction-observed {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 0.8rem;
+    margin-top: 0.8rem;
+    padding-top: 0.7rem;
+    border-top: 1px solid var(--bpw-line);
+    font-size: 0.8rem;
+}
+
+.prediction-observed span { color: var(--bpw-muted); }
+.prediction-detail-actions { display: flex; flex-wrap: wrap; gap: 0.7rem; align-items: center; margin-top: 0.8rem; }
+.prediction-detail-actions details { color: var(--bpw-muted); font-size: 0.78rem; }
+
+.prediction-evolution-row {
+    display: grid;
+    grid-template-columns: minmax(10rem, 0.4fr) minmax(0, 1.6fr);
+    gap: 0.8rem;
+    align-items: center;
+    padding: 0.7rem 0;
+    border-top: 1px solid var(--bpw-line);
+}
+
+.prediction-evolution-values { display: flex; gap: 0.5rem; overflow-x: auto; }
+.prediction-evolution-value { min-width: 7.2rem; padding: 0.5rem; border: 1px solid var(--bpw-line); border-radius: 6px; background: #fff; color: var(--bpw-ink); text-align: left; cursor: pointer; }
+.prediction-evolution-value span,
+.prediction-evolution-value strong,
+.prediction-evolution-value em { display: block; }
+.prediction-evolution-value strong { font-size: 0.82rem; }
+.prediction-evolution-value em { color: var(--bpw-muted); font-size: 0.72rem; font-style: normal; }
+
+@media (max-width: 920px) {
+    .prediction-summary { grid-template-columns: 1fr; }
+    .prediction-summary-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .prediction-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 767px) {
+    .prediction-evolution-row { grid-template-columns: 1fr; }
+}
+
 .run-dashboard-tabs {
     display: flex;
     flex-wrap: wrap;
