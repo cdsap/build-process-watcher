@@ -1,6 +1,7 @@
 import * as core from '@actions/core';
 import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
+import { PredictionMode } from './monitoring_features';
 import {
   resolveMonitorSpawnInvocation,
 } from './monitor_spawn';
@@ -27,6 +28,7 @@ export interface MonitoringProcessLaunchInputs {
   debugMode: boolean;
   exportToBigquery: boolean;
   predictiveReliability: boolean;
+  predictionMode: PredictionMode;
   enableBackend: boolean;
 }
 
@@ -54,6 +56,7 @@ export function createMonitoringProcessLaunchPlan(
       REMOTE_MONITORING: inputs.enableBackend && inputs.backendUrl ? 'true' : 'false',
       EXPORT_TO_BIGQUERY: inputs.exportToBigquery ? 'true' : 'false',
       PREDICTIVE_RELIABILITY: inputs.predictiveReliability ? 'true' : 'false',
+      PREDICTION_MODE: inputs.predictionMode,
       COLLECT_GC: 'true',
     },
     detached: true,

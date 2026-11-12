@@ -18,6 +18,7 @@ const inputs = {
   debugMode: true,
   exportToBigquery: true,
   predictiveReliability: true,
+  predictionMode: 'reliability' as const,
   enableBackend: true,
 };
 
@@ -45,6 +46,7 @@ describe('createMonitoringProcessLaunchPlan', () => {
         REMOTE_MONITORING: 'false',
         EXPORT_TO_BIGQUERY: 'true',
         PREDICTIVE_RELIABILITY: 'true',
+        PREDICTION_MODE: 'reliability',
         COLLECT_GC: 'true',
       },
     });
@@ -69,6 +71,7 @@ describe('createMonitoringProcessLaunchPlan', () => {
         REMOTE_MONITORING: 'true',
         EXPORT_TO_BIGQUERY: 'true',
         PREDICTIVE_RELIABILITY: 'true',
+        PREDICTION_MODE: 'reliability',
         COLLECT_GC: 'true',
       },
     });
@@ -94,3 +97,8 @@ describe('createMonitoringProcessLaunchPlan', () => {
     expect(child.unref).toHaveBeenCalledTimes(1);
   });
 });
+
+  it.each(['disabled', 'reliability', 'forecast', 'predict'] as const)('passes %s to the monitor', (predictionMode) => {
+    const plan = createMonitoringProcessLaunchPlan({ ...inputs, predictionMode }, {});
+    expect(plan.env.PREDICTION_MODE).toBe(predictionMode);
+  });

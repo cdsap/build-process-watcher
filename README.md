@@ -55,6 +55,7 @@ This is not required for normal local or remote monitoring. Use it only when you
 | `debug` | Enable debug logging | `false` | No |
 | `disable_summary_output` | Disable GitHub Actions summary output | `false` | No |
 | `export_to_bigquery` | Optional metrics export to BigQuery when Remote Mode finishes | `false` | No |
+| `prediction_mode` | Request `disabled`, `reliability`, `forecast`, or `predict` | `disabled` | No |
 | `predictive_reliability` | Opt in to advisory predictive reliability checkpoints; implies Remote Mode and BigQuery export | `false` | No |
 
 **Environment variables (for Remote Mode):** Set `BACKEND_URL` and `FRONTEND_URL` as env vars (e.g. from secrets) for custom URLs. If unset, default Cloud Run and dashboard URLs are used.
@@ -62,6 +63,10 @@ This is not required for normal local or remote monitoring. Use it only when you
 **BigQuery export is optional:** It is only for collecting metrics in BigQuery. Set `export_to_bigquery: 'true'` together with `remote_monitoring: 'true'` when you want that export. Predictive reliability also requests BigQuery export automatically. The backend service must be configured with `BIGQUERY_EXPORT_DATASET`; optional table overrides are `BIGQUERY_EXPORT_TABLE` and `BIGQUERY_EXPORT_PROCESSES_TABLE`.
 
 **Predictive reliability is opt-in and advisory:** Public builds keep prediction disabled by default. Set `predictive_reliability: 'true'` when you want a run to request predictive reliability checkpoints; this automatically enables Remote Mode and requests BigQuery export for the run. Predictions are advisory signals for triage and should not be treated as guaranteed OOM, timeout, or failure outcomes.
+
+**Prediction mode selection:** Set `prediction_mode` to `reliability`, `forecast`, or `predict` to request a mode. Values are lowercase; an empty input defaults to `disabled`, unless the legacy `predictive_reliability: 'true'` selects `reliability`. The legacy input may be combined with `reliability`, but conflicts with any other explicit mode and fails configuration. Invalid modes also fail configuration. The `prediction_mode` output reports the selected request, not provider readiness.
+
+All requested modes enable Remote Mode. Reliability also requests BigQuery export, matching the legacy input; forecast and predict do not imply export. The backend records the requested mode, but forecast and predict are contract-only until compatible providers are available. They do not invoke the reliability provider or produce predictions. A disabled or unavailable reliability provider likewise does not prevent monitoring and may produce no checkpoints. Older backends may ignore the new mode, so they cannot support forecast or predict; older runs without a mode remain valid and their legacy reliability flag retains its meaning. No additional mode-specific inputs are required for this contract.
 
 When run data contains public-safe `prediction_checkpoints`, the dashboard renders those checkpoint records in observation-window order. The public contract intentionally omits non-public implementation details, exact checkpoint policy, training data, and service endpoints.
 

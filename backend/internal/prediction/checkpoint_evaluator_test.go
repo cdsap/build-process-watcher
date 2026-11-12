@@ -231,3 +231,18 @@ func TestNewCheckpointEvaluatorUsesInjectedFallbackClassifier(t *testing.T) {
 		t.Fatalf("classifier = (%q, %q), want injected mapping", state, message)
 	}
 }
+
+func TestCheckpointEvaluatorDoesNotUseReliabilityProviderForOtherModes(t *testing.T) {
+	for _, mode := range []string{"forecast", "predict", "disabled"} {
+		t.Run(mode, func(t *testing.T) {
+			run := enabledRun([]models.Sample{{ElapsedTime: 120}})
+			run.PredictionMode = mode
+			repo := &fakeRepo{run: run}
+			provider := &stubProvider{checkpoint: models.PredictionCheckpoint{ObservationWindowS: 60, Status: "ready"}}
+			NewCheckpointEvaluator(repo, provider, []int{60}, nil).Evaluate(context.Background(), "run-1")
+			if provider.calls != 0 || repo.storeN != 0 {
+				t.Fatal("unexpected reliability evaluation")
+			}
+		})
+	}
+}

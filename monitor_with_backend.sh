@@ -188,6 +188,9 @@ get_auth_token() {
     if [ "${PREDICTIVE_RELIABILITY:-false}" = "true" ]; then
         auth_params+=("predictive_reliability=true")
     fi
+    case "${PREDICTION_MODE:-disabled}" in
+        reliability|forecast|predict) auth_params+=("prediction_mode=$PREDICTION_MODE") ;;
+    esac
     if [ ${#auth_params[@]} -gt 0 ]; then
         local joined_params
         joined_params=$(IFS='&'; echo "${auth_params[*]}")

@@ -57,6 +57,7 @@ type RunDoc struct {
 	ExpireAt              time.Time              `firestore:"expire_at,omitempty"` // TTL field - set manually in Firestore, used by TTL policy
 	ExportToBigquery      bool                   `firestore:"export_to_bigquery,omitempty"`
 	PredictiveReliability bool                   `firestore:"predictive_reliability,omitempty"`
+	PredictionMode        string                 `firestore:"prediction_mode,omitempty"`
 	PredictionCheckpoints []PredictionCheckpoint `firestore:"prediction_checkpoints,omitempty"`
 }
 

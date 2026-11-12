@@ -62,7 +62,7 @@ func (e *CheckpointEvaluator) Evaluate(ctx context.Context, runID string) {
 		log.Printf("Prediction skipped: could not load run %s: %v", runID, err)
 		return
 	}
-	if !runDoc.PredictiveReliability {
+	if !runDoc.PredictiveReliability || (runDoc.PredictionMode != "" && runDoc.PredictionMode != "reliability") {
 		return
 	}
 	processDoc, err := e.repo.GetProcesses(runID)
