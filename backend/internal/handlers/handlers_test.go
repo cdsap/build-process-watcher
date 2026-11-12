@@ -21,6 +21,7 @@ type fakeStorage struct {
 	processes             map[string]*models.ProcessDoc
 	exportToBigQuery      map[string]bool
 	predictiveReliability map[string]bool
+	predictionModes       map[string]string
 	storedSamples         []models.Sample
 	storedProcessInfo     []models.ProcessInfo
 	finishedRuns          []string
@@ -40,6 +41,7 @@ func newFakeStorage() *fakeStorage {
 		processes:             make(map[string]*models.ProcessDoc),
 		exportToBigQuery:      make(map[string]bool),
 		predictiveReliability: make(map[string]bool),
+		predictionModes:       make(map[string]string),
 	}
 }
 
@@ -90,6 +92,11 @@ func (f *fakeStorage) SetRunExportToBigquery(runID string, enabled bool) error {
 
 func (f *fakeStorage) SetRunPredictiveReliability(runID string, enabled bool) error {
 	f.predictiveReliability[runID] = enabled
+	return nil
+}
+
+func (f *fakeStorage) SetRunPredictionMode(runID, mode string) error {
+	f.predictionModes[runID] = mode
 	return nil
 }
 
@@ -459,6 +466,32 @@ func TestValidateRunBearerToken(t *testing.T) {
 			}
 			if message != tt.wantMsg {
 				t.Fatalf("message = %q, want %q", message, tt.wantMsg)
+			}
+		})
+	}
+}
+
+func TestAuthPredictionModes(t *testing.T) {
+	for _, tc := range []struct {
+		query, mode string
+		reliability bool
+		status      int
+	}{
+		{"", "", false, http.StatusOK},
+		{"prediction_mode=disabled", "", false, http.StatusOK},
+		{"predictive_reliability=true", "reliability", true, http.StatusOK},
+		{"prediction_mode=reliability", "reliability", true, http.StatusOK},
+		{"prediction_mode=forecast", "forecast", false, http.StatusOK},
+		{"prediction_mode=predict", "predict", false, http.StatusOK},
+		{"prediction_mode=invalid", "", false, http.StatusBadRequest},
+		{"prediction_mode=forecast&predictive_reliability=true", "", false, http.StatusBadRequest},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			store := newFakeStorage()
+			recorder := httptest.NewRecorder()
+			NewHandlers(store, nil).Auth(recorder, httptest.NewRequest(http.MethodPost, "/auth/run/run-1?"+tc.query, nil))
+			if recorder.Code != tc.status || store.predictionModes["run-1"] != tc.mode || store.predictiveReliability["run-1"] != tc.reliability {
+				t.Fatalf("status=%d mode=%q reliability=%v", recorder.Code, store.predictionModes["run-1"], store.predictiveReliability["run-1"])
 			}
 		})
 	}

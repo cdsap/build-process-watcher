@@ -75,6 +75,18 @@ func (c *Client) SetRunPredictiveReliability(runID string, enabled bool) error {
 	return nil
 }
 
+// SetRunPredictionMode records the requested public prediction mode.
+func (c *Client) SetRunPredictionMode(runID, mode string) error {
+	now := time.Now()
+	_, err := c.firestore.Collection("runs").Doc(runID).Set(c.ctx, map[string]interface{}{
+		"run_id": runID, "prediction_mode": mode, "updated_at": now, "updated_at_timestamp": ToMillis(now),
+	}, firestore.MergeAll)
+	if err != nil {
+		return fmt.Errorf("merge prediction mode for run %s: %w", runID, err)
+	}
+	return nil
+}
+
 // GetRun retrieves a run document by ID
 func (c *Client) GetRun(runID string) (*models.RunDoc, error) {
 	return c.GetRunWithContext(c.ctx, runID)

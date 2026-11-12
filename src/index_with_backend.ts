@@ -60,10 +60,12 @@ async function run() {
       frontendUrl,
       exportToBigquery,
       predictiveReliability,
+      predictionMode,
     } = resolveMonitoringFeatureFlags({
       remoteMonitoringRequested,
       exportToBigqueryRequested,
       predictiveReliabilityRequested,
+      predictionMode: core.getInput('prediction_mode'),
       backendUrl: requestedBackendUrl,
       frontendUrl: requestedFrontendUrl,
       runId,
@@ -101,6 +103,7 @@ async function run() {
     core.exportVariable('BPW_LOG_FILE_DEFAULT', defaultLogFile.toString());
     core.exportVariable('DISABLE_SUMMARY_OUTPUT', disableSummaryOutput.toString());
     core.exportVariable('EXPORT_TO_BIGQUERY', exportToBigquery ? 'true' : 'false');
+    core.exportVariable('PREDICTION_MODE', predictionMode);
     core.exportVariable('PREDICTIVE_RELIABILITY', predictiveReliability ? 'true' : 'false');
     
     // Also write RUN_ID to a file as a backup for the post step
@@ -139,6 +142,7 @@ async function run() {
     core.setOutput('remote_monitoring', enableBackend.toString());
     core.setOutput('frontend_url', frontendUrl);
     core.setOutput('export_to_bigquery', exportToBigquery.toString());
+    core.setOutput('prediction_mode', predictionMode);
     core.setOutput('predictive_reliability', predictiveReliability.toString());
 
     // Always show the dashboard URL when remote monitoring is enabled (regardless of debug mode)
@@ -175,6 +179,7 @@ async function run() {
       debugMode,
       exportToBigquery,
       predictiveReliability,
+      predictionMode,
       enableBackend,
     });
     const scriptPath = launchPlan.scriptPath;

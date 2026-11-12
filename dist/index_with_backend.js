@@ -25811,13 +25811,13 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 const core = __importStar(__nccwpck_require__(7484));
 const exec = __importStar(__nccwpck_require__(5236));
-const child_process_1 = __nccwpck_require__(5317);
 const fs = __importStar(__nccwpck_require__(9896));
 const path = __importStar(__nccwpck_require__(6928));
 const os = __importStar(__nccwpck_require__(857));
 const action_config_1 = __nccwpck_require__(4838);
 const monitoring_features_1 = __nccwpck_require__(4647);
 const monitor_spawn_1 = __nccwpck_require__(1677);
+const monitoring_process_1 = __nccwpck_require__(7719);
 async function run() {
     try {
         const requestedBackendUrl = process.env.BACKEND_URL || '';
@@ -25846,10 +25846,11 @@ async function run() {
         const disableSummaryOutput = core.getInput('disable_summary_output') === 'true';
         const exportToBigqueryRequested = core.getInput('export_to_bigquery') === 'true';
         const predictiveReliabilityRequested = core.getInput('predictive_reliability') === 'true';
-        const { enableBackend, backendUrl, frontendUrl, exportToBigquery, predictiveReliability, } = (0, monitoring_features_1.resolveMonitoringFeatureFlags)({
+        const { enableBackend, backendUrl, frontendUrl, exportToBigquery, predictiveReliability, predictionMode, } = (0, monitoring_features_1.resolveMonitoringFeatureFlags)({
             remoteMonitoringRequested,
             exportToBigqueryRequested,
             predictiveReliabilityRequested,
+            predictionMode: core.getInput('prediction_mode'),
             backendUrl: requestedBackendUrl,
             frontendUrl: requestedFrontendUrl,
             runId,
@@ -25883,6 +25884,7 @@ async function run() {
         core.exportVariable('BPW_LOG_FILE_DEFAULT', defaultLogFile.toString());
         core.exportVariable('DISABLE_SUMMARY_OUTPUT', disableSummaryOutput.toString());
         core.exportVariable('EXPORT_TO_BIGQUERY', exportToBigquery ? 'true' : 'false');
+        core.exportVariable('PREDICTION_MODE', predictionMode);
         core.exportVariable('PREDICTIVE_RELIABILITY', predictiveReliability ? 'true' : 'false');
         // Also write RUN_ID to a file as a backup for the post step
         // This ensures the post step can always find the RUN_ID even if env vars aren't available
@@ -25921,6 +25923,7 @@ async function run() {
         core.setOutput('remote_monitoring', enableBackend.toString());
         core.setOutput('frontend_url', frontendUrl);
         core.setOutput('export_to_bigquery', exportToBigquery.toString());
+        core.setOutput('prediction_mode', predictionMode);
         core.setOutput('predictive_reliability', predictiveReliability.toString());
         // Always show the dashboard URL when remote monitoring is enabled (regardless of debug mode)
         if (enableBackend && frontendUrl) {
@@ -25942,14 +25945,21 @@ async function run() {
                 core.info(`📝 LOCAL LOGGING MODE - Data will be saved to: ${logFilePath}`);
             }
         }
-        // Execute the monitoring script
-        const args = enableBackend && backendUrl
-            ? [interval, backendUrl, runId] // interval, backend_url, run_id
-            : [interval];
-        // Get the action's directory (where the dist folder is located)
         const actionDir = __dirname;
-        // The monitor scripts are in the parent directory of dist/
-        const scriptPath = path.join(actionDir, '..', monitoringScript);
+        const launchPlan = (0, monitoring_process_1.createMonitoringProcessLaunchPlan)({
+            actionDir,
+            interval,
+            backendUrl,
+            runId,
+            logFilePath,
+            defaultLogFile,
+            debugMode,
+            exportToBigquery,
+            predictiveReliability,
+            predictionMode,
+            enableBackend,
+        });
+        const scriptPath = launchPlan.scriptPath;
         // Check if script exists
         if (!fs.existsSync(scriptPath)) {
             core.setFailed(`❌ Monitor script not found: ${scriptPath}`);
@@ -25967,9 +25977,8 @@ async function run() {
                 core.warning(`⚠️  Could not make script executable: ${error}`);
             }
         }
-        const { command: spawnCommand, args: spawnArgs } = (0, monitor_spawn_1.resolveMonitorSpawnInvocation)(scriptPath, args);
         if (debugMode) {
-            core.info(`▶️  Executing: ${spawnCommand} ${spawnArgs.join(' ')}`);
+            core.info(`▶️  Executing: ${launchPlan.command} ${launchPlan.args.join(' ')}`);
         }
         if (enableBackend && backendUrl) {
             if (debugMode) {
@@ -25981,44 +25990,7 @@ async function run() {
                 core.info(`🔄 Starting local monitoring process...`);
             }
         }
-        // Start monitoring process in background
-        const env = {
-            ...process.env,
-            RUN_ID: runId,
-            LOG_FILE: logFilePath,
-            BPW_LOG_FILE_DEFAULT: defaultLogFile.toString(),
-            DEBUG_MODE: debugMode.toString(),
-            REMOTE_MONITORING: (enableBackend && backendUrl) ? 'true' : 'false',
-            EXPORT_TO_BIGQUERY: exportToBigquery ? 'true' : 'false',
-            PREDICTIVE_RELIABILITY: predictiveReliability ? 'true' : 'false',
-            COLLECT_GC: 'true'
-        };
-        const child = (0, child_process_1.spawn)(spawnCommand, spawnArgs, {
-            cwd: path.join(actionDir, '..'), // Run in the repository root, not dist/
-            env: env,
-            detached: true,
-            stdio: 'inherit'
-        });
-        // Store the PID for cleanup
-        const pid = child.pid;
-        if (debugMode) {
-            core.info(`🔄 Monitoring process started with PID: ${pid}`);
-        }
-        // Add error handling
-        child.on('error', (error) => {
-            core.error(`❌ Failed to start monitoring process: ${error.message}`);
-            core.setFailed(`Monitor script failed to start: ${error.message}`);
-        });
-        child.on('exit', (code, signal) => {
-            if (code !== 0) {
-                core.error(`❌ Monitoring process exited with code ${code} and signal ${signal}`);
-            }
-            else {
-                core.info(`✅ Monitoring process completed successfully`);
-            }
-        });
-        // Don't wait for the process to complete - let it run in background
-        child.unref();
+        (0, monitoring_process_1.startMonitoringProcess)(launchPlan, debugMode);
         if (enableBackend && backendUrl) {
             if (debugMode) {
                 core.info('✅ Backend monitoring started in background');
@@ -26092,11 +26064,23 @@ function shouldMakeScriptExecutable(platform = process.platform) {
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.DEFAULT_LOG_FILE_NAME = exports.DEFAULT_FRONTEND_BASE_URL = exports.DEFAULT_BACKEND_URL = void 0;
+exports.resolvePredictionMode = resolvePredictionMode;
 exports.resolveMonitoringFeatureFlags = resolveMonitoringFeatureFlags;
 exports.DEFAULT_BACKEND_URL = 'https://build-process-watcher-backend-685615422311.us-central1.run.app';
 exports.DEFAULT_FRONTEND_BASE_URL = 'https://process-watcher.web.app';
 var action_config_1 = __nccwpck_require__(4838);
 Object.defineProperty(exports, "DEFAULT_LOG_FILE_NAME", ({ enumerable: true, get: function () { return action_config_1.DEFAULT_LOG_FILE_NAME; } }));
+function resolvePredictionMode(mode, legacy) {
+    if (!mode)
+        return legacy ? 'reliability' : 'disabled';
+    if (!['disabled', 'reliability', 'forecast', 'predict'].includes(mode)) {
+        throw new Error('Invalid prediction_mode; expected disabled, reliability, forecast, or predict');
+    }
+    if (legacy && mode !== 'reliability') {
+        throw new Error('predictive_reliability=true conflicts with prediction_mode');
+    }
+    return mode;
+}
 function buildFrontendRunUrl(frontendBaseUrl, runId) {
     if (frontendBaseUrl.endsWith('/runs') || frontendBaseUrl.endsWith('/runs/')) {
         return `${frontendBaseUrl}/${runId}`;
@@ -26104,7 +26088,8 @@ function buildFrontendRunUrl(frontendBaseUrl, runId) {
     return `${frontendBaseUrl}/runs/${runId}`;
 }
 function resolveMonitoringFeatureFlags(inputs) {
-    const enableBackend = inputs.remoteMonitoringRequested || inputs.predictiveReliabilityRequested;
+    const predictionMode = resolvePredictionMode(inputs.predictionMode || '', inputs.predictiveReliabilityRequested);
+    const enableBackend = inputs.remoteMonitoringRequested || predictionMode !== 'disabled';
     let backendUrl = inputs.backendUrl || '';
     if (enableBackend && !backendUrl) {
         backendUrl = exports.DEFAULT_BACKEND_URL;
@@ -26124,9 +26109,112 @@ function resolveMonitoringFeatureFlags(inputs) {
         enableBackend,
         backendUrl,
         frontendUrl,
-        exportToBigquery: (inputs.exportToBigqueryRequested || inputs.predictiveReliabilityRequested) && useBackend,
-        predictiveReliability: inputs.predictiveReliabilityRequested && useBackend,
+        exportToBigquery: (inputs.exportToBigqueryRequested || predictionMode === 'reliability') && useBackend,
+        predictiveReliability: predictionMode === 'reliability' && useBackend,
+        predictionMode,
     };
+}
+
+
+/***/ }),
+
+/***/ 7719:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.createMonitoringProcessLaunchPlan = createMonitoringProcessLaunchPlan;
+exports.startMonitoringProcess = startMonitoringProcess;
+const core = __importStar(__nccwpck_require__(7484));
+const child_process_1 = __nccwpck_require__(5317);
+const path = __importStar(__nccwpck_require__(6928));
+const monitor_spawn_1 = __nccwpck_require__(1677);
+const MONITORING_SCRIPT = 'monitor_with_backend.sh';
+function createMonitoringProcessLaunchPlan(inputs, environment = process.env) {
+    const scriptPath = path.join(inputs.actionDir, '..', MONITORING_SCRIPT);
+    const monitorArgs = inputs.enableBackend && inputs.backendUrl
+        ? [inputs.interval, inputs.backendUrl, inputs.runId]
+        : [inputs.interval];
+    const { command, args } = (0, monitor_spawn_1.resolveMonitorSpawnInvocation)(scriptPath, monitorArgs);
+    return {
+        scriptPath,
+        command,
+        args,
+        cwd: path.join(inputs.actionDir, '..'),
+        env: {
+            ...environment,
+            RUN_ID: inputs.runId,
+            LOG_FILE: inputs.logFilePath,
+            BPW_LOG_FILE_DEFAULT: inputs.defaultLogFile.toString(),
+            DEBUG_MODE: inputs.debugMode.toString(),
+            REMOTE_MONITORING: inputs.enableBackend && inputs.backendUrl ? 'true' : 'false',
+            EXPORT_TO_BIGQUERY: inputs.exportToBigquery ? 'true' : 'false',
+            PREDICTIVE_RELIABILITY: inputs.predictiveReliability ? 'true' : 'false',
+            PREDICTION_MODE: inputs.predictionMode,
+            COLLECT_GC: 'true',
+        },
+        detached: true,
+        stdio: 'inherit',
+    };
+}
+function startMonitoringProcess(plan, debugMode) {
+    const child = (0, child_process_1.spawn)(plan.command, plan.args, {
+        cwd: plan.cwd,
+        env: plan.env,
+        detached: plan.detached,
+        stdio: plan.stdio,
+    });
+    if (debugMode) {
+        core.info(`🔄 Monitoring process started with PID: ${child.pid}`);
+    }
+    child.on('error', (error) => {
+        core.error(`❌ Failed to start monitoring process: ${error.message}`);
+        core.setFailed(`Monitor script failed to start: ${error.message}`);
+    });
+    child.on('exit', (code, signal) => {
+        if (code !== 0) {
+            core.error(`❌ Monitoring process exited with code ${code} and signal ${signal}`);
+        }
+        else {
+            core.info(`✅ Monitoring process completed successfully`);
+        }
+    });
+    child.unref();
+    return child;
 }
 
 

@@ -18,6 +18,7 @@ describe('resolveMonitoringFeatureFlags', () => {
       frontendUrl: '',
       exportToBigquery: false,
       predictiveReliability: false,
+      predictionMode: 'disabled',
     });
   });
 
@@ -34,6 +35,7 @@ describe('resolveMonitoringFeatureFlags', () => {
       frontendUrl: '',
       exportToBigquery: false,
       predictiveReliability: false,
+      predictionMode: 'disabled',
     });
   });
 
@@ -50,6 +52,7 @@ describe('resolveMonitoringFeatureFlags', () => {
       frontendUrl: '',
       exportToBigquery: false,
       predictiveReliability: false,
+      predictionMode: 'disabled',
     });
   });
 
@@ -66,6 +69,7 @@ describe('resolveMonitoringFeatureFlags', () => {
       frontendUrl: `${DEFAULT_FRONTEND_BASE_URL}/runs/run-1`,
       exportToBigquery: true,
       predictiveReliability: true,
+      predictionMode: 'reliability',
     });
   });
 
@@ -82,6 +86,7 @@ describe('resolveMonitoringFeatureFlags', () => {
       frontendUrl: `${DEFAULT_FRONTEND_BASE_URL}/runs/run-remote`,
       exportToBigquery: false,
       predictiveReliability: false,
+      predictionMode: 'disabled',
     });
   });
 
@@ -97,6 +102,7 @@ describe('resolveMonitoringFeatureFlags', () => {
       frontendUrl: `${DEFAULT_FRONTEND_BASE_URL}/runs/run-predictive`,
       exportToBigquery: true,
       predictiveReliability: true,
+      predictionMode: 'reliability',
     });
   });
 
@@ -114,6 +120,7 @@ describe('resolveMonitoringFeatureFlags', () => {
       frontendUrl: 'https://frontend.example/runs/run-abc',
       exportToBigquery: false,
       predictiveReliability: false,
+      predictionMode: 'disabled',
     });
   });
 
@@ -131,6 +138,7 @@ describe('resolveMonitoringFeatureFlags', () => {
       frontendUrl: 'https://frontend.example/runs//run-abc',
       exportToBigquery: false,
       predictiveReliability: false,
+      predictionMode: 'disabled',
     });
   });
 
@@ -148,6 +156,27 @@ describe('resolveMonitoringFeatureFlags', () => {
       frontendUrl: 'https://frontend.example/runs/run-abc',
       exportToBigquery: false,
       predictiveReliability: false,
+      predictionMode: 'disabled',
     });
+  });
+});
+
+describe('prediction mode selection', () => {
+  const base = { remoteMonitoringRequested: false, exportToBigqueryRequested: false, predictiveReliabilityRequested: false, runId: 'run-1' };
+  it.each(['disabled', 'reliability', 'forecast', 'predict'] as const)('resolves %s', (predictionMode) => {
+    const flags = resolveMonitoringFeatureFlags({ ...base, predictionMode });
+    expect(flags.predictionMode).toBe(predictionMode);
+    expect(flags.enableBackend).toBe(predictionMode !== 'disabled');
+    expect(flags.predictiveReliability).toBe(predictionMode === 'reliability');
+    expect(flags.exportToBigquery).toBe(predictionMode === 'reliability');
+  });
+  it('accepts the legacy opt-in with an explicit matching mode', () => {
+    expect(resolveMonitoringFeatureFlags({ ...base, predictionMode: 'reliability', predictiveReliabilityRequested: true }).predictionMode).toBe('reliability');
+  });
+  it.each(['disabled', 'forecast', 'predict'])('rejects legacy opt-in conflicting with %s', (predictionMode) => {
+    expect(() => resolveMonitoringFeatureFlags({ ...base, predictionMode, predictiveReliabilityRequested: true })).toThrow('conflicts');
+  });
+  it('rejects invalid values without echoing them', () => {
+    expect(() => resolveMonitoringFeatureFlags({ ...base, predictionMode: 'private-value' })).toThrow('Invalid prediction_mode');
   });
 });
