@@ -25846,10 +25846,12 @@ async function run() {
         const disableSummaryOutput = core.getInput('disable_summary_output') === 'true';
         const exportToBigqueryRequested = core.getInput('export_to_bigquery') === 'true';
         const predictiveReliabilityRequested = core.getInput('predictive_reliability') === 'true';
-        const { enableBackend, backendUrl, frontendUrl, exportToBigquery, predictiveReliability, predictionMode, } = (0, monitoring_features_1.resolveMonitoringFeatureFlags)({
+        const freshnessDiagnosticsRequested = core.getInput('freshness_diagnostics') === 'true';
+        const { enableBackend, backendUrl, frontendUrl, exportToBigquery, predictiveReliability, predictionMode, freshnessDiagnostics, } = (0, monitoring_features_1.resolveMonitoringFeatureFlags)({
             remoteMonitoringRequested,
             exportToBigqueryRequested,
             predictiveReliabilityRequested,
+            freshnessDiagnosticsRequested,
             predictionMode: core.getInput('prediction_mode'),
             backendUrl: requestedBackendUrl,
             frontendUrl: requestedFrontendUrl,
@@ -25886,6 +25888,7 @@ async function run() {
         core.exportVariable('EXPORT_TO_BIGQUERY', exportToBigquery ? 'true' : 'false');
         core.exportVariable('PREDICTION_MODE', predictionMode);
         core.exportVariable('PREDICTIVE_RELIABILITY', predictiveReliability ? 'true' : 'false');
+        core.exportVariable('FRESHNESS_DIAGNOSTICS', freshnessDiagnostics ? 'true' : 'false');
         // Also write RUN_ID to a file as a backup for the post step
         // This ensures the post step can always find the RUN_ID even if env vars aren't available
         try {
@@ -25925,6 +25928,7 @@ async function run() {
         core.setOutput('export_to_bigquery', exportToBigquery.toString());
         core.setOutput('prediction_mode', predictionMode);
         core.setOutput('predictive_reliability', predictiveReliability.toString());
+        core.setOutput('freshness_diagnostics', freshnessDiagnostics.toString());
         // Always show the dashboard URL when remote monitoring is enabled (regardless of debug mode)
         if (enableBackend && frontendUrl) {
             core.info(`🌐 Dashboard URL: ${frontendUrl}`);
@@ -25957,6 +25961,7 @@ async function run() {
             exportToBigquery,
             predictiveReliability,
             predictionMode,
+            freshnessDiagnostics,
             enableBackend,
         });
         const scriptPath = launchPlan.scriptPath;
@@ -26089,7 +26094,7 @@ function buildFrontendRunUrl(frontendBaseUrl, runId) {
 }
 function resolveMonitoringFeatureFlags(inputs) {
     const predictionMode = resolvePredictionMode(inputs.predictionMode || '', inputs.predictiveReliabilityRequested);
-    const enableBackend = inputs.remoteMonitoringRequested || predictionMode !== 'disabled';
+    const enableBackend = inputs.remoteMonitoringRequested || predictionMode !== 'disabled' || inputs.freshnessDiagnosticsRequested === true;
     let backendUrl = inputs.backendUrl || '';
     if (enableBackend && !backendUrl) {
         backendUrl = exports.DEFAULT_BACKEND_URL;
@@ -26112,6 +26117,7 @@ function resolveMonitoringFeatureFlags(inputs) {
         exportToBigquery: (inputs.exportToBigqueryRequested || predictionMode === 'reliability') && useBackend,
         predictiveReliability: predictionMode === 'reliability' && useBackend,
         predictionMode,
+        freshnessDiagnostics: inputs.freshnessDiagnosticsRequested === true && useBackend,
     };
 }
 
@@ -26185,6 +26191,7 @@ function createMonitoringProcessLaunchPlan(inputs, environment = process.env) {
             EXPORT_TO_BIGQUERY: inputs.exportToBigquery ? 'true' : 'false',
             PREDICTIVE_RELIABILITY: inputs.predictiveReliability ? 'true' : 'false',
             PREDICTION_MODE: inputs.predictionMode,
+            FRESHNESS_DIAGNOSTICS: inputs.freshnessDiagnostics ? 'true' : 'false',
             COLLECT_GC: 'true',
         },
         detached: true,

@@ -37,6 +37,7 @@ DEBUG_MODE="${DEBUG_MODE:-false}"
 
 # Check if remote monitoring is enabled
 REMOTE_MONITORING="${REMOTE_MONITORING:-false}"
+FRESHNESS_DIAGNOSTICS="${FRESHNESS_DIAGNOSTICS:-false}"
 
 # Network timeout configuration (in seconds)
 # Default: 30 seconds total, 10 seconds connection timeout
@@ -80,6 +81,7 @@ echo "REMOTE_MONITORING: $REMOTE_MONITORING" >> "$SCRIPT_DEBUG_LOG"
 echo "INTERVAL: $INTERVAL" >> "$SCRIPT_DEBUG_LOG"
 echo "EXPORT_TO_BIGQUERY: ${EXPORT_TO_BIGQUERY:-false}" >> "$SCRIPT_DEBUG_LOG"
 echo "PREDICTIVE_RELIABILITY: ${PREDICTIVE_RELIABILITY:-false}" >> "$SCRIPT_DEBUG_LOG"
+echo "FRESHNESS_DIAGNOSTICS: $FRESHNESS_DIAGNOSTICS" >> "$SCRIPT_DEBUG_LOG"
 echo "PATTERNS: ${PATTERNS[*]}" >> "$SCRIPT_DEBUG_LOG"
 echo "PID: $$" >> "$SCRIPT_DEBUG_LOG"
 echo "" >> "$SCRIPT_DEBUG_LOG"
@@ -90,6 +92,35 @@ log_script() {
 }
 
 log_script "Script started successfully"
+
+epoch_millis() {
+    local value
+    value=$(date +%s%3N 2>/dev/null || true)
+    if [[ "$value" =~ ^[0-9]{13}$ ]]; then
+        printf '%s' "$value"
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 -c 'import time; print(time.time_ns() // 1000000)'
+    else
+        printf '%s000' "$(date +%s)"
+    fi
+}
+
+freshness_json_fragment() {
+    local sample_id="${1:-}"
+    local sequence="${2:-}"
+    local collected_at_unix_ms="${3:-}"
+    if [ "${FRESHNESS_DIAGNOSTICS:-false}" != "true" ]; then
+        return 0
+    fi
+    if [ -z "$sample_id" ] || [ -z "$sequence" ] || [ -z "$collected_at_unix_ms" ]; then
+        return 0
+    fi
+    case "$sample_id|$sequence|$collected_at_unix_ms" in
+        *[!0-9\|-]*) return 0 ;;
+    esac
+    printf '"freshness":{"sample_id":"%s","sequence":%s,"collected_at_unix_ms":%s}' \
+        "$sample_id" "$sequence" "$collected_at_unix_ms"
+}
 
 process_exists() {
     local pid="$1"
@@ -433,6 +464,9 @@ send_to_backend() {
     local classes_loaded="${12:-N/A}"
     local classes_unloaded="${13:-N/A}"
     local class_time="${14:-N/A}"
+    local sample_id="${15:-}"
+    local sample_sequence="${16:-}"
+    local collected_at_unix_ms="${17:-}"
     
     log_script "send_to_backend called: timestamp=$timestamp, pid=$pid, name=$name, heap_used=$heap_used, heap_cap=$heap_cap, rss=$rss, gc_time=$gc_time"
     
@@ -446,10 +480,16 @@ send_to_backend() {
     log_script "send_to_backend: data_line='$data_line'"
     
     # Prepare JSON payload in the format our backend expects
+    local freshness_fragment
+    freshness_fragment=$(freshness_json_fragment "$sample_id" "$sample_sequence" "$collected_at_unix_ms")
+    local freshness_json=""
+    if [ -n "$freshness_fragment" ]; then
+        freshness_json=", $freshness_fragment"
+    fi
     local json_payload=$(cat <<EOF
 {
     "run_id": "$RUN_ID",
-    "data": "$data_line"
+    "data": "$data_line"$freshness_json
 }
 EOF
 )
@@ -776,7 +816,8 @@ while true; do
           if [[ -z "$GC_LINE" ]]; then
             echo "$TIMESTAMP | $PID | $NAME | N/A | N/A | ${RSS_MB}MB | N/A | $JIT_COMPILED | $JIT_FAILED | $JIT_INVALID | $JIT_TIME_S | $CLASSES_LOADED | $CLASSES_UNLOADED | $CLASS_TIME_S" >> "$LOG_FILE"
             # Store process data for batch sending
-            process_data+=("$TIMESTAMP|$PID|$NAME|0|0|${RSS_MB}MB|N/A|$JIT_COMPILED|$JIT_FAILED|$JIT_INVALID|$JIT_TIME_S|$CLASSES_LOADED|$CLASSES_UNLOADED|$CLASS_TIME_S")
+            COLLECTED_AT_UNIX_MS=$(epoch_millis)
+            process_data+=("$TIMESTAMP|$PID|$NAME|0|0|${RSS_MB}MB|N/A|$JIT_COMPILED|$JIT_FAILED|$JIT_INVALID|$JIT_TIME_S|$CLASSES_LOADED|$CLASSES_UNLOADED|$CLASS_TIME_S|${ITERATION}-${PID}|$ITERATION|$COLLECTED_AT_UNIX_MS")
           else
             EC=$(echo "$GC_LINE" | awk '{print $5}')
             EU=$(echo "$GC_LINE" | awk '{print $6}')
@@ -801,7 +842,8 @@ while true; do
             fi
             echo "$TIMESTAMP | $PID | $NAME | ${HEAP_USED_MB}MB | ${HEAP_CAP_MB}MB | ${RSS_MB}MB | ${GC_TIME_S}s | $JIT_COMPILED | $JIT_FAILED | $JIT_INVALID | $JIT_TIME_S | $CLASSES_LOADED | $CLASSES_UNLOADED | $CLASS_TIME_S" >> "$LOG_FILE"
             # Store process data for batch sending
-            process_data+=("$TIMESTAMP|$PID|$NAME|${HEAP_USED_MB}MB|${HEAP_CAP_MB}MB|${RSS_MB}MB|${GC_TIME_S}s|$JIT_COMPILED|$JIT_FAILED|$JIT_INVALID|$JIT_TIME_S|$CLASSES_LOADED|$CLASSES_UNLOADED|$CLASS_TIME_S")
+            COLLECTED_AT_UNIX_MS=$(epoch_millis)
+            process_data+=("$TIMESTAMP|$PID|$NAME|${HEAP_USED_MB}MB|${HEAP_CAP_MB}MB|${RSS_MB}MB|${GC_TIME_S}s|$JIT_COMPILED|$JIT_FAILED|$JIT_INVALID|$JIT_TIME_S|$CLASSES_LOADED|$CLASSES_UNLOADED|$CLASS_TIME_S|${ITERATION}-${PID}|$ITERATION|$COLLECTED_AT_UNIX_MS")
           fi
         } || { 
           log_script "ERROR: Failed to process memory data for PID $PID ($NAME) at $TIMESTAMP"
@@ -832,9 +874,9 @@ while true; do
     for data_line in "${process_data[@]}"; do
       sends_attempted=$((sends_attempted + 1))
       log_script "Sending data line: '$data_line'"
-      IFS='|' read -r ts pid name heap_used heap_cap rss gc_time jit_compiled jit_failed jit_invalid jit_time classes_loaded classes_unloaded class_time <<< "$data_line"
+      IFS='|' read -r ts pid name heap_used heap_cap rss gc_time jit_compiled jit_failed jit_invalid jit_time classes_loaded classes_unloaded class_time sample_id sample_sequence collected_at_unix_ms <<< "$data_line"
       log_script "Calling send_to_backend with GC data for PID $pid"
-      if send_to_backend "$ts" "$pid" "$name" "$heap_used" "$heap_cap" "$rss" "$gc_time" "$jit_compiled" "$jit_failed" "$jit_invalid" "$jit_time" "$classes_loaded" "$classes_unloaded" "$class_time"; then
+      if send_to_backend "$ts" "$pid" "$name" "$heap_used" "$heap_cap" "$rss" "$gc_time" "$jit_compiled" "$jit_failed" "$jit_invalid" "$jit_time" "$classes_loaded" "$classes_unloaded" "$class_time" "$sample_id" "$sample_sequence" "$collected_at_unix_ms"; then
         sends_succeeded=$((sends_succeeded + 1))
         log_script "send_to_backend succeeded for PID $pid"
       else

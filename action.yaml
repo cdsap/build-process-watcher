@@ -37,6 +37,10 @@ inputs:
     description: "Opt in to advisory predictive reliability checkpoints; this enables remote_monitoring and export_to_bigquery for the run when the hosted backend supports predictions"
     required: false
     default: 'false'
+  freshness_diagnostics:
+    description: 'Opt in to live collection-to-dashboard timing diagnostics; enables remote monitoring and adds per-sample timing metadata'
+    required: false
+    default: 'false'
 
 outputs:
   run_id:
@@ -53,6 +57,8 @@ outputs:
     description: 'Selected prediction mode; a request does not imply provider availability'
   predictive_reliability:
     description: 'Whether advisory predictive reliability checkpoints were requested for this run'
+  freshness_diagnostics:
+    description: 'Whether live collection-to-dashboard timing diagnostics were enabled'
 
 branding:
   icon: "activity"

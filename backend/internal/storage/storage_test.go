@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
+
+	"github.com/cdsap/build-process-watcher/backend/internal/models"
 )
 
 func TestParseDataHistoricalAndExtendedRecords(t *testing.T) {
@@ -65,6 +67,24 @@ func TestSampleJSONRoundTripOptionalMetrics(t *testing.T) {
 	}
 	if decoded["JITCompiledMethods"] != float64(5) || decoded["JITFailedCompilations"] != nil {
 		t.Fatalf("unexpected JSON: %s", encoded)
+	}
+}
+
+func TestStampFreshnessStoredUsesWallAndMonotonicTiming(t *testing.T) {
+	receivedAt := time.Now().Add(-25 * time.Millisecond)
+	samples := []models.Sample{{Freshness: &models.FreshnessTiming{
+		SampleID:          "1-123",
+		BackendReceivedAt: receivedAt,
+	}}}
+	storedAt := receivedAt.Add(25 * time.Millisecond)
+
+	stampFreshnessStored(samples, storedAt)
+
+	if samples[0].Freshness.BackendStoredAtUnixMs != storedAt.UnixMilli() {
+		t.Fatalf("stored wall time = %d, want %d", samples[0].Freshness.BackendStoredAtUnixMs, storedAt.UnixMilli())
+	}
+	if samples[0].Freshness.BackendStorageDurationMs != 25 {
+		t.Fatalf("storage duration = %d, want 25", samples[0].Freshness.BackendStorageDurationMs)
 	}
 }
 

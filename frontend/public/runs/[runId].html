@@ -10,6 +10,7 @@
     <script src="/config.js"></script>
     <script src="/compare-shared.js"></script>
     <script src="/prediction-view.js"></script>
+    <script src="/freshness-view.js"></script>
     <script>
         // Set all links dynamically based on config
         (function() {
@@ -757,6 +758,7 @@
 
         async function loadRunData(runId) {
             const backendUrl = window.BUILD_PROCESS_WATCHER_CONFIG?.backendUrl || 'https://build-process-watcher-backend-685615422311.us-central1.run.app';
+            const browserRequestStarted = performance.now();
             let response;
             
             try {
@@ -780,6 +782,7 @@
                 lastRefreshTime = new Date();
                 renderDashboard(runId, data);
                 window.currentRunData = data;
+                renderFreshnessDiagnostics(data, browserRequestStarted);
                 
                 // Auto-refresh if not finished
                 cancelRefresh(); // Cancel any existing timer
@@ -791,6 +794,18 @@
                 console.error('Run data request could not be completed:', { runId, error });
                 showUnavailableRun(response ? 'server' : 'connectivity');
             }
+        }
+
+        function renderFreshnessDiagnostics(data, browserRequestStarted) {
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                const target = document.getElementById('freshness-diagnostics');
+                if (!target || !window.BpwFreshnessView) return;
+                const browserFetchRenderMs = performance.now() - browserRequestStarted;
+                const view = BpwFreshnessView.render(data?.samples, Date.now(), browserFetchRenderMs);
+                target.hidden = !view;
+                target.innerHTML = view?.html || '';
+                window.currentFreshnessDiagnostics = view?.summary || null;
+            }));
         }
 
         function renderDashboard(runId, data) {
@@ -1040,6 +1055,8 @@
                         ` : ''}
                     </div>
                 </div>
+
+                <div id="freshness-diagnostics" hidden></div>
 
                 <div class="run-dashboard-tabs" role="tablist" aria-label="Run dashboard views">
                     <button type="button" class="run-dashboard-tab" role="tab" id="run-tab-dashboard" data-run-tab="dashboard" aria-controls="run-panel-dashboard">Dashboard</button>

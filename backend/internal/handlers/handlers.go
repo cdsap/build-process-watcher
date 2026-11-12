@@ -163,6 +163,7 @@ func (h *Handlers) Auth(w http.ResponseWriter, r *http.Request) {
 
 // Ingest receives and stores monitoring data
 func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
+	requestReceivedAt := time.Now()
 	log.Printf("=== INGEST HANDLER CALLED ===")
 	log.Printf("Method: %s", r.Method)
 	log.Printf("Headers: %v", r.Header)
@@ -256,6 +257,19 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid data format", http.StatusBadRequest)
 		return
 	}
+	if req.Freshness != nil {
+		if len(samples) != 1 || !validFreshness(req.Freshness) {
+			http.Error(w, "Invalid freshness metadata", http.StatusBadRequest)
+			return
+		}
+		samples[0].Freshness = &models.FreshnessTiming{
+			SampleID:                req.Freshness.SampleID,
+			Sequence:                req.Freshness.Sequence,
+			CollectedAtUnixMs:       req.Freshness.CollectedAtUnixMs,
+			BackendReceivedAtUnixMs: requestReceivedAt.UnixMilli(),
+			BackendReceivedAt:       requestReceivedAt,
+		}
+	}
 
 	// Store in Firestore
 	if err := h.storage.StoreSamples(req.RunID, samples); err != nil {
@@ -268,6 +282,18 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "success", "samples": fmt.Sprintf("%d", len(samples))})
+}
+
+func validFreshness(value *models.IngestFreshness) bool {
+	if value == nil || value.SampleID == "" || len(value.SampleID) > 128 || value.Sequence <= 0 || value.CollectedAtUnixMs <= 0 {
+		return false
+	}
+	for _, char := range value.SampleID {
+		if (char < '0' || char > '9') && char != '-' {
+			return false
+		}
+	}
+	return true
 }
 
 func boolQuery(r *http.Request, key string) bool {

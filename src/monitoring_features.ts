@@ -23,6 +23,7 @@ export interface MonitoringFeatureFlags {
   exportToBigquery: boolean;
   predictiveReliability: boolean;
   predictionMode: PredictionMode;
+  freshnessDiagnostics: boolean;
 }
 
 function buildFrontendRunUrl(frontendBaseUrl: string, runId: string): string {
@@ -36,13 +37,14 @@ export function resolveMonitoringFeatureFlags(inputs: {
   remoteMonitoringRequested: boolean;
   exportToBigqueryRequested: boolean;
   predictiveReliabilityRequested: boolean;
+  freshnessDiagnosticsRequested?: boolean;
   predictionMode?: string;
   backendUrl?: string;
   frontendUrl?: string;
   runId: string;
 }): MonitoringFeatureFlags {
   const predictionMode = resolvePredictionMode(inputs.predictionMode || '', inputs.predictiveReliabilityRequested);
-  const enableBackend = inputs.remoteMonitoringRequested || predictionMode !== 'disabled';
+  const enableBackend = inputs.remoteMonitoringRequested || predictionMode !== 'disabled' || inputs.freshnessDiagnosticsRequested === true;
 
   let backendUrl = inputs.backendUrl || '';
   if (enableBackend && !backendUrl) {
@@ -69,5 +71,6 @@ export function resolveMonitoringFeatureFlags(inputs: {
       (inputs.exportToBigqueryRequested || predictionMode === 'reliability') && useBackend,
     predictiveReliability: predictionMode === 'reliability' && useBackend,
     predictionMode,
+    freshnessDiagnostics: inputs.freshnessDiagnosticsRequested === true && useBackend,
   };
 }

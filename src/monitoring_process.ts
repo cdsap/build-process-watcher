@@ -29,6 +29,7 @@ export interface MonitoringProcessLaunchInputs {
   exportToBigquery: boolean;
   predictiveReliability: boolean;
   predictionMode: PredictionMode;
+  freshnessDiagnostics: boolean;
   enableBackend: boolean;
 }
 
@@ -57,6 +58,7 @@ export function createMonitoringProcessLaunchPlan(
       EXPORT_TO_BIGQUERY: inputs.exportToBigquery ? 'true' : 'false',
       PREDICTIVE_RELIABILITY: inputs.predictiveReliability ? 'true' : 'false',
       PREDICTION_MODE: inputs.predictionMode,
+      FRESHNESS_DIAGNOSTICS: inputs.freshnessDiagnostics ? 'true' : 'false',
       COLLECT_GC: 'true',
     },
     detached: true,

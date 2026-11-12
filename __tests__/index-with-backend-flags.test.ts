@@ -19,6 +19,7 @@ describe('resolveMonitoringFeatureFlags', () => {
       exportToBigquery: false,
       predictiveReliability: false,
       predictionMode: 'disabled',
+      freshnessDiagnostics: false,
     });
   });
 
@@ -36,6 +37,7 @@ describe('resolveMonitoringFeatureFlags', () => {
       exportToBigquery: false,
       predictiveReliability: false,
       predictionMode: 'disabled',
+      freshnessDiagnostics: false,
     });
   });
 
@@ -53,6 +55,7 @@ describe('resolveMonitoringFeatureFlags', () => {
       exportToBigquery: false,
       predictiveReliability: false,
       predictionMode: 'disabled',
+      freshnessDiagnostics: false,
     });
   });
 
@@ -70,6 +73,7 @@ describe('resolveMonitoringFeatureFlags', () => {
       exportToBigquery: true,
       predictiveReliability: true,
       predictionMode: 'reliability',
+      freshnessDiagnostics: false,
     });
   });
 
@@ -87,6 +91,7 @@ describe('resolveMonitoringFeatureFlags', () => {
       exportToBigquery: false,
       predictiveReliability: false,
       predictionMode: 'disabled',
+      freshnessDiagnostics: false,
     });
   });
 
@@ -103,6 +108,7 @@ describe('resolveMonitoringFeatureFlags', () => {
       exportToBigquery: true,
       predictiveReliability: true,
       predictionMode: 'reliability',
+      freshnessDiagnostics: false,
     });
   });
 
@@ -121,6 +127,7 @@ describe('resolveMonitoringFeatureFlags', () => {
       exportToBigquery: false,
       predictiveReliability: false,
       predictionMode: 'disabled',
+      freshnessDiagnostics: false,
     });
   });
 
@@ -139,6 +146,7 @@ describe('resolveMonitoringFeatureFlags', () => {
       exportToBigquery: false,
       predictiveReliability: false,
       predictionMode: 'disabled',
+      freshnessDiagnostics: false,
     });
   });
 
@@ -157,6 +165,25 @@ describe('resolveMonitoringFeatureFlags', () => {
       exportToBigquery: false,
       predictiveReliability: false,
       predictionMode: 'disabled',
+      freshnessDiagnostics: false,
+    });
+  });
+
+  it('treats freshness diagnostics as an opt-in remote monitoring mode', () => {
+    expect(resolveMonitoringFeatureFlags({
+      remoteMonitoringRequested: false,
+      exportToBigqueryRequested: false,
+      predictiveReliabilityRequested: false,
+      freshnessDiagnosticsRequested: true,
+      runId: 'run-freshness',
+    })).toEqual({
+      enableBackend: true,
+      backendUrl: DEFAULT_BACKEND_URL,
+      frontendUrl: `${DEFAULT_FRONTEND_BASE_URL}/runs/run-freshness`,
+      exportToBigquery: false,
+      predictiveReliability: false,
+      predictionMode: 'disabled',
+      freshnessDiagnostics: true,
     });
   });
 });

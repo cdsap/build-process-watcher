@@ -53,6 +53,7 @@ async function run() {
     const disableSummaryOutput = core.getInput('disable_summary_output') === 'true';
     const exportToBigqueryRequested = core.getInput('export_to_bigquery') === 'true';
     const predictiveReliabilityRequested = core.getInput('predictive_reliability') === 'true';
+    const freshnessDiagnosticsRequested = core.getInput('freshness_diagnostics') === 'true';
 
     const {
       enableBackend,
@@ -61,10 +62,12 @@ async function run() {
       exportToBigquery,
       predictiveReliability,
       predictionMode,
+      freshnessDiagnostics,
     } = resolveMonitoringFeatureFlags({
       remoteMonitoringRequested,
       exportToBigqueryRequested,
       predictiveReliabilityRequested,
+      freshnessDiagnosticsRequested,
       predictionMode: core.getInput('prediction_mode'),
       backendUrl: requestedBackendUrl,
       frontendUrl: requestedFrontendUrl,
@@ -105,6 +108,7 @@ async function run() {
     core.exportVariable('EXPORT_TO_BIGQUERY', exportToBigquery ? 'true' : 'false');
     core.exportVariable('PREDICTION_MODE', predictionMode);
     core.exportVariable('PREDICTIVE_RELIABILITY', predictiveReliability ? 'true' : 'false');
+    core.exportVariable('FRESHNESS_DIAGNOSTICS', freshnessDiagnostics ? 'true' : 'false');
     
     // Also write RUN_ID to a file as a backup for the post step
     // This ensures the post step can always find the RUN_ID even if env vars aren't available
@@ -144,6 +148,7 @@ async function run() {
     core.setOutput('export_to_bigquery', exportToBigquery.toString());
     core.setOutput('prediction_mode', predictionMode);
     core.setOutput('predictive_reliability', predictiveReliability.toString());
+    core.setOutput('freshness_diagnostics', freshnessDiagnostics.toString());
 
     // Always show the dashboard URL when remote monitoring is enabled (regardless of debug mode)
     if (enableBackend && frontendUrl) {
@@ -180,6 +185,7 @@ async function run() {
       exportToBigquery,
       predictiveReliability,
       predictionMode,
+      freshnessDiagnostics,
       enableBackend,
     });
     const scriptPath = launchPlan.scriptPath;
