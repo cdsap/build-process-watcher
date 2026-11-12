@@ -20,12 +20,13 @@ describe('run dashboard prediction evolution integration', () => {
 
   it.each(pages)('preserves marker-to-checkpoint selection wiring: %s', (page) => {
     const source = fs.readFileSync(page, 'utf8');
-    expect(source).toContain('customdata: markers.map(marker => marker.windowSeconds)');
+    expect(source).toContain('BpwPredictionView.buildMarkerData(predictionCheckpoints, chartTimestamps)');
     expect(source).toContain('predictionSelectedWindow = Number(marker.customdata)');
     expect(source).toContain('focusPredictionOnChart');
     expect(source).toContain('renderPredictionPanel(window.currentRunData, predictionSelectedWindow)');
     expect(source).not.toContain('renderDashboard(runId, data);\n                    setRunDashboardTab(\'predictions\')');
     expect(source).toContain("['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']");
+    expect(source).not.toContain('const buildPredictionMarkerData =');
   });
 
   it('keeps legacy runs without prediction checkpoints valid', () => {

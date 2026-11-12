@@ -74,6 +74,111 @@
         return selected || latestReady(checkpoints) || checkpoints[checkpoints.length - 1] || null;
     }
 
+    function formatMarkerValue(value, unit) {
+        const number = Number(value);
+        return Number.isFinite(number) ? `${number.toFixed(number >= 1000 ? 0 : 1)} ${unit}` : 'N/A';
+    }
+
+    function markerColor(checkpoint) {
+        if ((checkpoint?.status || 'unknown') !== 'ready') return '#94a3b8';
+        return {
+            low: '#16a34a',
+            elevated: '#d97706',
+            high: '#dc2626',
+            unknown: '#64748b'
+        }[riskOf(checkpoint)] || '#64748b';
+    }
+
+    function markerHoverText(checkpoint) {
+        const bits = [
+            `Window: ${escapeHtml(String(checkpoint?.observation_window_s || 'N/A'))}s`,
+            `Status: ${escapeHtml(checkpoint?.status || 'unknown')}`,
+            `Risk: ${escapeHtml(checkpoint?.risk_level || 'unknown')}`
+        ];
+        if (checkpoint?.confidence) bits.push(`Confidence: ${escapeHtml(checkpoint.confidence)}`);
+        if (Number.isFinite(Number(checkpoint?.predicted_peak_rss_mb))) bits.push(`Predicted peak RSS: ${formatMarkerValue(checkpoint.predicted_peak_rss_mb, 'MB')}`);
+        if (Number.isFinite(Number(checkpoint?.predicted_duration_s))) bits.push(`Predicted duration: ${formatMarkerValue(checkpoint.predicted_duration_s, 's')}`);
+        if (Array.isArray(checkpoint?.signals) && checkpoint.signals.length) {
+            bits.push(`Top signals: ${checkpoint.signals.slice(0, 3).map(signal => escapeHtml(signal)).join(', ')}`);
+        }
+        return bits.join('<br>');
+    }
+
+    function buildMarkerData(checkpoints, timestamps, options = {}) {
+        if (!Array.isArray(checkpoints) || !checkpoints.length || !Array.isArray(timestamps) || !timestamps.length) {
+            return { shapes: [], annotations: [], traces: [] };
+        }
+        const firstTimestamp = Number(timestamps[0]);
+        const elapsedAxis = options.axisMode === 'elapsed';
+        if (!elapsedAxis && !Number.isFinite(firstTimestamp)) {
+            return { shapes: [], annotations: [], traces: [] };
+        }
+        const markers = checkpoints
+            .map(checkpoint => {
+                const windowSeconds = Number(checkpoint?.observation_window_s);
+                if (!Number.isFinite(windowSeconds) || windowSeconds < 0) return null;
+                const status = checkpoint.status || 'unknown';
+                const ready = status === 'ready';
+                const color = markerColor(checkpoint);
+                return {
+                    checkpoint,
+                    windowSeconds,
+                    status,
+                    ready,
+                    color,
+                    x: elapsedAxis ? windowSeconds : new Date(firstTimestamp + windowSeconds * 1000),
+                    label: ready ? `P ${windowSeconds}s` : `${status} ${windowSeconds}s`
+                };
+            })
+            .filter(Boolean);
+        if (!markers.length) return { shapes: [], annotations: [], traces: [] };
+        return {
+            shapes: markers.map(marker => ({
+                type: 'line',
+                xref: 'x',
+                yref: 'paper',
+                x0: marker.x,
+                x1: marker.x,
+                y0: 0,
+                y1: 1,
+                line: { color: marker.color, width: marker.ready ? 2 : 1, dash: 'dot' },
+                opacity: marker.ready ? 0.85 : 0.45
+            })),
+            annotations: markers.map(marker => ({
+                x: marker.x,
+                y: 1.02,
+                xref: 'x',
+                yref: 'paper',
+                text: escapeHtml(marker.label),
+                showarrow: false,
+                font: { size: 11, color: marker.color },
+                bgcolor: 'rgba(255,255,255,0.86)',
+                bordercolor: marker.color,
+                borderwidth: 1,
+                borderpad: 2
+            })),
+            traces: [{
+                x: markers.map(marker => marker.x),
+                y: markers.map(() => 0.98),
+                yaxis: 'y2',
+                type: 'scatter',
+                mode: 'markers',
+                name: 'Prediction checkpoints',
+                marker: {
+                    symbol: 'triangle-down',
+                    size: markers.map(marker => marker.ready ? 12 : 10),
+                    color: markers.map(marker => marker.color),
+                    line: { color: '#ffffff', width: 1 }
+                },
+                text: markers.map(marker => markerHoverText(marker.checkpoint)),
+                hoverinfo: 'text',
+                hovertemplate: '%{text}<extra>Prediction checkpoint</extra>',
+                customdata: markers.map(marker => marker.windowSeconds),
+                showlegend: true
+            }]
+        };
+    }
+
     function observedAtCheckpoint(samples, checkpoint) {
         if (!Array.isArray(samples) || !samples.length || !checkpoint) return null;
         const usable = samples.filter(sample => finiteNumber(sample?.Timestamp) !== null && finiteNumber(sample?.RSS) !== null);
@@ -217,5 +322,5 @@
         return { selectedWindow: selected?.observation_window_s ?? null, html: `${processTimelines}${summary}<section class="prediction-panel"><div class="prediction-panel-head"><div><span class="bpw-panel-badge">Evolution</span><h2>Prediction evolution</h2></div><span class="prediction-panel-meta">${ready.length} of ${checkpoints.length} ready</span></div>${timeline}</section>${details}<section class="prediction-panel prediction-evolution"><div class="prediction-panel-head"><div><span class="bpw-panel-badge">Changes</span><h2>How estimates changed</h2></div></div>${renderMetricRow('Predicted peak RSS', peakRows, 'MB')}${renderMetricRow('Predicted duration', durationRows, 's')}${riskRows || '<p>Not enough ready checkpoints to show evolution.</p>'}</section>${outcome}` };
     }
 
-    window.BpwPredictionView = { normalizeCheckpoints, formatElapsed, formatValue, render, observedAtCheckpoint, aggregateRssAtTimestamp, peakAggregateRss };
+    window.BpwPredictionView = { normalizeCheckpoints, formatElapsed, formatValue, buildMarkerData, render, observedAtCheckpoint, aggregateRssAtTimestamp, peakAggregateRss };
 })();
