@@ -167,8 +167,44 @@ func (c *Client) StoreSamples(runID string, samples []models.Sample) error {
 		return err
 	}
 
+	if hasFreshness(samples) {
+		storedAt := time.Now()
+		stampFreshnessStored(runDoc.Samples[len(runDoc.Samples)-len(samples):], storedAt)
+		runDoc.UpdatedAt = storedAt
+		runDoc.UpdatedAtTimestamp = ToMillis(storedAt)
+		if _, err = doc.Set(c.ctx, runDoc); err != nil {
+			return fmt.Errorf("store freshness completion for run %s: %w", runID, err)
+		}
+	}
+
 	log.Printf("✅ Successfully stored %d samples for run ID: %s", len(samples), runID)
 	return nil
+}
+
+func hasFreshness(samples []models.Sample) bool {
+	for i := range samples {
+		if samples[i].Freshness != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func stampFreshnessStored(samples []models.Sample, storedAt time.Time) {
+	for i := range samples {
+		freshness := samples[i].Freshness
+		if freshness == nil {
+			continue
+		}
+		freshness.BackendStoredAtUnixMs = storedAt.UnixMilli()
+		if !freshness.BackendReceivedAt.IsZero() {
+			duration := storedAt.Sub(freshness.BackendReceivedAt).Milliseconds()
+			if duration < 0 {
+				duration = 0
+			}
+			freshness.BackendStorageDurationMs = duration
+		}
+	}
 }
 
 // StorePredictionCheckpoint stores or replaces one prediction checkpoint for a run.

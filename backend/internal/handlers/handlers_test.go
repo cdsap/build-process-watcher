@@ -341,6 +341,36 @@ func TestIngestUsesStoragePortWithoutFirestore(t *testing.T) {
 	}
 }
 
+func TestIngestAttachesFreshnessReceiptMetadata(t *testing.T) {
+	store := newFakeStorage()
+	h := NewHandlers(store, nil)
+	const runID = "run-freshness"
+	token, _, err := auth.GenerateToken(runID)
+	if err != nil {
+		t.Fatalf("GenerateToken failed: %v", err)
+	}
+
+	body := `{"run_id":"run-freshness","data":"00:00:01 | 12345 | GradleDaemon | 100MB | 200MB | 300MB","freshness":{"sample_id":"7-12345","sequence":7,"collected_at_unix_ms":1700000000123}}`
+	req := httptest.NewRequest(http.MethodPost, "/ingest", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	recorder := httptest.NewRecorder()
+	h.Ingest(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s; want %d", recorder.Code, recorder.Body.String(), http.StatusOK)
+	}
+	if len(store.storedSamples) != 1 || store.storedSamples[0].Freshness == nil {
+		t.Fatalf("freshness metadata missing from stored sample: %#v", store.storedSamples)
+	}
+	freshness := store.storedSamples[0].Freshness
+	if freshness.SampleID != "7-12345" || freshness.Sequence != 7 || freshness.CollectedAtUnixMs != 1700000000123 {
+		t.Fatalf("unexpected freshness metadata: %#v", freshness)
+	}
+	if freshness.BackendReceivedAtUnixMs <= 0 || freshness.BackendReceivedAt.IsZero() {
+		t.Fatalf("backend receipt time missing: %#v", freshness)
+	}
+}
+
 func TestGetRunUsesStoragePort(t *testing.T) {
 	store := newFakeStorage()
 	store.runs["run-retrieve"] = &models.RunDoc{

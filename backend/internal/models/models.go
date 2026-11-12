@@ -7,22 +7,36 @@ import (
 
 // Sample represents a single monitoring sample
 type Sample struct {
-	Timestamp                  int64  `firestore:"timestamp"`
-	ElapsedTime                int    `firestore:"elapsed_time"`
-	PID                        string `firestore:"pid"`
-	Name                       string `firestore:"name"`
-	HeapUsed                   int    `firestore:"heap_used"`
-	HeapCap                    int    `firestore:"heap_cap"`
-	RSS                        int    `firestore:"rss"`
-	GCTime                     int    `firestore:"gc_time,omitempty"` // GC time in milliseconds, optional
-	JITCompiledMethods         *int   `firestore:"jit_compiled_methods,omitempty"`
-	JITFailedCompilations      *int   `firestore:"jit_failed_compilations,omitempty"`
-	JITInvalidatedCompilations *int   `firestore:"jit_invalidated_compilations,omitempty"`
-	JITCompilationTimeMs       *int   `firestore:"jit_compilation_time_ms,omitempty"`
-	ClassesLoaded              *int   `firestore:"classes_loaded,omitempty"`
-	ClassesUnloaded            *int   `firestore:"classes_unloaded,omitempty"`
-	ClassLoadTimeMs            *int   `firestore:"class_load_time_ms,omitempty"`
-	RunID                      string `firestore:"run_id"`
+	Timestamp                  int64            `firestore:"timestamp"`
+	ElapsedTime                int              `firestore:"elapsed_time"`
+	PID                        string           `firestore:"pid"`
+	Name                       string           `firestore:"name"`
+	HeapUsed                   int              `firestore:"heap_used"`
+	HeapCap                    int              `firestore:"heap_cap"`
+	RSS                        int              `firestore:"rss"`
+	GCTime                     int              `firestore:"gc_time,omitempty"` // GC time in milliseconds, optional
+	JITCompiledMethods         *int             `firestore:"jit_compiled_methods,omitempty"`
+	JITFailedCompilations      *int             `firestore:"jit_failed_compilations,omitempty"`
+	JITInvalidatedCompilations *int             `firestore:"jit_invalidated_compilations,omitempty"`
+	JITCompilationTimeMs       *int             `firestore:"jit_compilation_time_ms,omitempty"`
+	ClassesLoaded              *int             `firestore:"classes_loaded,omitempty"`
+	ClassesUnloaded            *int             `firestore:"classes_unloaded,omitempty"`
+	ClassLoadTimeMs            *int             `firestore:"class_load_time_ms,omitempty"`
+	RunID                      string           `firestore:"run_id"`
+	Freshness                  *FreshnessTiming `json:"Freshness,omitempty" firestore:"freshness,omitempty"`
+}
+
+// FreshnessTiming is opt-in diagnostic metadata for one live sample. Wall-clock
+// fields span runner, backend, and browser hosts; BackendStorageDurationMs is
+// measured with Go's monotonic clock on the backend.
+type FreshnessTiming struct {
+	SampleID                 string    `json:"sample_id" firestore:"sample_id"`
+	Sequence                 int       `json:"sequence" firestore:"sequence"`
+	CollectedAtUnixMs        int64     `json:"collected_at_unix_ms" firestore:"collected_at_unix_ms"`
+	BackendReceivedAtUnixMs  int64     `json:"backend_received_at_unix_ms" firestore:"backend_received_at_unix_ms"`
+	BackendStoredAtUnixMs    int64     `json:"backend_stored_at_unix_ms,omitempty" firestore:"backend_stored_at_unix_ms,omitempty"`
+	BackendStorageDurationMs int64     `json:"backend_storage_duration_ms" firestore:"backend_storage_duration_ms"`
+	BackendReceivedAt        time.Time `json:"-" firestore:"-"`
 }
 
 // ProcessInfo contains information about a specific process
@@ -131,7 +145,15 @@ type TokenData struct {
 
 // IngestRequest is the request body for data ingestion
 type IngestRequest struct {
-	RunID       string       `json:"run_id"`
-	Data        string       `json:"data"`
-	ProcessInfo *ProcessInfo `json:"process_info,omitempty"` // Optional: VM flags for a new process
+	RunID       string           `json:"run_id"`
+	Data        string           `json:"data"`
+	ProcessInfo *ProcessInfo     `json:"process_info,omitempty"` // Optional: VM flags for a new process
+	Freshness   *IngestFreshness `json:"freshness,omitempty"`
+}
+
+// IngestFreshness is supplied only when the action's live timing spike is enabled.
+type IngestFreshness struct {
+	SampleID          string `json:"sample_id"`
+	Sequence          int    `json:"sequence"`
+	CollectedAtUnixMs int64  `json:"collected_at_unix_ms"`
 }

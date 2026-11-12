@@ -19,6 +19,7 @@ const inputs = {
   exportToBigquery: true,
   predictiveReliability: true,
   predictionMode: 'reliability' as const,
+  freshnessDiagnostics: true,
   enableBackend: true,
 };
 
@@ -47,6 +48,7 @@ describe('createMonitoringProcessLaunchPlan', () => {
         EXPORT_TO_BIGQUERY: 'true',
         PREDICTIVE_RELIABILITY: 'true',
         PREDICTION_MODE: 'reliability',
+        FRESHNESS_DIAGNOSTICS: 'true',
         COLLECT_GC: 'true',
       },
     });
@@ -72,6 +74,7 @@ describe('createMonitoringProcessLaunchPlan', () => {
         EXPORT_TO_BIGQUERY: 'true',
         PREDICTIVE_RELIABILITY: 'true',
         PREDICTION_MODE: 'reliability',
+        FRESHNESS_DIAGNOSTICS: 'true',
         COLLECT_GC: 'true',
       },
     });

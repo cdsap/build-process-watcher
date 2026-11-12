@@ -57,6 +57,7 @@ This is not required for normal local or remote monitoring. Use it only when you
 | `export_to_bigquery` | Optional metrics export to BigQuery when Remote Mode finishes | `false` | No |
 | `prediction_mode` | Request `disabled`, `reliability`, `forecast`, or `predict` | `disabled` | No |
 | `predictive_reliability` | Opt in to advisory predictive reliability checkpoints; implies Remote Mode and BigQuery export | `false` | No |
+| `freshness_diagnostics` | Add opt-in collection-to-dashboard timing telemetry; implies Remote Mode | `false` | No |
 
 **Environment variables (for Remote Mode):** Set `BACKEND_URL` and `FRONTEND_URL` as env vars (e.g. from secrets) for custom URLs. If unset, default Cloud Run and dashboard URLs are used.
 
@@ -65,6 +66,8 @@ This is not required for normal local or remote monitoring. Use it only when you
 **Predictive reliability is opt-in and advisory:** Public builds keep prediction disabled by default. Set `predictive_reliability: 'true'` when you want a run to request predictive reliability checkpoints; this automatically enables Remote Mode and requests BigQuery export for the run. Predictions are advisory signals for triage and should not be treated as guaranteed OOM, timeout, or failure outcomes.
 
 **Prediction mode selection:** Set `prediction_mode` to `reliability`, `forecast`, or `predict` to request a mode. Values are lowercase; an empty input defaults to `disabled`, unless the legacy `predictive_reliability: 'true'` selects `reliability`. The legacy input may be combined with `reliability`, but conflicts with any other explicit mode and fails configuration. Invalid modes also fail configuration. The `prediction_mode` output reports the selected request, not provider readiness.
+
+**Freshness diagnostics are experimental and opt-in:** Set `freshness_diagnostics: 'true'` for a bounded live timing spike. Instrumented samples include collection, backend receipt, and backend storage timing; the run dashboard adds fetch/render timing, p50/p95 latency, sequence gaps, and a cross-host clock-skew warning. The option enables Remote Mode but does not enable prediction or BigQuery export.
 
 All requested modes enable Remote Mode. Reliability also requests BigQuery export, matching the legacy input; forecast and predict do not imply export. The backend records the requested mode, but forecast and predict are contract-only until compatible providers are available. They do not invoke the reliability provider or produce predictions. A disabled or unavailable reliability provider likewise does not prevent monitoring and may produce no checkpoints. Older backends may ignore the new mode, so they cannot support forecast or predict; older runs without a mode remain valid and their legacy reliability flag retains its meaning. No additional mode-specific inputs are required for this contract.
 
