@@ -1286,3 +1286,17 @@ footer {
         min-width: 34rem;
     }
 }
+
+.process-forecast { margin-top: 1.5rem; }
+.process-forecast svg { display: block; width: 100%; max-width: 900px; height: auto; background: var(--bpw-surface, #fff); }
+.process-forecast polyline { fill: none; stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+.process-forecast .forecast-trace { stroke: #a54d00; stroke-dasharray: 6 4; }
+.process-forecast .actual-trace { stroke: #1764a3; }
+.process-forecast .forecast-now { stroke: #666; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.forecast-legend { font-size: 0.85rem; }
+.forecast-table-scroll { overflow-x: auto; }
+.forecast-table-scroll:focus-visible { outline: 2px solid #1764a3; outline-offset: 2px; }
+.forecast-table-scroll table { border-collapse: collapse; min-width: 620px; width: 100%; text-align: left; }
+.forecast-table-scroll th, .forecast-table-scroll td { padding: 0.5rem; border-bottom: 1px solid #ddd; }
+.process-forecast .forecast-point { fill: #a54d00; }
+.process-forecast .actual-point { fill: #1764a3; }

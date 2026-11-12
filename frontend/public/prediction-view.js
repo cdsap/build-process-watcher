@@ -132,7 +132,58 @@
         return `<div class="prediction-evolution-row"><div><strong>${label}</strong><span>At each evaluation</span></div><div class="prediction-evolution-values">${values.map(row => `<button type="button" class="prediction-evolution-value" data-prediction-window="${row.checkpoint.observation_window_s}"><span>${formatElapsed(row.checkpoint.observation_window_s)}</span><strong>${formatValue(row.value, unit)}</strong>${row.delta ? `<em>${escapeHtml(row.delta)}</em>` : ''}</button>`).join('')}</div></div>`;
     }
 
+    // Optional process_forecasts: {process_name, pid, metric, created_at_ms,
+    // points: [{target_at_ms, value_mb}]}. Timestamps use the sample clock.
+    function renderProcessTimelines(data) {
+        const samples = Array.isArray(data?.samples) ? data.samples : [];
+        const forecasts = Array.isArray(data?.process_forecasts) ? data.process_forecasts : [];
+        const groups = new Map();
+        samples.forEach(sample => {
+            if (!/^(GradleDaemon|GradleWorkerMain|KotlinCompileDaemon)$/.test(sample?.Name || '') || sample.PID == null) return;
+            const timestamp = finiteNumber(sample.Timestamp);
+            if (timestamp === null || !Number.isFinite(new Date(timestamp).getTime())) return;
+            ['heap', 'rss'].forEach(metric => {
+                const value = finiteNumber(sample[metric === 'heap' ? 'HeapUsed' : 'RSS']);
+                if (value === null || value < 0) return;
+                const key = JSON.stringify([sample.Name, String(sample.PID), metric]);
+                if (!groups.has(key)) groups.set(key, { name: sample.Name, pid: String(sample.PID), metric, actual: [], predictions: [] });
+                groups.get(key).actual.push({ time: timestamp, value });
+            });
+        });
+        forecasts.forEach(forecast => {
+            const key = JSON.stringify([forecast?.process_name, String(forecast?.pid), forecast?.metric]);
+            const group = groups.get(key);
+            const created = finiteNumber(forecast?.created_at_ms);
+            if (!group || created === null || !Number.isFinite(new Date(created).getTime()) || !Array.isArray(forecast.points)) return;
+            const points = forecast.points.map(point => ({ time: finiteNumber(point?.target_at_ms), value: finiteNumber(point?.value_mb) }))
+                .filter(point => point.time !== null && Number.isFinite(new Date(point.time).getTime()) && point.time >= created && point.value !== null && point.value >= 0)
+                .sort((a, b) => a.time - b.time);
+            if (points.length) group.predictions.push({ created, points });
+        });
+        const available = [...groups.values()].filter(group => group.predictions.length);
+        if (!available.length) return '';
+        const timeLabel = time => new Date(time).toISOString();
+        return `<section class="prediction-panel process-forecasts"><h2>Process memory forecasts</h2><p>Predicted values first; actual values are matched at the same sample time. Times are UTC.</p>${available.map(group => {
+            group.actual.sort((a, b) => a.time - b.time);
+            group.predictions.sort((a, b) => a.created - b.created);
+            const all = group.actual.concat(...group.predictions.map(prediction => prediction.points));
+            const minTime = Math.min(...all.map(point => point.time));
+            const maxTime = Math.max(...all.map(point => point.time));
+            const maxValue = Math.max(...all.map(point => point.value), 1);
+            const xy = point => `${20 + 560 * (point.time - minTime) / (maxTime - minTime || 1)},${115 - 95 * point.value / maxValue}`;
+            const now = Math.max(...group.actual.map(point => point.time));
+            const nowX = 20 + 560 * (now - minTime) / (maxTime - minTime || 1);
+            const traces = group.predictions.map(prediction => `<polyline class="forecast-trace" points="${prediction.points.map(xy).join(' ')}"/>${prediction.points.map(point => { const [x, y] = xy(point).split(','); return `<circle class="forecast-point" cx="${x}" cy="${y}" r="3"/>`; }).join('')}`).join('');
+            const rows = group.predictions.slice().reverse().flatMap(prediction => prediction.points.map(point => {
+                const actual = group.actual.find(sample => sample.time === point.time);
+                return `<tr><td>${timeLabel(prediction.created)}</td><td>${timeLabel(point.time)}</td><td>${formatValue(point.value, 'MB')}</td><td>${actual ? formatValue(actual.value, 'MB') : 'Pending'}</td></tr>`;
+            })).join('');
+            return `<article class="process-forecast"><h3>${escapeHtml(group.name)} · PID ${escapeHtml(group.pid)} · ${group.metric === 'heap' ? 'Heap' : 'RSS'}</h3><svg viewBox="0 0 600 135" role="img" aria-label="Dashed forecast traces and solid actual trace; vertical line marks latest actual sample"><line class="forecast-now" x1="${nowX}" x2="${nowX}" y1="10" y2="120"/>${traces}<polyline class="actual-trace" points="${group.actual.map(xy).join(' ')}"/>${group.actual.map(point => { const [x, y] = xy(point).split(','); return `<circle class="actual-point" cx="${x}" cy="${y}" r="3"/>`; }).join('')}</svg><p class="forecast-legend">Dashed: predictions · Solid: actual · Vertical: latest actual</p><div class="forecast-table-scroll" tabindex="0" role="region" aria-label="Forecast values for ${escapeHtml(group.name)} PID ${escapeHtml(group.pid)} ${group.metric}"><table><thead><tr><th>Created (UTC)</th><th>Target (UTC)</th><th>Predicted</th><th>Actual at target</th></tr></thead><tbody>${rows}</tbody></table></div></article>`;
+        }).join('')}</section>`;
+    }
+
     function render(data, selectedWindow) {
+        const processTimelines = renderProcessTimelines(data);
         const checkpoints = normalizeCheckpoints(data?.prediction_checkpoints);
         const selected = selectCheckpoint(checkpoints, selectedWindow);
         const latest = latestReady(checkpoints);
@@ -148,8 +199,8 @@
         }).join('')}</div>` : '';
 
         if (!checkpoints.length) {
-            const enabled = data?.predictionEnabled === true;
-            return { selectedWindow: null, html: `<section class="prediction-empty" aria-label="Prediction checkpoints"><span class="bpw-panel-badge">Predictions</span><h2>${enabled ? 'Waiting for first checkpoint' : 'No prediction checkpoints'}</h2><p>${enabled ? 'Predictions will appear here as observation windows complete.' : 'This legacy run does not contain prediction checkpoints.'}</p></section>` };
+            const enabled = data?.predictionEnabled === true || processTimelines !== '';
+            return { selectedWindow: null, html: `${processTimelines}<section class="prediction-empty" aria-label="Prediction checkpoints"><span class="bpw-panel-badge">Predictions</span><h2>${enabled ? 'Waiting for first checkpoint' : 'No prediction checkpoints'}</h2><p>${enabled ? 'Predictions will appear here as observation windows complete.' : 'This legacy run does not contain prediction checkpoints.'}</p></section>` };
         }
 
         const summaryCheckpoint = latest;
@@ -163,7 +214,7 @@
         const observedPeakRss = peakAggregateRss(data?.samples);
         const outcome = data?.finished === true ? `<section class="prediction-panel prediction-outcome"><div class="prediction-panel-head"><div><span class="bpw-panel-badge">Final observed outcome</span><h2>Completed run</h2></div></div><div class="prediction-detail-grid"><div><span>Observed duration</span><strong>${formatElapsed(elapsedValues.length ? Math.max(...elapsedValues) : null)}</strong></div><div><span>Observed peak RSS</span><strong>${formatValue(observedPeakRss, 'MB')}</strong></div></div><p>Observed values are shown separately; no accuracy or error claim is made without confirmed metric comparability.</p></section>` : '<section class="prediction-panel prediction-outcome"><h2>Final observed outcome</h2><p>Pending completion.</p></section>';
 
-        return { selectedWindow: selected?.observation_window_s ?? null, html: `${summary}<section class="prediction-panel"><div class="prediction-panel-head"><div><span class="bpw-panel-badge">Evolution</span><h2>Prediction evolution</h2></div><span class="prediction-panel-meta">${ready.length} of ${checkpoints.length} ready</span></div>${timeline}</section>${details}<section class="prediction-panel prediction-evolution"><div class="prediction-panel-head"><div><span class="bpw-panel-badge">Changes</span><h2>How estimates changed</h2></div></div>${renderMetricRow('Predicted peak RSS', peakRows, 'MB')}${renderMetricRow('Predicted duration', durationRows, 's')}${riskRows || '<p>Not enough ready checkpoints to show evolution.</p>'}</section>${outcome}` };
+        return { selectedWindow: selected?.observation_window_s ?? null, html: `${processTimelines}${summary}<section class="prediction-panel"><div class="prediction-panel-head"><div><span class="bpw-panel-badge">Evolution</span><h2>Prediction evolution</h2></div><span class="prediction-panel-meta">${ready.length} of ${checkpoints.length} ready</span></div>${timeline}</section>${details}<section class="prediction-panel prediction-evolution"><div class="prediction-panel-head"><div><span class="bpw-panel-badge">Changes</span><h2>How estimates changed</h2></div></div>${renderMetricRow('Predicted peak RSS', peakRows, 'MB')}${renderMetricRow('Predicted duration', durationRows, 's')}${riskRows || '<p>Not enough ready checkpoints to show evolution.</p>'}</section>${outcome}` };
     }
 
     window.BpwPredictionView = { normalizeCheckpoints, formatElapsed, formatValue, render, observedAtCheckpoint, aggregateRssAtTimestamp, peakAggregateRss };

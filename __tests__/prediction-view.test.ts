@@ -65,3 +65,38 @@ describe('prediction view model', () => {
     ])).toBe(40);
   });
 });
+
+describe('per-process memory forecasts', () => {
+  const view = loadView();
+  const samples = [
+    { Timestamp: 1000, Name: 'GradleDaemon', PID: '1', HeapUsed: 10, RSS: 20 },
+    { Timestamp: 2000, Name: 'GradleDaemon', PID: '1', HeapUsed: 15, RSS: 25 },
+    { Timestamp: 1000, Name: 'KotlinCompileDaemon', PID: '2', RSS: 30 },
+    { Timestamp: 1000, Name: 'Other', PID: '3', RSS: 40 },
+  ];
+  const process_forecasts = [
+    { process_name: 'GradleDaemon', pid: '1', metric: 'heap', created_at_ms: 1000, points: [{ target_at_ms: 2000, value_mb: 14 }, { target_at_ms: 3000, value_mb: 18 }] },
+    { process_name: 'GradleDaemon', pid: '1', metric: 'heap', created_at_ms: 1500, points: [{ target_at_ms: 2000, value_mb: 16 }] },
+    { process_name: 'KotlinCompileDaemon', pid: '2', metric: 'rss', created_at_ms: 1000, points: [{ target_at_ms: 2000, value_mb: 31 }] },
+    { process_name: 'KotlinCompileDaemon', pid: '2', metric: 'heap', created_at_ms: 1000, points: [{ target_at_ms: 2000, value_mb: 5 }] },
+    { process_name: 'Other', pid: '3', metric: 'rss', created_at_ms: 1000, points: [{ target_at_ms: 2000, value_mb: 42 }] },
+  ];
+
+  it('retains forecasts for observed process metrics and matches exact actual times', () => {
+    const html = view.render({ samples, process_forecasts }, null).html;
+    expect(html).toContain('GradleDaemon · PID 1 · Heap');
+    expect(html).toContain('KotlinCompileDaemon · PID 2 · RSS');
+    expect(html).not.toContain('KotlinCompileDaemon · PID 2 · Heap');
+    expect(html).not.toContain('Other · PID');
+    expect(html).toContain('14.0 MB</td><td>15.0 MB');
+    expect(html).toContain('16.0 MB</td><td>15.0 MB');
+    expect(html).toContain('18.0 MB</td><td>Pending');
+    expect(html.indexOf('Predicted</th>')).toBeLessThan(html.indexOf('Actual at target</th>'));
+  });
+
+  it('ignores malformed data and leaves legacy and pending runs usable', () => {
+    expect(() => view.render({ samples, process_forecasts: [{ process_name: 'GradleDaemon', pid: 1, metric: 'heap', created_at_ms: 1e20, points: [] }] }, null)).not.toThrow();
+    expect(view.render({ samples }, null).html).not.toContain('Process memory forecasts');
+    expect(view.render({ predictionEnabled: true }, null).html).toContain('Waiting for first checkpoint');
+  });
+});
