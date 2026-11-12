@@ -64,6 +64,42 @@ describe('prediction view model', () => {
       { Timestamp: 3000, RSS: 25, Name: 'KotlinCompileDaemon', PID: 2 },
     ])).toBe(40);
   });
+
+  it('builds timestamp-axis prediction markers with status and risk details', () => {
+    const markers = view.buildMarkerData([
+      {
+        observation_window_s: 60,
+        status: 'ready',
+        risk_level: 'high',
+        confidence: 'medium',
+        predicted_peak_rss_mb: 512,
+        predicted_duration_s: 180,
+        signals: ['heap pressure', '<unsafe>'],
+      },
+      { observation_window_s: 120, status: 'pending' },
+    ], [1000, 121000]);
+
+    expect(markers.traces).toHaveLength(1);
+    expect(markers.traces[0].x).toEqual([new Date(61000), new Date(121000)]);
+    expect(markers.traces[0].customdata).toEqual([60, 120]);
+    expect(markers.traces[0].marker.color).toEqual(['#dc2626', '#94a3b8']);
+    expect(markers.traces[0].text[0]).toContain('Predicted peak RSS: 512.0 MB');
+    expect(markers.traces[0].text[0]).toContain('Top signals: heap pressure, &lt;unsafe&gt;');
+    expect(markers.annotations.map((annotation: any) => annotation.text)).toEqual(['P 60s', 'pending 120s']);
+  });
+
+  it('supports elapsed axes and ignores unusable marker input', () => {
+    expect(view.buildMarkerData([], [1000])).toEqual({ shapes: [], annotations: [], traces: [] });
+    expect(view.buildMarkerData([{ observation_window_s: 'bad' }], [1000])).toEqual({ shapes: [], annotations: [], traces: [] });
+
+    const markers = view.buildMarkerData(
+      [{ observation_window_s: 60, status: 'ready', risk_level: 'low' }],
+      [1000],
+      { axisMode: 'elapsed' },
+    );
+    expect(markers.traces[0].x).toEqual([60]);
+    expect(markers.shapes[0]).toEqual(expect.objectContaining({ x0: 60, x1: 60 }));
+  });
 });
 
 describe('per-process memory forecasts', () => {
