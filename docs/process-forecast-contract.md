@@ -25,6 +25,16 @@ and metric:
 (`HeapUsed`) or `rss` (`RSS`). Values are MB, and times are Unix milliseconds
 on the same clock as sample `Timestamp`. Points must target the creation time
 or later. Keep earlier entries when adding later forecasts. The UI only displays
-metrics observed for eligible processes and matches actuals at exactly the target
-sample timestamp; it does not interpolate. This spike does not imply that any
-provider currently emits this contract.
+metrics observed for eligible processes. The chart overlays solid actual samples
+with dashed prediction traces from each issuance. Table actuals use the nearest
+sample within ±10s of the target timestamp (not interpolation). This spike does
+not imply that any provider currently emits this contract.
+
+## Live path (v1)
+
+When `prediction_mode=forecast`, the public backend may call the private
+provider `POST /forecast` and append returned issuances to `process_forecasts`.
+Reliability checkpoints are not written for forecast mode. The private v1
+implementation uses BigQuery `AI.FORECAST` (TimesFM) with a last-value fallback
+for thin series or provider failures. Horizons are +10/+30/+60 seconds on the
+sample clock for `GradleDaemon` and `KotlinCompileDaemon` heap/RSS.

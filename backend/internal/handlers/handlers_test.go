@@ -85,6 +85,10 @@ func (f *fakeStorage) StorePredictionCheckpoint(string, models.PredictionCheckpo
 	return nil
 }
 
+func (f *fakeStorage) AppendProcessForecasts(string, []models.ProcessForecast) error {
+	return nil
+}
+
 func (f *fakeStorage) SetRunExportToBigquery(runID string, enabled bool) error {
 	f.exportToBigQuery[runID] = enabled
 	return nil
@@ -282,7 +286,7 @@ func TestRunResponse_WithPredictionCheckpoints(t *testing.T) {
 func TestNewHandlersWithPredictorWiresCheckpointEvaluator(t *testing.T) {
 	h := NewHandlersWithPredictor(nil, nil, predictor.NoopProvider{}, []int{60}, func(error) (string, string) {
 		return "no_data", "prediction data unavailable"
-	})
+	}, predictor.NoopForecastProvider{}, predictor.NoopForecastProvider{})
 	if h.checkpointEvaluator == nil {
 		t.Fatal("expected checkpoint evaluator to be constructed")
 	}
@@ -291,7 +295,7 @@ func TestNewHandlersWithPredictorWiresCheckpointEvaluator(t *testing.T) {
 		t.Fatalf("classifier = (%q, %q), want injected mapping", state, message)
 	}
 
-	h = NewHandlersWithPredictor(nil, nil, nil, nil, nil)
+	h = NewHandlersWithPredictor(nil, nil, nil, nil, nil, nil, nil)
 	err := fmt.Errorf("private stack: customer id 9: boom")
 	state, message = h.checkpointEvaluator.FallbackClassifier()(err)
 	if state != "provider_error" || message != "prediction provider error" {

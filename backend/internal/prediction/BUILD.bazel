@@ -2,7 +2,10 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "prediction",
-    srcs = ["checkpoint_evaluator.go"],
+    srcs = [
+        "checkpoint_evaluator.go",
+        "forecast_evaluator.go",
+    ],
     importpath = "github.com/cdsap/build-process-watcher/backend/internal/prediction",
     visibility = ["//:__subpackages__"],
     deps = [
@@ -13,7 +16,10 @@ go_library(
 
 go_test(
     name = "prediction_test",
-    srcs = ["checkpoint_evaluator_test.go"],
+    srcs = [
+        "checkpoint_evaluator_test.go",
+        "forecast_evaluator_test.go",
+    ],
     embed = [":prediction"],
     deps = [
         "//internal/models",

@@ -73,6 +73,35 @@ type RunDoc struct {
 	PredictiveReliability bool                   `firestore:"predictive_reliability,omitempty"`
 	PredictionMode        string                 `firestore:"prediction_mode,omitempty"`
 	PredictionCheckpoints []PredictionCheckpoint `firestore:"prediction_checkpoints,omitempty"`
+	ProcessForecasts      []ProcessForecast      `firestore:"process_forecasts,omitempty"`
+}
+
+// ProcessForecast is one public-safe process/metric forecast issuance.
+type ProcessForecast struct {
+	ProcessName  string                 `json:"process_name" firestore:"process_name"`
+	PID          string                 `json:"pid" firestore:"pid"`
+	Metric       string                 `json:"metric" firestore:"metric"`
+	CreatedAtMs  int64                  `json:"created_at_ms" firestore:"created_at_ms"`
+	Points       []ProcessForecastPoint `json:"points" firestore:"points"`
+	ModelVersion string                 `json:"model_version,omitempty" firestore:"model_version,omitempty"`
+	Method       string                 `json:"method,omitempty" firestore:"method,omitempty"`
+}
+
+// ProcessForecastPoint is one forecast target on the sample clock.
+type ProcessForecastPoint struct {
+	TargetAtMs int64   `json:"target_at_ms" firestore:"target_at_ms"`
+	ValueMB    float64 `json:"value_mb" firestore:"value_mb"`
+}
+
+// AppendProcessForecasts keeps prior issuances and appends new ones.
+func AppendProcessForecasts(existing []ProcessForecast, additions []ProcessForecast) []ProcessForecast {
+	if len(additions) == 0 {
+		return existing
+	}
+	out := make([]ProcessForecast, 0, len(existing)+len(additions))
+	out = append(out, existing...)
+	out = append(out, additions...)
+	return out
 }
 
 // PredictionCheckpoint is a public-safe prediction result for one observation window.
@@ -120,6 +149,7 @@ type RunResponse struct {
 	Samples               []Sample               `json:"samples"`
 	ProcessInfo           map[string]ProcessInfo `json:"process_info,omitempty"`
 	PredictionCheckpoints []PredictionCheckpoint `json:"prediction_checkpoints,omitempty"`
+	ProcessForecasts      []ProcessForecast      `json:"process_forecasts,omitempty"`
 	Finished              bool                   `json:"finished"`
 	FinishedAt            *time.Time             `json:"finished_at,omitempty"`
 	UpdatedAt             time.Time              `json:"updated_at"`

@@ -237,6 +237,39 @@ func (c *Client) StorePredictionCheckpoint(runID string, checkpoint models.Predi
 	return nil
 }
 
+// AppendProcessForecasts appends public-safe process forecast issuances for a run.
+func (c *Client) AppendProcessForecasts(runID string, forecasts []models.ProcessForecast) error {
+	if len(forecasts) == 0 {
+		return nil
+	}
+	doc := c.firestore.Collection("runs").Doc(runID)
+	snapshot, err := doc.Get(c.ctx)
+	if err != nil && !strings.Contains(err.Error(), "not found") {
+		return err
+	}
+
+	var existing []models.ProcessForecast
+	if snapshot != nil && snapshot.Exists() {
+		var runDoc models.RunDoc
+		if err := snapshot.DataTo(&runDoc); err != nil {
+			return err
+		}
+		existing = runDoc.ProcessForecasts
+	}
+
+	now := time.Now()
+	_, err = doc.Set(c.ctx, map[string]interface{}{
+		"run_id":             runID,
+		"process_forecasts":  models.AppendProcessForecasts(existing, forecasts),
+		"updated_at":         now,
+		"updated_at_timestamp": ToMillis(now),
+	}, firestore.MergeAll)
+	if err != nil {
+		return fmt.Errorf("append process forecasts for run %s: %w", runID, err)
+	}
+	return nil
+}
+
 // StoreProcessInfo stores or updates process information (VM flags) for a process in the processes collection
 func (c *Client) StoreProcessInfo(runID string, processInfo models.ProcessInfo) error {
 	log.Printf("🔄 Storing process info for PID: %s (Name: %s) in run ID: %s", processInfo.PID, processInfo.Name, runID)
