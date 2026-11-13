@@ -625,6 +625,12 @@
         function bindPredictionPanel(data) {
             const panel = document.getElementById('run-panel-predictions');
             if (!panel) return;
+            if (window.forecastReplayStop) {
+                window.forecastReplayStop();
+                window.forecastReplayStop = null;
+            }
+            const content = document.getElementById('prediction-panel-content');
+            window.forecastReplayStop = BpwPredictionView.bindProcessForecastReplay(content);
             panel.onclick = (event) => {
                 const checkpointButton = event.target.closest('[data-prediction-window]');
                 if (checkpointButton && panel.contains(checkpointButton)) {
