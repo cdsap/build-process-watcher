@@ -280,84 +280,6 @@
         return [start].concat(prediction.points);
     }
 
-    function interpolatePath(path, time) {
-        if (!path.length) return null;
-        if (time <= path[0].time) return path[0].value;
-        for (let i = 0; i < path.length - 1; i += 1) {
-            const left = path[i];
-            const right = path[i + 1];
-            if (time > right.time) continue;
-            if (right.time === left.time) return right.value;
-            const ratio = (time - left.time) / (right.time - left.time);
-            return left.value + (right.value - left.value) * ratio;
-        }
-        return path[path.length - 1].value;
-    }
-
-    const TRACK_GAP_BREAK_MS = 15000;
-
-    // Stitch issuances into prediction tracks sampled only on actual times, plus a
-    // short forward tip after the last sample. Large sample gaps stay empty.
-    function buildTrackingSeries(predictions, actuals) {
-        if (!predictions.length || !actuals.length) return { observed: [], forward: [] };
-        const paths = predictions.map((prediction) => ({
-            created: prediction.created,
-            path: predictionPath(prediction, actuals),
-            end: Math.max(...prediction.points.map((point) => point.time), prediction.created),
-        }));
-        const latest = paths[paths.length - 1];
-        const lastActual = actuals[actuals.length - 1].time;
-        const pointAt = (time) => {
-            const active = paths.filter((item) => item.created <= time && time <= item.end);
-            if (!active.length) return null;
-            const values = active.map((item) => interpolatePath(item.path, time)).filter((value) => value !== null);
-            if (!values.length) return null;
-            const current = paths.slice().reverse().find((item) => item.created <= time);
-            const mid = current ? interpolatePath(current.path, time) : values[values.length - 1];
-            if (mid === null) return null;
-            return {
-                time,
-                mid,
-                min: Math.min(...values),
-                max: Math.max(...values),
-            };
-        };
-        const observed = actuals
-            .map((point) => point.time)
-            .filter((time) => time >= paths[0].created)
-            .map(pointAt)
-            .filter(Boolean);
-        const forward = latest.path
-            .filter((point) => point.time > lastActual)
-            .map((point) => pointAt(point.time))
-            .filter(Boolean);
-        return { observed, forward };
-    }
-
-    function splitByGaps(points, maxGapMs) {
-        if (!points.length) return [];
-        const segments = [[points[0]]];
-        for (let i = 1; i < points.length; i += 1) {
-            const prev = points[i - 1];
-            const next = points[i];
-            if (next.time - prev.time > maxGapMs) segments.push([next]);
-            else segments[segments.length - 1].push(next);
-        }
-        return segments.filter((segment) => segment.length > 0);
-    }
-
-    function areaPath(points, xAt, yAt, lowerKey, upperKey) {
-        if (points.length < 2) return '';
-        const upper = points.map((point) => `${xAt(point.time)},${yAt(point[upperKey])}`).join(' ');
-        const lower = points.slice().reverse().map((point) => `${xAt(point.time)},${yAt(point[lowerKey])}`).join(' ');
-        return `M ${upper} L ${lower} Z`;
-    }
-
-    function polylinePath(points, xAt, yAt, valueKey) {
-        if (points.length < 2) return '';
-        return points.map((point) => `${xAt(point.time)},${yAt(point[valueKey])}`).join(' ');
-    }
-
     function collectForecastGroups(data) {
         const samples = Array.isArray(data?.samples) ? data.samples : [];
         const forecasts = Array.isArray(data?.process_forecasts) ? data.process_forecasts : [];
@@ -386,20 +308,33 @@
         });
         return [...groups.values()].filter(group => group.predictions.length).map((group) => {
             group.actual.sort((a, b) => a.time - b.time);
-            group.predictions.sort((a, b) => a.created - b.created);
+            // Keep one issuance per created_at so duplicate provider writes do not stack.
+            const byCreated = new Map();
+            group.predictions
+                .sort((a, b) => a.created - b.created)
+                .forEach((prediction) => { byCreated.set(prediction.created, prediction); });
+            group.predictions = [...byCreated.values()];
             return group;
         });
     }
 
+    // Draw each issuance as its own path (anchor at nearest actual + forecast targets).
+    // Replay reveals issuances when created_at passes and scrubs the actual series.
     function renderForecastChartSvg(group, untilMs) {
-        const fullTrack = buildTrackingSeries(group.predictions, group.actual);
-        const trackPoints = fullTrack.observed.concat(fullTrack.forward);
+        const issuancePaths = group.predictions.map((prediction) => ({
+            created: prediction.created,
+            path: predictionPath(prediction, group.actual),
+        })).filter((item) => item.path.length >= 2);
+        const allPredictionPoints = issuancePaths.flatMap((item) => item.path);
         const allValues = group.actual.map((point) => point.value)
-            .concat(trackPoints.flatMap((point) => [point.min, point.max, point.mid]));
-        const minTime = Math.min(group.actual[0].time, trackPoints[0]?.time ?? group.actual[0].time);
+            .concat(allPredictionPoints.map((point) => point.value));
+        const minTime = Math.min(
+            group.actual[0].time,
+            ...allPredictionPoints.map((point) => point.time),
+        );
         const maxTime = Math.max(
             group.actual[group.actual.length - 1].time,
-            trackPoints[trackPoints.length - 1]?.time ?? group.actual[group.actual.length - 1].time,
+            ...allPredictionPoints.map((point) => point.time),
         );
         const minValue = Math.min(...allValues);
         const maxValue = Math.max(...allValues, 1);
@@ -420,28 +355,19 @@
 
         const cutoff = finiteNumber(untilMs);
         const visibleActual = cutoff === null ? group.actual : group.actual.filter((point) => point.time <= cutoff);
-        const visibleObserved = cutoff === null ? fullTrack.observed : fullTrack.observed.filter((point) => point.time <= cutoff);
-        const lastActualTime = group.actual[group.actual.length - 1].time;
-        const showForward = cutoff === null || cutoff >= lastActualTime;
-        const visibleForward = !showForward
-            ? []
-            : (cutoff === null ? fullTrack.forward : fullTrack.forward.filter((point) => point.time <= cutoff));
-        const observedSegments = splitByGaps(visibleObserved, TRACK_GAP_BREAK_MS);
-        const band = observedSegments.map((segment) => areaPath(segment, xAt, yAt, 'min', 'max'))
-            .filter(Boolean)
-            .map((path) => `<path class="forecast-band" d="${path}"/>`)
-            .join('');
-        const predictionLine = observedSegments.map((segment) => {
-            const points = polylinePath(segment, xAt, yAt, 'mid');
-            return points ? `<polyline class="forecast-trace forecast-trace-latest" points="${points}"/>` : '';
+        const visibleIssuances = cutoff === null
+            ? issuancePaths
+            : issuancePaths.filter((item) => item.created <= cutoff);
+        const predictionTraces = visibleIssuances.map((item, index, list) => {
+            const isLatest = index === list.length - 1;
+            const cls = isLatest ? 'forecast-trace forecast-trace-latest' : 'forecast-trace forecast-trace-prior';
+            const line = item.path.map(xy).join(' ');
+            const dots = item.path.slice(1).map((point) => (
+                `<circle class="forecast-point" cx="${xAt(point.time)}" cy="${yAt(point.value)}" r="2.5"/>`
+            )).join('');
+            return `<polyline class="${cls}" points="${line}"/>${dots}`;
         }).join('');
-        const forwardPoints = visibleObserved.length && visibleForward.length
-            ? [visibleObserved[visibleObserved.length - 1]].concat(visibleForward)
-            : visibleForward;
-        const forwardLine = polylinePath(forwardPoints, xAt, yAt, 'mid');
-        const forwardTrace = forwardLine
-            ? `<polyline class="forecast-trace forecast-trace-forward" points="${forwardLine}"/>`
-            : '';
+        const lastActualTime = group.actual[group.actual.length - 1].time;
         const cursorTime = cutoff === null
             ? lastActualTime
             : Math.min(Math.max(cutoff, minTime), maxTime);
@@ -449,7 +375,7 @@
         const actualLine = visibleActual.length
             ? `<polyline class="actual-trace" points="${visibleActual.map(xy).join(' ')}"/>`
             : '';
-        return `<svg class="forecast-chart" viewBox="0 0 640 180" role="img" aria-label="Actual memory trajectory with prediction track"><rect class="chart-frame" x="${plot.left}" y="${plot.top}" width="${plot.right - plot.left}" height="${plot.bottom - plot.top}"/>${grid}${band}${actualLine}${predictionLine}${forwardTrace}<line class="forecast-now" x1="${nowX}" x2="${nowX}" y1="${plot.top}" y2="${plot.bottom}"/>${xLabels}${yLabels}<text class="chart-axis-label" x="${(plot.left + plot.right) / 2}" y="174" text-anchor="middle">Elapsed time (seconds)</text><text class="chart-axis-label" x="16" y="${(plot.top + plot.bottom) / 2}" text-anchor="middle" transform="rotate(-90 16 ${(plot.top + plot.bottom) / 2})">Memory (MB)</text></svg>`;
+        return `<svg class="forecast-chart" viewBox="0 0 640 180" role="img" aria-label="Actual memory trajectory with prediction issuances"><rect class="chart-frame" x="${plot.left}" y="${plot.top}" width="${plot.right - plot.left}" height="${plot.bottom - plot.top}"/>${grid}${actualLine}${predictionTraces}<line class="forecast-now" x1="${nowX}" x2="${nowX}" y1="${plot.top}" y2="${plot.bottom}"/>${xLabels}${yLabels}<text class="chart-axis-label" x="${(plot.left + plot.right) / 2}" y="174" text-anchor="middle">Elapsed time (seconds)</text><text class="chart-axis-label" x="16" y="${(plot.top + plot.bottom) / 2}" text-anchor="middle" transform="rotate(-90 16 ${(plot.top + plot.bottom) / 2})">Memory (MB)</text></svg>`;
     }
 
     // Optional process_forecasts: {process_name, pid, metric, created_at_ms,
@@ -475,19 +401,47 @@
                         <option value="10">10x</option>
                         <option value="15" selected>15x</option>
                         <option value="20">20x</option>
+                        <option value="25">25x</option>
                         <option value="30">30x</option>
+                        <option value="40">40x</option>
                         <option value="50">50x</option>
                     </select>
                 </div>
             </div>
         </div>`;
-        return `<section class="prediction-panel process-forecasts"><h2>Process memory forecasts</h2><p>Replay scrubs actual and prediction tracks together. Actuals match the nearest sample within 10s.</p>${replayControls}${available.map((group, index) => {
+        const charts = available.map((group, index) => {
             const rows = group.predictions.slice().reverse().flatMap((prediction) => prediction.points.map((point) => {
                 const actual = actualNear(group.actual, point.time, ACTUAL_MATCH_WINDOW_MS);
                 return `<tr><td>${timeLabel(prediction.created)}</td><td>${timeLabel(point.time)}</td><td>${formatValue(point.value, 'MB')}</td><td>${actual ? formatValue(actual.value, 'MB') : 'Pending'}</td></tr>`;
             })).join('');
-            return `<article class="process-forecast" data-forecast-group-index="${index}"><h3>${escapeHtml(group.name)} · PID ${escapeHtml(group.pid)} · ${group.metric === 'heap' ? 'Heap' : 'RSS'}</h3><div class="forecast-chart-host" data-forecast-chart-host>${renderForecastChartSvg(group, null)}</div><ul class="forecast-chart-legend" aria-label="Chart legend"><li><span class="legend-swatch legend-actual"></span>Actual</li><li><span class="legend-swatch legend-prediction"></span>Prediction</li><li><span class="legend-swatch legend-band"></span>Prediction range</li><li><span class="legend-swatch legend-now"></span>Latest sample</li></ul><div class="forecast-table-scroll" tabindex="0" role="region" aria-label="Forecast values for ${escapeHtml(group.name)} PID ${escapeHtml(group.pid)} ${group.metric}"><table><thead><tr><th>Created (UTC)</th><th>Target (UTC)</th><th>Predicted</th><th>Actual at target</th></tr></thead><tbody>${rows}</tbody></table></div></article>`;
-        }).join('')}<script type="application/json" id="bpw-forecast-replay-data">${JSON.stringify(available).replace(/</g, '\\u003c')}</script></section>`;
+            return `<article class="process-forecast" data-forecast-group-index="${index}">
+                <h3>${escapeHtml(group.name)} · PID ${escapeHtml(group.pid)} · ${group.metric === 'heap' ? 'Heap' : 'RSS'}</h3>
+                <div class="forecast-chart-host" data-forecast-chart-host>${renderForecastChartSvg(group, null)}</div>
+                <details class="forecast-values">
+                    <summary>Issuance values</summary>
+                    <div class="forecast-table-scroll" tabindex="0" role="region" aria-label="Forecast values for ${escapeHtml(group.name)} PID ${escapeHtml(group.pid)} ${group.metric}">
+                        <table><thead><tr><th>Created (UTC)</th><th>Target (UTC)</th><th>Predicted</th><th>Actual at target</th></tr></thead><tbody>${rows}</tbody></table>
+                    </div>
+                </details>
+            </article>`;
+        }).join('');
+        return `<section class="prediction-panel process-forecasts">
+            <div class="prediction-panel-head">
+                <div>
+                    <span class="bpw-panel-badge">Process forecasts</span>
+                    <h2>Process memory forecasts</h2>
+                </div>
+                <span class="prediction-panel-meta">${available.length} series</span>
+            </div>
+            ${replayControls}
+            <ul class="forecast-chart-legend" aria-label="Chart legend">
+                <li><span class="legend-swatch legend-actual"></span>Actual</li>
+                <li><span class="legend-swatch legend-prediction"></span>Prediction issuance</li>
+                <li><span class="legend-swatch legend-now"></span>Replay cursor</li>
+            </ul>
+            <div class="process-forecasts-grid">${charts}</div>
+            <script type="application/json" id="bpw-forecast-replay-data">${JSON.stringify(available).replace(/</g, '\\u003c')}</script>
+        </section>`;
     }
 
     function bindProcessForecastReplay(root) {
@@ -612,8 +566,11 @@
         }).join('')}</div>` : '';
 
         if (!checkpoints.length) {
-            const enabled = data?.predictionEnabled === true || processTimelines !== '';
-            return { selectedWindow: null, html: `${processTimelines}<section class="prediction-empty" aria-label="Prediction checkpoints"><span class="bpw-panel-badge">Predictions</span><h2>${enabled ? 'Waiting for first checkpoint' : 'No prediction checkpoints'}</h2><p>${enabled ? 'Predictions will appear here as observation windows complete.' : 'This legacy run does not contain prediction checkpoints.'}</p></section>` };
+            if (processTimelines) {
+                return { selectedWindow: null, html: processTimelines };
+            }
+            const enabled = data?.predictionEnabled === true;
+            return { selectedWindow: null, html: `<section class="prediction-empty" aria-label="Prediction checkpoints"><span class="bpw-panel-badge">Predictions</span><h2>${enabled ? 'Waiting for first checkpoint' : 'No prediction checkpoints'}</h2><p>${enabled ? 'Predictions will appear here as observation windows complete.' : 'This legacy run does not contain prediction checkpoints.'}</p></section>` };
         }
 
         const summaryCheckpoint = latest;

@@ -1365,11 +1365,58 @@ footer {
 
 .forecast-replay-controls {
     margin: 0.75rem 0 1rem;
+    display: grid;
+    grid-template-columns: auto auto 1fr;
+    gap: 1rem;
+    align-items: center;
+    padding: 1rem;
 }
-.process-forecast { margin-top: 1.5rem; }
-.process-forecast svg { display: block; width: 100%; max-width: 920px; height: auto; background: var(--bpw-surface, #fff); }
+.forecast-replay-controls .buttons {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+.forecast-replay-controls .timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+.forecast-replay-controls input[type="range"] {
+    width: 100%;
+}
+@media (max-width: 768px) {
+    .forecast-replay-controls {
+        grid-template-columns: 1fr;
+    }
+}
+.process-forecasts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(26rem, 1fr));
+    gap: 1rem;
+}
+.process-forecast {
+    margin: 0;
+    padding: 0.85rem 0.95rem 1rem;
+    border: 1px solid rgba(22, 26, 29, 0.08);
+    border-radius: 8px;
+    background: var(--bpw-panel-soft, #f7f4ee);
+}
+.process-forecast h3 {
+    margin: 0 0 0.35rem;
+    font-size: 0.98rem;
+}
+.process-forecast svg { display: block; width: 100%; max-width: none; height: auto; background: var(--bpw-surface, #fff); }
 .process-forecast polyline { fill: none; stroke-width: 2.5; vector-effect: non-scaling-stroke; }
-.process-forecast .forecast-chart { margin: 0.35rem 0 0.5rem; }
+.process-forecast .forecast-chart { margin: 0.2rem 0 0.35rem; }
+.process-forecast .forecast-values {
+    margin-top: 0.35rem;
+    font-size: 0.9rem;
+}
+.process-forecast .forecast-values summary {
+    cursor: pointer;
+    color: #4b5563;
+    font-weight: 650;
+}
 .process-forecast .chart-frame {
     fill: #fbfcfe;
     stroke: #d7dde5;
@@ -1400,6 +1447,9 @@ footer {
 }
 .process-forecast .actual-trace { stroke: #2563eb; stroke-width: 2.75; }
 .process-forecast .forecast-now { stroke: #94a3b8; stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
+.process-forecasts > .forecast-chart-legend {
+    margin: 0 0 0.85rem;
+}
 .forecast-chart-legend {
     display: flex;
     flex-wrap: wrap;

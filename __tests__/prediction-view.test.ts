@@ -129,13 +129,15 @@ describe('per-process memory forecasts', () => {
     expect(html).toContain('18.0 MB</td><td>Pending');
     expect(html).toContain('class="actual-trace"');
     expect(html).toContain('class="forecast-trace forecast-trace-latest"');
-    expect(html).toContain('class="forecast-band"');
+    expect(html).toContain('class="forecast-trace forecast-trace-prior"');
+    expect(html).toContain('class="forecast-point"');
     expect(html).toContain('Elapsed time (seconds)');
     expect(html).toContain('Memory (MB)');
+    expect(html).toContain('<summary>Issuance values</summary>');
     expect(html.indexOf('Predicted</th>')).toBeLessThan(html.indexOf('Actual at target</th>'));
   });
 
-  it('overlays predictions on the actual timeline and matches nearby sample times', () => {
+  it('overlays prediction issuances on the actual timeline and matches nearby sample times', () => {
     const nearSamples = [
       { Timestamp: 1000, Name: 'GradleDaemon', PID: '1', HeapUsed: 10, RSS: 20 },
       { Timestamp: 4500, Name: 'GradleDaemon', PID: '1', HeapUsed: 12, RSS: 22 },
@@ -154,11 +156,14 @@ describe('per-process memory forecasts', () => {
       },
     ];
     const html = view.render({ samples: nearSamples, process_forecasts: nearForecasts }, null).html;
-    expect(html).toContain('Replay scrubs actual and prediction tracks together');
     expect(html).toContain('id="forecast-replay-controls"');
+    expect(html).toContain('class="process-forecasts-grid"');
     expect(html).toContain('class="forecast-chart"');
     expect(html).toContain('class="forecast-chart-legend"');
+    expect(html).toContain('Prediction issuance');
+    expect(html).not.toContain('Waiting for first checkpoint');
     expect(html).not.toContain('class="chart-legend"');
+    expect(html).toContain('class="forecast-trace forecast-trace-latest"');
     expect(html).toContain('15.0 MB</td><td>16.0 MB');
     expect(html).toContain('20.0 MB</td><td>Pending');
     expect(view.actualNear(
@@ -166,6 +171,27 @@ describe('per-process memory forecasts', () => {
       5000,
       10000,
     )).toEqual({ time: 4500, value: 12, delta: 500 });
+  });
+
+  it('still draws prediction issuances when actual samples are sparse', () => {
+    const html = view.render({
+      samples: [
+        { Timestamp: 1000, Name: 'GradleDaemon', PID: '1', HeapUsed: 100, RSS: 200 },
+        { Timestamp: 40000, Name: 'GradleDaemon', PID: '1', HeapUsed: 400, RSS: 500 },
+      ],
+      process_forecasts: [{
+        process_name: 'GradleDaemon',
+        pid: '1',
+        metric: 'heap',
+        created_at_ms: 1000,
+        points: [
+          { target_at_ms: 11000, value_mb: 150 },
+          { target_at_ms: 31000, value_mb: 180 },
+        ],
+      }],
+    }, null).html;
+    expect(html).toContain('class="forecast-trace forecast-trace-latest"');
+    expect(html).toContain('class="forecast-point"');
   });
 
   it('binds prediction replay controls and scrubs chart frames', () => {
