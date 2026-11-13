@@ -260,12 +260,19 @@ describe('per-process memory forecasts', () => {
     const timeline = byId.get('forecast-replay-timeline');
     const meta = byId.get('forecast-replay-meta');
     expect(timeline).toBeTruthy();
-    expect(meta.textContent).toContain('Frame 3 / 3');
+    // Dense 1s rail from 1000..11000 inclusive => 11 frames.
+    expect(meta.textContent).toContain('Frame 11 / 11');
     expect(hosts[0].innerHTML).toContain('class="actual-trace"');
+    expect(hosts[0].innerHTML).toContain('class="forecast-trace forecast-trace-latest"');
     timeline.value = '0';
     timeline.listeners.input();
-    expect(meta.textContent).toContain('Frame 1 / 3');
+    expect(meta.textContent).toContain('Frame 1 / 11');
     expect(hosts[0].innerHTML).toContain('class="actual-trace"');
+    // Issuance created_at equals the first sample, so the prediction path is already visible.
+    expect(hosts[0].innerHTML).toContain('class="forecast-trace forecast-trace-latest"');
+    timeline.value = '4';
+    timeline.listeners.input();
+    expect(meta.textContent).toContain('Frame 5 / 11');
     stop();
   });
 

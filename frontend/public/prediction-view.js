@@ -444,6 +444,35 @@
         </section>`;
     }
 
+    // Replay on a dense elapsed-time rail so sparse sample gaps (common around the
+    // first issuance) do not pause playback for multiple seconds.
+    const REPLAY_STEP_MS = 1000;
+    const REPLAY_MIN_DELAY_MS = 16;
+    const REPLAY_MAX_DELAY_MS = 120;
+
+    function buildForecastReplayTimestamps(groups) {
+        const marks = [];
+        groups.forEach((group) => {
+            (group.actual || []).forEach((point) => {
+                if (Number.isFinite(point?.time)) marks.push(point.time);
+            });
+            (group.predictions || []).forEach((prediction) => {
+                if (Number.isFinite(prediction?.created)) marks.push(prediction.created);
+                (prediction.points || []).forEach((point) => {
+                    if (Number.isFinite(point?.time)) marks.push(point.time);
+                });
+            });
+        });
+        const unique = [...new Set(marks)].sort((a, b) => a - b);
+        if (unique.length < 2) return unique;
+        const start = unique[0];
+        const end = unique[unique.length - 1];
+        const dense = new Set(unique);
+        for (let time = start; time <= end; time += REPLAY_STEP_MS) dense.add(time);
+        dense.add(end);
+        return [...dense].sort((a, b) => a - b);
+    }
+
     function bindProcessForecastReplay(root) {
         if (!root) return () => {};
         const controls = root.querySelector('#forecast-replay-controls');
@@ -457,9 +486,7 @@
         }
         if (!Array.isArray(groups) || !groups.length) return () => {};
 
-        const timestamps = [...new Set(groups.flatMap((group) => (group.actual || []).map((point) => point.time)))]
-            .filter((time) => Number.isFinite(time))
-            .sort((a, b) => a - b);
+        const timestamps = buildForecastReplayTimestamps(groups);
         if (!timestamps.length) return () => {};
 
         const timeline = controls.querySelector('#forecast-replay-timeline');
@@ -513,9 +540,10 @@
                 isPlaying = false;
                 return;
             }
-            const nextDelay = Math.max(
-                16,
-                (timestamps[currentFrame + 1] - timestamps[currentFrame]) / speedMultiplier,
+            const rawDelay = (timestamps[currentFrame + 1] - timestamps[currentFrame]) / speedMultiplier;
+            const nextDelay = Math.min(
+                REPLAY_MAX_DELAY_MS,
+                Math.max(REPLAY_MIN_DELAY_MS, rawDelay),
             );
             playTimer = setTimeout(() => {
                 renderFrame(currentFrame + 1);
