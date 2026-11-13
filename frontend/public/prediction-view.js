@@ -237,9 +237,128 @@
         return `<div class="prediction-evolution-row"><div><strong>${label}</strong><span>At each evaluation</span></div><div class="prediction-evolution-values">${values.map(row => `<button type="button" class="prediction-evolution-value" data-prediction-window="${row.checkpoint.observation_window_s}"><span>${formatElapsed(row.checkpoint.observation_window_s)}</span><strong>${formatValue(row.value, unit)}</strong>${row.delta ? `<em>${escapeHtml(row.delta)}</em>` : ''}</button>`).join('')}</div></div>`;
     }
 
-    // Optional process_forecasts: {process_name, pid, metric, created_at_ms,
-    // points: [{target_at_ms, value_mb}]}. Timestamps use the sample clock.
-    function renderProcessTimelines(data) {
+    // Match an observed sample near a forecast target. Sparse monitor samples almost
+    // never land on exact target millis, so allow a ±10s window on the sample clock.
+    const ACTUAL_MATCH_WINDOW_MS = 10000;
+
+    function actualNear(actuals, targetMs, maxDeltaMs) {
+        const target = finiteNumber(targetMs);
+        const windowMs = finiteNumber(maxDeltaMs);
+        if (target === null || windowMs === null || windowMs < 0 || !Array.isArray(actuals) || !actuals.length) return null;
+        let best = null;
+        actuals.forEach((sample) => {
+            const time = finiteNumber(sample?.time);
+            const value = finiteNumber(sample?.value);
+            if (time === null || value === null || value < 0) return;
+            const delta = Math.abs(time - target);
+            if (delta > windowMs) return;
+            if (
+                !best
+                || delta < best.delta
+                || (delta === best.delta && time <= target && best.time > target)
+            ) {
+                best = { time, value, delta };
+            }
+        });
+        return best;
+    }
+
+    function niceTicks(min, max, count) {
+        if (!(max > min) || count < 2) return [min, max];
+        const span = max - min;
+        const step = span / (count - 1);
+        const ticks = [];
+        for (let i = 0; i < count; i += 1) ticks.push(min + step * i);
+        return ticks;
+    }
+
+    function predictionPath(prediction, actuals) {
+        const origin = actualNear(actuals, prediction.created, ACTUAL_MATCH_WINDOW_MS);
+        const start = origin
+            ? { time: origin.time, value: origin.value }
+            : { time: prediction.created, value: prediction.points[0].value };
+        return [start].concat(prediction.points);
+    }
+
+    function interpolatePath(path, time) {
+        if (!path.length) return null;
+        if (time <= path[0].time) return path[0].value;
+        for (let i = 0; i < path.length - 1; i += 1) {
+            const left = path[i];
+            const right = path[i + 1];
+            if (time > right.time) continue;
+            if (right.time === left.time) return right.value;
+            const ratio = (time - left.time) / (right.time - left.time);
+            return left.value + (right.value - left.value) * ratio;
+        }
+        return path[path.length - 1].value;
+    }
+
+    const TRACK_GAP_BREAK_MS = 15000;
+
+    // Stitch issuances into prediction tracks sampled only on actual times, plus a
+    // short forward tip after the last sample. Large sample gaps stay empty.
+    function buildTrackingSeries(predictions, actuals) {
+        if (!predictions.length || !actuals.length) return { observed: [], forward: [] };
+        const paths = predictions.map((prediction) => ({
+            created: prediction.created,
+            path: predictionPath(prediction, actuals),
+            end: Math.max(...prediction.points.map((point) => point.time), prediction.created),
+        }));
+        const latest = paths[paths.length - 1];
+        const lastActual = actuals[actuals.length - 1].time;
+        const pointAt = (time) => {
+            const active = paths.filter((item) => item.created <= time && time <= item.end);
+            if (!active.length) return null;
+            const values = active.map((item) => interpolatePath(item.path, time)).filter((value) => value !== null);
+            if (!values.length) return null;
+            const current = paths.slice().reverse().find((item) => item.created <= time);
+            const mid = current ? interpolatePath(current.path, time) : values[values.length - 1];
+            if (mid === null) return null;
+            return {
+                time,
+                mid,
+                min: Math.min(...values),
+                max: Math.max(...values),
+            };
+        };
+        const observed = actuals
+            .map((point) => point.time)
+            .filter((time) => time >= paths[0].created)
+            .map(pointAt)
+            .filter(Boolean);
+        const forward = latest.path
+            .filter((point) => point.time > lastActual)
+            .map((point) => pointAt(point.time))
+            .filter(Boolean);
+        return { observed, forward };
+    }
+
+    function splitByGaps(points, maxGapMs) {
+        if (!points.length) return [];
+        const segments = [[points[0]]];
+        for (let i = 1; i < points.length; i += 1) {
+            const prev = points[i - 1];
+            const next = points[i];
+            if (next.time - prev.time > maxGapMs) segments.push([next]);
+            else segments[segments.length - 1].push(next);
+        }
+        return segments.filter((segment) => segment.length > 0);
+    }
+
+    function areaPath(points, xAt, yAt, lowerKey, upperKey) {
+        if (points.length < 2) return '';
+        const upper = points.map((point) => `${xAt(point.time)},${yAt(point[upperKey])}`).join(' ');
+        const lower = points.slice().reverse().map((point) => `${xAt(point.time)},${yAt(point[lowerKey])}`).join(' ');
+        return `M ${upper} L ${lower} Z`;
+    }
+
+    function polylinePath(points, xAt, yAt, valueKey) {
+        if (points.length < 2) return '';
+        return points.map((point) => `${xAt(point.time)},${yAt(point[valueKey])}`).join(' ');
+    }
+
+    function collectForecastGroups(data) {
         const samples = Array.isArray(data?.samples) ? data.samples : [];
         const forecasts = Array.isArray(data?.process_forecasts) ? data.process_forecasts : [];
         const groups = new Map();
@@ -265,26 +384,215 @@
                 .sort((a, b) => a.time - b.time);
             if (points.length) group.predictions.push({ created, points });
         });
-        const available = [...groups.values()].filter(group => group.predictions.length);
-        if (!available.length) return '';
-        const timeLabel = time => new Date(time).toISOString();
-        return `<section class="prediction-panel process-forecasts"><h2>Process memory forecasts</h2><p>Predicted values first; actual values are matched at the same sample time. Times are UTC.</p>${available.map(group => {
+        return [...groups.values()].filter(group => group.predictions.length).map((group) => {
             group.actual.sort((a, b) => a.time - b.time);
             group.predictions.sort((a, b) => a.created - b.created);
-            const all = group.actual.concat(...group.predictions.map(prediction => prediction.points));
-            const minTime = Math.min(...all.map(point => point.time));
-            const maxTime = Math.max(...all.map(point => point.time));
-            const maxValue = Math.max(...all.map(point => point.value), 1);
-            const xy = point => `${20 + 560 * (point.time - minTime) / (maxTime - minTime || 1)},${115 - 95 * point.value / maxValue}`;
-            const now = Math.max(...group.actual.map(point => point.time));
-            const nowX = 20 + 560 * (now - minTime) / (maxTime - minTime || 1);
-            const traces = group.predictions.map(prediction => `<polyline class="forecast-trace" points="${prediction.points.map(xy).join(' ')}"/>${prediction.points.map(point => { const [x, y] = xy(point).split(','); return `<circle class="forecast-point" cx="${x}" cy="${y}" r="3"/>`; }).join('')}`).join('');
-            const rows = group.predictions.slice().reverse().flatMap(prediction => prediction.points.map(point => {
-                const actual = group.actual.find(sample => sample.time === point.time);
+            return group;
+        });
+    }
+
+    function renderForecastChartSvg(group, untilMs) {
+        const fullTrack = buildTrackingSeries(group.predictions, group.actual);
+        const trackPoints = fullTrack.observed.concat(fullTrack.forward);
+        const allValues = group.actual.map((point) => point.value)
+            .concat(trackPoints.flatMap((point) => [point.min, point.max, point.mid]));
+        const minTime = Math.min(group.actual[0].time, trackPoints[0]?.time ?? group.actual[0].time);
+        const maxTime = Math.max(
+            group.actual[group.actual.length - 1].time,
+            trackPoints[trackPoints.length - 1]?.time ?? group.actual[group.actual.length - 1].time,
+        );
+        const minValue = Math.min(...allValues);
+        const maxValue = Math.max(...allValues, 1);
+        const valuePad = Math.max((maxValue - minValue) * 0.08, maxValue * 0.04, 1);
+        const yMin = Math.max(0, minValue - valuePad);
+        const yMax = maxValue + valuePad;
+        const plot = { left: 54, right: 586, top: 18, bottom: 148 };
+        const xAt = time => plot.left + (plot.right - plot.left) * (time - minTime) / (maxTime - minTime || 1);
+        const yAt = value => plot.bottom - (plot.bottom - plot.top) * (value - yMin) / (yMax - yMin || 1);
+        const xy = point => `${xAt(point.time)},${yAt(point.value)}`;
+        const elapsedS = time => (time - minTime) / 1000;
+        const xTicks = niceTicks(minTime, maxTime, 5);
+        const yTicks = niceTicks(yMin, yMax, 5);
+        const grid = yTicks.map((value) => `<line class="chart-grid" x1="${plot.left}" x2="${plot.right}" y1="${yAt(value)}" y2="${yAt(value)}"/>`).join('')
+            + xTicks.map((time) => `<line class="chart-grid" x1="${xAt(time)}" x2="${xAt(time)}" y1="${plot.top}" y2="${plot.bottom}"/>`).join('');
+        const xLabels = xTicks.map((time) => `<text class="chart-tick" x="${xAt(time)}" y="${plot.bottom + 16}" text-anchor="middle">${Math.round(elapsedS(time))}s</text>`).join('');
+        const yLabels = yTicks.map((value) => `<text class="chart-tick" x="${plot.left - 8}" y="${yAt(value) + 3}" text-anchor="end">${Math.round(value)}</text>`).join('');
+
+        const cutoff = finiteNumber(untilMs);
+        const visibleActual = cutoff === null ? group.actual : group.actual.filter((point) => point.time <= cutoff);
+        const visibleObserved = cutoff === null ? fullTrack.observed : fullTrack.observed.filter((point) => point.time <= cutoff);
+        const lastActualTime = group.actual[group.actual.length - 1].time;
+        const showForward = cutoff === null || cutoff >= lastActualTime;
+        const visibleForward = !showForward
+            ? []
+            : (cutoff === null ? fullTrack.forward : fullTrack.forward.filter((point) => point.time <= cutoff));
+        const observedSegments = splitByGaps(visibleObserved, TRACK_GAP_BREAK_MS);
+        const band = observedSegments.map((segment) => areaPath(segment, xAt, yAt, 'min', 'max'))
+            .filter(Boolean)
+            .map((path) => `<path class="forecast-band" d="${path}"/>`)
+            .join('');
+        const predictionLine = observedSegments.map((segment) => {
+            const points = polylinePath(segment, xAt, yAt, 'mid');
+            return points ? `<polyline class="forecast-trace forecast-trace-latest" points="${points}"/>` : '';
+        }).join('');
+        const forwardPoints = visibleObserved.length && visibleForward.length
+            ? [visibleObserved[visibleObserved.length - 1]].concat(visibleForward)
+            : visibleForward;
+        const forwardLine = polylinePath(forwardPoints, xAt, yAt, 'mid');
+        const forwardTrace = forwardLine
+            ? `<polyline class="forecast-trace forecast-trace-forward" points="${forwardLine}"/>`
+            : '';
+        const cursorTime = cutoff === null
+            ? lastActualTime
+            : Math.min(Math.max(cutoff, minTime), maxTime);
+        const nowX = xAt(cursorTime);
+        const actualLine = visibleActual.length
+            ? `<polyline class="actual-trace" points="${visibleActual.map(xy).join(' ')}"/>`
+            : '';
+        return `<svg class="forecast-chart" viewBox="0 0 640 180" role="img" aria-label="Actual memory trajectory with prediction track"><rect class="chart-frame" x="${plot.left}" y="${plot.top}" width="${plot.right - plot.left}" height="${plot.bottom - plot.top}"/>${grid}${band}${actualLine}${predictionLine}${forwardTrace}<line class="forecast-now" x1="${nowX}" x2="${nowX}" y1="${plot.top}" y2="${plot.bottom}"/>${xLabels}${yLabels}<text class="chart-axis-label" x="${(plot.left + plot.right) / 2}" y="174" text-anchor="middle">Elapsed time (seconds)</text><text class="chart-axis-label" x="16" y="${(plot.top + plot.bottom) / 2}" text-anchor="middle" transform="rotate(-90 16 ${(plot.top + plot.bottom) / 2})">Memory (MB)</text></svg>`;
+    }
+
+    // Optional process_forecasts: {process_name, pid, metric, created_at_ms,
+    // points: [{target_at_ms, value_mb}]}. Timestamps use the sample clock.
+    function renderProcessTimelines(data) {
+        const available = collectForecastGroups(data);
+        if (!available.length) return '';
+        const timeLabel = time => new Date(time).toISOString();
+        const replayControls = `<div class="replay-controls forecast-replay-controls" id="forecast-replay-controls">
+            <div class="buttons">
+                <button class="btn" type="button" id="btn-forecast-replay-play">Play</button>
+                <button class="btn secondary" type="button" id="btn-forecast-replay-pause">Pause</button>
+                <button class="btn secondary" type="button" id="btn-forecast-replay-reset">Reset</button>
+            </div>
+            <div class="meta" id="forecast-replay-meta">Frame 0 / 0</div>
+            <div class="timeline">
+                <input type="range" id="forecast-replay-timeline" aria-label="Prediction replay timeline" min="0" max="0" value="0">
+                <div class="meta" id="forecast-replay-time-label">Elapsed: 0s</div>
+                <div class="meta">
+                    Speed:
+                    <select id="forecast-replay-speed" aria-label="Prediction replay speed">
+                        <option value="5">5x</option>
+                        <option value="10">10x</option>
+                        <option value="15" selected>15x</option>
+                        <option value="20">20x</option>
+                        <option value="30">30x</option>
+                        <option value="50">50x</option>
+                    </select>
+                </div>
+            </div>
+        </div>`;
+        return `<section class="prediction-panel process-forecasts"><h2>Process memory forecasts</h2><p>Replay scrubs actual and prediction tracks together. Actuals match the nearest sample within 10s.</p>${replayControls}${available.map((group, index) => {
+            const rows = group.predictions.slice().reverse().flatMap((prediction) => prediction.points.map((point) => {
+                const actual = actualNear(group.actual, point.time, ACTUAL_MATCH_WINDOW_MS);
                 return `<tr><td>${timeLabel(prediction.created)}</td><td>${timeLabel(point.time)}</td><td>${formatValue(point.value, 'MB')}</td><td>${actual ? formatValue(actual.value, 'MB') : 'Pending'}</td></tr>`;
             })).join('');
-            return `<article class="process-forecast"><h3>${escapeHtml(group.name)} · PID ${escapeHtml(group.pid)} · ${group.metric === 'heap' ? 'Heap' : 'RSS'}</h3><svg viewBox="0 0 600 135" role="img" aria-label="Dashed forecast traces and solid actual trace; vertical line marks latest actual sample"><line class="forecast-now" x1="${nowX}" x2="${nowX}" y1="10" y2="120"/>${traces}<polyline class="actual-trace" points="${group.actual.map(xy).join(' ')}"/>${group.actual.map(point => { const [x, y] = xy(point).split(','); return `<circle class="actual-point" cx="${x}" cy="${y}" r="3"/>`; }).join('')}</svg><p class="forecast-legend">Dashed: predictions · Solid: actual · Vertical: latest actual</p><div class="forecast-table-scroll" tabindex="0" role="region" aria-label="Forecast values for ${escapeHtml(group.name)} PID ${escapeHtml(group.pid)} ${group.metric}"><table><thead><tr><th>Created (UTC)</th><th>Target (UTC)</th><th>Predicted</th><th>Actual at target</th></tr></thead><tbody>${rows}</tbody></table></div></article>`;
-        }).join('')}</section>`;
+            return `<article class="process-forecast" data-forecast-group-index="${index}"><h3>${escapeHtml(group.name)} · PID ${escapeHtml(group.pid)} · ${group.metric === 'heap' ? 'Heap' : 'RSS'}</h3><div class="forecast-chart-host" data-forecast-chart-host>${renderForecastChartSvg(group, null)}</div><ul class="forecast-chart-legend" aria-label="Chart legend"><li><span class="legend-swatch legend-actual"></span>Actual</li><li><span class="legend-swatch legend-prediction"></span>Prediction</li><li><span class="legend-swatch legend-band"></span>Prediction range</li><li><span class="legend-swatch legend-now"></span>Latest sample</li></ul><div class="forecast-table-scroll" tabindex="0" role="region" aria-label="Forecast values for ${escapeHtml(group.name)} PID ${escapeHtml(group.pid)} ${group.metric}"><table><thead><tr><th>Created (UTC)</th><th>Target (UTC)</th><th>Predicted</th><th>Actual at target</th></tr></thead><tbody>${rows}</tbody></table></div></article>`;
+        }).join('')}<script type="application/json" id="bpw-forecast-replay-data">${JSON.stringify(available).replace(/</g, '\\u003c')}</script></section>`;
+    }
+
+    function bindProcessForecastReplay(root) {
+        if (!root) return () => {};
+        const controls = root.querySelector('#forecast-replay-controls');
+        const dataNode = root.querySelector('#bpw-forecast-replay-data');
+        if (!controls || !dataNode) return () => {};
+        let groups = [];
+        try {
+            groups = JSON.parse(dataNode.textContent || '[]');
+        } catch (error) {
+            return () => {};
+        }
+        if (!Array.isArray(groups) || !groups.length) return () => {};
+
+        const timestamps = [...new Set(groups.flatMap((group) => (group.actual || []).map((point) => point.time)))]
+            .filter((time) => Number.isFinite(time))
+            .sort((a, b) => a - b);
+        if (!timestamps.length) return () => {};
+
+        const timeline = controls.querySelector('#forecast-replay-timeline');
+        const meta = controls.querySelector('#forecast-replay-meta');
+        const timeLabel = controls.querySelector('#forecast-replay-time-label');
+        const playBtn = controls.querySelector('#btn-forecast-replay-play');
+        const pauseBtn = controls.querySelector('#btn-forecast-replay-pause');
+        const resetBtn = controls.querySelector('#btn-forecast-replay-reset');
+        const speedSelect = controls.querySelector('#forecast-replay-speed');
+        const hosts = [...root.querySelectorAll('[data-forecast-chart-host]')];
+        if (!timeline || !meta || !timeLabel || !playBtn || !pauseBtn || !resetBtn || !speedSelect || !hosts.length) {
+            return () => {};
+        }
+
+        let isPlaying = false;
+        let playTimer = null;
+        let currentFrame = timestamps.length - 1;
+        let speedMultiplier = Number(speedSelect.value) || 15;
+        timeline.min = '0';
+        timeline.max = String(Math.max(0, timestamps.length - 1));
+
+        function elapsedFor(timestamp) {
+            const first = timestamps[0];
+            return Math.max(0, Math.round((timestamp - first) / 1000));
+        }
+
+        function renderFrame(frameIndex) {
+            currentFrame = Math.max(0, Math.min(frameIndex, timestamps.length - 1));
+            const timestamp = timestamps[currentFrame];
+            timeline.value = String(currentFrame);
+            meta.textContent = `Frame ${currentFrame + 1} / ${timestamps.length}`;
+            timeLabel.textContent = `Elapsed: ${elapsedFor(timestamp)}s | ${new Date(timestamp).toLocaleTimeString()}`;
+            hosts.forEach((host, index) => {
+                const group = groups[index];
+                if (!group) return;
+                host.innerHTML = renderForecastChartSvg(group, timestamp);
+            });
+        }
+
+        function pause() {
+            isPlaying = false;
+            if (playTimer) {
+                clearTimeout(playTimer);
+                playTimer = null;
+            }
+        }
+
+        function scheduleNext() {
+            if (!isPlaying) return;
+            if (currentFrame >= timestamps.length - 1) {
+                isPlaying = false;
+                return;
+            }
+            const nextDelay = Math.max(
+                16,
+                (timestamps[currentFrame + 1] - timestamps[currentFrame]) / speedMultiplier,
+            );
+            playTimer = setTimeout(() => {
+                renderFrame(currentFrame + 1);
+                scheduleNext();
+            }, nextDelay);
+        }
+
+        function play() {
+            if (isPlaying) return;
+            if (currentFrame >= timestamps.length - 1) renderFrame(0);
+            isPlaying = true;
+            scheduleNext();
+        }
+
+        playBtn.addEventListener('click', play);
+        pauseBtn.addEventListener('click', pause);
+        resetBtn.addEventListener('click', () => {
+            pause();
+            renderFrame(0);
+        });
+        timeline.addEventListener('input', () => {
+            pause();
+            renderFrame(Number(timeline.value));
+        });
+        speedSelect.addEventListener('change', () => {
+            const parsed = Number(speedSelect.value);
+            if (!Number.isNaN(parsed) && parsed > 0) speedMultiplier = parsed;
+        });
+
+        renderFrame(timestamps.length - 1);
+        return pause;
     }
 
     function render(data, selectedWindow) {
@@ -322,5 +630,16 @@
         return { selectedWindow: selected?.observation_window_s ?? null, html: `${processTimelines}${summary}<section class="prediction-panel"><div class="prediction-panel-head"><div><span class="bpw-panel-badge">Evolution</span><h2>Prediction evolution</h2></div><span class="prediction-panel-meta">${ready.length} of ${checkpoints.length} ready</span></div>${timeline}</section>${details}<section class="prediction-panel prediction-evolution"><div class="prediction-panel-head"><div><span class="bpw-panel-badge">Changes</span><h2>How estimates changed</h2></div></div>${renderMetricRow('Predicted peak RSS', peakRows, 'MB')}${renderMetricRow('Predicted duration', durationRows, 's')}${riskRows || '<p>Not enough ready checkpoints to show evolution.</p>'}</section>${outcome}` };
     }
 
-    window.BpwPredictionView = { normalizeCheckpoints, formatElapsed, formatValue, buildMarkerData, render, observedAtCheckpoint, aggregateRssAtTimestamp, peakAggregateRss };
+    window.BpwPredictionView = {
+        normalizeCheckpoints,
+        formatElapsed,
+        formatValue,
+        buildMarkerData,
+        render,
+        observedAtCheckpoint,
+        aggregateRssAtTimestamp,
+        peakAggregateRss,
+        actualNear,
+        bindProcessForecastReplay,
+    };
 })();

@@ -597,11 +597,17 @@
             const panel = document.getElementById('run-panel-predictions');
             const content = document.getElementById('prediction-panel-content');
             if (!panel || !content) return;
+            if (window.forecastReplayStop) {
+                window.forecastReplayStop();
+                window.forecastReplayStop = null;
+            }
             const checkpoints = BpwPredictionView.normalizeCheckpoints(data?.prediction_checkpoints);
-            const predictionEnabled = window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true || checkpoints.length > 0;
+            const hasProcessForecasts = Array.isArray(data?.process_forecasts) && data.process_forecasts.length > 0;
+            const predictionEnabled = window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true || checkpoints.length > 0 || hasProcessForecasts;
             const view = BpwPredictionView.render({ ...data, predictionEnabled }, predictionSelectedWindow);
             predictionSelectedWindow = view.selectedWindow;
             content.innerHTML = view.html;
+            window.forecastReplayStop = BpwPredictionView.bindProcessForecastReplay(content);
             if (focusWindow !== null) {
                 const selected = content.querySelector(`[data-prediction-window="${Number(focusWindow)}"]`);
                 if (selected && typeof selected.focus === 'function') selected.focus({ preventScroll: true });
@@ -809,7 +815,8 @@
             
             const formatDur = (s) => s < 60 ? s + 's' : (Math.floor(s / 60) + 'm' + (s % 60 ? ' ' + Math.round(s % 60) + 's' : ''));
             const predictionCheckpoints = BpwPredictionView.normalizeCheckpoints(data.prediction_checkpoints);
-            const predictionEnabled = window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true || predictionCheckpoints.length > 0;
+            const hasProcessForecasts = Array.isArray(data.process_forecasts) && data.process_forecasts.length > 0;
+            const predictionEnabled = window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true || predictionCheckpoints.length > 0 || hasProcessForecasts;
             const readyPredictionCount = predictionCheckpoints.filter(checkpoint => checkpoint.status === 'ready').length;
             const latestReadyRisk = [...predictionCheckpoints].reverse().find(checkpoint => checkpoint.status === 'ready')?.risk_level;
             const predictionView = BpwPredictionView.render({ ...data, predictionEnabled }, predictionSelectedWindow);

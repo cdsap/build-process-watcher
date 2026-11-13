@@ -27,6 +27,8 @@ type Options struct {
 	BigQueryTable          string
 	BigQueryProcessesTable string
 	PredictionProvider     predictor.Provider
+	ForecastProvider       predictor.ForecastProvider
+	TabPredictProvider     predictor.ForecastProvider
 	PredictionCheckpoints  []int
 	// FallbackClassifier maps provider failures onto public-safe telemetry.
 	// Composition roots (for example backend main) supply provider-specific
@@ -35,16 +37,20 @@ type Options struct {
 }
 
 type serverConfig struct {
-	projectID                 string
-	port                      string
-	bigQueryDataset           string
-	bigQueryTable             string
-	bigQueryProcessesTable    string
-	predictionProviderEnabled bool
-	predictionProviderURL     string
-	predictionProviderAuth    string
-	predictionProviderTime    time.Duration
-	predictionCheckpoints     string
+	projectID                   string
+	port                        string
+	bigQueryDataset             string
+	bigQueryTable               string
+	bigQueryProcessesTable      string
+	predictionProviderEnabled   bool
+	predictionProviderURL       string
+	predictionProviderAuth      string
+	predictionProviderTime      time.Duration
+	predictionCheckpoints       string
+	forecastProviderEnabled     bool
+	forecastProviderTimeout     time.Duration
+	tabPredictProviderEnabled   bool
+	tabPredictProviderTimeout   time.Duration
 }
 
 // OptionsFromEnv reads public backend configuration from environment variables.
@@ -60,6 +66,10 @@ func OptionsFromEnv() Options {
 		predictionProviderAuth:    os.Getenv("PREDICTIVE_PROVIDER_AUTH_AUDIENCE"),
 		predictionProviderTime:    parseRemoteProviderTimeout(os.Getenv("PREDICTIVE_PROVIDER_TIMEOUT_MS")),
 		predictionCheckpoints:     os.Getenv("PREDICTIVE_RELIABILITY_CHECKPOINTS"),
+		forecastProviderEnabled:   predictionProviderEnabled(firstNonEmpty(os.Getenv("PREDICTIVE_FORECAST_PROVIDER_ENABLED"), os.Getenv("PREDICTIVE_PROVIDER_ENABLED"))),
+		forecastProviderTimeout:   parseForecastProviderTimeout(os.Getenv("PREDICTIVE_FORECAST_PROVIDER_TIMEOUT_MS")),
+		tabPredictProviderEnabled: predictionProviderEnabled(firstNonEmpty(os.Getenv("PREDICTIVE_TABPREDICT_PROVIDER_ENABLED"), os.Getenv("PREDICTIVE_PROVIDER_ENABLED"))),
+		tabPredictProviderTimeout: parseForecastProviderTimeout(firstNonEmpty(os.Getenv("PREDICTIVE_TABPREDICT_PROVIDER_TIMEOUT_MS"), os.Getenv("PREDICTIVE_FORECAST_PROVIDER_TIMEOUT_MS"))),
 	})
 	if err != nil {
 		log.Printf("🔮 Remote predictive provider disabled: %v", err)
@@ -81,6 +91,40 @@ func buildOptions(config serverConfig) (Options, error) {
 		}
 	}
 
+	forecastProvider := predictor.ForecastProvider(predictor.NoopForecastProvider{})
+	if config.forecastProviderEnabled {
+		remoteForecast, forecastErr := predictor.NewRemoteForecastProvider(predictor.RemoteForecastConfig{
+			URL:          config.predictionProviderURL,
+			Timeout:      config.forecastProviderTimeout,
+			AuthAudience: config.predictionProviderAuth,
+		})
+		if forecastErr != nil {
+			if providerErr == nil {
+				providerErr = forecastErr
+			}
+			forecastProvider = predictor.NoopForecastProvider{}
+		} else {
+			forecastProvider = remoteForecast
+		}
+	}
+
+	tabPredictProvider := predictor.ForecastProvider(predictor.NoopForecastProvider{})
+	if config.tabPredictProviderEnabled {
+		remoteTab, tabErr := predictor.NewRemoteTabPredictProvider(predictor.RemoteForecastConfig{
+			URL:          config.predictionProviderURL,
+			Timeout:      config.tabPredictProviderTimeout,
+			AuthAudience: config.predictionProviderAuth,
+		})
+		if tabErr != nil {
+			if providerErr == nil {
+				providerErr = tabErr
+			}
+			tabPredictProvider = predictor.NoopForecastProvider{}
+		} else {
+			tabPredictProvider = remoteTab
+		}
+	}
+
 	checkpointValue := strings.TrimSpace(config.predictionCheckpoints)
 	checkpoints := predictor.ParseCheckpoints(checkpointValue)
 	if checkpointValue == "" && predictor.Enabled(provider) {
@@ -94,6 +138,8 @@ func buildOptions(config serverConfig) (Options, error) {
 		BigQueryTable:          strings.TrimSpace(config.bigQueryTable),
 		BigQueryProcessesTable: strings.TrimSpace(config.bigQueryProcessesTable),
 		PredictionProvider:     provider,
+		ForecastProvider:       forecastProvider,
+		TabPredictProvider:     tabPredictProvider,
 		PredictionCheckpoints:  checkpoints,
 	}, providerErr
 }
@@ -135,7 +181,21 @@ func Run(ctx context.Context, options Options) error {
 		log.Printf("🔮 Predictive reliability disabled (set private provider and PREDICTIVE_RELIABILITY_CHECKPOINTS to enable)")
 	}
 
-	h := handlers.NewHandlersWithPredictor(storageClient, exportSched, provider, options.PredictionCheckpoints, options.FallbackClassifier)
+	forecastProvider := options.ForecastProvider
+	if forecastProvider == nil {
+		forecastProvider = predictor.NoopForecastProvider{}
+	}
+	if predictor.ForecastEnabled(forecastProvider) {
+		log.Printf("🔮 Process forecast provider enabled")
+	}
+	tabPredictProvider := options.TabPredictProvider
+	if tabPredictProvider == nil {
+		tabPredictProvider = predictor.NoopForecastProvider{}
+	}
+	if predictor.ForecastEnabled(tabPredictProvider) {
+		log.Printf("🔮 Process tabpredict provider enabled")
+	}
+	h := handlers.NewHandlersWithPredictor(storageClient, exportSched, provider, options.PredictionCheckpoints, options.FallbackClassifier, forecastProvider, tabPredictProvider)
 	cleanupService := cleanup.NewService(storageClient, exportSched)
 	mux := NewMux(h, cleanupService)
 	port := portOrDefault(options.Port)
@@ -207,4 +267,21 @@ func parseRemoteProviderTimeout(value string) time.Duration {
 		return 0
 	}
 	return time.Duration(millis) * time.Millisecond
+}
+
+func parseForecastProviderTimeout(value string) time.Duration {
+	millis, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || millis <= 0 {
+		return 20 * time.Second
+	}
+	return time.Duration(millis) * time.Millisecond
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }

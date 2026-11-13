@@ -21,6 +21,7 @@ type Handlers struct {
 	storage             Storage
 	export              Exporter
 	checkpointEvaluator *prediction.CheckpointEvaluator
+	forecastEvaluator   *prediction.ForecastEvaluator
 }
 
 // Storage is the persistence port used by the HTTP handlers and checkpoint
@@ -31,6 +32,7 @@ type Storage interface {
 	StoreSamples(runID string, samples []models.Sample) error
 	StoreProcessInfo(runID string, processInfo models.ProcessInfo) error
 	StorePredictionCheckpoint(runID string, checkpoint models.PredictionCheckpoint) error
+	AppendProcessForecasts(runID string, forecasts []models.ProcessForecast) error
 	SetRunExportToBigquery(runID string, enabled bool) error
 	SetRunPredictiveReliability(runID string, enabled bool) error
 	SetRunPredictionMode(runID, mode string) error
@@ -45,20 +47,23 @@ type Exporter interface {
 
 // NewHandlers creates a new handlers instance. export may be nil (no BigQuery jobs).
 func NewHandlers(storageClient Storage, export Exporter) *Handlers {
-	return NewHandlersWithPredictor(storageClient, export, predictor.NoopProvider{}, nil, nil)
+	return NewHandlersWithPredictor(storageClient, export, predictor.NoopProvider{}, nil, nil, predictor.NoopForecastProvider{}, predictor.NoopForecastProvider{})
 }
 
-// NewHandlersWithPredictor creates handlers with an optional prediction provider
-// and optional fallback classifier supplied by the composition root.
-func NewHandlersWithPredictor(storageClient Storage, export Exporter, predictionProvider predictor.Provider, checkpoints []int, fallbackClassifier predictor.FallbackClassifier) *Handlers {
-	var repo prediction.CheckpointRepository
+// NewHandlersWithPredictor creates handlers with optional reliability, forecast, and
+// tabpredict providers plus an optional fallback classifier supplied by the composition root.
+func NewHandlersWithPredictor(storageClient Storage, export Exporter, predictionProvider predictor.Provider, checkpoints []int, fallbackClassifier predictor.FallbackClassifier, forecastProvider predictor.ForecastProvider, tabPredictProvider predictor.ForecastProvider) *Handlers {
+	var checkpointRepo prediction.CheckpointRepository
+	var forecastRepo prediction.ForecastRepository
 	if storageClient != nil {
-		repo = storageClient
+		checkpointRepo = storageClient
+		forecastRepo = storageClient
 	}
 	return &Handlers{
 		storage:             storageClient,
 		export:              export,
-		checkpointEvaluator: prediction.NewCheckpointEvaluator(repo, predictionProvider, checkpoints, fallbackClassifier),
+		checkpointEvaluator: prediction.NewCheckpointEvaluator(checkpointRepo, predictionProvider, checkpoints, fallbackClassifier),
+		forecastEvaluator:   prediction.NewForecastEvaluatorWithTabPredict(forecastRepo, forecastProvider, tabPredictProvider),
 	}
 }
 
@@ -278,6 +283,9 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.checkpointEvaluator.Evaluate(r.Context(), req.RunID)
+	if h.forecastEvaluator != nil {
+		h.forecastEvaluator.Evaluate(r.Context(), req.RunID)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -368,6 +376,7 @@ func (h *Handlers) GetRun(w http.ResponseWriter, r *http.Request) {
 	response.Samples = runDoc.Samples
 	response.ProcessInfo = processDoc.ProcessInfo
 	response.PredictionCheckpoints = runDoc.PredictionCheckpoints
+	response.ProcessForecasts = runDoc.ProcessForecasts
 	response.Finished = runDoc.Finished
 	response.UpdatedAt = runDoc.UpdatedAt
 	if !runDoc.FinishedAt.IsZero() {
