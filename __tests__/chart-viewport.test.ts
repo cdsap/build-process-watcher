@@ -118,18 +118,23 @@ describe('chart viewport', () => {
         'utf8',
       ),
     );
-    const timestamps = [...new Set(fixture.samples.map((s: any) => Number(s.Timestamp)))]
-      .filter((t) => Number.isFinite(t))
-      .sort((a, b) => a - b) as number[];
-    const values = timestamps.map((t) => {
+    const stampSet = new Set<number>();
+    fixture.samples.forEach((sample: any) => {
+      const stamp = Number(sample.Timestamp);
+      if (Number.isFinite(stamp)) stampSet.add(stamp);
+    });
+    const timestamps = Array.from(stampSet).sort((a, b) => a - b);
+    const values = timestamps.map((stamp) => {
       const row = fixture.samples.find(
-        (s: any) => Number(s.Timestamp) === t && s.Name === 'GradleDaemon' && s.PID === '3177',
+        (sample: any) => Number(sample.Timestamp) === stamp
+          && sample.Name === 'GradleDaemon'
+          && sample.PID === '3177',
       );
       return row ? row.RSS : null;
     });
     const gapLimitMs = 8_000;
     const gaps = view.findGaps(timestamps, gapLimitMs);
-    expect(gaps.some((g: any) => (g.end - g.start) >= 60_000)).toBe(true);
+    expect(gaps.some((gap: any) => (gap.end - gap.start) >= 60_000)).toBe(true);
     const midGap = gaps[0].start + Math.floor((gaps[0].end - gaps[0].start) / 2);
     const connectors = view.unobservedConnectors(timestamps, values, midGap, gapLimitMs, {
       maxIndex: gaps[0].lowerIndex,
