@@ -491,6 +491,10 @@
         // Refresh interval management
         let refreshInterval = parseInt(localStorage.getItem('refreshInterval')) || 60; // Default 60 seconds
         let refreshTimer = null;
+        let liveMountState = null;
+        let liveSeriesStore = null;
+        let liveYDomain = null;
+        let liveRunController = null;
         let lastRefreshTime = null;
         let activeRunDashboardTab = 'dashboard';
         let predictionSelectedWindow = null;
@@ -659,11 +663,6 @@
             });
         }
 
-        let liveMountState = null;
-        let liveSeriesStore = null;
-        let liveYDomain = null;
-        let liveRunController = null;
-
         function computeLiveSummary(data) {
             const samples = data?.samples || [];
             const processInfo = data?.process_info || {};
@@ -803,17 +802,61 @@
                 },
                 onError: ({ status, error, response }) => {
                     console.error('Run data request failed:', { status, error, response });
-                    if (status === 404 || status === 410) showUnavailableRun('not-found');
-                    else if (status) showUnavailableRun('server');
-                    else if (!document.getElementById('chart')) showUnavailableRun('connectivity');
+                    if (status === 404 || status === 410) {
+                        showUnavailableRun('not-found');
+                    } else if (status) {
+                        showUnavailableRun('server');
+                    } else if (document.getElementById('chart') && liveMountState?.finished === false) {
+                        // Keep the live chart on a transient connectivity blip.
+                    } else {
+                        showUnavailableRun('connectivity');
+                    }
                 },
             });
             return liveRunController;
         }
 
+        async function loadRunDataLegacy(runId, backendUrl) {
+            let response;
+            try {
+                response = await fetch(`${backendUrl}/runs/${runId}`);
+                if (!response.ok) {
+                    console.error('Run data request failed:', {
+                        runId,
+                        status: response.status,
+                        statusText: response.statusText
+                    });
+                    if (response.status === 404 || response.status === 410) {
+                        showUnavailableRun('not-found');
+                    } else {
+                        showUnavailableRun('server');
+                    }
+                    return;
+                }
+
+                const data = CompareShared.normalizeReportData(await response.json());
+                lastRefreshTime = new Date();
+                renderDashboard(runId, data);
+                window.currentRunData = data;
+                renderFreshnessDiagnostics(data, performance.now());
+                cancelRefresh();
+                if (!data.finished) {
+                    refreshTimer = setTimeout(() => loadRunData(runId), refreshInterval * 1000);
+                }
+            } catch (error) {
+                console.error('Run data request could not be completed:', { runId, error });
+                showUnavailableRun(response ? 'server' : 'connectivity');
+            }
+        }
+
         async function loadRunData(runId) {
             const backendUrl = window.BUILD_PROCESS_WATCHER_CONFIG?.backendUrl || 'https://build-process-watcher-backend-685615422311.us-central1.run.app';
             cancelRefresh();
+            if (typeof window.BpwLiveRunController?.createLiveRunController !== 'function'
+                || typeof window.BpwChartSeriesStore?.createChartSeriesStore !== 'function') {
+                await loadRunDataLegacy(runId, backendUrl);
+                return;
+            }
             const controller = ensureLiveRunController();
             await controller.refresh(runId, backendUrl);
         }
