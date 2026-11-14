@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -16,12 +17,19 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
 
+// postIngestEvaluationTimeout bounds checkpoint/forecast work after the ingest ACK.
+// TabFM can take tens of seconds; keep this above the provider client timeout.
+const postIngestEvaluationTimeout = 45 * time.Second
+
 // Handlers contains all HTTP handlers
 type Handlers struct {
 	storage             Storage
 	export              Exporter
 	checkpointEvaluator *prediction.CheckpointEvaluator
 	forecastEvaluator   *prediction.ForecastEvaluator
+	// evaluateAfterStore runs after the ingest success response is flushed.
+	// Tests may replace it to assert the collector is not blocked on prediction.
+	evaluateAfterStore func(ctx context.Context, runID string)
 }
 
 // Storage is the persistence port used by the HTTP handlers and checkpoint
@@ -59,11 +67,25 @@ func NewHandlersWithPredictor(storageClient Storage, export Exporter, prediction
 		checkpointRepo = storageClient
 		forecastRepo = storageClient
 	}
-	return &Handlers{
+	h := &Handlers{
 		storage:             storageClient,
 		export:              export,
 		checkpointEvaluator: prediction.NewCheckpointEvaluator(checkpointRepo, predictionProvider, checkpoints, fallbackClassifier),
 		forecastEvaluator:   prediction.NewForecastEvaluatorWithTabPredict(forecastRepo, forecastProvider, tabPredictProvider),
+	}
+	h.evaluateAfterStore = h.runPostIngestEvaluation
+	return h
+}
+
+// runPostIngestEvaluation runs reliability checkpoints and process forecasts after
+// samples are stored. Called only after the ingest HTTP response has been flushed
+// so the monitor's blocking curl is not held open for TabFM latency.
+func (h *Handlers) runPostIngestEvaluation(ctx context.Context, runID string) {
+	if h.checkpointEvaluator != nil {
+		h.checkpointEvaluator.Evaluate(ctx, runID)
+	}
+	if h.forecastEvaluator != nil {
+		h.forecastEvaluator.Evaluate(ctx, runID)
 	}
 }
 
@@ -282,14 +304,25 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
-	h.checkpointEvaluator.Evaluate(r.Context(), req.RunID)
-	if h.forecastEvaluator != nil {
-		h.forecastEvaluator.Evaluate(r.Context(), req.RunID)
-	}
 
+	// ACK the collector before prediction work. Sync TabFM on the request path
+	// previously held curl open for ~20–30s and created regular sample holes.
+	// Flush so the client can proceed; keep evaluation on this goroutine so Cloud
+	// Run still has CPU until the handler returns.
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "success", "samples": fmt.Sprintf("%d", len(samples))})
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "success", "samples": fmt.Sprintf("%d", len(samples))}); err != nil {
+		log.Printf("Failed to encode ingest response for run %s: %v", req.RunID, err)
+	}
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+
+	evalCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), postIngestEvaluationTimeout)
+	defer cancel()
+	if h.evaluateAfterStore != nil {
+		h.evaluateAfterStore(evalCtx, req.RunID)
+	}
 }
 
 func validFreshness(value *models.IngestFreshness) bool {

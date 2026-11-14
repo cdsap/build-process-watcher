@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +16,21 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
+
+// flushRecorder signals when the ingest ACK has been flushed to the client.
+type flushRecorder struct {
+	*httptest.ResponseRecorder
+	flushed chan struct{}
+}
+
+func (r *flushRecorder) Flush() {
+	r.ResponseRecorder.Flush()
+	select {
+	case <-r.flushed:
+	default:
+		close(r.flushed)
+	}
+}
 
 type fakeStorage struct {
 	runs                  map[string]*models.RunDoc
@@ -342,6 +358,59 @@ func TestIngestUsesStoragePortWithoutFirestore(t *testing.T) {
 	}
 	if len(store.storedSamples) != 1 || len(store.storedProcessInfo) != 1 {
 		t.Fatalf("stored samples/process info = %d/%d, want 1/1", len(store.storedSamples), len(store.storedProcessInfo))
+	}
+}
+
+func TestIngestAcksBeforePredictionWork(t *testing.T) {
+	store := newFakeStorage()
+	h := NewHandlers(store, nil)
+	const runID = "run-ingest-decouple"
+	token, _, err := auth.GenerateToken(runID)
+	if err != nil {
+		t.Fatalf("GenerateToken failed: %v", err)
+	}
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	h.evaluateAfterStore = func(context.Context, string) {
+		close(entered)
+		<-release
+	}
+
+	body := `{"run_id":"run-ingest-decouple","data":"00:00:01 | 12345 | GradleDaemon | 100MB | 200MB | 300MB"}`
+	req := httptest.NewRequest(http.MethodPost, "/ingest", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	flushed := make(chan struct{})
+	recorder := &flushRecorder{ResponseRecorder: httptest.NewRecorder(), flushed: flushed}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		h.Ingest(recorder, req)
+	}()
+
+	select {
+	case <-flushed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("ingest did not flush ACK before prediction work")
+	}
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("prediction work never started after ACK")
+	}
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s; want %d", recorder.Code, recorder.Body.String(), http.StatusOK)
+	}
+	if len(store.storedSamples) != 1 {
+		t.Fatalf("stored samples = %d, want 1", len(store.storedSamples))
+	}
+
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("ingest handler did not return after prediction work finished")
 	}
 }
 
