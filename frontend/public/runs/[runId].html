@@ -11,6 +11,8 @@
     <script src="/compare-shared.js"></script>
     <script src="/playback-clock.js"></script>
     <script src="/chart-viewport.js"></script>
+    <script src="/chart-series-store.js"></script>
+    <script src="/live-run-controller.js"></script>
     <script src="/prediction-view.js"></script>
     <script src="/freshness-view.js"></script>
     <script>
@@ -508,14 +510,8 @@
         function setRefreshInterval(seconds) {
             refreshInterval = seconds;
             localStorage.setItem('refreshInterval', seconds);
-            
-            // Cancel existing timer and restart with new interval
-            if (refreshTimer) {
-                clearTimeout(refreshTimer);
-                refreshTimer = null;
-            }
-            
-            // Reload immediately to show the new interval in UI
+            if (liveRunController) liveRunController.cancelTimer();
+            // Reload immediately; controller reschedules on success while live.
             loadRunData(runId);
         }
 
@@ -524,6 +520,7 @@
                 clearTimeout(refreshTimer);
                 refreshTimer = null;
             }
+            if (liveRunController) liveRunController.cancelTimer();
         }
 
         function resizeRunDashboardCharts() {
@@ -662,44 +659,163 @@
             });
         }
 
-        async function loadRunData(runId) {
-            const backendUrl = window.BUILD_PROCESS_WATCHER_CONFIG?.backendUrl || 'https://build-process-watcher-backend-685615422311.us-central1.run.app';
-            const browserRequestStarted = performance.now();
-            let response;
-            
-            try {
-                response = await fetch(`${backendUrl}/runs/${runId}`);
-                
-                if (!response.ok) {
-                    console.error('Run data request failed:', {
-                        runId,
-                        status: response.status,
-                        statusText: response.statusText
-                    });
-                    if (response.status === 404 || response.status === 410) {
-                        showUnavailableRun('not-found');
-                    } else {
-                        showUnavailableRun('server');
-                    }
-                    return;
-                }
+        let liveMountState = null;
+        let liveSeriesStore = null;
+        let liveYDomain = null;
+        let liveRunController = null;
 
-                const data = CompareShared.normalizeReportData(await response.json());
-                lastRefreshTime = new Date();
+        function computeLiveSummary(data) {
+            const samples = data?.samples || [];
+            const processInfo = data?.process_info || {};
+            let maxRssAllProcesses = 0;
+            let maxHeapAllProcesses = 0;
+            let maxGcTimeAllProcesses = 0;
+            for (const [pid] of Object.entries(processInfo)) {
+                const processSamples = samples.filter((sample) => sample.PID === pid);
+                processSamples.forEach((sample) => {
+                    if (sample.RSS > maxRssAllProcesses) maxRssAllProcesses = sample.RSS;
+                    if (sample.HeapUsed > maxHeapAllProcesses) maxHeapAllProcesses = sample.HeapUsed;
+                    const gcSeconds = sample.GCTimeSeconds ?? (sample.GCTime ? sample.GCTime / 1000 : 0);
+                    if (gcSeconds > maxGcTimeAllProcesses) maxGcTimeAllProcesses = gcSeconds;
+                });
+            }
+            const timestamps = [...new Set(samples.map((sample) => sample.Timestamp))];
+            const processKeys = [...new Set(samples.map((sample) => `${sample.Name}|${sample.PID}`))];
+            const totalSeries = buildTotalRssSeries(samples, timestamps.sort((a, b) => a - b), processKeys);
+            (totalSeries.totalRss || []).forEach((value) => {
+                if (value > maxRssAllProcesses) maxRssAllProcesses = value;
+            });
+            const processCount = processKeys.length;
+            const elapsedTimes = samples.map((sample) => sample.ElapsedTime || 0).filter((value) => value > 0);
+            const durationSec = elapsedTimes.length >= 2
+                ? Math.max(...elapsedTimes) - Math.min(...elapsedTimes)
+                : (elapsedTimes[0] || 0);
+            const sampleRate = durationSec > 0 && samples.length > 0 ? (samples.length / Math.max(durationSec, 1)) : 0;
+            const pressure = maxRssAllProcesses > 0 && maxHeapAllProcesses > 0
+                ? Math.min(999, (maxHeapAllProcesses / maxRssAllProcesses) * 100)
+                : 0;
+            return {
+                samples,
+                maxRssAllProcesses,
+                maxHeapAllProcesses,
+                maxGcTimeAllProcesses,
+                processCount,
+                durationSec,
+                sampleRate,
+                pressure,
+            };
+        }
+
+        function canUpdateLiveDashboard(runId, data) {
+            const content = document.getElementById('content');
+            return !!(
+                liveMountState
+                && liveMountState.runId === runId
+                && liveMountState.finished === false
+                && data?.finished !== true
+                && content
+                && content.dataset.bpwLiveMounted === '1'
+                && document.getElementById('chart')
+            );
+        }
+
+        function updateLiveHeader(summary, data) {
+            const formatMb = (value) => value > 0 ? `${value.toFixed(value >= 1000 ? 0 : 1)} MB` : 'N/A';
+            const setText = (id, text, hidden) => {
+                const node = document.getElementById(id);
+                if (!node) return;
+                node.textContent = text;
+                if (hidden !== undefined) node.hidden = !!hidden;
+            };
+            setText('run-header-status', 'Live');
+            const status = document.getElementById('run-header-status');
+            if (status) {
+                status.classList.add('live');
+                status.classList.remove('done');
+            }
+            setText('run-header-samples', `${summary.samples.length} samples`);
+            setText('run-header-processes', `${summary.processCount} processes`);
+            setText('run-header-duration', summary.durationSec > 0 ? formatDur(summary.durationSec) : '', summary.durationSec <= 0);
+            setText('run-header-peak', summary.maxRssAllProcesses > 0 ? `${summary.maxRssAllProcesses.toFixed(0)} MB peak` : '', summary.maxRssAllProcesses <= 0);
+            setText('run-header-updated', data.updated_at ? new Date(data.updated_at).toLocaleString() : '', !data.updated_at);
+            setText('kpi-peak-rss', formatMb(summary.maxRssAllProcesses));
+            setText('kpi-peak-heap', formatMb(summary.maxHeapAllProcesses));
+            setText('kpi-peak-heap-note', summary.pressure > 0 ? `${summary.pressure.toFixed(0)}% of peak RSS` : 'Heap signal unavailable');
+            setText('kpi-gc-time', summary.maxGcTimeAllProcesses > 0 ? `${summary.maxGcTimeAllProcesses.toFixed(2)} s` : 'N/A');
+            setText('kpi-sample-density', summary.sampleRate > 0 ? `${summary.sampleRate.toFixed(2)}/s` : 'N/A');
+            setText(
+                'kpi-sample-density-note',
+                `${summary.samples.length} samples over ${summary.durationSec > 0 ? formatDur(summary.durationSec) : 'the run'}`,
+            );
+        }
+
+        function updateLiveDashboard(runId, data, browserRequestStarted) {
+            const summary = computeLiveSummary(data);
+            if (!liveSeriesStore) {
+                liveSeriesStore = BpwChartSeriesStore.createChartSeriesStore(summary.samples);
+            } else {
+                liveSeriesStore.reconcile(summary.samples);
+            }
+            window.currentSamples = summary.samples;
+            window.currentRunData = data;
+            window.currentProcessSummary = CompareShared.buildProcessSummary(summary.samples, data.process_info || {});
+            updateLiveHeader(summary, data);
+            if (document.getElementById('chart')) {
+                renderChart(summary.samples, BpwPredictionView.normalizeCheckpoints(data.prediction_checkpoints), { live: true });
+            }
+            if (hasGCData(summary.samples) && document.getElementById('gc-chart')) {
+                renderGCChart(summary.samples, { live: true });
+            }
+            renderJvmCounterCharts(summary.samples, { live: true });
+            renderPredictionPanel(data);
+            bindPredictionPanel(data);
+            renderFreshnessDiagnostics(data, browserRequestStarted);
+        }
+
+        function applyRunData(runId, data, browserRequestStarted) {
+            lastRefreshTime = new Date();
+            if (canUpdateLiveDashboard(runId, data)) {
+                updateLiveDashboard(runId, data, browserRequestStarted);
+            } else {
+                liveSeriesStore = BpwChartSeriesStore.createChartSeriesStore(data.samples || []);
+                liveYDomain = null;
                 renderDashboard(runId, data);
                 window.currentRunData = data;
                 renderFreshnessDiagnostics(data, browserRequestStarted);
-                
-                // Auto-refresh if not finished
-                cancelRefresh(); // Cancel any existing timer
-                if (!data.finished) {
-                    refreshTimer = setTimeout(() => loadRunData(runId), refreshInterval * 1000);
-                }
-                
-            } catch (error) {
-                console.error('Run data request could not be completed:', { runId, error });
-                showUnavailableRun(response ? 'server' : 'connectivity');
             }
+        }
+
+        function ensureLiveRunController() {
+            if (liveRunController) return liveRunController;
+            liveRunController = BpwLiveRunController.createLiveRunController({
+                normalize: (payload) => CompareShared.normalizeReportData(payload),
+                onData: ({ runId, data, browserRequestStarted }) => {
+                    applyRunData(runId, data, browserRequestStarted);
+                    if (data?.finished !== true) {
+                        liveRunController.schedule(
+                            runId,
+                            window.BUILD_PROCESS_WATCHER_CONFIG?.backendUrl || 'https://build-process-watcher-backend-685615422311.us-central1.run.app',
+                            refreshInterval,
+                        );
+                    } else {
+                        liveRunController.cancelTimer();
+                    }
+                },
+                onError: ({ status, error, response }) => {
+                    console.error('Run data request failed:', { status, error, response });
+                    if (status === 404 || status === 410) showUnavailableRun('not-found');
+                    else if (status) showUnavailableRun('server');
+                    else if (!document.getElementById('chart')) showUnavailableRun('connectivity');
+                },
+            });
+            return liveRunController;
+        }
+
+        async function loadRunData(runId) {
+            const backendUrl = window.BUILD_PROCESS_WATCHER_CONFIG?.backendUrl || 'https://build-process-watcher-backend-685615422311.us-central1.run.app';
+            cancelRefresh();
+            const controller = ensureLiveRunController();
+            await controller.refresh(runId, backendUrl);
         }
 
         function renderFreshnessDiagnostics(data, browserRequestStarted) {
@@ -938,12 +1054,12 @@
                 <div class="run-header-bar">
                     <div class="run-header-main">
                         <span class="run-id">${escapeHtml(runId)}</span>
-                        <span class="run-status ${isFinished ? 'done' : 'live'}">${isFinished ? 'Completed' : 'Live'}</span>
-                        <span class="run-stat">${samples.length} samples</span>
-                        <span class="run-stat">${processCount} processes</span>
-                        ${durationSec > 0 ? `<span class="run-stat">${formatDur(durationSec)}</span>` : ''}
-                        ${maxRssAllProcesses > 0 ? `<span class="run-stat">${maxRssAllProcesses.toFixed(0)} MB peak</span>` : ''}
-                        ${data.updated_at ? `<span class="run-stat muted">${new Date(data.updated_at).toLocaleString()}</span>` : ''}
+                        <span class="run-status ${isFinished ? 'done' : 'live'}" id="run-header-status">${isFinished ? 'Completed' : 'Live'}</span>
+                        <span class="run-stat" id="run-header-samples">${samples.length} samples</span>
+                        <span class="run-stat" id="run-header-processes">${processCount} processes</span>
+                        <span class="run-stat" id="run-header-duration" ${durationSec > 0 ? '' : 'hidden'}>${durationSec > 0 ? formatDur(durationSec) : ''}</span>
+                        <span class="run-stat" id="run-header-peak" ${maxRssAllProcesses > 0 ? '' : 'hidden'}>${maxRssAllProcesses > 0 ? `${maxRssAllProcesses.toFixed(0)} MB peak` : ''}</span>
+                        <span class="run-stat muted" id="run-header-updated" ${data.updated_at ? '' : 'hidden'}>${data.updated_at ? new Date(data.updated_at).toLocaleString() : ''}</span>
                     </div>
                     <div class="run-header-actions">
                         <button type="button" class="btn secondary bpw-layout-toggle" data-bpw-layout-toggle id="btn-layout-toggle">Experiment layout</button>
@@ -974,23 +1090,23 @@
                 <div class="run-kpi-strip">
                     <div class="run-kpi">
                         <div class="run-kpi-label">Peak RSS</div>
-                        <div class="run-kpi-value">${formatMb(maxRssAllProcesses)}</div>
+                        <div class="run-kpi-value" id="kpi-peak-rss">${formatMb(maxRssAllProcesses)}</div>
                         <div class="run-kpi-note">Total memory across active JVMs</div>
                     </div>
                     <div class="run-kpi">
                         <div class="run-kpi-label">Peak Heap</div>
-                        <div class="run-kpi-value">${formatMb(maxHeapAllProcesses)}</div>
-                        <div class="run-kpi-note">${pressure > 0 ? `${pressure.toFixed(0)}% of peak RSS` : 'Heap signal unavailable'}</div>
+                        <div class="run-kpi-value" id="kpi-peak-heap">${formatMb(maxHeapAllProcesses)}</div>
+                        <div class="run-kpi-note" id="kpi-peak-heap-note">${pressure > 0 ? `${pressure.toFixed(0)}% of peak RSS` : 'Heap signal unavailable'}</div>
                     </div>
                     <div class="run-kpi">
                         <div class="run-kpi-label">GC Time</div>
-                        <div class="run-kpi-value">${maxGcTimeAllProcesses > 0 ? `${maxGcTimeAllProcesses.toFixed(2)} s` : 'N/A'}</div>
+                        <div class="run-kpi-value" id="kpi-gc-time">${maxGcTimeAllProcesses > 0 ? `${maxGcTimeAllProcesses.toFixed(2)} s` : 'N/A'}</div>
                         <div class="run-kpi-note">Highest cumulative process value</div>
                     </div>
                     <div class="run-kpi">
                         <div class="run-kpi-label">Sample Density</div>
-                        <div class="run-kpi-value">${sampleRate > 0 ? `${sampleRate.toFixed(2)}/s` : 'N/A'}</div>
-                        <div class="run-kpi-note">${samples.length} samples over ${durationSec > 0 ? formatDur(durationSec) : 'the run'}</div>
+                        <div class="run-kpi-value" id="kpi-sample-density">${sampleRate > 0 ? `${sampleRate.toFixed(2)}/s` : 'N/A'}</div>
+                        <div class="run-kpi-note" id="kpi-sample-density-note">${samples.length} samples over ${durationSec > 0 ? formatDur(durationSec) : 'the run'}</div>
                     </div>
                 </div>
 
@@ -1370,6 +1486,15 @@
 
             bindRunDashboardTabs();
             bindPredictionPanel(data);
+
+            const content = document.getElementById('content');
+            if (content) {
+                content.dataset.bpwLiveMounted = isFinished ? '0' : '1';
+            }
+            liveMountState = { runId, finished: isFinished === true };
+            if (!isFinished) {
+                liveSeriesStore = BpwChartSeriesStore.createChartSeriesStore(samples);
+            }
         }
 
         function shouldShowRssHeapRatioChart(samples) {
@@ -1443,7 +1568,7 @@
             return gib.toFixed(2);
         }
 
-        function renderGCChart(samples) {
+        function renderGCChart(samples, options = {}) {
             // Process data for GC chart - group by both Name and PID to handle multiple processes with same name
             const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
             // Create unique process keys (Name + PID combination)
@@ -1480,16 +1605,20 @@
 
             // Total GC line intentionally omitted.
 
-            const layout = getGcLayout();
+            const layout = {
+                ...getGcLayout(),
+                uirevision: `run:${runId}:panel:gc`,
+            };
             const config = getGcConfig();
-
-            Plotly.newPlot('gc-chart', applyVisibilityToTraces('gc-chart', traces), layout, config);
+            const prepared = applyVisibilityToTraces('gc-chart', traces);
+            const node = document.getElementById('gc-chart');
+            if (options.live && node?.data?.length) {
+                Plotly.react('gc-chart', prepared, layout, config);
+            } else {
+                Plotly.newPlot('gc-chart', prepared, layout, config);
+            }
             attachLegendVisibilityHandlers('gc-chart');
-            
-            // Handle window resize
-            window.addEventListener('resize', function() {
-                Plotly.Plots.resize('gc-chart');
-            });
+            ensureChartResizeHandler();
         }
 
         function renderRssHeapRatioChart(samples) {
@@ -2614,7 +2743,18 @@
             return CompareShared.getRatioConfig(`build-monitor-rss-heap-${runId}`);
         }
 
-        function renderChart(samples, predictionCheckpoints = []) {
+        function ensureChartResizeHandler() {
+            if (window.__bpwChartResizeBound) return;
+            window.__bpwChartResizeBound = true;
+            window.addEventListener('resize', () => {
+                ['chart', 'gc-chart', 'rss-heap-chart', 'jit-time-chart', 'jit-rate-chart', 'classes-loaded-chart', 'class-rate-chart']
+                    .forEach((id) => {
+                        if (document.getElementById(id)) Plotly.Plots.resize(id);
+                    });
+            });
+        }
+
+        function renderChart(samples, predictionCheckpoints = [], options = {}) {
             // Process data for chart - group by both Name and PID to handle multiple processes with same name
             const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
             // Create unique process keys (Name + PID combination)
@@ -2700,9 +2840,12 @@
 
             const predictionMarkers = BpwPredictionView.buildMarkerData(predictionCheckpoints, chartTimestamps);
             chartTraces.push(...predictionMarkers.traces);
+            const memoryValues = chartTraces.flatMap((trace) => (trace.y || []).filter((value) => Number.isFinite(value)));
+            liveYDomain = BpwChartViewport.growOnlyDomain(liveYDomain, memoryValues, options.live ? 1.20 : 1.10);
             const baseMemoryLayout = getMemoryLayout();
-            const layout = {
+            let layout = {
                 ...baseMemoryLayout,
+                uirevision: `run:${runId}:panel:memory`,
                 shapes: [
                     ...(baseMemoryLayout.shapes || []),
                     ...predictionMarkers.shapes
@@ -2725,19 +2868,29 @@
                     fixedrange: true
                 }
             };
+            if (options.live) {
+                const xDomain = BpwChartViewport.timeDomain(chartTimestamps);
+                layout = BpwChartViewport.applyFixedRanges(layout, {
+                    x: { min: new Date(xDomain.min), max: new Date(xDomain.max) },
+                    y: liveYDomain,
+                    uirevision: `run:${runId}:panel:memory`,
+                });
+            }
             const config = getMemoryConfig();
-
-            Plotly.newPlot('chart', applyVisibilityToTraces('chart', chartTraces), layout, config);
+            const preparedTraces = applyVisibilityToTraces('chart', chartTraces);
+            const chartNode = document.getElementById('chart');
+            const alreadyMounted = !!(chartNode && chartNode.data && chartNode.data.length);
+            if (options.live && alreadyMounted) {
+                Plotly.react('chart', preparedTraces, layout, config);
+            } else {
+                Plotly.newPlot('chart', preparedTraces, layout, config);
+            }
             attachLegendVisibilityHandlers('chart', updateMainChartFilterCheckboxes);
             attachPredictionMarkerInteractions('chart');
-            
-            // Handle window resize
-            window.addEventListener('resize', function() {
-                Plotly.Plots.resize('chart');
-            });
+            ensureChartResizeHandler();
         }
 
-        function renderJvmCounterCharts(samples) {
+        function renderJvmCounterCharts(samples, options = {}) {
             if (!hasJITData(samples) && !hasClassLoadingData(samples)) return;
             const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
             const data = buildReplayData(samples, timestamps);
@@ -2751,9 +2904,20 @@
             charts.forEach(([id, metric, title, yTitle]) => {
                 if (!document.getElementById(id)) return;
                 const traces = buildMetricTraces(data, data.timestamps, frame, metric, {});
-                Plotly.newPlot(id, applyVisibilityToTraces(id, traces), CompareShared.getCounterLayout(title, yTitle), CompareShared.getCounterConfig(`build-monitor-${metric}-${runId}`));
+                const layout = {
+                    ...CompareShared.getCounterLayout(title, yTitle),
+                    uirevision: `run:${runId}:panel:${metric}`,
+                };
+                const config = CompareShared.getCounterConfig(`build-monitor-${metric}-${runId}`);
+                const node = document.getElementById(id);
+                if (options.live && node?.data?.length) {
+                    Plotly.react(id, applyVisibilityToTraces(id, traces), layout, config);
+                } else {
+                    Plotly.newPlot(id, applyVisibilityToTraces(id, traces), layout, config);
+                }
                 attachLegendVisibilityHandlers(id);
             });
+            ensureChartResizeHandler();
             if (window.BpwExperimentLayout) {
                 BpwExperimentLayout.resizeCharts();
             }
@@ -2912,6 +3076,14 @@
             } catch (e) {
                 console.error('Failed to download CSV:', e);
             }
+        }
+
+        function formatDur(seconds) {
+            const value = Number(seconds) || 0;
+            if (value < 60) return `${value}s`;
+            const minutes = Math.floor(value / 60);
+            const remainder = Math.round(value % 60);
+            return remainder ? `${minutes}m ${remainder}s` : `${minutes}m`;
         }
 
         function escapeHtml(str) {
