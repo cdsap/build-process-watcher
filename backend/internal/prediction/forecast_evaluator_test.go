@@ -82,35 +82,28 @@ func TestForecastEvaluatorAppendsForPredictMode(t *testing.T) {
 	}
 }
 
-func TestPredictModeUses20sThrottle(t *testing.T) {
-	repo := &forecastRepoStub{run: &models.RunDoc{
-		PredictionMode: "predict",
-		Samples: []models.Sample{
-			{ElapsedTime: 25, Timestamp: 25000, Name: "GradleDaemon", PID: "1", HeapUsed: 100, RSS: 200},
-		},
-	}}
-	evaluator := NewForecastEvaluatorWithTabPredict(repo, predictor.NoopForecastProvider{}, forecastProviderStub{out: []models.ProcessForecast{{
-		ProcessName: "GradleDaemon", PID: "1", Metric: "heap", CreatedAtMs: 25000,
-		Points: []models.ProcessForecastPoint{{TargetAtMs: 35000, ValueMB: 110}},
-	}}})
-	evaluator.Evaluate(context.Background(), "run-1")
-	if len(repo.appended) != 1 {
-		t.Fatalf("appended = %d, want 1 at 25s with predict 20s throttle", len(repo.appended))
-	}
-
-	repo = &forecastRepoStub{run: &models.RunDoc{
-		PredictionMode: "forecast",
-		Samples: []models.Sample{
-			{ElapsedTime: 25, Timestamp: 25000, Name: "GradleDaemon", PID: "1", HeapUsed: 100, RSS: 200},
-		},
-	}}
-	evaluator = NewForecastEvaluator(repo, forecastProviderStub{out: []models.ProcessForecast{{
-		ProcessName: "GradleDaemon", PID: "1", Metric: "heap", CreatedAtMs: 25000,
-		Points: []models.ProcessForecastPoint{{TargetAtMs: 35000, ValueMB: 110}},
-	}}})
-	evaluator.Evaluate(context.Background(), "run-1")
-	if len(repo.appended) != 0 {
-		t.Fatalf("appended = %d, want 0 at 25s with forecast 30s throttle", len(repo.appended))
+func TestProcessForecastModesShare20sThrottle(t *testing.T) {
+	for _, mode := range []string{"predict", "forecast"} {
+		repo := &forecastRepoStub{run: &models.RunDoc{
+			PredictionMode: mode,
+			Samples: []models.Sample{
+				{ElapsedTime: 25, Timestamp: 25000, Name: "GradleDaemon", PID: "1", HeapUsed: 100, RSS: 200},
+			},
+		}}
+		want := []models.ProcessForecast{{
+			ProcessName: "GradleDaemon", PID: "1", Metric: "heap", CreatedAtMs: 25000,
+			Points: []models.ProcessForecastPoint{{TargetAtMs: 35000, ValueMB: 110}},
+		}}
+		var evaluator *ForecastEvaluator
+		if mode == "predict" {
+			evaluator = NewForecastEvaluatorWithTabPredict(repo, predictor.NoopForecastProvider{}, forecastProviderStub{out: want})
+		} else {
+			evaluator = NewForecastEvaluator(repo, forecastProviderStub{out: want})
+		}
+		evaluator.Evaluate(context.Background(), "run-1")
+		if len(repo.appended) != 1 {
+			t.Fatalf("%s appended = %d, want 1 at 25s with shared 20s throttle", mode, len(repo.appended))
+		}
 	}
 }
 

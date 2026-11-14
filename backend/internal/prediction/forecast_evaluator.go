@@ -9,9 +9,9 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
 
-// Predict mode targets a denser continuous tracking chart; forecast mode stays coarser.
-const forecastThrottleElapsedS = 30
-const predictThrottleElapsedS = 20
+// Shared cadence for forecast (TimesFM) and predict (TabFM): same cloud behavior,
+// only the private BigQuery API differs (AI.FORECAST vs AI.PREDICT).
+const processForecastThrottleElapsedS = 20
 
 // ForecastRepository is the persistence surface used by forecast evaluation.
 type ForecastRepository interface {
@@ -106,16 +106,13 @@ func normalizeMode(mode string) string {
 	}
 }
 
-func throttleForMode(mode string) int {
-	if mode == "predict" {
-		return predictThrottleElapsedS
-	}
-	return forecastThrottleElapsedS
+func throttleForMode(string) int {
+	return processForecastThrottleElapsedS
 }
 
 func shouldForecast(samples []models.Sample, existing []models.ProcessForecast, throttleS int) bool {
 	if throttleS <= 0 {
-		throttleS = forecastThrottleElapsedS
+		throttleS = processForecastThrottleElapsedS
 	}
 	maxElapsed := 0
 	for _, sample := range samples {
