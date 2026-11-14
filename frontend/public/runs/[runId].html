@@ -1217,8 +1217,7 @@
                     ${isFinished === true && samples.length ? `
                         <div class="replay-controls" id="rss-replay-controls">
                             <div class="buttons">
-                                <button class="btn" id="btn-rss-replay-play">Play</button>
-                                <button class="btn secondary" id="btn-rss-replay-pause">Pause</button>
+                                <button class="btn" id="btn-rss-replay-play" aria-pressed="false">Play</button>
                                 <button class="btn secondary" id="btn-rss-replay-reset">Reset</button>
                             </div>
                             <div class="meta" id="rss-replay-meta">Frame 0 / 0</div>
@@ -1238,6 +1237,13 @@
                                         <option value="40">40x</option>
                                         <option value="45">45x</option>
                                         <option value="50">50x</option>
+                                    </select>
+                                </div>
+                                <div class="meta">
+                                    Viewport:
+                                    <select id="rss-replay-viewport" aria-label="Memory replay viewport">
+                                        <option value="full" selected>Full timeline</option>
+                                        <option value="follow">Follow playback</option>
                                     </select>
                                 </div>
                             </div>
@@ -1811,15 +1817,50 @@
                     return { x: [new Date(timestamps[0])], y: [null] };
                 }
                 const endIndex = Math.min(sampleIndex, timestamps.length - 1);
-                const x = timestamps.slice(firstIndex, endIndex + 1).map((time) => new Date(time));
-                const y = values.slice(firstIndex, endIndex + 1);
-                if (!allowVisual) return { x, y };
+                const series = BpwChartViewport.measuredSeriesWithGapBreaks(
+                    timestamps,
+                    values,
+                    firstIndex,
+                    endIndex,
+                    memoryGapLimitMs,
+                );
+                if (!allowVisual) return series;
                 const endpoint = BpwChartViewport.visualEndpoint(timestamps, values, playheadAbsoluteMs, memoryGapLimitMs);
-                if (!endpoint || endpoint.lowerIndex < firstIndex || endpoint.lowerIndex > endIndex) return { x, y };
+                if (!endpoint || endpoint.lowerIndex < firstIndex || endpoint.lowerIndex > endIndex) return series;
                 return {
-                    x: x.concat([new Date(endpoint.time)]),
-                    y: y.concat([endpoint.value]),
+                    x: series.x.concat([new Date(endpoint.time)]),
+                    y: series.y.concat([endpoint.value]),
                 };
+            }
+
+            function appendUnobservedConnectors(traces, timestamps, values, firstIndex, sampleIndex, playheadAbsoluteMs, style) {
+                if (firstIndex === -1 || sampleIndex < firstIndex) return;
+                const connectors = BpwChartViewport.unobservedConnectors(
+                    timestamps,
+                    values,
+                    playheadAbsoluteMs,
+                    memoryGapLimitMs,
+                    { firstIndex, maxIndex: sampleIndex },
+                );
+                connectors.forEach((segment, index) => {
+                    traces.push({
+                        x: segment.x.map((time) => new Date(time)),
+                        y: segment.y,
+                        type: 'scatter',
+                        mode: 'lines',
+                        name: style.legendOnce && index === 0 ? 'Unobserved interval' : style.name,
+                        uid: `${style.uid}:gap:${segment.lowerIndex}`,
+                        legendgroup: style.legendgroup || 'unobserved',
+                        showlegend: Boolean(style.legendOnce && index === 0),
+                        hovertemplate: 'Unobserved interval<br>%{x}<br>%{y:.1f} MB<extra></extra>',
+                        line: {
+                            color: style.color,
+                            width: style.width == null ? 2 : style.width,
+                            dash: 'dot',
+                        },
+                        connectgaps: false,
+                    });
+                });
             }
 
             function buildMemoryTraces(frameIndex, playheadAbsoluteMs, allowVisualEndpoint) {
@@ -1831,6 +1872,7 @@
                     ? playheadAbsoluteMs
                     : chartTimestamps[sampleIndex];
                 const traces = [];
+                let unobservedLegendUsed = false;
                 processKeys.forEach((processKey) => {
                     const def = chartSeries[processKey];
                     const uidBase = `${runId}:${processKey}`;
@@ -1870,6 +1912,29 @@
                         line: { color: def.color, width: 2, dash: 'dash' },
                         connectgaps: false,
                     });
+                    if (allowVisualEndpoint) {
+                        appendUnobservedConnectors(
+                            traces,
+                            chartTimestamps,
+                            def.rss,
+                            def.firstRss,
+                            sampleIndex,
+                            absoluteMs,
+                            {
+                                uid: `${uidBase}:rss`,
+                                color: def.color,
+                                width: 2,
+                                name: `${def.processName} PID:${def.pid} (unobserved)`,
+                                legendOnce: !unobservedLegendUsed,
+                            },
+                        );
+                        if (!unobservedLegendUsed) {
+                            const gaps = BpwChartViewport.findGaps(chartTimestamps, memoryGapLimitMs);
+                            if (gaps.some((gap) => gap.lowerIndex >= def.firstRss && gap.lowerIndex <= sampleIndex && absoluteMs > gap.start)) {
+                                unobservedLegendUsed = true;
+                            }
+                        }
+                    }
                 });
                 if (firstTotalRssIndex !== -1) {
                     const totalSeries = revealMetricSeries(
@@ -1894,6 +1959,23 @@
                             : [],
                         hovertemplate: 'Total RSS: %{y} MB<br>%{customdata}<extra></extra>',
                     });
+                    if (allowVisualEndpoint) {
+                        appendUnobservedConnectors(
+                            traces,
+                            chartTimestamps,
+                            chartTotalSeries.totalRss,
+                            firstTotalRssIndex,
+                            sampleIndex,
+                            absoluteMs,
+                            {
+                                uid: `${runId}:total-rss`,
+                                color: '#7f8c8d',
+                                width: 3,
+                                name: 'Total RSS (unobserved)',
+                                legendOnce: !unobservedLegendUsed,
+                            },
+                        );
+                    }
                 }
                 return applyVisibilityToTraces('chart', traces);
             }
@@ -1958,22 +2040,44 @@
                 const pauseBtn = document.getElementById(`btn-${panelKey}-replay-pause`);
                 const resetBtn = document.getElementById(`btn-${panelKey}-replay-reset`);
                 const speedSelect = document.getElementById(`${panelKey}-replay-speed`);
+                const viewportSelect = document.getElementById(`${panelKey}-replay-viewport`);
                 const useSmoothMemory = smoothMemory === true && window.BpwChartViewport;
+                const followWindowMs = Math.max(
+                    30_000,
+                    Math.round((memoryXDomain.max - memoryXDomain.min) * 0.28),
+                );
 
                 let latestRender = Promise.resolve();
                 let currentFrame = Math.max(0, chartTimestamps.length - 1);
+                let viewportMode = viewportSelect && viewportSelect.value === 'follow' ? 'follow' : 'full';
+                let playing = false;
 
-                function fixedLayout() {
+                function syncPlayButton() {
+                    if (!playBtn) return;
+                    playBtn.textContent = playing ? 'Pause' : 'Play';
+                    playBtn.setAttribute('aria-pressed', playing ? 'true' : 'false');
+                    playBtn.classList.toggle('secondary', playing);
+                }
+
+                function fixedLayout(playheadAbsoluteMs) {
                     const base = layoutGetter();
                     if (!useSmoothMemory) return base;
-                    return BpwChartViewport.applyFixedRanges(base, {
+                    const xDomain = BpwChartViewport.followDomain(
+                        memoryXDomain,
+                        playheadAbsoluteMs,
+                        followWindowMs,
+                        viewportMode,
+                    );
+                    let layout = BpwChartViewport.applyFixedRanges(base, {
                         x: {
-                            min: new Date(memoryXDomain.min),
-                            max: new Date(memoryXDomain.max),
+                            min: new Date(xDomain.min),
+                            max: new Date(xDomain.max),
                         },
                         y: memoryYDomain,
-                        uirevision: memoryUirevision,
+                        uirevision: `${memoryUirevision}:${viewportMode}`,
                     });
+                    layout = BpwChartViewport.applyPlayheadShape(layout, playheadAbsoluteMs);
+                    return layout;
                 }
 
                 function updateUi(position) {
@@ -1991,6 +2095,7 @@
                     timeLabel.textContent = `Playhead: ${elapsedSec}s | ${new Date(absolute).toLocaleTimeString()}${
                         recordedElapsed !== undefined ? ` | sample ${recordedElapsed}s` : ''
                     }`;
+                    syncPlayButton();
                 }
 
                 function renderAt(position) {
@@ -1999,19 +2104,19 @@
                         ? buildTraces(position.sampleIndex, position.absoluteMs, allowVisual)
                         : buildTraces(position.sampleIndex);
                     updateUi(position);
-                    latestRender = Plotly.react(chartId, traces, fixedLayout(), configGetter());
+                    latestRender = Plotly.react(
+                        chartId,
+                        traces,
+                        useSmoothMemory ? fixedLayout(position.absoluteMs) : fixedLayout(),
+                        configGetter(),
+                    );
                     return latestRender;
                 }
 
                 const coalescer = useSmoothMemory
                     ? BpwChartViewport.createRenderCoalescer({
                         minIntervalMs: 70,
-                        render: (position, token) => {
-                            const task = renderAt(position);
-                            return Promise.resolve(task).then((result) => (
-                                token === coalescer.getGeneration() ? result : null
-                            ));
-                        },
+                        render: (position) => renderAt(position),
                     })
                     : null;
 
@@ -2022,10 +2127,23 @@
                         if (coalescer) coalescer.enqueue(position);
                         else renderAt(position);
                     },
+                    onStateChange: (state) => {
+                        playing = Boolean(state.playing);
+                        syncPlayButton();
+                    },
                 });
 
                 function pause() {
                     clock.pause();
+                }
+
+                function play() {
+                    clock.play();
+                }
+
+                function togglePlay() {
+                    if (playing) pause();
+                    else play();
                 }
 
                 function renderFrame(frameIndex) {
@@ -2040,9 +2158,16 @@
                     clock.destroy();
                 };
 
-                playBtn.addEventListener('click', () => clock.play());
-                pauseBtn.addEventListener('click', pause);
-                resetBtn.addEventListener('click', () => clock.reset());
+                if (playBtn) {
+                    playBtn.addEventListener('click', togglePlay);
+                }
+                if (pauseBtn) {
+                    pauseBtn.addEventListener('click', pause);
+                }
+                resetBtn.addEventListener('click', () => {
+                    pause();
+                    clock.reset();
+                });
                 timeline.addEventListener('input', () => {
                     pause();
                     clock.seekTo(Number(timeline.value));
@@ -2051,7 +2176,14 @@
                     const parsed = Number(speedSelect.value);
                     if (!Number.isNaN(parsed) && parsed > 0) clock.setSpeed(parsed);
                 });
+                if (viewportSelect) {
+                    viewportSelect.addEventListener('change', () => {
+                        viewportMode = viewportSelect.value === 'follow' ? 'follow' : 'full';
+                        clock.seekTo(Number(timeline.value));
+                    });
+                }
 
+                syncPlayButton();
                 clock.seekTo(Math.max(0, chartTimestamps[chartTimestamps.length - 1] - chartTimestamps[0]));
                 latestRender.then(() => {
                     attachLegendVisibilityHandlers(chartId, onLegendUpdate);
