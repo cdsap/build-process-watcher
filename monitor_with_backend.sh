@@ -18,7 +18,7 @@ JOB_ID="${JOB_ID:-$(date +%s)}"
 # Store start time
 START_TIME=$(date +%s)
 
-# Debug log file for backend requests
+# Debug log file for backend requests (action cwd; CI and cleanup look here)
 BACKEND_DEBUG_LOG="backend_debug.log"
 
 # Comprehensive debug log file for script execution
