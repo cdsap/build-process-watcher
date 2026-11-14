@@ -719,6 +719,56 @@
             );
         }
 
+        // After /finish, keep refreshing Predictions so late TabFM jobs can paint.
+        const POST_FINISH_FORECAST_GRACE_MS = 3 * 60 * 1000;
+        const POST_FINISH_FORECAST_POLL_SECONDS = 5;
+        let postFinishForecastPollStartedAt = null;
+
+        function wantsProcessForecastPolling(data) {
+            const mode = data?.prediction_mode;
+            return mode === 'predict' || mode === 'forecast'
+                || (Array.isArray(data?.process_forecasts) && data.process_forecasts.length > 0);
+        }
+
+        function shouldKeepPollingRun(data) {
+            if (data?.finished !== true) {
+                postFinishForecastPollStartedAt = null;
+                return true;
+            }
+            if (!wantsProcessForecastPolling(data)) {
+                postFinishForecastPollStartedAt = null;
+                return false;
+            }
+            if (postFinishForecastPollStartedAt == null) {
+                postFinishForecastPollStartedAt = Date.now();
+            }
+            const finishedAt = data?.finished_at ? Date.parse(data.finished_at) : NaN;
+            const start = Number.isFinite(finishedAt) ? finishedAt : postFinishForecastPollStartedAt;
+            return (Date.now() - start) < POST_FINISH_FORECAST_GRACE_MS;
+        }
+
+        function canUpdateFinishedPredictionPanel(runId, data) {
+            return !!(
+                liveMountState
+                && liveMountState.runId === runId
+                && liveMountState.finished === true
+                && data?.finished === true
+                && document.getElementById('prediction-panel-content')
+                && typeof window.BpwPredictionView?.render === 'function'
+            );
+        }
+
+        function bindForecastReplayControls() {
+            const content = document.getElementById('prediction-panel-content');
+            if (window.forecastReplayStop) {
+                window.forecastReplayStop();
+                window.forecastReplayStop = null;
+            }
+            if (content && typeof window.BpwPredictionView?.bindProcessForecastReplay === 'function') {
+                window.forecastReplayStop = BpwPredictionView.bindProcessForecastReplay(content);
+            }
+        }
+
         function updateLiveHeader(summary, data) {
             const formatMb = (value) => value > 0 ? `${value.toFixed(value >= 1000 ? 0 : 1)} MB` : 'N/A';
             const setText = (id, text, hidden) => {
@@ -776,6 +826,12 @@
             lastRefreshTime = new Date();
             if (canUpdateLiveDashboard(runId, data)) {
                 updateLiveDashboard(runId, data, browserRequestStarted);
+            } else if (canUpdateFinishedPredictionPanel(runId, data)) {
+                // Finished shell already mounted: refresh forecast timelines without remounting replay/charts.
+                window.currentRunData = data;
+                renderPredictionPanel(data);
+                bindPredictionPanel(data);
+                renderFreshnessDiagnostics(data, browserRequestStarted);
             } else {
                 liveSeriesStore = BpwChartSeriesStore.createChartSeriesStore(data.samples || []);
                 liveYDomain = null;
@@ -791,12 +847,12 @@
                 normalize: (payload) => CompareShared.normalizeReportData(payload),
                 onData: ({ runId, data, browserRequestStarted }) => {
                     applyRunData(runId, data, browserRequestStarted);
-                    if (data?.finished !== true) {
-                        liveRunController.schedule(
-                            runId,
-                            window.BUILD_PROCESS_WATCHER_CONFIG?.backendUrl || 'https://build-process-watcher-backend-685615422311.us-central1.run.app',
-                            refreshInterval,
-                        );
+                    const backendUrl = window.BUILD_PROCESS_WATCHER_CONFIG?.backendUrl || 'https://build-process-watcher-backend-685615422311.us-central1.run.app';
+                    if (shouldKeepPollingRun(data)) {
+                        const interval = data?.finished === true
+                            ? POST_FINISH_FORECAST_POLL_SECONDS
+                            : refreshInterval;
+                        liveRunController.schedule(runId, backendUrl, interval);
                     } else {
                         liveRunController.cancelTimer();
                     }
@@ -841,8 +897,11 @@
                 window.currentRunData = data;
                 renderFreshnessDiagnostics(data, performance.now());
                 cancelRefresh();
-                if (!data.finished) {
-                    refreshTimer = setTimeout(() => loadRunData(runId), refreshInterval * 1000);
+                if (shouldKeepPollingRun(data)) {
+                    const interval = data.finished === true
+                        ? POST_FINISH_FORECAST_POLL_SECONDS
+                        : refreshInterval;
+                    refreshTimer = setTimeout(() => loadRunData(runId), interval * 1000);
                 }
             } catch (error) {
                 console.error('Run data request could not be completed:', { runId, error });
@@ -1536,6 +1595,7 @@
 
             bindRunDashboardTabs();
             bindPredictionPanel(data);
+            bindForecastReplayControls();
 
             const content = document.getElementById('content');
             if (content) {
