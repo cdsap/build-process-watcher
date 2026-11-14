@@ -18,18 +18,11 @@ JOB_ID="${JOB_ID:-$(date +%s)}"
 # Store start time
 START_TIME=$(date +%s)
 
-# Keep monitor debug logs next to LOG_FILE so cleanup can always archive them.
-LOG_DIR=$(dirname "$LOG_FILE")
-if [ -z "$LOG_DIR" ] || [ "$LOG_DIR" = "." ]; then
-    LOG_DIR="$(pwd)"
-fi
-mkdir -p "$LOG_DIR"
-
-# Debug log file for backend requests
-BACKEND_DEBUG_LOG="${LOG_DIR}/backend_debug.log"
+# Debug log file for backend requests (action cwd; CI and cleanup look here)
+BACKEND_DEBUG_LOG="backend_debug.log"
 
 # Comprehensive debug log file for script execution
-SCRIPT_DEBUG_LOG="${LOG_DIR}/script_debug.log"
+SCRIPT_DEBUG_LOG="script_debug.log"
 
 # Token storage
 AUTH_TOKEN=""
@@ -76,7 +69,7 @@ echo "Start Time: $(date)" >> "$BACKEND_DEBUG_LOG"
 echo "" >> "$BACKEND_DEBUG_LOG"
 if [ "$DEBUG_MODE" = "true" ]; then
     echo "✅ Backend debug log created: $BACKEND_DEBUG_LOG" >&2
-    echo "📁 Full backend debug log path: $BACKEND_DEBUG_LOG" >&2
+    echo "📁 Full backend debug log path: $(pwd)/$BACKEND_DEBUG_LOG" >&2
 fi
 
 # Initialize script debug log (always enabled for troubleshooting)
