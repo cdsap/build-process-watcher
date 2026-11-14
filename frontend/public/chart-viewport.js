@@ -53,6 +53,13 @@
         return { min: 0, max: niceCeil(peak, headroom ?? 1.10) };
     }
 
+    // Live Y axis: grow only when measured peak consumes reserved headroom.
+    function growOnlyDomain(current, values, headroom) {
+        const next = memoryDomain(values, headroom ?? 1.20);
+        if (!current || !Number.isFinite(current.max)) return next;
+        return { min: 0, max: Math.max(current.max, next.max) };
+    }
+
     function applyFixedRanges(layout, domains) {
         const next = { ...(layout || {}) };
         if (domains?.x) {
@@ -158,6 +165,7 @@
         niceCeil,
         timeDomain,
         memoryDomain,
+        growOnlyDomain,
         applyFixedRanges,
         visualEndpoint,
         createRenderCoalescer,
