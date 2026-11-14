@@ -48,7 +48,7 @@
                     browserRequestStarted: started,
                     generation: token,
                 });
-                return { ok: true, finished: lastFinished };
+                return { ok: true, finished: lastFinished, data: payload };
             } catch (error) {
                 if (!destroyed && token === generation) onError({ runId, error });
                 return { ok: false, error };
@@ -57,16 +57,14 @@
             }
         }
 
+        // Schedule one refresh. Callers re-schedule from onData when more polls are needed
+        // (including a short post-finish window for late process_forecasts).
         function schedule(runId, backendUrl, intervalSeconds) {
             cancelTimer();
-            if (destroyed || lastFinished) return;
+            if (destroyed) return;
             const delayMs = Math.max(1, Number(intervalSeconds) || 60) * 1000;
             timer = setTimeout(() => {
-                refresh(runId, backendUrl).then((result) => {
-                    if (!destroyed && result?.ok && !result.finished) {
-                        schedule(runId, backendUrl, intervalSeconds);
-                    }
-                });
+                refresh(runId, backendUrl);
             }, delayMs);
         }
 

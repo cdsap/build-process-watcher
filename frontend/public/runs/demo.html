@@ -1359,6 +1359,14 @@
 
             bindRunDashboardTabs();
             bindPredictionPanel(data);
+            if (window.forecastReplayStop) {
+                window.forecastReplayStop();
+                window.forecastReplayStop = null;
+            }
+            const predictionContent = document.getElementById('prediction-panel-content');
+            if (predictionContent && typeof window.BpwPredictionView?.bindProcessForecastReplay === 'function') {
+                window.forecastReplayStop = BpwPredictionView.bindProcessForecastReplay(predictionContent);
+            }
         }
 
         function shouldShowRssHeapRatioChart(samples) {
