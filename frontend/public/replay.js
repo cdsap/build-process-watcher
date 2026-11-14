@@ -14,6 +14,7 @@
         getGcConfig,
         getCounterLayout,
         getCounterConfig,
+        getMedianDelta,
         visibilityStore
     } = window.BpwCompareShared || {};
 
@@ -238,12 +239,18 @@
         const resetBtn = document.getElementById('btn-single-reset');
         const speedSelect = document.getElementById('single-replay-speed');
 
-        let isPlaying = false;
-        let playTimer = null;
         let currentFrame = 0;
-        let speedMultiplier = Number(speedSelect.value) || 15;
-
-        timeline.max = String(Math.max(0, chartTimestamps.length - 1));
+        const memoryGapLimitMs = (getMedianDelta(chartTimestamps) || 0) * 2;
+        const memoryValuePool = [];
+        (data.totalRss || []).forEach((value) => {
+            if (value !== null && value !== undefined) memoryValuePool.push(value);
+        });
+        Object.values(data.series || {}).forEach((def) => {
+            (def.rss || []).forEach((value) => { if (value !== null && value !== undefined) memoryValuePool.push(value); });
+            (def.heap || []).forEach((value) => { if (value !== null && value !== undefined) memoryValuePool.push(value); });
+        });
+        const memoryXDomain = BpwChartViewport.timeDomain(elapsedSeconds);
+        const memoryYDomain = BpwChartViewport.memoryDomain(memoryValuePool);
 
         const traceVisibility = visibilityStore || {};
 
@@ -309,20 +316,59 @@
             }
         });
 
-        function updateUi(frameIndex) {
-            timeline.value = String(frameIndex);
-            meta.textContent = `Frame ${frameIndex + 1} / ${chartTimestamps.length}`;
-            const timestamp = chartTimestamps[frameIndex];
-            const elapsed = elapsedByTimestamp.get(timestamp) || 0;
-            timeLabel.textContent = `Elapsed: ${elapsed}s`;
+        function withVisualEndpoints(traces, frameIndex, playheadAbsoluteMs, allowVisual) {
+            if (!allowVisual) return traces;
+            return traces.map((trace) => {
+                if (!trace?.name) return trace;
+                const isRss = trace.name.includes('(RSS)') || trace.name === 'Total RSS Memory';
+                const isHeap = trace.name.includes('(Heap)');
+                if (!isRss && !isHeap) return trace;
+                let values = null;
+                if (trace.name === 'Total RSS Memory') values = data.totalRss;
+                else {
+                    const match = Object.values(data.series || {}).find((def) => (
+                        trace.name === `${def.processName} PID:${def.pid} (${isRss ? 'RSS' : 'Heap'})`
+                    ));
+                    values = match ? (isRss ? match.rss : match.heap) : null;
+                }
+                if (!values) return trace;
+                const endpoint = BpwChartViewport.visualEndpoint(
+                    chartTimestamps,
+                    values,
+                    playheadAbsoluteMs,
+                    memoryGapLimitMs,
+                );
+                if (!endpoint || endpoint.lowerIndex > frameIndex) return trace;
+                const visualX = (endpoint.time - chartTimestamps[0]) / 1000;
+                return {
+                    ...trace,
+                    x: (trace.x || []).concat([visualX]),
+                    y: (trace.y || []).concat([endpoint.value]),
+                };
+            });
         }
 
-        function renderFrame(frameIndex) {
-            currentFrame = frameIndex;
-            updateUi(frameIndex);
+        function updateUi(position) {
+            const sampleIndex = Math.max(0, position.sampleIndex);
+            currentFrame = sampleIndex;
+            timeline.max = String(Math.max(0, Math.round(position.durationMs)));
+            timeline.value = String(Math.round(position.cursorMs));
+            const elapsedSec = Math.round(position.cursorMs / 1000);
+            meta.textContent = `Elapsed ${elapsedSec}s · Sample ${sampleIndex + 1} / ${position.sampleCount}`;
+            const recorded = elapsedByTimestamp.get(chartTimestamps[sampleIndex]) || elapsedSec;
+            timeLabel.textContent = `Playhead: ${elapsedSec}s | sample ${recorded}s`;
+        }
+
+        function renderFrame(frameIndex, playheadAbsoluteMs, allowVisual) {
+            const idx = Math.max(0, Math.min(
+                Number.isFinite(frameIndex) ? frameIndex : chartTimestamps.length - 1,
+                chartTimestamps.length - 1,
+            ));
+            currentFrame = idx;
+            const absoluteMs = Number.isFinite(playheadAbsoluteMs) ? playheadAbsoluteMs : chartTimestamps[idx];
             const tasks = [];
 
-            const memoryLayout = {
+            let memoryLayout = {
                 ...getMemoryLayout(),
                 xaxis: {
                     ...getMemoryLayout().xaxis,
@@ -341,14 +387,24 @@
                     b: 110
                 }
             };
+            memoryLayout = BpwChartViewport.applyFixedRanges(memoryLayout, {
+                x: memoryXDomain,
+                y: memoryYDomain,
+                uirevision: 'replay:memory',
+            });
 
-            const rssTraces = buildMetricTraces(data, chartTimestamps, frameIndex, 'rss', {
-                lineDash: 'solid',
-                heapDash: 'dash',
-                includeTotalRss: true,
-                totalLabel: 'Total RSS Memory',
-                totalColor: '#2c3e50'
-            }, elapsedSeconds);
+            const rssTraces = withVisualEndpoints(
+                buildMetricTraces(data, chartTimestamps, idx, 'rss', {
+                    lineDash: 'solid',
+                    heapDash: 'dash',
+                    includeTotalRss: true,
+                    totalLabel: 'Total RSS Memory',
+                    totalColor: '#2c3e50'
+                }, elapsedSeconds),
+                idx,
+                absoluteMs,
+                allowVisual,
+            );
             tasks.push(Plotly.react('single-rss', applyVisibilityToTraces('single-rss', rssTraces), memoryLayout, getMemoryConfig('build-replay')));
 
             if (showGC) {
@@ -371,7 +427,7 @@
                         b: 110
                     }
                 };
-                const gcTraces = buildMetricTraces(data, chartTimestamps, frameIndex, 'gc', {
+                const gcTraces = buildMetricTraces(data, chartTimestamps, idx, 'gc', {
                     lineDash: 'solid'
                 }, elapsedSeconds);
                 tasks.push(Plotly.react('single-gc', applyVisibilityToTraces('single-gc', gcTraces), gcLayout, getGcConfig('build-replay-gc')));
@@ -379,7 +435,7 @@
             const counterChart = (id, metric, title, yTitle) => {
                 const layout = getCounterLayout(title, yTitle);
                 layout.xaxis = { ...layout.xaxis, title: 'Elapsed (s)', tickformat: null, type: 'linear' };
-                const traces = buildMetricTraces(data, chartTimestamps, frameIndex, metric, {}, elapsedSeconds);
+                const traces = buildMetricTraces(data, chartTimestamps, idx, metric, {}, elapsedSeconds);
                 tasks.push(Plotly.react(id, applyVisibilityToTraces(id, traces), layout, getCounterConfig(`build-replay-${metric}`)));
             };
             if (showJIT) {
@@ -405,51 +461,50 @@
             });
         }
 
-        function scheduleNext() {
-            if (!isPlaying) return;
-            if (currentFrame >= chartTimestamps.length - 1) {
-                isPlaying = false;
-                return;
-            }
-            const nextDelay = Math.max(
-                16,
-                (chartTimestamps[currentFrame + 1] - chartTimestamps[currentFrame]) / speedMultiplier
-            );
-            playTimer = setTimeout(() => {
-                renderFrame(currentFrame + 1).then(scheduleNext);
-            }, nextDelay);
-        }
-
-        function play() {
-            if (isPlaying) return;
-            isPlaying = true;
-            scheduleNext();
-        }
+        let latestRender = Promise.resolve();
+        const coalescer = BpwChartViewport.createRenderCoalescer({
+            minIntervalMs: 70,
+            render: (position, token) => {
+                updateUi(position);
+                latestRender = renderFrame(
+                    position.sampleIndex,
+                    position.absoluteMs,
+                    !position.reducedMotion,
+                );
+                return Promise.resolve(latestRender).then((result) => (
+                    token === coalescer.getGeneration() ? result : null
+                ));
+            },
+        });
+        const clock = BpwPlaybackClock.createPlaybackClock({
+            timestamps: chartTimestamps,
+            speed: Number(speedSelect.value) || 15,
+            onPosition: (position) => coalescer.enqueue(position),
+        });
 
         function pause() {
-            isPlaying = false;
-            if (playTimer) {
-                clearTimeout(playTimer);
-                playTimer = null;
-            }
+            clock.pause();
         }
 
-        playBtn.addEventListener('click', play);
+        playBtn.addEventListener('click', () => clock.play());
         pauseBtn.addEventListener('click', pause);
-        resetBtn.addEventListener('click', () => {
-            pause();
-            renderFrame(0);
-        });
+        resetBtn.addEventListener('click', () => clock.reset());
         timeline.addEventListener('input', () => {
             pause();
-            renderFrame(Number(timeline.value));
+            clock.seekTo(Number(timeline.value));
         });
         speedSelect.addEventListener('change', () => {
             const parsed = Number(speedSelect.value);
-            if (!Number.isNaN(parsed) && parsed > 0) {
-                speedMultiplier = parsed;
-            }
+            if (!Number.isNaN(parsed) && parsed > 0) clock.setSpeed(parsed);
         });
+
+        function renderFrameByIndex(frameIndex) {
+            const idx = Math.max(0, Math.min(frameIndex, chartTimestamps.length - 1));
+            clock.seekTo(chartTimestamps[idx] - chartTimestamps[0]);
+            return latestRender;
+        }
+
+        clock.seekTo(Math.max(0, chartTimestamps[chartTimestamps.length - 1] - chartTimestamps[0]));
 
         if (window.BpwChartStudio) {
             BpwChartStudio.init({
@@ -471,7 +526,7 @@
         if (window.BpwExperimentLayout) {
             BpwExperimentLayout.registerReplayPanel({
                 pause,
-                renderFrame,
+                renderFrame: renderFrameByIndex,
                 getMaxFrame: () => chartTimestamps.length - 1
             });
             BpwExperimentLayout.initUnifiedReplay({
