@@ -1,0 +1,23 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "predictionqueue",
+    srcs = [
+        "cloudtasks.go",
+        "scheduler.go",
+    ],
+    importpath = "github.com/cdsap/build-process-watcher/backend/internal/predictionqueue",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@com_google_cloud_go_cloudtasks//apiv2",
+        "@com_google_cloud_go_cloudtasks//apiv2/cloudtaskspb",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "predictionqueue_test",
+    srcs = ["scheduler_test.go"],
+    embed = [":predictionqueue"],
+)

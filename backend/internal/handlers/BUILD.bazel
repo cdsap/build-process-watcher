@@ -7,9 +7,9 @@ go_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//internal/auth",
-        "//internal/exportqueue",
         "//internal/models",
         "//internal/prediction",
+        "//internal/predictionqueue",
         "//internal/storage",
         "//pkg/predictor",
     ],
@@ -22,6 +22,7 @@ go_test(
     deps = [
         "//internal/auth",
         "//internal/models",
+        "//internal/predictionqueue",
         "//pkg/predictor",
     ],
 )

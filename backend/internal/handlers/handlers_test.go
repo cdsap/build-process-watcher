@@ -9,28 +9,15 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/cdsap/build-process-watcher/backend/internal/auth"
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
+	"github.com/cdsap/build-process-watcher/backend/internal/predictionqueue"
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
-
-// flushRecorder signals when the ingest ACK has been flushed to the client.
-type flushRecorder struct {
-	*httptest.ResponseRecorder
-	flushed chan struct{}
-}
-
-func (r *flushRecorder) Flush() {
-	r.ResponseRecorder.Flush()
-	select {
-	case <-r.flushed:
-	default:
-		close(r.flushed)
-	}
-}
 
 type fakeStorage struct {
 	runs                  map[string]*models.RunDoc
@@ -361,56 +348,69 @@ func TestIngestUsesStoragePortWithoutFirestore(t *testing.T) {
 	}
 }
 
-func TestIngestAcksBeforePredictionWork(t *testing.T) {
+func TestIngestSchedulesPredictionWithoutRunningIt(t *testing.T) {
 	store := newFakeStorage()
 	h := NewHandlers(store, nil)
-	const runID = "run-ingest-decouple"
+	const runID = "run-ingest-schedule"
 	token, _, err := auth.GenerateToken(runID)
 	if err != nil {
 		t.Fatalf("GenerateToken failed: %v", err)
 	}
 
-	entered := make(chan struct{})
-	release := make(chan struct{})
-	h.evaluateAfterStore = func(context.Context, string) {
-		close(entered)
-		<-release
-	}
+	var gotRun string
+	var gotElapsed int
+	var scheduled atomic.Bool
+	h.SetPredictionScheduler(predictionqueue.Func(func(_ context.Context, id string, elapsed int) error {
+		gotRun = id
+		gotElapsed = elapsed
+		scheduled.Store(true)
+		time.Sleep(25 * time.Millisecond) // typical enqueue latency, not TabFM
+		return nil
+	}), "job-secret")
 
-	body := `{"run_id":"run-ingest-decouple","data":"00:00:01 | 12345 | GradleDaemon | 100MB | 200MB | 300MB"}`
+	body := `{"run_id":"run-ingest-schedule","data":"00:00:40 | 12345 | GradleDaemon | 100MB | 200MB | 300MB"}`
 	req := httptest.NewRequest(http.MethodPost, "/ingest", strings.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+token)
-	flushed := make(chan struct{})
-	recorder := &flushRecorder{ResponseRecorder: httptest.NewRecorder(), flushed: flushed}
+	recorder := httptest.NewRecorder()
 
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		h.Ingest(recorder, req)
-	}()
+	start := time.Now()
+	h.Ingest(recorder, req)
+	took := time.Since(start)
 
-	select {
-	case <-flushed:
-	case <-time.After(2 * time.Second):
-		t.Fatal("ingest did not flush ACK before prediction work")
-	}
-	select {
-	case <-entered:
-	case <-time.After(2 * time.Second):
-		t.Fatal("prediction work never started after ACK")
-	}
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s; want %d", recorder.Code, recorder.Body.String(), http.StatusOK)
+	}
+	if !scheduled.Load() || gotRun != runID {
+		t.Fatalf("schedule run=%q scheduled=%v", gotRun, scheduled.Load())
+	}
+	if gotElapsed != 40 {
+		t.Fatalf("max elapsed = %d, want 40", gotElapsed)
+	}
+	if took > 500*time.Millisecond {
+		t.Fatalf("ingest took %s; expected enqueue-only latency", took)
 	}
 	if len(store.storedSamples) != 1 {
 		t.Fatalf("stored samples = %d, want 1", len(store.storedSamples))
 	}
+}
 
-	close(release)
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("ingest handler did not return after prediction work finished")
+func TestEvaluatePredictionJobRequiresToken(t *testing.T) {
+	store := newFakeStorage()
+	h := NewHandlers(store, nil)
+	h.SetPredictionScheduler(predictionqueue.Noop{}, "job-secret")
+
+	okReq := httptest.NewRequest(http.MethodPost, "/internal/prediction-jobs", strings.NewReader(`{"run_id":"run-job"}`))
+	okReq.Header.Set(predictionJobTokenHeader, "job-secret")
+	okRec := httptest.NewRecorder()
+	h.EvaluatePredictionJob(okRec, okReq)
+	if okRec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", okRec.Code, okRec.Body.String())
+	}
+
+	badRec := httptest.NewRecorder()
+	h.EvaluatePredictionJob(badRec, httptest.NewRequest(http.MethodPost, "/internal/prediction-jobs", strings.NewReader(`{"run_id":"run-job"}`)))
+	if badRec.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized status = %d", badRec.Code)
 	}
 }
 

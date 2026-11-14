@@ -242,7 +242,7 @@ func TestOptionsFromEnvLeavesFallbackClassifierUnset(t *testing.T) {
 func TestNewMuxRegistersPublicRoutes(t *testing.T) {
 	mux := NewMux(handlers.NewHandlers(nil, nil), cleanup.NewService(nil, nil))
 
-	for _, route := range []string{"/healthz", "/auth/run/run-1", "/ingest", "/runs/run-1", "/finish/run-1", "/cleanup/stale", "/test"} {
+	for _, route := range []string{"/healthz", "/auth/run/run-1", "/ingest", "/internal/prediction-jobs", "/runs/run-1", "/finish/run-1", "/cleanup/stale", "/test"} {
 		request := httptest.NewRequest(http.MethodOptions, route, nil)
 		recorder := httptest.NewRecorder()
 

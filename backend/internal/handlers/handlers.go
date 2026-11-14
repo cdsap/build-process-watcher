@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -13,13 +14,16 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/internal/auth"
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
 	"github.com/cdsap/build-process-watcher/backend/internal/prediction"
+	"github.com/cdsap/build-process-watcher/backend/internal/predictionqueue"
 	"github.com/cdsap/build-process-watcher/backend/internal/storage"
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
 
-// postIngestEvaluationTimeout bounds checkpoint/forecast work after the ingest ACK.
+// predictionJobTimeout bounds checkpoint/forecast work on the job handler.
 // TabFM can take tens of seconds; keep this above the provider client timeout.
-const postIngestEvaluationTimeout = 45 * time.Second
+const predictionJobTimeout = 45 * time.Second
+
+const predictionJobTokenHeader = "X-BPW-Prediction-Job-Token"
 
 // Handlers contains all HTTP handlers
 type Handlers struct {
@@ -27,9 +31,10 @@ type Handlers struct {
 	export              Exporter
 	checkpointEvaluator *prediction.CheckpointEvaluator
 	forecastEvaluator   *prediction.ForecastEvaluator
-	// evaluateAfterStore runs after the ingest success response is flushed.
-	// Tests may replace it to assert the collector is not blocked on prediction.
-	evaluateAfterStore func(ctx context.Context, runID string)
+	// predictionScheduler enqueues evaluation off the /ingest path (Cloud Tasks).
+	predictionScheduler predictionqueue.Scheduler
+	// predictionJobToken authorizes POST /internal/prediction-jobs.
+	predictionJobToken string
 }
 
 // Storage is the persistence port used by the HTTP handlers and checkpoint
@@ -67,20 +72,30 @@ func NewHandlersWithPredictor(storageClient Storage, export Exporter, prediction
 		checkpointRepo = storageClient
 		forecastRepo = storageClient
 	}
-	h := &Handlers{
+	return &Handlers{
 		storage:             storageClient,
 		export:              export,
 		checkpointEvaluator: prediction.NewCheckpointEvaluator(checkpointRepo, predictionProvider, checkpoints, fallbackClassifier),
 		forecastEvaluator:   prediction.NewForecastEvaluatorWithTabPredict(forecastRepo, forecastProvider, tabPredictProvider),
+		predictionScheduler: predictionqueue.Noop{},
 	}
-	h.evaluateAfterStore = h.runPostIngestEvaluation
-	return h
 }
 
-// runPostIngestEvaluation runs reliability checkpoints and process forecasts after
-// samples are stored. Called only after the ingest HTTP response has been flushed
-// so the monitor's blocking curl is not held open for TabFM latency.
-func (h *Handlers) runPostIngestEvaluation(ctx context.Context, runID string) {
+// SetPredictionScheduler installs the off-ingest prediction job scheduler.
+func (h *Handlers) SetPredictionScheduler(scheduler predictionqueue.Scheduler, jobToken string) {
+	if h == nil {
+		return
+	}
+	if scheduler == nil {
+		scheduler = predictionqueue.Noop{}
+	}
+	h.predictionScheduler = scheduler
+	h.predictionJobToken = strings.TrimSpace(jobToken)
+}
+
+// runPredictionEvaluation runs reliability checkpoints and process forecasts.
+// Invoked only from the prediction job handler — never from /ingest.
+func (h *Handlers) runPredictionEvaluation(ctx context.Context, runID string) {
 	if h.checkpointEvaluator != nil {
 		h.checkpointEvaluator.Evaluate(ctx, runID)
 	}
@@ -305,24 +320,68 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ACK the collector before prediction work. Sync TabFM on the request path
-	// previously held curl open for ~20–30s and created regular sample holes.
-	// Flush so the client can proceed; keep evaluation on this goroutine so Cloud
-	// Run still has CPU until the handler returns.
+	// Enqueue prediction off this request. Never run TabFM/TimesFM here: Cloud Run
+	// holds the client until the handler returns even after Flush.
+	maxElapsed := maxSampleElapsed(samples)
+	if h.predictionScheduler != nil {
+		if err := h.predictionScheduler.Schedule(r.Context(), req.RunID, maxElapsed); err != nil {
+			predictionqueue.LogScheduleError(req.RunID, err)
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(map[string]string{"status": "success", "samples": fmt.Sprintf("%d", len(samples))}); err != nil {
 		log.Printf("Failed to encode ingest response for run %s: %v", req.RunID, err)
 	}
-	if flusher, ok := w.(http.Flusher); ok {
-		flusher.Flush()
+}
+
+func maxSampleElapsed(samples []models.Sample) int {
+	maxElapsed := 0
+	for _, sample := range samples {
+		if sample.ElapsedTime > maxElapsed {
+			maxElapsed = sample.ElapsedTime
+		}
+	}
+	return maxElapsed
+}
+
+// EvaluatePredictionJob runs checkpoint/forecast evaluation for a Cloud Tasks job.
+// Auth is a shared secret header — not the run JWT — so Tasks can invoke it.
+func (h *Handlers) EvaluatePredictionJob(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, "+predictionJobTokenHeader)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if h.predictionJobToken == "" || r.Header.Get(predictionJobTokenHeader) != h.predictionJobToken {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	job, err := predictionqueue.DecodeJob(body)
+	if err != nil {
+		http.Error(w, "Invalid job payload", http.StatusBadRequest)
+		return
 	}
 
-	evalCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), postIngestEvaluationTimeout)
+	evalCtx, cancel := context.WithTimeout(r.Context(), predictionJobTimeout)
 	defer cancel()
-	if h.evaluateAfterStore != nil {
-		h.evaluateAfterStore(evalCtx, req.RunID)
-	}
+	h.runPredictionEvaluation(evalCtx, job.RunID)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "success", "run_id": job.RunID})
 }
 
 func validFreshness(value *models.IngestFreshness) bool {
