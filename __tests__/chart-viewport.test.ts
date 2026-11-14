@@ -98,6 +98,54 @@ describe('chart viewport', () => {
     expect(layout.shapes[0].x0).toEqual(new Date(12_500));
   });
 
+  it('keeps Plotly uids CSS-selector safe for react/cleanPlot', () => {
+    const uid = view.plotlySafeUid(
+      'predict-43537595506-1-baseline',
+      'GradleDaemon|3177',
+      'rss',
+      'gap',
+      11,
+    );
+    expect(uid).toBe('predict-43537595506-1-baseline-GradleDaemon-3177-rss-gap-11');
+    expect(uid).toMatch(/^[a-zA-Z0-9_-]+$/);
+    expect(uid.includes('|') || uid.includes(':')).toBe(false);
+  });
+
+  it('builds gap connectors for the predict-43537595506-1-baseline fixture', () => {
+    const fixture = JSON.parse(
+      fs.readFileSync(
+        path.join(__dirname, '../__fixtures__/runs/predict-43537595506-1-baseline.json'),
+        'utf8',
+      ),
+    );
+    const timestamps = [...new Set(fixture.samples.map((s: any) => Number(s.Timestamp)))]
+      .filter((t) => Number.isFinite(t))
+      .sort((a, b) => a - b) as number[];
+    const values = timestamps.map((t) => {
+      const row = fixture.samples.find(
+        (s: any) => Number(s.Timestamp) === t && s.Name === 'GradleDaemon' && s.PID === '3177',
+      );
+      return row ? row.RSS : null;
+    });
+    const gapLimitMs = 8_000;
+    const gaps = view.findGaps(timestamps, gapLimitMs);
+    expect(gaps.some((g: any) => (g.end - g.start) >= 60_000)).toBe(true);
+    const midGap = gaps[0].start + Math.floor((gaps[0].end - gaps[0].start) / 2);
+    const connectors = view.unobservedConnectors(timestamps, values, midGap, gapLimitMs, {
+      maxIndex: gaps[0].lowerIndex,
+    });
+    expect(connectors).toHaveLength(1);
+    expect(connectors[0].complete).toBe(false);
+    const broken = view.measuredSeriesWithGapBreaks(
+      timestamps,
+      values,
+      0,
+      timestamps.length - 1,
+      gapLimitMs,
+    );
+    expect(broken.y).toContain(null);
+  });
+
   it('waits for in-flight Plotly updates before starting the next', async () => {
     const calls: number[] = [];
     let now = 0;

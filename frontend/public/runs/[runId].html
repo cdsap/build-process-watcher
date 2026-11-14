@@ -1536,6 +1536,15 @@
 
             bindRunDashboardTabs();
             bindPredictionPanel(data);
+            // Finished dashboards embed prediction HTML once; still need forecast replay wiring.
+            const predictionContent = document.getElementById('prediction-panel-content');
+            if (predictionContent && window.BpwPredictionView?.bindProcessForecastReplay) {
+                if (window.forecastReplayStop) {
+                    window.forecastReplayStop();
+                    window.forecastReplayStop = null;
+                }
+                window.forecastReplayStop = BpwPredictionView.bindProcessForecastReplay(predictionContent);
+            }
 
             const content = document.getElementById('content');
             if (content) {
@@ -1833,6 +1842,10 @@
                 };
             }
 
+            function plotlySafeUid(...parts) {
+                return BpwChartViewport.plotlySafeUid(...parts);
+            }
+
             function appendUnobservedConnectors(traces, timestamps, values, firstIndex, sampleIndex, playheadAbsoluteMs, style) {
                 if (firstIndex === -1 || sampleIndex < firstIndex) return;
                 const connectors = BpwChartViewport.unobservedConnectors(
@@ -1849,7 +1862,8 @@
                         type: 'scatter',
                         mode: 'lines',
                         name: style.legendOnce && index === 0 ? 'Unobserved interval' : style.name,
-                        uid: `${style.uid}:gap:${segment.lowerIndex}`,
+                        // Plotly uses uids in querySelector; keep them CSS-safe.
+                        uid: plotlySafeUid(style.uid, 'gap', segment.lowerIndex),
                         legendgroup: style.legendgroup || 'unobserved',
                         showlegend: Boolean(style.legendOnce && index === 0),
                         hovertemplate: 'Unobserved interval<br>%{x}<br>%{y:.1f} MB<extra></extra>',
@@ -1898,7 +1912,7 @@
                         type: 'scatter',
                         mode: 'lines',
                         name: `${def.processName} PID:${def.pid} (RSS)`,
-                        uid: `${uidBase}:rss`,
+                        uid: plotlySafeUid(uidBase, 'rss'),
                         line: { color: def.color, width: 3 },
                         connectgaps: false,
                     });
@@ -1908,7 +1922,7 @@
                         type: 'scatter',
                         mode: 'lines',
                         name: `${def.processName} PID:${def.pid} (Heap)`,
-                        uid: `${uidBase}:heap`,
+                        uid: plotlySafeUid(uidBase, 'heap'),
                         line: { color: def.color, width: 2, dash: 'dash' },
                         connectgaps: false,
                     });
@@ -1921,7 +1935,7 @@
                             sampleIndex,
                             absoluteMs,
                             {
-                                uid: `${uidBase}:rss`,
+                                uid: plotlySafeUid(uidBase, 'rss'),
                                 color: def.color,
                                 width: 2,
                                 name: `${def.processName} PID:${def.pid} (unobserved)`,
@@ -1951,7 +1965,7 @@
                         type: 'scatter',
                         mode: 'lines',
                         name: 'Total RSS Memory',
-                        uid: `${runId}:total-rss`,
+                        uid: plotlySafeUid(runId, 'total-rss'),
                         line: { color: '#2c3e50', width: 4 },
                         connectgaps: false,
                         customdata: sampleIndex >= firstTotalRssIndex
@@ -1968,7 +1982,7 @@
                             sampleIndex,
                             absoluteMs,
                             {
-                                uid: `${runId}:total-rss`,
+                                uid: plotlySafeUid(runId, 'total-rss'),
                                 color: '#7f8c8d',
                                 width: 3,
                                 name: 'Total RSS (unobserved)',

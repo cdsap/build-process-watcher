@@ -238,6 +238,16 @@
         return next;
     }
 
+    // Plotly uses uids inside querySelector class selectors during react/cleanPlot.
+    function plotlySafeUid(...parts) {
+        return parts
+            .map((part) => String(part == null ? '' : part))
+            .join('-')
+            .replace(/[^a-zA-Z0-9_-]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .slice(0, 120) || 'trace';
+    }
+
     function createRenderCoalescer(options) {
         const minIntervalMs = Math.max(0, finiteNumber(options?.minIntervalMs) ?? 70); // ~14 fps when 70
         const nowFn = typeof options?.now === 'function' ? options.now : () => performance.now();
@@ -319,6 +329,7 @@
         measuredSeriesWithGapBreaks: measuredSeriesWithGapBreaks,
         followDomain: followDomain,
         applyPlayheadShape: applyPlayheadShape,
+        plotlySafeUid: plotlySafeUid,
         createRenderCoalescer: createRenderCoalescer,
     };
 }));
