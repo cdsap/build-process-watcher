@@ -7,7 +7,7 @@ import { initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { parseTimestampSeconds, generateJsonReport } from './lib/report';
 import { generateCombinedMermaidChart, MermaidProcessData } from './lib/mermaid';
-import { artifactSummary, existingArtifactPaths } from './lib/artifacts';
+import { artifactSummary, existingArtifactPaths, resolveMonitorDebugLogPaths } from './lib/artifacts';
 import { finishRunViaBackend, RunFinisherError } from './lib/run_finisher';
 import { parseLogSamples } from './lib/log_samples';
 import { LogParseResult, parseLogContents } from './lib/log_parser';
@@ -833,26 +833,7 @@ async function run() {
             console.log('   Available env vars:', Object.keys(process.env).filter(k => k.includes('RUN') || k.includes('GITHUB')).join(', ') || 'none');
         }
 
-        // Print backend debug log if it exists (only in debug mode)
         const actionDir = process.env.GITHUB_ACTION_PATH || __dirname;
-        const backendDebugLog = path.join(actionDir, '..', 'backend_debug.log');
-        if (fs.existsSync(backendDebugLog) && debugMode) {
-            console.log('\n🔍 Backend Debug Log:');
-            console.log('==========================================');
-            const debugContent = fs.readFileSync(backendDebugLog, 'utf8');
-            console.log(debugContent);
-            console.log('==========================================\n');
-        }
-
-        // Print script debug log if it exists (only in debug mode)
-        const scriptDebugLog = path.join(actionDir, '..', 'script_debug.log');
-        if (fs.existsSync(scriptDebugLog) && debugMode) {
-            console.log('\n🔍 Script Debug Log:');
-            console.log('==========================================');
-            const scriptDebugContent = fs.readFileSync(scriptDebugLog, 'utf8');
-            console.log(scriptDebugContent);
-            console.log('==========================================\n');
-        }
 
         // Print summary statistics if available (for backend mode)
         const successfulCallsFile = path.join(actionDir, '..', 'successful_calls_count.txt');
@@ -919,6 +900,24 @@ async function run() {
         });
         resolvedLogFile = logFile;
         const backendMode = process.env.ENABLE_BACKEND === 'true';
+        const monitorDebugLogsForPrint = resolveMonitorDebugLogPaths({
+            logFile,
+            actionPath: process.env.GITHUB_ACTION_PATH || null,
+            actionBundleDir: actionDir,
+            cwd: process.cwd(),
+        });
+        if (monitorDebugLogsForPrint.backendDebugLog && debugMode) {
+            console.log('\n🔍 Backend Debug Log:');
+            console.log('==========================================');
+            console.log(fs.readFileSync(monitorDebugLogsForPrint.backendDebugLog, 'utf8'));
+            console.log('==========================================\n');
+        }
+        if (monitorDebugLogsForPrint.scriptDebugLog && debugMode) {
+            console.log('\n🔍 Script Debug Log:');
+            console.log('==========================================');
+            console.log(fs.readFileSync(monitorDebugLogsForPrint.scriptDebugLog, 'utf8'));
+            console.log('==========================================\n');
+        }
         
         if (debugMode) {
             console.log(`🔍 Debug: Current working directory: ${process.cwd()}`);
@@ -1086,23 +1085,33 @@ async function run() {
                     path.join(outputDir, csvFile),
                     path.join(outputDir, jsonFile)
                 ];
-                if (debugMode) {
-                    const backendDebugLog = path.join(actionDir, '..', 'backend_debug.log');
-                    if (fs.existsSync(backendDebugLog)) {
-                        const debugCopy = path.join(outputDir, `backend_debug${outputSuffix}.log`);
-                        if (!fs.existsSync(debugCopy)) {
-                            fs.copyFileSync(backendDebugLog, debugCopy);
-                        }
-                        artifactCandidates.push(debugCopy);
+                // Always archive monitor debug logs when present (needed to diagnose collector stalls).
+                const monitorDebugLogs = resolveMonitorDebugLogPaths({
+                    logFile,
+                    actionPath: process.env.GITHUB_ACTION_PATH || null,
+                    actionBundleDir: actionDir,
+                    cwd: process.cwd(),
+                });
+                const debugLogCopies: Array<{ source: string; name: string }> = [];
+                if (monitorDebugLogs.backendDebugLog) {
+                    debugLogCopies.push({
+                        source: monitorDebugLogs.backendDebugLog,
+                        name: `backend_debug${outputSuffix}.log`,
+                    });
+                }
+                if (monitorDebugLogs.scriptDebugLog) {
+                    debugLogCopies.push({
+                        source: monitorDebugLogs.scriptDebugLog,
+                        name: `script_debug${outputSuffix}.log`,
+                    });
+                }
+                for (const entry of debugLogCopies) {
+                    const debugCopy = path.join(outputDir, entry.name);
+                    if (!fs.existsSync(debugCopy)) {
+                        fs.copyFileSync(entry.source, debugCopy);
                     }
-                    const scriptDebugLog = path.join(actionDir, '..', 'script_debug.log');
-                    if (fs.existsSync(scriptDebugLog)) {
-                        const debugCopy = path.join(outputDir, `script_debug${outputSuffix}.log`);
-                        if (!fs.existsSync(debugCopy)) {
-                            fs.copyFileSync(scriptDebugLog, debugCopy);
-                        }
-                        artifactCandidates.push(debugCopy);
-                    }
+                    artifactCandidates.push(debugCopy);
+                    console.log(`📎 Including monitor debug log in artifacts: ${entry.name}`);
                 }
                 const files = existingArtifactPaths(artifactCandidates);
                 

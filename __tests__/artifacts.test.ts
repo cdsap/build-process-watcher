@@ -1,7 +1,11 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { artifactSummary, existingArtifactPaths } from '../src/lib/artifacts';
+import {
+  artifactSummary,
+  existingArtifactPaths,
+  resolveMonitorDebugLogPaths,
+} from '../src/lib/artifacts';
 
 describe('existingArtifactPaths', () => {
   it('returns absolute paths for every generated chart that exists', () => {
@@ -38,6 +42,34 @@ describe('existingArtifactPaths', () => {
       ])).toEqual([memoryChart]);
     } finally {
       fs.rmSync(outputDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('resolveMonitorDebugLogPaths', () => {
+  it('prefers debug logs next to LOG_FILE', () => {
+    const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bpw-run-'));
+    const otherDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bpw-other-'));
+    try {
+      const logFile = path.join(runDir, 'build_process_watcher.log');
+      const backend = path.join(runDir, 'backend_debug.log');
+      const script = path.join(runDir, 'script_debug.log');
+      fs.writeFileSync(logFile, 'log');
+      fs.writeFileSync(backend, 'backend');
+      fs.writeFileSync(script, 'script');
+      fs.writeFileSync(path.join(otherDir, 'backend_debug.log'), 'ignored');
+
+      expect(resolveMonitorDebugLogPaths({
+        logFile,
+        actionPath: otherDir,
+        cwd: otherDir,
+      })).toEqual({
+        backendDebugLog: backend,
+        scriptDebugLog: script,
+      });
+    } finally {
+      fs.rmSync(runDir, { recursive: true, force: true });
+      fs.rmSync(otherDir, { recursive: true, force: true });
     }
   });
 });
