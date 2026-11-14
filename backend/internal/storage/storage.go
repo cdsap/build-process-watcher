@@ -399,31 +399,27 @@ func (c *Client) MarkRunAsFinished(runID string) (newlyFinished bool, err error)
 		return false, nil
 	}
 
-	// Mark as finished
-	if runDoc.ID == "" {
-		runDoc.ID = runID
-	}
-	if runDoc.RunID == "" {
-		runDoc.RunID = runID
+	// Merge-only finish fields so a concurrent AppendProcessForecasts / checkpoint
+	// MergeAll is not clobbered by a full document Set of a stale snapshot.
+	fields := map[string]interface{}{
+		"id":                   runID,
+		"run_id":               runID,
+		"finished":             true,
+		"finished_at":          now,
+		"updated_at":           now,
+		"updated_at_timestamp": ToMillis(now),
+		"expire_at":            now.Add(24 * time.Hour),
 	}
 	if runDoc.StartTime.IsZero() {
-		runDoc.StartTime = now
+		fields["start_time"] = now
 	}
 	if runDoc.CreatedAt.IsZero() {
-		runDoc.CreatedAt = now
+		fields["created_at"] = now
 	}
 	if runDoc.Samples == nil {
-		runDoc.Samples = []models.Sample{}
+		fields["samples"] = []models.Sample{}
 	}
-	runDoc.Finished = true
-	runDoc.FinishedAt = now
-	runDoc.UpdatedAt = now
-	runDoc.UpdatedAtTimestamp = ToMillis(now) // Store Unix millis for timezone-independent queries
-	// Set expire_at to 24 hours from finish time for Firestore TTL
-	runDoc.ExpireAt = now.Add(24 * time.Hour)
-
-	// Update in Firestore
-	_, err = doc.Set(c.ctx, runDoc)
+	_, err = doc.Set(c.ctx, fields, firestore.MergeAll)
 	if err != nil {
 		return false, err
 	}

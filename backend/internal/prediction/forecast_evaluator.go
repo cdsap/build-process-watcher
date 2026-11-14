@@ -58,9 +58,8 @@ func (e *ForecastEvaluator) Evaluate(ctx context.Context, runID string) {
 		log.Printf("Forecast skipped: could not load run %s: %v", runID, err)
 		return
 	}
-	if runDoc.Finished {
-		return
-	}
+	// Do not skip when Finished: prediction jobs are enqueued from /ingest and may
+	// run after /finish. Throttle + AppendProcessForecasts idempotency prevent storms.
 	mode := normalizeMode(runDoc.PredictionMode)
 	provider := e.providerForMode(mode)
 	if provider == nil || !predictor.ForecastEnabled(provider) {

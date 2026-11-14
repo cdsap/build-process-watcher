@@ -114,6 +114,24 @@ func TestPredictModeUses20sThrottle(t *testing.T) {
 	}
 }
 
+func TestForecastEvaluatorAllowsFinishedRunsForLateJobs(t *testing.T) {
+	repo := &forecastRepoStub{run: &models.RunDoc{
+		Finished:       true,
+		PredictionMode: "predict",
+		Samples: []models.Sample{
+			{ElapsedTime: 40, Timestamp: 40000, Name: "GradleDaemon", PID: "1", HeapUsed: 100, RSS: 200},
+		},
+	}}
+	evaluator := NewForecastEvaluatorWithTabPredict(repo, predictor.NoopForecastProvider{}, forecastProviderStub{out: []models.ProcessForecast{{
+		ProcessName: "GradleDaemon", PID: "1", Metric: "heap", CreatedAtMs: 40000,
+		Points: []models.ProcessForecastPoint{{TargetAtMs: 50000, ValueMB: 110}},
+	}}})
+	evaluator.Evaluate(context.Background(), "run-1")
+	if len(repo.appended) != 1 {
+		t.Fatalf("appended = %d, want 1 for late job after finish", len(repo.appended))
+	}
+}
+
 func TestForecastEvaluatorIgnoresForecastProviderInPredictMode(t *testing.T) {
 	repo := &forecastRepoStub{run: &models.RunDoc{
 		PredictionMode: "predict",

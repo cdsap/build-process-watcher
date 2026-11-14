@@ -15,6 +15,7 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/internal/cleanup"
 	"github.com/cdsap/build-process-watcher/backend/internal/exportqueue"
 	"github.com/cdsap/build-process-watcher/backend/internal/handlers"
+	"github.com/cdsap/build-process-watcher/backend/internal/predictionqueue"
 	"github.com/cdsap/build-process-watcher/backend/internal/storage"
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
@@ -196,6 +197,17 @@ func Run(ctx context.Context, options Options) error {
 		log.Printf("🔮 Process tabpredict provider enabled")
 	}
 	h := handlers.NewHandlersWithPredictor(storageClient, exportSched, provider, options.PredictionCheckpoints, options.FallbackClassifier, forecastProvider, tabPredictProvider)
+
+	predictionSched, predictionCloser := newPredictionScheduler(ctx, options.ProjectID)
+	if predictionCloser != nil {
+		defer func() {
+			if err := predictionCloser(); err != nil {
+				log.Printf("prediction scheduler close: %v", err)
+			}
+		}()
+	}
+	h.SetPredictionScheduler(predictionSched, strings.TrimSpace(os.Getenv("PREDICTION_JOB_TOKEN")))
+
 	cleanupService := cleanup.NewService(storageClient, exportSched)
 	mux := NewMux(h, cleanupService)
 	port := portOrDefault(options.Port)
@@ -205,11 +217,42 @@ func Run(ctx context.Context, options Options) error {
 	log.Printf("   - GET  /healthz")
 	log.Printf("   - POST /auth/run/{runId}")
 	log.Printf("   - POST /ingest (JWT required)")
+	log.Printf("   - POST /internal/prediction-jobs (prediction job token)")
 	log.Printf("   - GET  /runs/{runId}")
 	log.Printf("   - POST /finish/{runId} (JWT required)")
 	log.Printf("   - POST /cleanup/stale (Admin required)")
 
 	return http.ListenAndServe(":"+port, mux)
+}
+
+func newPredictionScheduler(ctx context.Context, projectID string) (predictionqueue.Scheduler, func() error) {
+	queue := strings.TrimSpace(os.Getenv("PREDICTION_TASKS_QUEUE"))
+	location := strings.TrimSpace(firstNonEmpty(os.Getenv("PREDICTION_TASKS_LOCATION"), "us-central1"))
+	targetURL := strings.TrimSpace(os.Getenv("PREDICTION_JOB_URL"))
+	token := strings.TrimSpace(os.Getenv("PREDICTION_JOB_TOKEN"))
+	if queue == "" || targetURL == "" || token == "" {
+		log.Printf("🔮 Prediction job queue disabled (set PREDICTION_TASKS_QUEUE, PREDICTION_JOB_URL, PREDICTION_JOB_TOKEN to enable Cloud Tasks offload)")
+		return predictionqueue.Noop{}, nil
+	}
+	mode := "predict"
+	if predictionProviderEnabled(firstNonEmpty(os.Getenv("PREDICTIVE_TABPREDICT_PROVIDER_ENABLED"), os.Getenv("PREDICTIVE_PROVIDER_ENABLED"))) {
+		mode = "predict"
+	} else if predictionProviderEnabled(firstNonEmpty(os.Getenv("PREDICTIVE_FORECAST_PROVIDER_ENABLED"), os.Getenv("PREDICTIVE_PROVIDER_ENABLED"))) {
+		mode = "forecast"
+	}
+	sched, err := predictionqueue.NewCloudTasks(ctx, predictionqueue.CloudTasksConfig{
+		ProjectID:    projectID,
+		Location:     location,
+		Queue:        queue,
+		TargetURL:    targetURL,
+		AuthToken:    token,
+		ThrottleMode: mode,
+	})
+	if err != nil {
+		log.Printf("🔮 Prediction Cloud Tasks scheduler disabled: %v", err)
+		return predictionqueue.Noop{}, nil
+	}
+	return sched, sched.Close
 }
 
 func providerOrNoop(provider predictor.Provider) predictor.Provider {
@@ -225,6 +268,7 @@ func NewMux(h *handlers.Handlers, cleanupService *cleanup.Service) *http.ServeMu
 	mux.HandleFunc("/healthz", h.Health)
 	mux.HandleFunc("/auth/run/", h.Auth)
 	mux.HandleFunc("/ingest", h.Ingest)
+	mux.HandleFunc("/internal/prediction-jobs", h.EvaluatePredictionJob)
 	mux.HandleFunc("/runs/", h.GetRun)
 	mux.HandleFunc("/finish/", h.FinishRun)
 	mux.HandleFunc("/cleanup/stale", cleanupService.HandleManualStaleCleanup)
