@@ -158,7 +158,12 @@ describe('per-process memory forecasts', () => {
     expect(html).toContain('id="forecast-replay-controls"');
     expect(html).toContain('class="forecast-chart"');
     expect(html).toContain('class="forecast-chart-legend"');
+    expect(html).toContain('class="process-forecast-charts"');
+    expect(html).toContain('class="process-forecast-tables"');
     expect(html).not.toContain('class="chart-legend"');
+    // Charts stay contiguous; value tables are grouped below.
+    expect(html.indexOf('process-forecast-charts')).toBeLessThan(html.indexOf('process-forecast-tables'));
+    expect(html.indexOf('data-forecast-chart-host')).toBeLessThan(html.indexOf('forecast-table-scroll'));
     expect(html).toContain('15.0 MB</td><td>16.0 MB');
     expect(html).toContain('20.0 MB</td><td>Pending');
     expect(view.actualNear(

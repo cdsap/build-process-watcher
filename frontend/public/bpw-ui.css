@@ -1367,6 +1367,24 @@ footer {
     margin: 0.75rem 0 1rem;
 }
 .process-forecast { margin-top: 1.5rem; }
+.process-forecast-charts {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+}
+.process-forecast-charts .process-forecast {
+    margin-top: 0;
+}
+.process-forecast-tables {
+    margin-top: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+.process-forecast-tables .process-forecast {
+    margin-top: 0;
+}
 .process-forecast svg { display: block; width: 100%; max-width: 920px; height: auto; background: var(--bpw-surface, #fff); }
 .process-forecast polyline { fill: none; stroke-width: 2.5; vector-effect: non-scaling-stroke; }
 .process-forecast .forecast-chart { margin: 0.35rem 0 0.5rem; }
