@@ -74,7 +74,6 @@
     let liveYDomain = null;
     let liveRunController = null;
     let lastRefreshTime = null;
-    let activeRunDashboardTab = 'dashboard';
     let predictionSelectedWindow = null;
     
     if (!runId || runId === 'runs' || runId === '') {
@@ -127,53 +126,26 @@
         });
     }
 
-    function setRunDashboardTab(tab) {
-        activeRunDashboardTab = tab === 'predictions' ? 'predictions' : 'dashboard';
-        // Route through Classic / Studio / Story / Predictions mode switch.
-        if (window.BpwExperimentLayout?.setViewMode) {
-            if (activeRunDashboardTab === 'predictions') {
-                if (BpwExperimentLayout.isPredictionsEnabled?.() === false) {
-                    activeRunDashboardTab = 'dashboard';
-                    if (BpwExperimentLayout.getViewMode?.() === 'predictions') {
-                        BpwExperimentLayout.setViewMode(BpwExperimentLayout.VIEW_MODES?.classic || 'classic');
-                    }
-                } else {
-                    BpwExperimentLayout.setViewMode(BpwExperimentLayout.VIEW_MODES?.predictions || 'predictions');
-                }
-            } else if (BpwExperimentLayout.getViewMode?.() === 'predictions') {
-                BpwExperimentLayout.setViewMode(BpwExperimentLayout.VIEW_MODES?.classic || 'classic');
-            }
-        }
-        const tabs = document.querySelectorAll('.run-dashboard-tab[data-run-tab]');
-        const dashboardPanel = document.getElementById('run-panel-dashboard');
-        const predictionsPanel = document.getElementById('run-panel-predictions');
-        tabs.forEach((button) => {
-            const selected = button.getAttribute('data-run-tab') === activeRunDashboardTab;
-            button.classList.toggle('is-active', selected);
-            button.setAttribute('aria-selected', selected ? 'true' : 'false');
-            button.tabIndex = selected ? 0 : -1;
-        });
-        if (dashboardPanel) dashboardPanel.hidden = activeRunDashboardTab !== 'dashboard';
-        if (predictionsPanel) predictionsPanel.hidden = activeRunDashboardTab !== 'predictions';
-        if (activeRunDashboardTab === 'dashboard') {
-            requestAnimationFrame(() => resizeRunDashboardCharts());
-        }
+    function openPredictionsView() {
+        if (!window.BpwExperimentLayout?.setViewMode) return;
+        if (BpwExperimentLayout.isPredictionsEnabled?.() === false) return;
+        BpwExperimentLayout.setViewMode(BpwExperimentLayout.VIEW_MODES?.predictions || 'predictions');
     }
 
-    function bindRunDashboardTabs() {
-        document.querySelectorAll('[data-run-tab]').forEach((el) => {
-            el.addEventListener('click', () => {
-                setRunDashboardTab(el.getAttribute('data-run-tab'));
-            });
-        });
-        const initial = window.BpwExperimentLayout?.getViewMode?.() === 'predictions'
-            ? 'predictions'
-            : (activeRunDashboardTab || 'dashboard');
-        setRunDashboardTab(initial);
+    function openClassicDashboard() {
+        if (!window.BpwExperimentLayout?.setViewMode) return;
+        BpwExperimentLayout.setViewMode(BpwExperimentLayout.VIEW_MODES?.classic || 'classic');
+        requestAnimationFrame(() => resizeRunDashboardCharts());
     }
 
-    function focusPredictionsTabFromChart() {
-        setRunDashboardTab('predictions');
+    function bindPredictionNavigation() {
+        document.querySelectorAll('[data-open-predictions]').forEach((el) => {
+            el.addEventListener('click', openPredictionsView);
+        });
+    }
+
+    function focusPredictionsFromChart() {
+        openPredictionsView();
         requestAnimationFrame(() => {
             const modeBtn = document.querySelector('[data-bpw-view-mode="predictions"]');
             if (modeBtn && typeof modeBtn.focus === 'function') modeBtn.focus({ preventScroll: true });
@@ -183,7 +155,7 @@
 
     function focusPredictionOnChart(windowSeconds) {
         predictionSelectedWindow = Number(windowSeconds);
-        setRunDashboardTab('dashboard');
+        openClassicDashboard();
         requestAnimationFrame(() => {
             const chart = document.getElementById('chart');
             const traceIndex = chart?.data?.findIndex(trace => trace?.name === 'Prediction checkpoints') ?? -1;
@@ -234,7 +206,6 @@
                 const windowSeconds = Number(checkpointButton.getAttribute('data-prediction-window'));
                 predictionSelectedWindow = windowSeconds;
                 renderPredictionPanel(data, windowSeconds);
-                setRunDashboardTab('predictions');
                 return;
             }
             const chartButton = event.target.closest('[data-prediction-chart-window]');
@@ -266,7 +237,7 @@
             if (marker) {
                 predictionSelectedWindow = Number(marker.customdata);
                 if (window.currentRunData) renderPredictionPanel(window.currentRunData, predictionSelectedWindow);
-                focusPredictionsTabFromChart();
+                focusPredictionsFromChart();
             }
         });
     }
@@ -667,7 +638,7 @@
         const predictionPreviewHtml = predictionCheckpoints.length ? `
             <section class="prediction-preview" aria-label="Prediction preview">
                 <div class="prediction-preview-main"><span class="bpw-panel-badge">Predictions</span><strong>Latest ${escapeHtml(latestReadyRisk || 'not available')}</strong><span>${readyPredictionCount} of ${predictionCheckpoints.length} checkpoints ready</span></div>
-                <button type="button" class="btn secondary" data-run-tab="predictions">Open Predictions</button>
+                <button type="button" class="btn secondary" data-open-predictions>Open Predictions</button>
             </section>
         ` : '';
 
@@ -805,12 +776,7 @@
 
             <div id="freshness-diagnostics" hidden></div>
 
-            <div class="run-dashboard-tabs run-dashboard-tabs-legacy" role="tablist" aria-label="Run dashboard views" hidden>
-                <button type="button" class="run-dashboard-tab" role="tab" id="run-tab-dashboard" data-run-tab="dashboard" aria-controls="run-panel-dashboard">Dashboard</button>
-                <button type="button" class="run-dashboard-tab" role="tab" id="run-tab-predictions" data-run-tab="predictions" aria-controls="run-panel-predictions">Predictions</button>
-            </div>
-
-            <div id="run-panel-dashboard" class="run-dashboard-panel" role="tabpanel" aria-labelledby="run-tab-dashboard">
+            <div id="run-panel-dashboard" class="run-dashboard-panel">
             <div class="run-kpi-strip">
                 <div class="run-kpi">
                     <div class="run-kpi-label">Peak RSS</div>
@@ -863,9 +829,9 @@
             <div id="compare-section" class="compare-section" style="display: none;"></div>
             </div>
 
-            <div id="run-panel-predictions" class="run-dashboard-panel" role="tabpanel" aria-labelledby="run-tab-predictions" hidden>
+            <section id="run-panel-predictions" class="run-dashboard-panel" aria-label="Predictions" hidden>
                 <div id="prediction-panel-content">${predictionTabHtml}</div>
-            </div>
+            </section>
         `;
 
         if (samples.length > 0) {
@@ -932,7 +898,7 @@
             }
         }
 
-        bindRunDashboardTabs();
+        bindPredictionNavigation();
         bindPredictionPanel(data);
         bindForecastReplayControls();
 

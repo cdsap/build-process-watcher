@@ -459,40 +459,6 @@ input[type="file"] {
     .prediction-evolution-row { grid-template-columns: 1fr; }
 }
 
-.run-dashboard-tabs {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem;
-    margin: 0 0 1rem;
-    padding: 0.25rem;
-    border: 1px solid rgba(22, 26, 29, 0.09);
-    border-radius: 8px;
-    background: rgba(245, 247, 251, 0.9);
-}
-
-.run-dashboard-tab {
-    appearance: none;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--bpw-muted);
-    cursor: pointer;
-    font: inherit;
-    font-size: 0.86rem;
-    font-weight: 650;
-    min-height: 2.1rem;
-    min-width: 7.5rem;
-    padding: 0.4rem 0.85rem;
-}
-
-.run-dashboard-tab.is-active,
-.run-dashboard-tab[aria-selected="true"] {
-    background: #fff;
-    border-color: var(--bpw-line);
-    color: var(--bpw-ink);
-    box-shadow: 0 1px 2px rgba(22, 26, 29, 0.06);
-}
-
 .run-dashboard-panel[hidden] {
     display: none !important;
 }
@@ -1415,11 +1381,6 @@ footer {
     .prediction-preview {
         flex-direction: column;
         align-items: stretch;
-    }
-
-    .run-dashboard-tab {
-        flex: 1 1 auto;
-        min-width: 0;
     }
 
     .prediction-metrics {

@@ -15,12 +15,16 @@ function readDashboardPage(page: string): string {
 }
 
 describe('run dashboard prediction evolution integration', () => {
-  it.each(pages)('loads the shared prediction view and keeps both dashboard tabs: %s', (page) => {
+  it.each(pages)('loads the shared prediction view without legacy dashboard tabs: %s', (page) => {
     const source = readDashboardPage(page);
     expect(source).toContain('<script src="/prediction-view.js"></script>');
-    expect(source).toContain('data-run-tab="dashboard"');
-    expect(source).toContain('data-run-tab="predictions"');
-    expect(source).toContain('run-dashboard-tabs-legacy');
+    expect(source).toContain('data-open-predictions');
+    expect(source).not.toContain('data-run-tab');
+    expect(source).not.toContain('run-dashboard-tabs-legacy');
+    expect(source).not.toContain('activeRunDashboardTab');
+    expect(source).not.toContain('setRunDashboardTab');
+    expect(source).not.toContain('bindRunDashboardTabs');
+    expect(source).not.toContain('aria-labelledby="run-tab-');
     expect(source).toContain('BpwPredictionView.render');
     expect(source).toContain('data-prediction-window');
     expect(source).toContain('data-prediction-chart-window');
@@ -48,7 +52,6 @@ describe('run dashboard prediction evolution integration', () => {
     expect(source).toContain('predictionSelectedWindow = Number(marker.customdata)');
     expect(source).toContain('focusPredictionOnChart');
     expect(source).toContain('renderPredictionPanel(window.currentRunData, predictionSelectedWindow)');
-    expect(source).not.toContain('renderDashboard(runId, data);\n                    setRunDashboardTab(\'predictions\')');
     expect(source).toContain("['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']");
     expect(source).not.toContain('const buildPredictionMarkerData =');
   });
