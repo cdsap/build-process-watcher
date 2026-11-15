@@ -190,7 +190,7 @@ describe('resolveMonitoringFeatureFlags', () => {
 
 describe('prediction mode selection', () => {
   const base = { remoteMonitoringRequested: false, exportToBigqueryRequested: false, predictiveReliabilityRequested: false, runId: 'run-1' };
-  it.each(['disabled', 'reliability', 'forecast', 'predict'] as const)('resolves %s', (predictionMode) => {
+  it.each(['disabled', 'reliability', 'forecast', 'predict', 'bqml-boosted'] as const)('resolves %s', (predictionMode) => {
     const flags = resolveMonitoringFeatureFlags({ ...base, predictionMode });
     expect(flags.predictionMode).toBe(predictionMode);
     expect(flags.enableBackend).toBe(predictionMode !== 'disabled');
@@ -200,7 +200,7 @@ describe('prediction mode selection', () => {
   it('accepts the legacy opt-in with an explicit matching mode', () => {
     expect(resolveMonitoringFeatureFlags({ ...base, predictionMode: 'reliability', predictiveReliabilityRequested: true }).predictionMode).toBe('reliability');
   });
-  it.each(['disabled', 'forecast', 'predict'])('rejects legacy opt-in conflicting with %s', (predictionMode) => {
+  it.each(['disabled', 'forecast', 'predict', 'bqml-boosted'])('rejects legacy opt-in conflicting with %s', (predictionMode) => {
     expect(() => resolveMonitoringFeatureFlags({ ...base, predictionMode, predictiveReliabilityRequested: true })).toThrow('conflicts');
   });
   it('rejects invalid values without echoing them', () => {

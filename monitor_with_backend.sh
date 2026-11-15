@@ -220,7 +220,7 @@ get_auth_token() {
         auth_params+=("predictive_reliability=true")
     fi
     case "${PREDICTION_MODE:-disabled}" in
-        reliability|forecast|predict) auth_params+=("prediction_mode=$PREDICTION_MODE") ;;
+        reliability|forecast|predict|bqml-boosted) auth_params+=("prediction_mode=$PREDICTION_MODE") ;;
     esac
     if [ ${#auth_params[@]} -gt 0 ]; then
         local joined_params

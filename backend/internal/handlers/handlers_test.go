@@ -289,7 +289,7 @@ func TestRunResponse_WithPredictionCheckpoints(t *testing.T) {
 func TestNewHandlersWithPredictorWiresCheckpointEvaluator(t *testing.T) {
 	h := NewHandlersWithPredictor(nil, nil, predictor.NoopProvider{}, []int{60}, func(error) (string, string) {
 		return "no_data", "prediction data unavailable"
-	}, predictor.NoopForecastProvider{}, predictor.NoopForecastProvider{})
+	}, predictor.NoopForecastProvider{}, predictor.NoopForecastProvider{}, predictor.NoopForecastProvider{})
 	if h.checkpointEvaluator == nil {
 		t.Fatal("expected checkpoint evaluator to be constructed")
 	}
@@ -298,7 +298,7 @@ func TestNewHandlersWithPredictorWiresCheckpointEvaluator(t *testing.T) {
 		t.Fatalf("classifier = (%q, %q), want injected mapping", state, message)
 	}
 
-	h = NewHandlersWithPredictor(nil, nil, nil, nil, nil, nil, nil)
+	h = NewHandlersWithPredictor(nil, nil, nil, nil, nil, nil, nil, nil)
 	err := fmt.Errorf("private stack: customer id 9: boom")
 	state, message = h.checkpointEvaluator.FallbackClassifier()(err)
 	if state != "provider_error" || message != "prediction provider error" {
@@ -586,6 +586,7 @@ func TestAuthPredictionModes(t *testing.T) {
 		{"prediction_mode=reliability", "reliability", true, http.StatusOK},
 		{"prediction_mode=forecast", "forecast", false, http.StatusOK},
 		{"prediction_mode=predict", "predict", false, http.StatusOK},
+		{"prediction_mode=bqml-boosted", "bqml-boosted", false, http.StatusOK},
 		{"prediction_mode=invalid", "", false, http.StatusBadRequest},
 		{"prediction_mode=forecast&predictive_reliability=true", "", false, http.StatusBadRequest},
 	} {

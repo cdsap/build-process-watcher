@@ -101,7 +101,7 @@ describe('createMonitoringProcessLaunchPlan', () => {
   });
 });
 
-  it.each(['disabled', 'reliability', 'forecast', 'predict'] as const)('passes %s to the monitor', (predictionMode) => {
+  it.each(['disabled', 'reliability', 'forecast', 'predict', 'bqml-boosted'] as const)('passes %s to the monitor', (predictionMode) => {
     const plan = createMonitoringProcessLaunchPlan({ ...inputs, predictionMode }, {});
     expect(plan.env.PREDICTION_MODE).toBe(predictionMode);
   });

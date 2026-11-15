@@ -61,12 +61,12 @@ type Exporter interface {
 
 // NewHandlers creates a new handlers instance. export may be nil (no BigQuery jobs).
 func NewHandlers(storageClient Storage, export Exporter) *Handlers {
-	return NewHandlersWithPredictor(storageClient, export, predictor.NoopProvider{}, nil, nil, predictor.NoopForecastProvider{}, predictor.NoopForecastProvider{})
+	return NewHandlersWithPredictor(storageClient, export, predictor.NoopProvider{}, nil, nil, predictor.NoopForecastProvider{}, predictor.NoopForecastProvider{}, predictor.NoopForecastProvider{})
 }
 
-// NewHandlersWithPredictor creates handlers with optional reliability, forecast, and
-// tabpredict providers plus an optional fallback classifier supplied by the composition root.
-func NewHandlersWithPredictor(storageClient Storage, export Exporter, predictionProvider predictor.Provider, checkpoints []int, fallbackClassifier predictor.FallbackClassifier, forecastProvider predictor.ForecastProvider, tabPredictProvider predictor.ForecastProvider) *Handlers {
+// NewHandlersWithPredictor creates handlers with optional reliability and timeline
+// providers (forecast / tabpredict / bqml-boosted) plus an optional fallback classifier.
+func NewHandlersWithPredictor(storageClient Storage, export Exporter, predictionProvider predictor.Provider, checkpoints []int, fallbackClassifier predictor.FallbackClassifier, forecastProvider, tabPredictProvider, bqmlBoostedProvider predictor.ForecastProvider) *Handlers {
 	var checkpointRepo prediction.CheckpointRepository
 	var forecastRepo prediction.ForecastRepository
 	if storageClient != nil {
@@ -77,7 +77,7 @@ func NewHandlersWithPredictor(storageClient Storage, export Exporter, prediction
 		storage:             storageClient,
 		export:              export,
 		checkpointEvaluator: prediction.NewCheckpointEvaluator(checkpointRepo, predictionProvider, checkpoints, fallbackClassifier),
-		forecastEvaluator:   prediction.NewForecastEvaluatorWithTabPredict(forecastRepo, forecastProvider, tabPredictProvider),
+		forecastEvaluator:   prediction.NewForecastEvaluatorWithProviders(forecastRepo, forecastProvider, tabPredictProvider, bqmlBoostedProvider),
 		predictionScheduler: predictionqueue.Noop{},
 	}
 }
@@ -154,7 +154,7 @@ func (h *Handlers) Auth(w http.ResponseWriter, r *http.Request) {
 	mode := r.URL.Query().Get("prediction_mode")
 	legacy := boolQuery(r, "predictive_reliability")
 	switch mode {
-	case "", "disabled", "reliability", "forecast", "predict":
+	case "", "disabled", "reliability", "forecast", "predict", "bqml-boosted":
 	default:
 		http.Error(w, "invalid prediction_mode", http.StatusBadRequest)
 		return

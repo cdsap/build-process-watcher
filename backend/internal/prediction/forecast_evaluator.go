@@ -9,8 +9,7 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
 
-// Shared cadence for forecast (TimesFM) and predict (TabFM): same cloud behavior,
-// only the private BigQuery API differs (AI.FORECAST vs AI.PREDICT).
+// Shared cadence for timeline modes (forecast / predict / bqml-boosted).
 const processForecastThrottleElapsedS = 20
 
 // ForecastRepository is the persistence surface used by forecast evaluation.
@@ -20,35 +19,47 @@ type ForecastRepository interface {
 }
 
 // ForecastEvaluator coordinates process-forecast provider calls after ingest.
-// prediction_mode=forecast uses TimesFM (/forecast); prediction_mode=predict uses TabFM (/tabpredict).
-// Both write the same public process_forecasts contract.
+// prediction_mode=forecast → TimesFM (/forecast)
+// prediction_mode=predict → TabFM (/tabpredict)
+// prediction_mode=bqml-boosted → trained BQML boosted trees (/bqml-boosted)
+// All write the same public process_forecasts contract.
 type ForecastEvaluator struct {
-	repo               ForecastRepository
-	forecastProvider   predictor.ForecastProvider
-	tabPredictProvider predictor.ForecastProvider
+	repo                ForecastRepository
+	forecastProvider    predictor.ForecastProvider
+	tabPredictProvider  predictor.ForecastProvider
+	bqmlBoostedProvider predictor.ForecastProvider
 }
 
 // NewForecastEvaluator constructs a forecast evaluator.
 func NewForecastEvaluator(repo ForecastRepository, forecastProvider predictor.ForecastProvider) *ForecastEvaluator {
-	return NewForecastEvaluatorWithTabPredict(repo, forecastProvider, predictor.NoopForecastProvider{})
+	return NewForecastEvaluatorWithProviders(repo, forecastProvider, predictor.NoopForecastProvider{}, predictor.NoopForecastProvider{})
 }
 
 // NewForecastEvaluatorWithTabPredict constructs an evaluator for forecast and predict modes.
 func NewForecastEvaluatorWithTabPredict(repo ForecastRepository, forecastProvider, tabPredictProvider predictor.ForecastProvider) *ForecastEvaluator {
+	return NewForecastEvaluatorWithProviders(repo, forecastProvider, tabPredictProvider, predictor.NoopForecastProvider{})
+}
+
+// NewForecastEvaluatorWithProviders constructs an evaluator for all timeline modes.
+func NewForecastEvaluatorWithProviders(repo ForecastRepository, forecastProvider, tabPredictProvider, bqmlBoostedProvider predictor.ForecastProvider) *ForecastEvaluator {
 	if forecastProvider == nil {
 		forecastProvider = predictor.NoopForecastProvider{}
 	}
 	if tabPredictProvider == nil {
 		tabPredictProvider = predictor.NoopForecastProvider{}
 	}
+	if bqmlBoostedProvider == nil {
+		bqmlBoostedProvider = predictor.NoopForecastProvider{}
+	}
 	return &ForecastEvaluator{
-		repo:               repo,
-		forecastProvider:   forecastProvider,
-		tabPredictProvider: tabPredictProvider,
+		repo:                repo,
+		forecastProvider:    forecastProvider,
+		tabPredictProvider:  tabPredictProvider,
+		bqmlBoostedProvider: bqmlBoostedProvider,
 	}
 }
 
-// Evaluate requests process forecasts when prediction_mode is forecast or predict.
+// Evaluate requests process forecasts for forecast, predict, or bqml-boosted modes.
 func (e *ForecastEvaluator) Evaluate(ctx context.Context, runID string) {
 	if e == nil || e.repo == nil {
 		return
@@ -92,6 +103,8 @@ func (e *ForecastEvaluator) providerForMode(mode string) predictor.ForecastProvi
 		return e.forecastProvider
 	case "predict":
 		return e.tabPredictProvider
+	case "bqml-boosted":
+		return e.bqmlBoostedProvider
 	default:
 		return nil
 	}
@@ -99,7 +112,7 @@ func (e *ForecastEvaluator) providerForMode(mode string) predictor.ForecastProvi
 
 func normalizeMode(mode string) string {
 	switch mode {
-	case "forecast", "predict", "reliability", "disabled":
+	case "forecast", "predict", "bqml-boosted", "reliability", "disabled":
 		return mode
 	default:
 		return ""

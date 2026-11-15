@@ -26078,8 +26078,8 @@ Object.defineProperty(exports, "DEFAULT_LOG_FILE_NAME", ({ enumerable: true, get
 function resolvePredictionMode(mode, legacy) {
     if (!mode)
         return legacy ? 'reliability' : 'disabled';
-    if (!['disabled', 'reliability', 'forecast', 'predict'].includes(mode)) {
-        throw new Error('Invalid prediction_mode; expected disabled, reliability, forecast, or predict');
+    if (!['disabled', 'reliability', 'forecast', 'predict', 'bqml-boosted'].includes(mode)) {
+        throw new Error('Invalid prediction_mode; expected disabled, reliability, forecast, predict, or bqml-boosted');
     }
     if (legacy && mode !== 'reliability') {
         throw new Error('predictive_reliability=true conflicts with prediction_mode');
