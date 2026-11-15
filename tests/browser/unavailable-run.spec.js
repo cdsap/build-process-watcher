@@ -7,15 +7,30 @@ const runPage = fs.readFileSync(
   'utf8',
 );
 
+function contentTypeFor(pathname) {
+  if (pathname.endsWith('.css')) return 'text/css';
+  if (pathname.endsWith('.js')) return 'text/javascript';
+  if (pathname.endsWith('.json')) return 'application/json';
+  if (pathname.endsWith('.svg')) return 'image/svg+xml';
+  return 'text/plain';
+}
+
 async function serveRunPage(page) {
   await page.route('https://cdn.plot.ly/**', route => route.fulfill({
     contentType: 'text/javascript',
     body: '',
   }));
-  await page.route('https://frontend.test/**', route => {
+  await page.route('https://frontend.test/**', async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     if (pathname.startsWith('/runs/')) {
       return route.fulfill({ contentType: 'text/html', body: runPage });
+    }
+    const assetPath = path.join(__dirname, '../../frontend/public', pathname.replace(/^\//, ''));
+    if (fs.existsSync(assetPath) && fs.statSync(assetPath).isFile()) {
+      return route.fulfill({
+        contentType: contentTypeFor(pathname),
+        body: fs.readFileSync(assetPath, 'utf8'),
+      });
     }
     return route.fulfill({ contentType: 'text/javascript', body: '' });
   });
