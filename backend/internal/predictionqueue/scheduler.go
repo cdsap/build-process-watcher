@@ -66,12 +66,11 @@ func TaskID(runID string, maxElapsedS, throttleS int) string {
 	return id
 }
 
-// ThrottleForMode mirrors prediction package cadence for dedupe buckets.
+// ThrottleForMode returns the shared process-forecast dedupe bucket size.
+// forecast and predict use the same cadence; only the BigQuery API differs.
 func ThrottleForMode(mode string) int {
-	if mode == "predict" {
-		return 20
-	}
-	return 30
+	_ = mode
+	return 20
 }
 
 // EncodeJob marshals a job body for HTTP task delivery.
