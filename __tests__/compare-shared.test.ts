@@ -231,6 +231,84 @@ describe('JIT and class loading series', () => {
   });
 });
 
+describe('memory chart filters', () => {
+  it('binds filter controls once while reapplying their state on later renders', () => {
+    const document = createFakeDocument();
+    const total = document.registerElement('filter-total');
+    const rss = document.registerElement('filter-rss');
+    const heap = document.registerElement('filter-heap');
+    const chart = document.registerElement('memory-chart');
+    chart.data = [
+      { name: 'Total RSS Memory' },
+      { name: 'GradleDaemon (RSS)' },
+      { name: 'GradleDaemon (Heap)' },
+    ];
+    const restyle = jest.fn();
+    const shared = loadShared({ document, Plotly: { restyle } });
+
+    const setup = () => shared.setupMemoryChartFilters(
+      'memory-chart',
+      'filter-total',
+      'filter-rss',
+      'filter-heap',
+      (name: string) => name === 'Total RSS Memory',
+    );
+
+    setup();
+    setup();
+
+    expect(total.addEventListener).toHaveBeenCalledTimes(1);
+    expect(rss.addEventListener).toHaveBeenCalledTimes(1);
+    expect(heap.addEventListener).toHaveBeenCalledTimes(1);
+    expect(restyle).toHaveBeenCalledTimes(2);
+
+    rss.checked = false;
+    rss.listeners.change();
+
+    expect(shared.visibilityStore['memory-chart']['GradleDaemon (RSS)']).toBe('legendonly');
+    expect(restyle).toHaveBeenLastCalledWith(chart, 'visible', [true, 'legendonly', true]);
+  });
+
+  it('syncs filter controls after legend visibility changes', () => {
+    const document = createFakeDocument();
+    const total = document.registerElement('filter-total');
+    const rss = document.registerElement('filter-rss');
+    const heap = document.registerElement('filter-heap');
+    const chart = document.registerElement('memory-chart');
+    chart.data = [
+      { name: 'Total RSS Memory' },
+      { name: 'GradleDaemon (RSS)' },
+      { name: 'GradleDaemon (Heap)' },
+    ];
+    const shared = loadShared({ document, Plotly: { restyle: jest.fn() } });
+
+    shared.setupMemoryChartFilters(
+      'memory-chart',
+      'filter-total',
+      'filter-rss',
+      'filter-heap',
+      (name: string) => name === 'Total RSS Memory',
+    );
+    const legendHandler = chart.on.mock.calls[0][1];
+    legendHandler([{ visible: 'legendonly' }, [0]]);
+    legendHandler([{ visible: 'legendonly' }, [1]]);
+
+    expect(total.checked).toBe(false);
+    expect(rss.checked).toBe(false);
+    expect(heap.checked).toBe(true);
+  });
+
+  it.each([
+    '../frontend/public/replay.js',
+    '../frontend/public/run-dashboard.js',
+  ])('uses the shared filter helper in %s', relativePath => {
+    const source = fs.readFileSync(path.join(__dirname, relativePath), 'utf8');
+    expect(source).toContain('setupMemoryChartFilters');
+    expect(source).not.toMatch(/function setup(?:SingleReplay|MainChart)Filters/);
+    expect(source).not.toMatch(/function update(?:SingleReplay|MainChart)FilterCheckboxes/);
+  });
+});
+
 describe('compact JSON samples', () => {
   const shared = loadShared();
 
