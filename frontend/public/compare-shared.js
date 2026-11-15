@@ -1222,7 +1222,6 @@
             headerSubtitle = 'Replay both runs with a shared timeline',
             memoryFilenameBase,
             gcFilenameBase,
-            ratioFilenameBase,
             baseProcessSummary,
             compareProcessSummary
         } = options || {};
@@ -1725,7 +1724,6 @@
                     headerSubtitle,
                     memoryFilenameBase,
                     gcFilenameBase,
-                    ratioFilenameBase,
                     baseProcessSummary,
                     compareProcessSummary
                 });
