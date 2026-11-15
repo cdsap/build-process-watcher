@@ -3,12 +3,12 @@ export const DEFAULT_BACKEND_URL =
 export const DEFAULT_FRONTEND_BASE_URL = 'https://process-watcher.web.app';
 export { DEFAULT_LOG_FILE_NAME } from './action_config';
 
-export type PredictionMode = 'disabled' | 'reliability' | 'forecast' | 'predict';
+export type PredictionMode = 'disabled' | 'reliability' | 'forecast' | 'predict' | 'bqml-boosted';
 
 export function resolvePredictionMode(mode: string, legacy: boolean): PredictionMode {
   if (!mode) return legacy ? 'reliability' : 'disabled';
-  if (!['disabled', 'reliability', 'forecast', 'predict'].includes(mode)) {
-    throw new Error('Invalid prediction_mode; expected disabled, reliability, forecast, or predict');
+  if (!['disabled', 'reliability', 'forecast', 'predict', 'bqml-boosted'].includes(mode)) {
+    throw new Error('Invalid prediction_mode; expected disabled, reliability, forecast, predict, or bqml-boosted');
   }
   if (legacy && mode !== 'reliability') {
     throw new Error('predictive_reliability=true conflicts with prediction_mode');

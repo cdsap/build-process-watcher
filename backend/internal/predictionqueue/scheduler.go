@@ -67,7 +67,7 @@ func TaskID(runID string, maxElapsedS, throttleS int) string {
 }
 
 // ThrottleForMode returns the shared process-forecast dedupe bucket size.
-// forecast and predict use the same cadence; only the BigQuery API differs.
+// All timeline modes (forecast / predict / bqml-boosted) share the same cadence.
 func ThrottleForMode(mode string) int {
 	_ = mode
 	return 20

@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-test.each(['reliability', 'forecast', 'predict', 'disabled'])('monitor sends the %s request to the backend', (mode) => {
+test.each(['reliability', 'forecast', 'predict', 'bqml-boosted', 'disabled'])('monitor sends the %s request to the backend', (mode) => {
   const script = fs.readFileSync(path.join(__dirname, '../monitor_with_backend.sh'), 'utf8');
   const authFunction = script.slice(script.indexOf('get_auth_token() {'), script.indexOf('# Function to get VM flags'));
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bpw-mode-test-'));

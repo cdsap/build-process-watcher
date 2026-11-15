@@ -631,6 +631,7 @@
             const predictionMode = data?.prediction_mode;
             const predictionEnabled = predictionMode === 'predict'
                 || predictionMode === 'forecast'
+                || predictionMode === 'bqml-boosted'
                 || predictionMode === 'reliability'
                 || window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true
                 || checkpoints.length > 0
@@ -838,6 +839,7 @@
             const predictionMode = data.prediction_mode;
             const predictionEnabled = predictionMode === 'predict'
                 || predictionMode === 'forecast'
+                || predictionMode === 'bqml-boosted'
                 || predictionMode === 'reliability'
                 || window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true
                 || predictionCheckpoints.length > 0

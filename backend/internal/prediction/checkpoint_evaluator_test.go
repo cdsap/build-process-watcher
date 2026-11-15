@@ -233,7 +233,7 @@ func TestNewCheckpointEvaluatorUsesInjectedFallbackClassifier(t *testing.T) {
 }
 
 func TestCheckpointEvaluatorDoesNotUseReliabilityProviderForOtherModes(t *testing.T) {
-	for _, mode := range []string{"forecast", "predict", "disabled"} {
+	for _, mode := range []string{"forecast", "predict", "bqml-boosted", "disabled"} {
 		t.Run(mode, func(t *testing.T) {
 			run := enabledRun([]models.Sample{{ElapsedTime: 120}})
 			run.PredictionMode = mode

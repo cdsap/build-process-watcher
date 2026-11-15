@@ -31,7 +31,7 @@ inputs:
     required: false
     default: 'false'
   prediction_mode:
-    description: 'Prediction request: disabled, reliability, forecast, or predict (default disabled; legacy predictive_reliability=true selects reliability)'
+    description: 'Prediction request: disabled, reliability, forecast, predict, or bqml-boosted (default disabled; legacy predictive_reliability=true selects reliability)'
     required: false
   predictive_reliability:
     description: "Opt in to advisory predictive reliability checkpoints; this enables remote_monitoring and export_to_bigquery for the run when the hosted backend supports predictions"

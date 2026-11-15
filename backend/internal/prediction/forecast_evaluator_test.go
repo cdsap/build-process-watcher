@@ -82,8 +82,26 @@ func TestForecastEvaluatorAppendsForPredictMode(t *testing.T) {
 	}
 }
 
+func TestForecastEvaluatorAppendsForBQMLBoostedMode(t *testing.T) {
+	repo := &forecastRepoStub{run: &models.RunDoc{
+		PredictionMode: "bqml-boosted",
+		Samples: []models.Sample{
+			{ElapsedTime: 40, Timestamp: 40000, Name: "GradleDaemon", PID: "1", HeapUsed: 100, RSS: 200},
+		},
+	}}
+	want := []models.ProcessForecast{{
+		ProcessName: "GradleDaemon", PID: "1", Metric: "heap", CreatedAtMs: 40000,
+		Points: []models.ProcessForecastPoint{{TargetAtMs: 50000, ValueMB: 108}},
+	}}
+	evaluator := NewForecastEvaluatorWithProviders(repo, predictor.NoopForecastProvider{}, predictor.NoopForecastProvider{}, forecastProviderStub{out: want})
+	evaluator.Evaluate(context.Background(), "run-1")
+	if len(repo.appended) != 1 {
+		t.Fatalf("appended = %d, want 1 for bqml-boosted mode", len(repo.appended))
+	}
+}
+
 func TestProcessForecastModesShare20sThrottle(t *testing.T) {
-	for _, mode := range []string{"predict", "forecast"} {
+	for _, mode := range []string{"predict", "forecast", "bqml-boosted"} {
 		repo := &forecastRepoStub{run: &models.RunDoc{
 			PredictionMode: mode,
 			Samples: []models.Sample{
@@ -95,9 +113,12 @@ func TestProcessForecastModesShare20sThrottle(t *testing.T) {
 			Points: []models.ProcessForecastPoint{{TargetAtMs: 35000, ValueMB: 110}},
 		}}
 		var evaluator *ForecastEvaluator
-		if mode == "predict" {
+		switch mode {
+		case "predict":
 			evaluator = NewForecastEvaluatorWithTabPredict(repo, predictor.NoopForecastProvider{}, forecastProviderStub{out: want})
-		} else {
+		case "bqml-boosted":
+			evaluator = NewForecastEvaluatorWithProviders(repo, predictor.NoopForecastProvider{}, predictor.NoopForecastProvider{}, forecastProviderStub{out: want})
+		default:
 			evaluator = NewForecastEvaluator(repo, forecastProviderStub{out: want})
 		}
 		evaluator.Evaluate(context.Background(), "run-1")
