@@ -94,7 +94,6 @@ describe('production replay controls', () => {
   test.each([
     ['Replay', '../frontend/public/replay.js', 'single-replay'],
     ['Replay unified view', '../frontend/public/replay.js', 'bpw-unified'],
-    ['Compare', '../frontend/public/compare-shared.js', 'compare-replay'],
   ])('%s exposes a named slider and combobox', (_page, relativePath, controlPrefix) => {
     const source = fs.readFileSync(path.join(__dirname, relativePath), 'utf8');
 
@@ -104,5 +103,17 @@ describe('production replay controls', () => {
     expect(source).toContain(
       `id="${controlPrefix}-speed" aria-label="Playback speed"`
     );
+  });
+
+  it('Compare builds shared replay controls with labeled slider and speed', () => {
+    const shared = fs.readFileSync(path.join(__dirname, '../frontend/public/compare-shared.js'), 'utf8');
+    const controls = fs.readFileSync(path.join(__dirname, '../frontend/public/replay-controls.js'), 'utf8');
+
+    expect(shared).toContain("idPrefix: 'compare-replay'");
+    expect(shared).toContain('BpwReplayControls.renderReplayControls');
+    expect(controls).toContain('type="range" id="${idPrefix}-timeline" aria-label="${timelineAria}"');
+    expect(controls).toContain('id="${idPrefix}-speed" aria-label="${speedAria}"');
+    expect(controls).toContain("opts.timelineAriaLabel || 'Replay position'");
+    expect(controls).toContain("opts.speedAriaLabel || 'Playback speed'");
   });
 });

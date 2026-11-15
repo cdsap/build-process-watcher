@@ -3,12 +3,32 @@ import * as path from 'path';
 import * as vm from 'vm';
 
 function loadView(): any {
-  const window: any = {};
+  const sandbox: any = {
+    module: { exports: {} },
+    exports: {},
+    performance: { now: () => 0 },
+    setTimeout,
+    clearTimeout,
+    matchMedia: () => ({ matches: false }),
+    requestAnimationFrame: (cb: Function) => setTimeout(() => cb(0), 0),
+    cancelAnimationFrame: clearTimeout,
+    document: { querySelector: () => null },
+  };
+  sandbox.globalThis = sandbox;
+  sandbox.window = sandbox;
+  vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, '../frontend/public/playback-clock.js'), 'utf8'),
+    sandbox,
+  );
+  vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, '../frontend/public/replay-controls.js'), 'utf8'),
+    sandbox,
+  );
   vm.runInNewContext(
     fs.readFileSync(path.join(__dirname, '../frontend/public/prediction-view.js'), 'utf8'),
-    { window },
+    sandbox,
   );
-  return window.BpwPredictionView;
+  return sandbox.BpwPredictionView;
 }
 
 describe('prediction view model', () => {

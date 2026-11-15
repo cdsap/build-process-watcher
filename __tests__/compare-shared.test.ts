@@ -6,10 +6,29 @@ function loadShared(overrides: Record<string, any> = {}): any {
   const window: any = { innerWidth: 1200 };
   const context = vm.createContext({
     window,
-    document: {},
+    globalThis: window,
+    document: overrides.document || { querySelector: () => null },
     localStorage: { getItem: () => null },
+    performance: { now: () => 0 },
+    setTimeout,
+    clearTimeout,
+    matchMedia: () => ({ matches: false }),
+    requestAnimationFrame: (cb: Function) => setTimeout(() => cb(0), 0),
+    cancelAnimationFrame: clearTimeout,
     ...overrides,
   });
+  context.window = window;
+  context.globalThis = window;
+  vm.runInContext(
+    fs.readFileSync(path.join(__dirname, '../frontend/public/playback-clock.js'), 'utf8'),
+    context,
+  );
+  vm.runInContext(
+    fs.readFileSync(path.join(__dirname, '../frontend/public/replay-controls.js'), 'utf8'),
+    context,
+  );
+  window.BpwPlaybackClock = context.BpwPlaybackClock || window.BpwPlaybackClock;
+  window.BpwReplayControls = context.BpwReplayControls || window.BpwReplayControls;
   const source = fs.readFileSync(path.join(__dirname, '../frontend/public/compare-shared.js'), 'utf8');
   vm.runInContext(source, context);
   return window.BpwCompareShared;
@@ -33,6 +52,11 @@ function createFakeDocument() {
         }),
         appendChild: jest.fn(),
         on: jest.fn(),
+        querySelector: (selector: string) => {
+          const idMatch = String(selector).match(/^#(.+)$/);
+          return idMatch ? elements.get(idMatch[1]) || null : null;
+        },
+        querySelectorAll: () => [],
       };
       Object.defineProperty(element, 'innerHTML', {
         get: () => element.__innerHTML || '',
@@ -52,6 +76,10 @@ function createFakeDocument() {
     registerElement,
     getElementById: jest.fn((id: string) => elements.get(id) || null),
     createElement: jest.fn(() => registerElement(`created-${elements.size}`)),
+    querySelector: (selector: string) => {
+      const idMatch = String(selector).match(/^#(.+)$/);
+      return idMatch ? elements.get(idMatch[1]) || null : null;
+    },
   };
 }
 
@@ -175,7 +203,9 @@ describe('JIT and class loading series', () => {
     expect(jitTime.traces.find((trace: any) => trace.name.startsWith('Candidate:'))?.x).toEqual([2]);
     expect(classRate.layout.xaxis.tickvals).toEqual([0, 2, 1, 3, 2, 4]);
 
-    document.getElementById('compare-replay-timeline').listeners.input({ target: { value: '1' } });
+    const timeline = document.getElementById('compare-replay-timeline');
+    timeline.value = '1';
+    timeline.listeners.input();
     await Promise.resolve();
 
     const updatedClassRate = plotCalls.filter(call => call.chartId === 'compare-class-rate').at(-1);
