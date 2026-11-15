@@ -43,40 +43,15 @@
         const showJIT = hasJITData(samples);
         const showClasses = hasClassLoadingData(samples);
 
-        section.innerHTML = `
-            <div id="bpw-unified-replay" class="bpw-unified-replay" hidden>
-                <div class="bpw-unified-label">Unified replay (all charts)</div>
-                <div class="replay-controls" id="bpw-unified-replay-controls">
-                    <div class="buttons">
-                        <button class="btn" id="bpw-unified-play" type="button">Play</button>
-                        <button class="btn secondary" id="bpw-unified-pause" type="button">Pause</button>
-                        <button class="btn secondary" id="bpw-unified-reset" type="button">Reset</button>
-                    </div>
-                    <div class="meta" id="bpw-unified-meta">Frame 0 / 0</div>
-                    <div class="timeline">
-                        <input type="range" id="bpw-unified-timeline" aria-label="Replay position" min="0" max="0" value="0">
-                        <div class="meta" id="bpw-unified-time-label">Elapsed: 0s</div>
-                        <div class="meta">
-                            Speed:
-                            <select id="bpw-unified-speed" aria-label="Playback speed">
-                                <option value="5">5x</option>
-                                <option value="10">10x</option>
-                                <option value="15" selected>15x</option>
-                                <option value="20">20x</option>
-                                <option value="25">25x</option>
-                                <option value="30">30x</option>
-                                <option value="35">35x</option>
-                                <option value="40">40x</option>
-                                <option value="45">45x</option>
-                                <option value="50">50x</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div id="bpw-workspace-deck" class="bpw-workspace-deck" hidden aria-label="Workspace layout"></div>
-            <div id="bpw-chart-studio" class="bpw-chart-studio" hidden aria-label="Chart overlay studio"></div>
-            <div id="bpw-build-story" class="bpw-build-story" hidden aria-label="Build story timeline"></div>
+        section.innerHTML = window.BpwChartPanels.render({
+            chartIdPrefix: 'single-',
+            headingLevel: 4,
+            chartHeights: { memory: 460, gc: 460, runtime: 400 },
+            showGC,
+            showJIT,
+            showClasses,
+            includeUnifiedReplay: true,
+            beforeGrid: `
             <div class="replay-controls" id="single-replay-controls">
                 <div class="buttons">
                     <button class="btn" id="btn-single-play">Play</button>
@@ -109,123 +84,8 @@
                 <label><input type="checkbox" id="filter-single-rss" checked> RSS</label>
                 <label><input type="checkbox" id="filter-single-heap" checked> Heap</label>
             </div>
-            <div id="bpw-charts-grid" class="bpw-charts-grid">
-            <section class="bpw-chart-panel" data-bpw-panel="memory" id="section-memory">
-            <div class="bpw-panel-card">
-                <div class="bpw-panel-card-head">
-                    <div>
-                        <span class="bpw-panel-badge">Memory</span>
-                        <h4>Memory Usage Over Time</h4>
-                    </div>
-                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="memory" title="Expand this panel">Expand</button>
-                </div>
-                <div class="bpw-panel-card-body">
-            <div class="chart-container">
-                <div class="chart-wrapper">
-                    <div id="single-rss" style="width: 100%; height: 460px;"></div>
-                </div>
-            </div>
-                </div>
-            </div>
-            </section>
-            ${showGC ? `
-            <section class="bpw-chart-panel" data-bpw-panel="gc" id="section-gc">
-            <div class="bpw-panel-card">
-                <div class="bpw-panel-card-head">
-                    <div>
-                        <span class="bpw-panel-badge">GC</span>
-                        <h4>Garbage Collection Time</h4>
-                    </div>
-                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="gc" title="Expand this panel">Expand</button>
-                </div>
-                <div class="bpw-panel-card-body">
-            <div class="chart-container">
-                <div class="chart-wrapper">
-                    <div id="single-gc" style="width: 100%; height: 460px;"></div>
-                </div>
-            </div>
-                </div>
-            </div>
-            </section>
-            ` : ''}
-            ${(showJIT || showClasses) ? `<div class="bpw-runtime-stage">` : ''}
-            ${showJIT ? `
-            <section class="bpw-chart-panel" data-bpw-panel="jit-time" id="section-jit-time">
-            <div class="bpw-panel-card">
-                <div class="bpw-panel-card-head">
-                    <div>
-                        <span class="bpw-panel-badge">JIT</span>
-                        <h4>Cumulative Compilation Time</h4>
-                    </div>
-                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="jit-time" title="Expand this panel">Expand</button>
-                </div>
-                <div class="bpw-panel-card-body">
-                    <div class="chart-container">
-                        <div class="chart-wrapper">
-                            <div id="single-jit-time" class="bpw-chart-plot" style="width:100%;height:400px"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            </section>
-            <section class="bpw-chart-panel" data-bpw-panel="jit-rate" id="section-jit-rate">
-            <div class="bpw-panel-card">
-                <div class="bpw-panel-card-head">
-                    <div>
-                        <span class="bpw-panel-badge">JIT</span>
-                        <h4>Compilation Activity</h4>
-                    </div>
-                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="jit-rate" title="Expand this panel">Expand</button>
-                </div>
-                <div class="bpw-panel-card-body">
-                    <div class="chart-container">
-                        <div class="chart-wrapper">
-                            <div id="single-jit-rate" class="bpw-chart-plot" style="width:100%;height:400px"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            </section>` : ''}
-            ${showClasses ? `
-            <section class="bpw-chart-panel" data-bpw-panel="classes-loaded" id="section-classes-loaded">
-            <div class="bpw-panel-card">
-                <div class="bpw-panel-card-head">
-                    <div>
-                        <span class="bpw-panel-badge">Classes</span>
-                        <h4>Cumulative Classes Loaded</h4>
-                    </div>
-                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="classes-loaded" title="Expand this panel">Expand</button>
-                </div>
-                <div class="bpw-panel-card-body">
-                    <div class="chart-container">
-                        <div class="chart-wrapper">
-                            <div id="single-classes-loaded" class="bpw-chart-plot" style="width:100%;height:400px"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            </section>
-            <section class="bpw-chart-panel" data-bpw-panel="class-rate" id="section-class-rate">
-            <div class="bpw-panel-card">
-                <div class="bpw-panel-card-head">
-                    <div>
-                        <span class="bpw-panel-badge">Classes</span>
-                        <h4>Class Loading Activity</h4>
-                    </div>
-                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="class-rate" title="Expand this panel">Expand</button>
-                </div>
-                <div class="bpw-panel-card-body">
-                    <div class="chart-container">
-                        <div class="chart-wrapper">
-                            <div id="single-class-rate" class="bpw-chart-plot" style="width:100%;height:400px"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            </section>` : ''}
-            ${(showJIT || showClasses) ? `</div>` : ''}
-            </div>
-        `;
+            `,
+        });
 
         section.style.display = 'block';
 
