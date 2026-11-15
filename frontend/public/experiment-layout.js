@@ -37,10 +37,10 @@
     };
 
     const replayPanels = [];
-    let unifiedTimer = null;
-    let unifiedPlaying = false;
+    let unifiedClock = null;
+    let unifiedPlaybackTimestamps = [];
     let unifiedFrame = 0;
-    let unifiedSpeed = 15;
+    let unifiedRenderPromise = Promise.resolve([]);
     let unifiedTimestamps = [];
     let unifiedElapsedByTimestamp = null;
     let focusPanelId = null;
@@ -565,11 +565,7 @@
     }
 
     function pauseUnifiedReplay() {
-        unifiedPlaying = false;
-        if (unifiedTimer) {
-            clearTimeout(unifiedTimer);
-            unifiedTimer = null;
-        }
+        if (unifiedClock) unifiedClock.pause();
         replayPanels.forEach((panel) => {
             if (panel.pause) panel.pause();
         });
@@ -578,7 +574,14 @@
     function selectUnifiedFrame(frameIndex) {
         pauseUnifiedReplay();
         const maxFrame = getMaxFrame();
-        return renderUnifiedFrame(Math.max(0, Math.min(Number(frameIndex) || 0, maxFrame)));
+        const nextFrame = Math.max(0, Math.min(Number(frameIndex) || 0, maxFrame));
+        if (!unifiedClock || !unifiedPlaybackTimestamps.length) {
+            return renderUnifiedFrame(nextFrame);
+        }
+        unifiedClock.seekTo(
+            unifiedPlaybackTimestamps[nextFrame] - unifiedPlaybackTimestamps[0]
+        );
+        return unifiedRenderPromise;
     }
 
     function getMaxFrame() {
@@ -616,35 +619,37 @@
         unifiedFrame = frameIndex;
         updateUnifiedUi(frameIndex);
         const tasks = replayPanels.map((panel) => panel.renderFrame(frameIndex));
-        return Promise.all(tasks);
+        unifiedRenderPromise = Promise.all(tasks);
+        return unifiedRenderPromise;
     }
 
-    function scheduleUnifiedNext() {
-        if (!unifiedPlaying || !isExperiment()) return;
+    function createUnifiedClock(speed) {
+        if (unifiedClock) unifiedClock.destroy();
+        unifiedClock = null;
+
         const maxFrame = getMaxFrame();
-        if (unifiedFrame >= maxFrame) {
-            unifiedPlaying = false;
-            return;
-        }
-        const nextDelay = unifiedTimestamps.length > 1
-            ? Math.max(
-                16,
-                (unifiedTimestamps[unifiedFrame + 1] - unifiedTimestamps[unifiedFrame]) / unifiedSpeed
-            )
-            : 120;
-        unifiedTimer = setTimeout(() => {
-            renderUnifiedFrame(unifiedFrame + 1).then(scheduleUnifiedNext);
-        }, nextDelay);
+        unifiedPlaybackTimestamps = unifiedTimestamps.length
+            ? unifiedTimestamps.slice()
+            : Array.from({ length: maxFrame + 1 }, (_, index) => index * 1800);
+
+        if (!global.BpwPlaybackClock || !unifiedPlaybackTimestamps.length) return;
+        unifiedClock = global.BpwPlaybackClock.createPlaybackClock({
+            timestamps: unifiedPlaybackTimestamps,
+            speed,
+            onPosition: (position) => {
+                if (position.sampleIndex >= 0 && position.sampleIndex !== unifiedFrame) {
+                    renderUnifiedFrame(position.sampleIndex);
+                }
+            }
+        });
     }
 
     function playUnifiedReplay() {
-        if (!isExperiment() || !replayPanels.length) return;
-        if (unifiedPlaying) return;
-        unifiedPlaying = true;
+        if (!isExperiment() || !replayPanels.length || !unifiedClock) return;
         replayPanels.forEach((panel) => {
             if (panel.pause) panel.pause();
         });
-        scheduleUnifiedNext();
+        unifiedClock.play();
     }
 
     function initUnifiedReplay(options) {
@@ -663,34 +668,38 @@
 
         if (!playBtn || !pauseBtn || !resetBtn || !timeline) return;
 
-        if (container.dataset.bpwUnifiedBound === 'true') {
-            const initialFrame = Math.max(0, getMaxFrame());
+        const initialFrame = Math.max(0, getMaxFrame());
+        createUnifiedClock(Number(speedSelect?.value) || 15);
+        if (unifiedClock && unifiedPlaybackTimestamps.length) {
+            unifiedFrame = -1;
+            unifiedClock.seekTo(
+                unifiedPlaybackTimestamps[initialFrame] - unifiedPlaybackTimestamps[0]
+            );
+        } else {
             renderUnifiedFrame(initialFrame);
-            return;
         }
-        container.dataset.bpwUnifiedBound = 'true';
 
-        unifiedSpeed = Number(speedSelect?.value) || 15;
+        if (container.dataset.bpwUnifiedBound === 'true') return;
+        container.dataset.bpwUnifiedBound = 'true';
 
         playBtn.addEventListener('click', playUnifiedReplay);
         pauseBtn.addEventListener('click', pauseUnifiedReplay);
         resetBtn.addEventListener('click', () => {
             pauseUnifiedReplay();
-            renderUnifiedFrame(0);
+            if (unifiedClock) unifiedClock.reset();
+            else renderUnifiedFrame(0);
         });
         timeline.addEventListener('input', () => {
-            pauseUnifiedReplay();
-            renderUnifiedFrame(Number(timeline.value));
+            selectUnifiedFrame(Number(timeline.value));
         });
         if (speedSelect) {
             speedSelect.addEventListener('change', () => {
                 const parsed = Number(speedSelect.value);
-                if (!Number.isNaN(parsed) && parsed > 0) unifiedSpeed = parsed;
+                if (!Number.isNaN(parsed) && parsed > 0 && unifiedClock) {
+                    unifiedClock.setSpeed(parsed);
+                }
             });
         }
-
-        const initialFrame = Math.max(0, getMaxFrame());
-        renderUnifiedFrame(initialFrame);
     }
 
     function initToggleButtons() {

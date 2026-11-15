@@ -59,8 +59,15 @@
                         <div class="meta">
                             Speed:
                             <select id="bpw-unified-speed" aria-label="Playback speed">
+                                <option value="5">5x</option>
+                                <option value="10">10x</option>
                                 <option value="15" selected>15x</option>
+                                <option value="20">20x</option>
                                 <option value="25">25x</option>
+                                <option value="30">30x</option>
+                                <option value="35">35x</option>
+                                <option value="40">40x</option>
+                                <option value="45">45x</option>
                                 <option value="50">50x</option>
                             </select>
                         </div>
