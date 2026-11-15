@@ -50,6 +50,7 @@
         visibilityStore,
         applyVisibilityToTraces,
         attachLegendVisibilityHandlers,
+        setupMemoryChartFilters,
         hasGCData,
         hasJITData,
         hasClassLoadingData,
@@ -869,7 +870,7 @@
 
         if (samples.length > 0) {
             renderChart(samples, predictionCheckpoints);
-            setupMainChartFilters();
+                setupMemoryChartFilters('chart', 'filter-total-rss', 'filter-rss', 'filter-heap');
             if (hasGCData(samples)) {
                 renderGCChart(samples);
             }
@@ -945,62 +946,6 @@
         }
     }
 
-
-    function updateMainChartFilterCheckboxes() {
-        const total = document.getElementById('filter-total-rss');
-        const rss = document.getElementById('filter-rss');
-        const heap = document.getElementById('filter-heap');
-        const chart = document.getElementById('chart');
-        if (!total || !rss || !heap || !chart || !chart.data) return;
-        const map = traceVisibility['chart'] || {};
-
-        let rssVisible = false;
-        let heapVisible = false;
-        chart.data.forEach(trace => {
-            if (!trace.name) return;
-            const vis = map[trace.name];
-            const isVisible = vis !== 'legendonly' && vis !== false;
-            if (trace.name.includes('(RSS)')) rssVisible = rssVisible || isVisible;
-            if (trace.name.includes('(Heap)')) heapVisible = heapVisible || isVisible;
-        });
-        const totalVis = map['Total RSS Memory'];
-        total.checked = totalVis === undefined ? true : (totalVis !== 'legendonly' && totalVis !== false);
-        rss.checked = rssVisible;
-        heap.checked = heapVisible;
-    }
-
-    function setupMainChartFilters() {
-        const total = document.getElementById('filter-total-rss');
-        const rss = document.getElementById('filter-rss');
-        const heap = document.getElementById('filter-heap');
-        if (!total || !rss || !heap) return;
-
-        const applyFilters = () => {
-            const chart = document.getElementById('chart');
-            if (!chart || !chart.data) return;
-            const map = traceVisibility['chart'] || (traceVisibility['chart'] = {});
-
-            chart.data.forEach(trace => {
-                if (!trace.name) return;
-                if (trace.name === 'Total RSS Memory') {
-                    map[trace.name] = total.checked ? true : 'legendonly';
-                } else if (trace.name.includes('(RSS)')) {
-                    map[trace.name] = rss.checked ? true : 'legendonly';
-                } else if (trace.name.includes('(Heap)')) {
-                    map[trace.name] = heap.checked ? true : 'legendonly';
-                }
-            });
-
-            const visArray = chart.data.map(trace => map[trace.name] !== undefined ? map[trace.name] : true);
-            Plotly.restyle(chart, 'visible', visArray);
-        };
-
-        total.addEventListener('change', applyFilters);
-        rss.addEventListener('change', applyFilters);
-        heap.addEventListener('change', applyFilters);
-
-        applyFilters();
-    }
 
     function getMaxHeapGiB(vmFlags) {
         if (!Array.isArray(vmFlags)) return null;
@@ -1301,7 +1246,7 @@
         
 
         function setupReplayPanel(options) {
-            const { panelKey, chartId, controlsId, buildTraces, layoutGetter, configGetter, onLegendUpdate, smoothMemory } = options;
+            const { panelKey, chartId, controlsId, buildTraces, layoutGetter, configGetter, smoothMemory } = options;
             const controls = document.getElementById(controlsId);
             const chart = document.getElementById(chartId);
             if (!controls || !chart || !window.BpwPlaybackClock) return;
@@ -1466,7 +1411,7 @@
             syncPlayButton();
             clock.seekTo(Math.max(0, chartTimestamps[chartTimestamps.length - 1] - chartTimestamps[0]));
             latestRender.then(() => {
-                attachLegendVisibilityHandlers(chartId, onLegendUpdate);
+                attachLegendVisibilityHandlers(chartId);
             });
 
             if (window.BpwExperimentLayout) {
@@ -1609,7 +1554,6 @@
             buildTraces: buildMemoryTraces,
             layoutGetter: getMemoryLayout,
             configGetter: getMemoryConfig,
-            onLegendUpdate: updateMainChartFilterCheckboxes,
             smoothMemory: true
         });
         setupReplayPanel({
@@ -1870,7 +1814,6 @@
         } else {
             Plotly.newPlot('chart', preparedTraces, layout, config);
         }
-        attachLegendVisibilityHandlers('chart', updateMainChartFilterCheckboxes);
         attachPredictionMarkerInteractions('chart');
         ensureChartResizeHandler();
     }

@@ -44,6 +44,62 @@
         chart.__visibilityHandlersAttached = true;
     }
 
+    function setupMemoryChartFilters(chartId, totalId, rssId, heapId, isTotalTrace = name => name === 'Total RSS Memory') {
+        const total = document.getElementById(totalId);
+        const rss = document.getElementById(rssId);
+        const heap = document.getElementById(heapId);
+        if (!total || !rss || !heap) return;
+
+        const applyFilters = () => {
+            const chart = document.getElementById(chartId);
+            if (!chart || !chart.data) return;
+            const map = visibilityStore[chartId] || (visibilityStore[chartId] = {});
+            chart.data.forEach(trace => {
+                if (!trace.name) return;
+                if (isTotalTrace(trace.name)) {
+                    map[trace.name] = total.checked ? true : 'legendonly';
+                } else if (trace.name.includes('(RSS)')) {
+                    map[trace.name] = rss.checked ? true : 'legendonly';
+                } else if (trace.name.includes('(Heap)')) {
+                    map[trace.name] = heap.checked ? true : 'legendonly';
+                }
+            });
+            const visArray = chart.data.map(trace => map[trace.name] !== undefined ? map[trace.name] : true);
+            Plotly.restyle(chart, 'visible', visArray);
+        };
+
+        const updateCheckboxes = () => {
+            const chart = document.getElementById(chartId);
+            if (!chart || !chart.data) return;
+            const map = visibilityStore[chartId] || {};
+            let totalVisible = true;
+            let rssVisible = false;
+            let heapVisible = false;
+            chart.data.forEach(trace => {
+                if (!trace.name) return;
+                const visible = map[trace.name] !== 'legendonly' && map[trace.name] !== false;
+                if (isTotalTrace(trace.name)) {
+                    totalVisible = totalVisible && visible;
+                } else if (trace.name.includes('(RSS)')) {
+                    rssVisible = rssVisible || visible;
+                } else if (trace.name.includes('(Heap)')) {
+                    heapVisible = heapVisible || visible;
+                }
+            });
+            total.checked = totalVisible;
+            rss.checked = rssVisible;
+            heap.checked = heapVisible;
+        };
+
+        [total, rss, heap].forEach(control => {
+            if (control.__memoryChartFilterAttached) return;
+            control.addEventListener('change', applyFilters);
+            control.__memoryChartFilterAttached = true;
+        });
+        applyFilters();
+        attachLegendVisibilityHandlers(chartId, updateCheckboxes);
+    }
+
     function hasGCData(samples) {
         return samples.some(sample => {
             if (sample.GCTimeSeconds !== undefined && sample.GCTimeSeconds !== null) {
@@ -1422,59 +1478,12 @@
             }
         });
 
-        function setupCompareChartFilters(chartId, totalId, rssId, heapId, isTotalTrace) {
-            const total = document.getElementById(totalId);
-            const rss = document.getElementById(rssId);
-            const heap = document.getElementById(heapId);
-            if (!total || !rss || !heap) return;
-            const applyFilters = () => {
-                const chart = document.getElementById(chartId);
-                if (!chart || !chart.data) return;
-                const map = visibilityStore[chartId] || (visibilityStore[chartId] = {});
-                chart.data.forEach(trace => {
-                    if (!trace.name) return;
-                    if (isTotalTrace(trace.name)) {
-                        map[trace.name] = total.checked ? true : 'legendonly';
-                    } else if (trace.name.includes('(RSS)')) {
-                        map[trace.name] = rss.checked ? true : 'legendonly';
-                    } else if (trace.name.includes('(Heap)')) {
-                        map[trace.name] = heap.checked ? true : 'legendonly';
-                    }
-                });
-                const visArray = chart.data.map(trace => map[trace.name] !== undefined ? map[trace.name] : true);
-                Plotly.restyle(chart, 'visible', visArray);
-            };
-            total.addEventListener('change', applyFilters);
-            rss.addEventListener('change', applyFilters);
-            heap.addEventListener('change', applyFilters);
-            applyFilters();
-        }
-
-        function updateCompareChartFilterCheckboxes(chartId, totalId, rssId, heapId, isTotalTrace) {
-            const total = document.getElementById(totalId);
-            const rss = document.getElementById(rssId);
-            const heap = document.getElementById(heapId);
-            const chart = document.getElementById(chartId);
-            if (!total || !rss || !heap || !chart || !chart.data) return;
-            const map = visibilityStore[chartId] || {};
-            let rssVisible = false;
-            let heapVisible = false;
-            let totalVisible = true;
-            chart.data.forEach(trace => {
-                if (!trace.name) return;
-                const vis = map[trace.name];
-                const isVisible = vis !== 'legendonly' && vis !== false;
-                if (isTotalTrace(trace.name)) {
-                    totalVisible = totalVisible && isVisible;
-                } else if (trace.name.includes('(RSS)')) {
-                    rssVisible = rssVisible || isVisible;
-                } else if (trace.name.includes('(Heap)')) {
-                    heapVisible = heapVisible || isVisible;
-                }
-            });
-            total.checked = totalVisible;
-            rss.checked = rssVisible;
-            heap.checked = heapVisible;
+        function updateUi(frameIndex) {
+            timeline.value = String(frameIndex);
+            meta.textContent = `Frame ${frameIndex + 1} / ${chartTimestamps.length}`;
+            const timestamp = chartTimestamps[frameIndex];
+            const elapsed = elapsedByTimestamp.get(timestamp) || 0;
+            timeLabel.textContent = `Elapsed: ${elapsed}s`;
         }
 
         function renderFrame(frameIndex) {
@@ -1636,16 +1645,13 @@
                 const isTotalBase = (name) => name === 'Total RSS Memory';
                 const isTotalCompare = (name) => name === 'Compare Total RSS Memory';
                 if (isSplitMode) {
-                    setupCompareChartFilters('compare-rss', 'filter-compare-total-rss', 'filter-compare-rss', 'filter-compare-heap', isTotalSplit);
-                    attachLegendVisibilityHandlers('compare-rss', () => updateCompareChartFilterCheckboxes('compare-rss', 'filter-compare-total-rss', 'filter-compare-rss', 'filter-compare-heap', isTotalSplit));
+                    setupMemoryChartFilters('compare-rss', 'filter-compare-total-rss', 'filter-compare-rss', 'filter-compare-heap', isTotalSplit);
                     if (showGC) {
                         attachLegendVisibilityHandlers('compare-gc');
                     }
                 } else {
-                    setupCompareChartFilters('compare-current-rss', 'filter-current-total-rss', 'filter-current-rss', 'filter-current-heap', isTotalBase);
-                    setupCompareChartFilters('compare-other-rss', 'filter-other-total-rss', 'filter-other-rss', 'filter-other-heap', isTotalCompare);
-                    attachLegendVisibilityHandlers('compare-current-rss', () => updateCompareChartFilterCheckboxes('compare-current-rss', 'filter-current-total-rss', 'filter-current-rss', 'filter-current-heap', isTotalBase));
-                    attachLegendVisibilityHandlers('compare-other-rss', () => updateCompareChartFilterCheckboxes('compare-other-rss', 'filter-other-total-rss', 'filter-other-rss', 'filter-other-heap', isTotalCompare));
+                    setupMemoryChartFilters('compare-current-rss', 'filter-current-total-rss', 'filter-current-rss', 'filter-current-heap', isTotalBase);
+                    setupMemoryChartFilters('compare-other-rss', 'filter-other-total-rss', 'filter-other-rss', 'filter-other-heap', isTotalCompare);
                     if (showGC) {
                         attachLegendVisibilityHandlers('compare-current-gc');
                         attachLegendVisibilityHandlers('compare-other-gc');
@@ -1736,6 +1742,7 @@
         visibilityStore,
         applyVisibilityToTraces,
         attachLegendVisibilityHandlers,
+        setupMemoryChartFilters,
         hasGCData,
         hasRatioData,
         hasJITData,
