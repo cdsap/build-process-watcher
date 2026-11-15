@@ -6,9 +6,13 @@ describe('run dashboard responsive layout', () => {
     path.join(__dirname, '../frontend/public/runs/[runId].html'),
     'utf8',
   );
+  const chromeSource = fs.readFileSync(
+    path.join(__dirname, '../frontend/public/bpw-ui.css'),
+    'utf8',
+  );
 
   it('allows chart wrappers to shrink to the mobile viewport', () => {
-    const mobileRules = source.match(/@media \(max-width: 480px\)\s*{([\s\S]*?)\n\s*}\n\s*}/);
+    const mobileRules = chromeSource.match(/@media \(max-width: 560px\)\s*{([\s\S]*?)\n\}/);
 
     expect(mobileRules).not.toBeNull();
     expect(mobileRules?.[1]).toMatch(/\.chart-wrapper\s*{[^}]*min-width:\s*0\s*;/);
