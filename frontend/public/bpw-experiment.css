@@ -619,6 +619,26 @@ body.bpw-perspective-story .bpw-chart-studio {
     box-shadow: 0 8px 22px rgba(22, 26, 29, 0.06);
 }
 
+/* Predictions sits with Classic / Studio / Story; hide the old Dashboard|Predictions strip. */
+.run-dashboard-tabs-legacy[hidden] {
+    display: none !important;
+}
+
+body.bpw-view-predictions #run-panel-dashboard {
+    display: none !important;
+}
+
+body.bpw-view-predictions #run-panel-predictions {
+    display: block;
+}
+
+body.bpw-view-predictions #bpw-chart-studio,
+body.bpw-view-predictions #bpw-build-story,
+body.bpw-view-predictions #bpw-workspace-deck,
+body.bpw-view-predictions #bpw-unified-replay {
+    display: none !important;
+}
+
 .bpw-mode-btn {
     display: inline-grid;
     gap: 0.05rem;
@@ -659,6 +679,19 @@ body.bpw-perspective-story .bpw-chart-studio {
 
 .bpw-mode-btn[aria-pressed="true"] small {
     color: var(--bpw-teal, #087f8c);
+}
+
+.bpw-mode-btn:disabled,
+.bpw-mode-btn[aria-disabled="true"] {
+    opacity: 0.45;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.bpw-mode-btn:disabled:hover,
+.bpw-mode-btn[aria-disabled="true"]:hover {
+    border-color: transparent;
+    background: transparent;
 }
 
 .bpw-layout-toggle[aria-pressed="true"] {
