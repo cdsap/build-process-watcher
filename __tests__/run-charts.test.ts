@@ -55,7 +55,8 @@ describe('shared run charts', () => {
     for (const relative of ['runs/[runId].html', 'runs/demo.html']) {
       const html = fs.readFileSync(path.join(__dirname, '../frontend/public', relative), 'utf8');
       expect(html).toContain('<script src="/run-charts.js"></script>');
-      expect(html).toContain('BpwRunCharts.renderGCChart');
-          }
+    }
+    const dashboard = fs.readFileSync(path.join(__dirname, '../frontend/public/run-dashboard.js'), 'utf8');
+    expect(dashboard).toContain('BpwRunCharts.renderGCChart');
   });
 });
