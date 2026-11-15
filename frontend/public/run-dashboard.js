@@ -1,0 +1,2389 @@
+// Shared run dashboard for live and checked-in demo data.
+(function() {
+    const dashboardConfig = window.BPW_RUN_DASHBOARD_CONFIG || {};
+    const isLiveDashboard = dashboardConfig.mode !== 'demo';
+
+    mountDashboardShell();
+    setFrontendLinks();
+
+    const pathParts = window.location.pathname.split('/');
+    const runId = dashboardConfig.runId || pathParts[pathParts.length - 1];
+
+    function mountDashboardShell() {
+        const root = document.getElementById('run-dashboard-root');
+        if (!root) throw new Error('Missing run dashboard root');
+        root.innerHTML = `
+            <div class="container">
+                <header>
+                    <h1>Build Process Watcher</h1>
+                </header>
+                <div id="content">
+                    <div class="loading">
+                        <p>Loading run data...</p>
+                    </div>
+                </div>
+            </div>
+            <footer>
+                <div class="footer-content">
+                    <p>Build Process Watcher - Monitor your build processes</p>
+                    <div class="footer-links">
+                        <a href="https://process-watcher.web.app">Home</a>
+                        <a href="https://github.com/cdsap/build-process-watcher" target="_blank" rel="noopener noreferrer">GitHub Repository</a>
+                        <a href="https://github.com/marketplace/actions/build-process-watcher" target="_blank" rel="noopener noreferrer">GitHub Action</a>
+                    </div>
+                    <p class="footer-note">Memory reports are available for 24 hours · Free service</p>
+                </div>
+            </footer>
+        `;
+    }
+
+    function setFrontendLinks() {
+        const frontendUrl = window.BUILD_PROCESS_WATCHER_CONFIG?.frontendUrl || 'https://process-watcher.web.app';
+        document.querySelectorAll('.back-home-link, a[href="https://process-watcher.web.app"]').forEach((link) => {
+            link.href = frontendUrl;
+        });
+    }
+
+    const CompareShared = window.BpwCompareShared || {};
+    const {
+        COLOR_PALETTE,
+        visibilityStore,
+        applyVisibilityToTraces,
+        attachLegendVisibilityHandlers,
+        hasGCData,
+        hasJITData,
+        hasClassLoadingData,
+        buildColorMap,
+        getMedianDelta,
+        buildTotalRssSeries,
+        buildForwardFilledSeries,
+        buildExactSeries,
+        buildReplayData,
+        buildMetricTraces,
+        parseCsvText,
+        normalizeCompareSamples
+    } = CompareShared;
+    const traceVisibility = visibilityStore || {};
+    
+    // Refresh interval management
+    let refreshInterval = parseInt(localStorage.getItem('refreshInterval')) || 60; // Default 60 seconds
+    let refreshTimer = null;
+    let liveMountState = null;
+    let liveSeriesStore = null;
+    let liveYDomain = null;
+    let liveRunController = null;
+    let lastRefreshTime = null;
+    let activeRunDashboardTab = 'dashboard';
+    let predictionSelectedWindow = null;
+    
+    if (!runId || runId === 'runs' || runId === '') {
+        document.getElementById('content').innerHTML = `
+            <div class="error">
+                <h2>Invalid Run ID</h2>
+                <p>No run ID provided in the URL.</p>
+                <a href="#" class="back-home-link" style="color: #2563eb;">Back to Home</a>
+            </div>
+        `;
+        setFrontendLinks();
+    } else {
+        loadRunData(runId);
+    }
+
+    function setRefreshInterval(seconds) {
+        refreshInterval = seconds;
+        localStorage.setItem('refreshInterval', seconds);
+        if (liveRunController) liveRunController.cancelTimer();
+        // Reload immediately; controller reschedules on success while live.
+        loadRunData(runId);
+    }
+    window.setRefreshInterval = setRefreshInterval;
+
+    function cancelRefresh() {
+        if (refreshTimer) {
+            clearTimeout(refreshTimer);
+            refreshTimer = null;
+        }
+        if (liveRunController) liveRunController.cancelTimer();
+    }
+
+    function resizeRunDashboardCharts() {
+        if (!window.Plotly || typeof Plotly.Plots?.resize !== 'function') return;
+        [
+            'chart',
+            'gc-chart',
+            'rss-heap-chart',
+            'jit-time-chart',
+            'classes-loaded-chart',
+            'class-rate-chart',
+        ].forEach((id) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            try {
+                Plotly.Plots.resize(el);
+            } catch (_) {
+                // Chart may not be initialized yet.
+            }
+        });
+    }
+
+    function setRunDashboardTab(tab) {
+        activeRunDashboardTab = tab === 'predictions' ? 'predictions' : 'dashboard';
+        // Route through Classic / Studio / Story / Predictions mode switch.
+        if (window.BpwExperimentLayout?.setViewMode) {
+            if (activeRunDashboardTab === 'predictions') {
+                if (BpwExperimentLayout.isPredictionsEnabled?.() === false) {
+                    activeRunDashboardTab = 'dashboard';
+                    if (BpwExperimentLayout.getViewMode?.() === 'predictions') {
+                        BpwExperimentLayout.setViewMode(BpwExperimentLayout.VIEW_MODES?.classic || 'classic');
+                    }
+                } else {
+                    BpwExperimentLayout.setViewMode(BpwExperimentLayout.VIEW_MODES?.predictions || 'predictions');
+                }
+            } else if (BpwExperimentLayout.getViewMode?.() === 'predictions') {
+                BpwExperimentLayout.setViewMode(BpwExperimentLayout.VIEW_MODES?.classic || 'classic');
+            }
+        }
+        const tabs = document.querySelectorAll('.run-dashboard-tab[data-run-tab]');
+        const dashboardPanel = document.getElementById('run-panel-dashboard');
+        const predictionsPanel = document.getElementById('run-panel-predictions');
+        tabs.forEach((button) => {
+            const selected = button.getAttribute('data-run-tab') === activeRunDashboardTab;
+            button.classList.toggle('is-active', selected);
+            button.setAttribute('aria-selected', selected ? 'true' : 'false');
+            button.tabIndex = selected ? 0 : -1;
+        });
+        if (dashboardPanel) dashboardPanel.hidden = activeRunDashboardTab !== 'dashboard';
+        if (predictionsPanel) predictionsPanel.hidden = activeRunDashboardTab !== 'predictions';
+        if (activeRunDashboardTab === 'dashboard') {
+            requestAnimationFrame(() => resizeRunDashboardCharts());
+        }
+    }
+
+    function bindRunDashboardTabs() {
+        document.querySelectorAll('[data-run-tab]').forEach((el) => {
+            el.addEventListener('click', () => {
+                setRunDashboardTab(el.getAttribute('data-run-tab'));
+            });
+        });
+        const initial = window.BpwExperimentLayout?.getViewMode?.() === 'predictions'
+            ? 'predictions'
+            : (activeRunDashboardTab || 'dashboard');
+        setRunDashboardTab(initial);
+    }
+
+    function focusPredictionsTabFromChart() {
+        setRunDashboardTab('predictions');
+        requestAnimationFrame(() => {
+            const modeBtn = document.querySelector('[data-bpw-view-mode="predictions"]');
+            if (modeBtn && typeof modeBtn.focus === 'function') modeBtn.focus({ preventScroll: true });
+            document.getElementById('run-panel-predictions')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        });
+    }
+
+    function focusPredictionOnChart(windowSeconds) {
+        predictionSelectedWindow = Number(windowSeconds);
+        setRunDashboardTab('dashboard');
+        requestAnimationFrame(() => {
+            const chart = document.getElementById('chart');
+            const traceIndex = chart?.data?.findIndex(trace => trace?.name === 'Prediction checkpoints') ?? -1;
+            const pointIndex = traceIndex >= 0 ? chart.data[traceIndex].customdata?.findIndex(value => Number(value) === Number(windowSeconds)) : -1;
+            if (traceIndex >= 0 && pointIndex >= 0 && window.Plotly?.Fx?.hover) {
+                Plotly.Fx.hover(chart, { curveNumber: traceIndex, pointNumber: pointIndex });
+            }
+        });
+    }
+
+    function renderPredictionPanel(data, focusWindow = null) {
+        const panel = document.getElementById('run-panel-predictions');
+        const content = document.getElementById('prediction-panel-content');
+        if (!panel || !content) return;
+        if (window.forecastReplayStop) {
+            window.forecastReplayStop();
+            window.forecastReplayStop = null;
+        }
+        const checkpoints = BpwPredictionView.normalizeCheckpoints(data?.prediction_checkpoints);
+        const hasProcessForecasts = Array.isArray(data?.process_forecasts) && data.process_forecasts.length > 0;
+        const predictionMode = data?.prediction_mode;
+        const predictionEnabled = predictionMode === 'predict'
+            || predictionMode === 'forecast'
+            || predictionMode === 'bqml-boosted'
+            || predictionMode === 'reliability'
+            || window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true
+            || checkpoints.length > 0
+            || hasProcessForecasts;
+        if (window.BpwExperimentLayout?.setPredictionsEnabled) {
+            BpwExperimentLayout.setPredictionsEnabled(predictionEnabled);
+        }
+        const view = BpwPredictionView.render({ ...data, predictionEnabled }, predictionSelectedWindow);
+        predictionSelectedWindow = view.selectedWindow;
+        content.innerHTML = view.html;
+        window.forecastReplayStop = BpwPredictionView.bindProcessForecastReplay(content);
+        if (focusWindow !== null) {
+            const selected = content.querySelector(`[data-prediction-window="${Number(focusWindow)}"]`);
+            if (selected && typeof selected.focus === 'function') selected.focus({ preventScroll: true });
+        }
+    }
+
+    function bindPredictionPanel(data) {
+        const panel = document.getElementById('run-panel-predictions');
+        if (!panel) return;
+        panel.onclick = (event) => {
+            const checkpointButton = event.target.closest('[data-prediction-window]');
+            if (checkpointButton && panel.contains(checkpointButton)) {
+                const windowSeconds = Number(checkpointButton.getAttribute('data-prediction-window'));
+                predictionSelectedWindow = windowSeconds;
+                renderPredictionPanel(data, windowSeconds);
+                setRunDashboardTab('predictions');
+                return;
+            }
+            const chartButton = event.target.closest('[data-prediction-chart-window]');
+            if (chartButton && panel.contains(chartButton)) {
+                focusPredictionOnChart(Number(chartButton.getAttribute('data-prediction-chart-window')));
+            }
+        };
+        panel.onkeydown = (event) => {
+            const current = event.target.closest('.prediction-event[data-prediction-window]');
+            if (!current || !panel.contains(current)) return;
+            if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+            const buttons = [...panel.querySelectorAll('.prediction-event[data-prediction-window]')];
+            const index = buttons.indexOf(current);
+            const nextIndex = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? index - 1 : index + 1;
+            if (nextIndex < 0 || nextIndex >= buttons.length) return;
+            event.preventDefault();
+            buttons[nextIndex].focus();
+        };
+    }
+
+    function attachPredictionMarkerInteractions(chartId) {
+        const chart = document.getElementById(chartId);
+        if (!chart || typeof chart.on !== 'function') return;
+        if (chart.__bpwPredictionMarkerClickBound) return;
+        chart.__bpwPredictionMarkerClickBound = true;
+        chart.on('plotly_click', (event) => {
+            const points = Array.isArray(event?.points) ? event.points : [];
+            const marker = points.find(point => point?.data?.name === 'Prediction checkpoints');
+            if (marker) {
+                predictionSelectedWindow = Number(marker.customdata);
+                if (window.currentRunData) renderPredictionPanel(window.currentRunData, predictionSelectedWindow);
+                focusPredictionsTabFromChart();
+            }
+        });
+    }
+
+    function computeLiveSummary(data) {
+        const samples = data?.samples || [];
+        const processInfo = data?.process_info || {};
+        let maxRssAllProcesses = 0;
+        let maxHeapAllProcesses = 0;
+        let maxGcTimeAllProcesses = 0;
+        for (const [pid] of Object.entries(processInfo)) {
+            const processSamples = samples.filter((sample) => sample.PID === pid);
+            processSamples.forEach((sample) => {
+                if (sample.RSS > maxRssAllProcesses) maxRssAllProcesses = sample.RSS;
+                if (sample.HeapUsed > maxHeapAllProcesses) maxHeapAllProcesses = sample.HeapUsed;
+                const gcSeconds = sample.GCTimeSeconds ?? (sample.GCTime ? sample.GCTime / 1000 : 0);
+                if (gcSeconds > maxGcTimeAllProcesses) maxGcTimeAllProcesses = gcSeconds;
+            });
+        }
+        const timestamps = [...new Set(samples.map((sample) => sample.Timestamp))];
+        const processKeys = [...new Set(samples.map((sample) => `${sample.Name}|${sample.PID}`))];
+        const totalSeries = buildTotalRssSeries(samples, timestamps.sort((a, b) => a - b), processKeys);
+        (totalSeries.totalRss || []).forEach((value) => {
+            if (value > maxRssAllProcesses) maxRssAllProcesses = value;
+        });
+        const processCount = processKeys.length;
+        const elapsedTimes = samples.map((sample) => sample.ElapsedTime || 0).filter((value) => value > 0);
+        const durationSec = elapsedTimes.length >= 2
+            ? Math.max(...elapsedTimes) - Math.min(...elapsedTimes)
+            : (elapsedTimes[0] || 0);
+        const sampleRate = durationSec > 0 && samples.length > 0 ? (samples.length / Math.max(durationSec, 1)) : 0;
+        const pressure = maxRssAllProcesses > 0 && maxHeapAllProcesses > 0
+            ? Math.min(999, (maxHeapAllProcesses / maxRssAllProcesses) * 100)
+            : 0;
+        return {
+            samples,
+            maxRssAllProcesses,
+            maxHeapAllProcesses,
+            maxGcTimeAllProcesses,
+            processCount,
+            durationSec,
+            sampleRate,
+            pressure,
+        };
+    }
+
+    function canUpdateLiveDashboard(runId, data) {
+        const content = document.getElementById('content');
+        return !!(
+            liveMountState
+            && liveMountState.runId === runId
+            && liveMountState.finished === false
+            && data?.finished !== true
+            && content
+            && content.dataset.bpwLiveMounted === '1'
+            && document.getElementById('chart')
+        );
+    }
+
+    // After /finish, keep refreshing Predictions so late TabFM jobs can paint.
+    const POST_FINISH_FORECAST_GRACE_MS = 3 * 60 * 1000;
+    const POST_FINISH_FORECAST_POLL_SECONDS = 5;
+    let postFinishForecastPollStartedAt = null;
+
+    function wantsProcessForecastPolling(data) {
+        const mode = data?.prediction_mode;
+        return mode === 'predict' || mode === 'forecast' || mode === 'bqml-boosted'
+            || (Array.isArray(data?.process_forecasts) && data.process_forecasts.length > 0);
+    }
+
+    function shouldKeepPollingRun(data) {
+        if (data?.finished !== true) {
+            postFinishForecastPollStartedAt = null;
+            return true;
+        }
+        if (!wantsProcessForecastPolling(data)) {
+            postFinishForecastPollStartedAt = null;
+            return false;
+        }
+        if (postFinishForecastPollStartedAt == null) {
+            postFinishForecastPollStartedAt = Date.now();
+        }
+        const finishedAt = data?.finished_at ? Date.parse(data.finished_at) : NaN;
+        const start = Number.isFinite(finishedAt) ? finishedAt : postFinishForecastPollStartedAt;
+        return (Date.now() - start) < POST_FINISH_FORECAST_GRACE_MS;
+    }
+
+    function canUpdateFinishedPredictionPanel(runId, data) {
+        return !!(
+            liveMountState
+            && liveMountState.runId === runId
+            && liveMountState.finished === true
+            && data?.finished === true
+            && document.getElementById('prediction-panel-content')
+            && typeof window.BpwPredictionView?.render === 'function'
+        );
+    }
+
+    function bindForecastReplayControls() {
+        const content = document.getElementById('prediction-panel-content');
+        if (window.forecastReplayStop) {
+            window.forecastReplayStop();
+            window.forecastReplayStop = null;
+        }
+        if (content && typeof window.BpwPredictionView?.bindProcessForecastReplay === 'function') {
+            window.forecastReplayStop = BpwPredictionView.bindProcessForecastReplay(content);
+        }
+    }
+
+    function updateLiveHeader(summary, data) {
+        const formatMb = (value) => value > 0 ? `${value.toFixed(value >= 1000 ? 0 : 1)} MB` : 'N/A';
+        const setText = (id, text, hidden) => {
+            const node = document.getElementById(id);
+            if (!node) return;
+            node.textContent = text;
+            if (hidden !== undefined) node.hidden = !!hidden;
+        };
+        setText('run-header-status', 'Live');
+        const status = document.getElementById('run-header-status');
+        if (status) {
+            status.classList.add('live');
+            status.classList.remove('done');
+        }
+        setText('run-header-samples', `${summary.samples.length} samples`);
+        setText('run-header-processes', `${summary.processCount} processes`);
+        setText('run-header-duration', summary.durationSec > 0 ? formatDur(summary.durationSec) : '', summary.durationSec <= 0);
+        setText('run-header-peak', summary.maxRssAllProcesses > 0 ? `${summary.maxRssAllProcesses.toFixed(0)} MB peak` : '', summary.maxRssAllProcesses <= 0);
+        setText('run-header-updated', data.updated_at ? new Date(data.updated_at).toLocaleString() : '', !data.updated_at);
+        setText('kpi-peak-rss', formatMb(summary.maxRssAllProcesses));
+        setText('kpi-peak-heap', formatMb(summary.maxHeapAllProcesses));
+        setText('kpi-peak-heap-note', summary.pressure > 0 ? `${summary.pressure.toFixed(0)}% of peak RSS` : 'Heap signal unavailable');
+        setText('kpi-gc-time', summary.maxGcTimeAllProcesses > 0 ? `${summary.maxGcTimeAllProcesses.toFixed(2)} s` : 'N/A');
+        setText('kpi-sample-density', summary.sampleRate > 0 ? `${summary.sampleRate.toFixed(2)}/s` : 'N/A');
+        setText(
+            'kpi-sample-density-note',
+            `${summary.samples.length} samples over ${summary.durationSec > 0 ? formatDur(summary.durationSec) : 'the run'}`,
+        );
+    }
+
+    function updateLiveDashboard(runId, data, browserRequestStarted) {
+        const summary = computeLiveSummary(data);
+        if (!liveSeriesStore) {
+            liveSeriesStore = BpwChartSeriesStore.createChartSeriesStore(summary.samples);
+        } else {
+            liveSeriesStore.reconcile(summary.samples);
+        }
+        window.currentSamples = summary.samples;
+        window.currentRunData = data;
+        window.currentProcessSummary = CompareShared.buildProcessSummary(summary.samples, data.process_info || {});
+        updateLiveHeader(summary, data);
+        if (document.getElementById('chart')) {
+            renderChart(summary.samples, BpwPredictionView.normalizeCheckpoints(data.prediction_checkpoints), { live: true });
+        }
+        if (hasGCData(summary.samples) && document.getElementById('gc-chart')) {
+            renderGCChart(summary.samples, { live: true });
+        }
+        renderJvmCounterCharts(summary.samples, { live: true });
+        renderPredictionPanel(data);
+        bindPredictionPanel(data);
+        renderFreshnessDiagnostics(data, browserRequestStarted);
+    }
+
+    function applyRunData(runId, data, browserRequestStarted) {
+        lastRefreshTime = new Date();
+        if (canUpdateLiveDashboard(runId, data)) {
+            updateLiveDashboard(runId, data, browserRequestStarted);
+        } else if (canUpdateFinishedPredictionPanel(runId, data)) {
+            // Finished shell already mounted: refresh forecast timelines without remounting replay/charts.
+            window.currentRunData = data;
+            renderPredictionPanel(data);
+            bindPredictionPanel(data);
+            renderFreshnessDiagnostics(data, browserRequestStarted);
+        } else {
+            liveSeriesStore = BpwChartSeriesStore.createChartSeriesStore(data.samples || []);
+            liveYDomain = null;
+            renderDashboard(runId, data);
+            window.currentRunData = data;
+            renderFreshnessDiagnostics(data, browserRequestStarted);
+        }
+    }
+
+    function ensureLiveRunController() {
+        if (liveRunController) return liveRunController;
+        liveRunController = BpwLiveRunController.createLiveRunController({
+            normalize: (payload) => CompareShared.normalizeReportData(payload),
+            onData: ({ runId, data, browserRequestStarted }) => {
+                applyRunData(runId, data, browserRequestStarted);
+                const backendUrl = window.BUILD_PROCESS_WATCHER_CONFIG?.backendUrl || 'https://build-process-watcher-backend-685615422311.us-central1.run.app';
+                if (shouldKeepPollingRun(data)) {
+                    const interval = data?.finished === true
+                        ? POST_FINISH_FORECAST_POLL_SECONDS
+                        : refreshInterval;
+                    liveRunController.schedule(runId, backendUrl, interval);
+                } else {
+                    liveRunController.cancelTimer();
+                }
+            },
+            onError: ({ status, error, response }) => {
+                console.error('Run data request failed:', { status, error, response });
+                if (status === 404 || status === 410) {
+                    showUnavailableRun('not-found');
+                } else if (status) {
+                    showUnavailableRun('server');
+                } else if (document.getElementById('chart') && liveMountState?.finished === false) {
+                    // Keep the live chart on a transient connectivity blip.
+                } else {
+                    showUnavailableRun('connectivity');
+                }
+            },
+        });
+        return liveRunController;
+    }
+
+    async function loadRunDataLegacy(runId, backendUrl, dataUrl = null) {
+        let response;
+        try {
+            response = await fetch(dataUrl || `${backendUrl}/runs/${runId}`);
+            if (!response.ok) {
+                console.error('Run data request failed:', {
+                    runId,
+                    status: response.status,
+                    statusText: response.statusText
+                });
+                if (response.status === 404 || response.status === 410) {
+                    showUnavailableRun('not-found');
+                } else {
+                    showUnavailableRun('server');
+                }
+                return;
+            }
+
+            const data = CompareShared.normalizeReportData(await response.json());
+            lastRefreshTime = new Date();
+            renderDashboard(runId, data);
+            window.currentRunData = data;
+            renderFreshnessDiagnostics(data, performance.now());
+            cancelRefresh();
+            if (isLiveDashboard && shouldKeepPollingRun(data)) {
+                const interval = data.finished === true
+                    ? POST_FINISH_FORECAST_POLL_SECONDS
+                    : refreshInterval;
+                refreshTimer = setTimeout(() => loadRunData(runId), interval * 1000);
+            }
+        } catch (error) {
+            console.error('Run data request could not be completed:', { runId, error });
+            showUnavailableRun(response ? 'server' : 'connectivity');
+        }
+    }
+
+    async function loadRunData(runId) {
+        const backendUrl = window.BUILD_PROCESS_WATCHER_CONFIG?.backendUrl || 'https://build-process-watcher-backend-685615422311.us-central1.run.app';
+        cancelRefresh();
+        if (!isLiveDashboard) {
+            await loadRunDataLegacy(runId, backendUrl, dashboardConfig.dataUrl);
+            return;
+        }
+        if (typeof window.BpwLiveRunController?.createLiveRunController !== 'function'
+            || typeof window.BpwChartSeriesStore?.createChartSeriesStore !== 'function') {
+            await loadRunDataLegacy(runId, backendUrl);
+            return;
+        }
+        const controller = ensureLiveRunController();
+        await controller.refresh(runId, backendUrl);
+    }
+
+    function renderFreshnessDiagnostics(data, browserRequestStarted) {
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            const target = document.getElementById('freshness-diagnostics');
+            if (!target || !window.BpwFreshnessView) return;
+            const browserFetchRenderMs = performance.now() - browserRequestStarted;
+            const view = BpwFreshnessView.render(data?.samples, Date.now(), browserFetchRenderMs);
+            target.hidden = !view;
+            target.innerHTML = view?.html || '';
+            window.currentFreshnessDiagnostics = view?.summary || null;
+        }));
+    }
+
+    function renderDashboard(runId, data) {
+        const isFinished = data.finished === true;
+        const samples = data.samples || [];
+        const processInfo = data.process_info || {};
+        window.currentSamples = samples;
+        window.currentProcessSummary = CompareShared.buildProcessSummary(samples, processInfo);
+        
+        // Calculate metrics for each process and overall
+        let maxRssAllProcesses = 0;
+        let maxHeapAllProcesses = 0;
+        let maxGcTimeAllProcesses = 0;
+        const processMetrics = {};
+        
+        // Calculate metrics per process
+        for (const [pid, info] of Object.entries(processInfo)) {
+            const processSamples = samples.filter(s => s.PID === pid);
+            let maxRss = 0;
+            let maxHeap = 0;
+            let maxGCTimeSeconds = 0;
+            let finalCompiledMethods = null;
+            let finalJITTimeMs = null;
+            let finalClassesLoaded = null;
+            let minTimestamp = Number.POSITIVE_INFINITY;
+            let maxTimestamp = 0;
+            
+            processSamples.forEach(sample => {
+                if (sample.RSS && sample.RSS > maxRss) {
+                    maxRss = sample.RSS;
+                }
+                if (sample.HeapUsed && sample.HeapUsed > maxHeap) {
+                    maxHeap = sample.HeapUsed;
+                }
+                if (sample.GCTime) {
+                    // GCTime is cumulative in samples; keep the max in seconds.
+                    const gcSeconds = sample.GCTime / 1000;
+                    if (gcSeconds > maxGCTimeSeconds) {
+                        maxGCTimeSeconds = gcSeconds;
+                    }
+                }
+                if (Number.isFinite(Number(sample.JITCompiledMethods))) finalCompiledMethods = Number(sample.JITCompiledMethods);
+                if (Number.isFinite(Number(sample.JITCompilationTimeMs))) finalJITTimeMs = Number(sample.JITCompilationTimeMs);
+                if (Number.isFinite(Number(sample.ClassesLoaded))) finalClassesLoaded = Number(sample.ClassesLoaded);
+                if (sample.Timestamp && sample.Timestamp < minTimestamp) minTimestamp = sample.Timestamp;
+                if (sample.Timestamp && sample.Timestamp > maxTimestamp) maxTimestamp = sample.Timestamp;
+            });
+            
+            processMetrics[pid] = {
+                maxRss: maxRss,
+                maxHeap: maxHeap,
+                totalGCTime: maxGCTimeSeconds,
+                finalCompiledMethods,
+                finalJITTimeMs,
+                finalClassesLoaded,
+                durationSeconds: Number.isFinite(minTimestamp) && maxTimestamp >= minTimestamp
+                    ? Math.max(0, (maxTimestamp - minTimestamp) / 1000)
+                    : 0,
+                sampleCount: processSamples.length
+            };
+            if (maxHeap > maxHeapAllProcesses) {
+                maxHeapAllProcesses = maxHeap;
+            }
+            if (maxGCTimeSeconds > maxGcTimeAllProcesses) {
+                maxGcTimeAllProcesses = maxGCTimeSeconds;
+            }
+            
+        }
+
+        // Calculate overall max RSS by summing per-timestamp totals
+        // Use forward-filling to avoid drops when a process skips a sample
+        const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
+        const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
+        const lastKnownRSS = {};
+        processKeys.forEach(processKey => {
+            lastKnownRSS[processKey] = 0;
+        });
+
+        timestamps.forEach(timestamp => {
+            let total = 0;
+            let hasAnyProcess = false;
+
+            processKeys.forEach(processKey => {
+                const [processName, pid] = processKey.split('|');
+                const sample = samples
+                    .filter(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp)
+                    [0];
+
+                if (sample) {
+                    lastKnownRSS[processKey] = sample.RSS;
+                    total += sample.RSS;
+                    hasAnyProcess = true;
+                } else if (lastKnownRSS[processKey] > 0) {
+                    total += lastKnownRSS[processKey];
+                    hasAnyProcess = true;
+                }
+            });
+
+            if (hasAnyProcess && total > maxRssAllProcesses) {
+                maxRssAllProcesses = total;
+            }
+        });
+        
+        const formatDur = (s) => s < 60 ? s + 's' : (Math.floor(s / 60) + 'm' + (s % 60 ? ' ' + Math.round(s % 60) + 's' : ''));
+        const predictionCheckpoints = BpwPredictionView.normalizeCheckpoints(data.prediction_checkpoints);
+        const hasProcessForecasts = Array.isArray(data.process_forecasts) && data.process_forecasts.length > 0;
+        const predictionMode = data.prediction_mode;
+        const predictionEnabled = predictionMode === 'predict'
+            || predictionMode === 'forecast'
+            || predictionMode === 'bqml-boosted'
+            || predictionMode === 'reliability'
+            || window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true
+            || predictionCheckpoints.length > 0
+            || hasProcessForecasts;
+        if (window.BpwExperimentLayout?.setPredictionsEnabled) {
+            BpwExperimentLayout.setPredictionsEnabled(predictionEnabled);
+        }
+        const readyPredictionCount = predictionCheckpoints.filter(checkpoint => checkpoint.status === 'ready').length;
+        const latestReadyRisk = [...predictionCheckpoints].reverse().find(checkpoint => checkpoint.status === 'ready')?.risk_level;
+        const predictionView = BpwPredictionView.render({ ...data, predictionEnabled }, predictionSelectedWindow);
+        predictionSelectedWindow = predictionView.selectedWindow;
+        const predictionTabHtml = predictionView.html;
+        const predictionPreviewHtml = predictionCheckpoints.length ? `
+            <section class="prediction-preview" aria-label="Prediction preview">
+                <div class="prediction-preview-main"><span class="bpw-panel-badge">Predictions</span><strong>Latest ${escapeHtml(latestReadyRisk || 'not available')}</strong><span>${readyPredictionCount} of ${predictionCheckpoints.length} checkpoints ready</span></div>
+                <button type="button" class="btn secondary" data-run-tab="predictions">Open Predictions</button>
+            </section>
+        ` : '';
+
+        // Render process info section
+        let processInfoHtml = '';
+        if (Object.keys(processInfo).length > 0) {
+            const formatMetricMb = (value) => value > 0 ? `${value.toFixed(value >= 1000 ? 0 : 1)} MB` : 'N/A';
+            const formatMetricSeconds = (value) => value > 0 ? `${value.toFixed(value >= 10 ? 1 : 3)} s` : 'N/A';
+            const processEntries = Object.entries(processInfo).map(([pid, info]) => {
+                const vmFlags = info.vm_flags || [];
+                const metrics = processMetrics[pid] || { maxRss: 0, maxHeap: 0, totalGCTime: 0, durationSeconds: 0, sampleCount: 0 };
+                return {
+                    pid,
+                    info,
+                    vmFlags,
+                    metrics,
+                    maxHeapGiB: getMaxHeapGiB(vmFlags)
+                };
+            });
+            const peakRssPid = processEntries.reduce((best, entry) => !best || entry.metrics.maxRss > best.metrics.maxRss ? entry : best, null)?.pid;
+            const peakGcPid = processEntries.reduce((best, entry) => !best || entry.metrics.totalGCTime > best.metrics.totalGCTime ? entry : best, null)?.pid;
+            const longestPid = processEntries.reduce((best, entry) => !best || entry.metrics.durationSeconds > best.metrics.durationSeconds ? entry : best, null)?.pid;
+            const groups = {};
+            processEntries.forEach((entry) => {
+                const name = entry.info.name || 'Unknown';
+                if (!groups[name]) groups[name] = [];
+                groups[name].push(entry);
+            });
+
+            processInfoHtml = '<div class="process-info-section">';
+            processInfoHtml += '<div class="process-info-head">';
+            processInfoHtml += '<div><h2>Process Information</h2><p>Compare JVM processes first; expand details only when you need flags or runtime metadata.</p></div>';
+            if (maxRssAllProcesses > 0) {
+                processInfoHtml += `<div class="process-info-total"><span>All processes peak</span><strong>${formatMetricMb(maxRssAllProcesses)}</strong></div>`;
+            }
+            processInfoHtml += '</div>';
+            processInfoHtml += '<div class="process-groups">';
+            Object.entries(groups).sort(([a], [b]) => a.localeCompare(b)).forEach(([name, entries]) => {
+                processInfoHtml += '<section class="process-group">';
+                processInfoHtml += `<div class="process-group-title"><h3>${escapeHtml(name)}</h3><span>${entries.length} PID${entries.length === 1 ? '' : 's'}</span></div>`;
+                entries.sort((a, b) => b.metrics.maxRss - a.metrics.maxRss).forEach(({ pid, info, vmFlags, metrics, maxHeapGiB }) => {
+                    const badges = [];
+                    if (pid === peakRssPid && metrics.maxRss > 0) badges.push('Peak RSS contributor');
+                    if (pid === peakGcPid && metrics.totalGCTime > 0) badges.push('Most GC time');
+                    if (pid === longestPid && metrics.durationSeconds > 0) badges.push('Longest lived');
+                    if (metrics.finalCompiledMethods !== null || metrics.finalJITTimeMs !== null) badges.push('JIT data');
+                    if (metrics.finalClassesLoaded !== null) badges.push('Class data');
+
+                    processInfoHtml += '<article class="process-info-card">';
+                    processInfoHtml += '<div class="process-card-main">';
+                    processInfoHtml += '<div class="process-card-title">';
+                    processInfoHtml += `<strong>PID ${escapeHtml(pid)}</strong>`;
+                    if (maxHeapGiB) processInfoHtml += `<span>Heap max ${maxHeapGiB} GiB</span>`;
+                    processInfoHtml += '</div>';
+                    if (badges.length) {
+                        processInfoHtml += '<div class="process-badges">';
+                        badges.forEach((badge) => {
+                            processInfoHtml += `<span>${badge}</span>`;
+                        });
+                        processInfoHtml += '</div>';
+                    }
+                    processInfoHtml += '</div>';
+
+                    processInfoHtml += '<div class="process-metric-grid">';
+                    processInfoHtml += `<div class="process-metric"><strong>Max RSS</strong><span>${formatMetricMb(metrics.maxRss)}</span></div>`;
+                    processInfoHtml += `<div class="process-metric"><strong>Max Heap</strong><span>${formatMetricMb(metrics.maxHeap)}</span></div>`;
+                    processInfoHtml += `<div class="process-metric"><strong>GC Time</strong><span>${formatMetricSeconds(metrics.totalGCTime)}</span></div>`;
+                    processInfoHtml += `<div class="process-metric"><strong>Duration</strong><span>${metrics.durationSeconds > 0 ? formatDur(Math.round(metrics.durationSeconds)) : 'N/A'}</span></div>`;
+                    processInfoHtml += `<div class="process-metric"><strong>Compiled</strong><span>${metrics.finalCompiledMethods ?? 'N/A'}</span></div>`;
+                    processInfoHtml += `<div class="process-metric"><strong>Classes</strong><span>${metrics.finalClassesLoaded ?? 'N/A'}</span></div>`;
+                    processInfoHtml += '</div>';
+
+                    processInfoHtml += '<details class="process-details">';
+                    processInfoHtml += '<summary>JVM details</summary>';
+                    processInfoHtml += '<div class="process-detail-grid">';
+                    processInfoHtml += `<div><strong>Samples</strong><span>${metrics.sampleCount || 0}</span></div>`;
+                    processInfoHtml += `<div><strong>JIT time</strong><span>${metrics.finalJITTimeMs !== null ? formatMetricSeconds(metrics.finalJITTimeMs / 1000) : 'N/A'}</span></div>`;
+                    processInfoHtml += `<div><strong>Process name</strong><span>${escapeHtml(info.name || 'Unknown')}</span></div>`;
+                    processInfoHtml += '</div>';
+                    if (vmFlags.length > 0) {
+                        processInfoHtml += '<div class="vm-flags-list">';
+                        vmFlags.forEach(flag => {
+                            processInfoHtml += `<span class="vm-flag">${escapeHtml(flag)}</span>`;
+                        });
+                        processInfoHtml += '</div>';
+                    } else {
+                        processInfoHtml += '<div class="process-meta">No VM flags available</div>';
+                    }
+                    processInfoHtml += '</details>';
+                    processInfoHtml += '</article>';
+                });
+                processInfoHtml += '</section>';
+            });
+            processInfoHtml += '</div>';
+            processInfoHtml += '</div>';
+        }
+        
+        const processCount = new Set(samples.map(s => `${s.Name}|${s.PID}`)).size;
+        const elapsedTimes = samples.map(s => s.ElapsedTime || 0).filter(t => t > 0);
+        const durationSec = elapsedTimes.length >= 2 ? Math.max(...elapsedTimes) - Math.min(...elapsedTimes) : (elapsedTimes[0] || 0);
+        const formatMb = (value) => value > 0 ? `${value.toFixed(value >= 1000 ? 0 : 1)} MB` : 'N/A';
+        const sampleRate = durationSec > 0 && samples.length > 0 ? (samples.length / Math.max(durationSec, 1)) : 0;
+        const pressure = maxRssAllProcesses > 0 && maxHeapAllProcesses > 0
+            ? Math.min(999, (maxHeapAllProcesses / maxRssAllProcesses) * 100)
+            : 0;
+
+        document.getElementById('content').innerHTML = `
+            <div class="run-header-bar">
+                <div class="run-header-main">
+                    <span class="run-id">${escapeHtml(runId)}</span>
+                    <span class="run-status ${isFinished ? 'done' : 'live'}" id="run-header-status">${isFinished ? 'Completed' : 'Live'}</span>
+                    <span class="run-stat" id="run-header-samples">${samples.length} samples</span>
+                    <span class="run-stat" id="run-header-processes">${processCount} processes</span>
+                    <span class="run-stat" id="run-header-duration" ${durationSec > 0 ? '' : 'hidden'}>${durationSec > 0 ? formatDur(durationSec) : ''}</span>
+                    <span class="run-stat" id="run-header-peak" ${maxRssAllProcesses > 0 ? '' : 'hidden'}>${maxRssAllProcesses > 0 ? `${maxRssAllProcesses.toFixed(0)} MB peak` : ''}</span>
+                    <span class="run-stat muted" id="run-header-updated" ${data.updated_at ? '' : 'hidden'}>${data.updated_at ? new Date(data.updated_at).toLocaleString() : ''}</span>
+                </div>
+                <div class="run-header-actions">
+                    <button type="button" class="btn secondary bpw-layout-toggle" data-bpw-layout-toggle id="btn-layout-toggle">Experiment layout</button>
+                    ${!isFinished ? `
+                        <div class="run-header-refresh">
+                            <label>Refresh</label>
+                            <select id="refreshInterval" onchange="setRefreshInterval(parseInt(this.value))">
+                                <option value="5" ${refreshInterval === 5 ? 'selected' : ''}>5s</option>
+                                <option value="10" ${refreshInterval === 10 ? 'selected' : ''}>10s</option>
+                                <option value="30" ${refreshInterval === 30 ? 'selected' : ''}>30s</option>
+                                <option value="60" ${refreshInterval === 60 ? 'selected' : ''}>1m</option>
+                                <option value="120" ${refreshInterval === 120 ? 'selected' : ''}>2m</option>
+                                <option value="300" ${refreshInterval === 300 ? 'selected' : ''}>5m</option>
+                            </select>
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+
+            <div id="freshness-diagnostics" hidden></div>
+
+            <div class="run-dashboard-tabs run-dashboard-tabs-legacy" role="tablist" aria-label="Run dashboard views" hidden>
+                <button type="button" class="run-dashboard-tab" role="tab" id="run-tab-dashboard" data-run-tab="dashboard" aria-controls="run-panel-dashboard">Dashboard</button>
+                <button type="button" class="run-dashboard-tab" role="tab" id="run-tab-predictions" data-run-tab="predictions" aria-controls="run-panel-predictions">Predictions</button>
+            </div>
+
+            <div id="run-panel-dashboard" class="run-dashboard-panel" role="tabpanel" aria-labelledby="run-tab-dashboard">
+            <div class="run-kpi-strip">
+                <div class="run-kpi">
+                    <div class="run-kpi-label">Peak RSS</div>
+                    <div class="run-kpi-value" id="kpi-peak-rss">${formatMb(maxRssAllProcesses)}</div>
+                    <div class="run-kpi-note">Total memory across active JVMs</div>
+                </div>
+                <div class="run-kpi">
+                    <div class="run-kpi-label">Peak Heap</div>
+                    <div class="run-kpi-value" id="kpi-peak-heap">${formatMb(maxHeapAllProcesses)}</div>
+                    <div class="run-kpi-note" id="kpi-peak-heap-note">${pressure > 0 ? `${pressure.toFixed(0)}% of peak RSS` : 'Heap signal unavailable'}</div>
+                </div>
+                <div class="run-kpi">
+                    <div class="run-kpi-label">GC Time</div>
+                    <div class="run-kpi-value" id="kpi-gc-time">${maxGcTimeAllProcesses > 0 ? `${maxGcTimeAllProcesses.toFixed(2)} s` : 'N/A'}</div>
+                    <div class="run-kpi-note">Highest cumulative process value</div>
+                </div>
+                <div class="run-kpi">
+                    <div class="run-kpi-label">Sample Density</div>
+                    <div class="run-kpi-value" id="kpi-sample-density">${sampleRate > 0 ? `${sampleRate.toFixed(2)}/s` : 'N/A'}</div>
+                    <div class="run-kpi-note" id="kpi-sample-density-note">${samples.length} samples over ${durationSec > 0 ? formatDur(durationSec) : 'the run'}</div>
+                </div>
+            </div>
+
+            ${predictionPreviewHtml}
+
+            <!-- Compare runs hidden until ready -->
+
+            <div id="bpw-workspace-deck" class="bpw-workspace-deck" hidden aria-label="Workspace layout"></div>
+
+            ${isFinished === true && samples.length ? `
+            <div id="bpw-unified-replay" class="bpw-unified-replay" hidden>
+                <div class="bpw-unified-label">Unified replay (all charts)</div>
+                <div class="replay-controls" id="bpw-unified-replay-controls">
+                    <div class="buttons">
+                        <button class="btn" id="bpw-unified-play" type="button">Play</button>
+                        <button class="btn secondary" id="bpw-unified-pause" type="button">Pause</button>
+                        <button class="btn secondary" id="bpw-unified-reset" type="button">Reset</button>
+                    </div>
+                    <div class="meta" id="bpw-unified-meta">Frame 0 / 0</div>
+                    <div class="timeline">
+                        <input type="range" id="bpw-unified-timeline" min="0" max="0" value="0">
+                        <div class="meta" id="bpw-unified-time-label">Elapsed: 0s</div>
+                        <div class="meta">
+                            Speed:
+                            <select id="bpw-unified-speed">
+                                <option value="5">5x</option>
+                                <option value="10">10x</option>
+                                <option value="15" selected>15x</option>
+                                <option value="20">20x</option>
+                                <option value="25">25x</option>
+                                <option value="30">30x</option>
+                                <option value="35">35x</option>
+                                <option value="40">40x</option>
+                                <option value="45">45x</option>
+                                <option value="50">50x</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            ` : ''}
+
+            <div id="bpw-chart-studio" class="bpw-chart-studio" hidden aria-label="Chart overlay studio"></div>
+            <div id="bpw-build-story" class="bpw-build-story" hidden aria-label="Build story timeline"></div>
+
+            <div id="bpw-charts-grid" class="bpw-charts-grid">
+            <section class="bpw-chart-panel" data-bpw-panel="memory" id="section-memory">
+            <div class="bpw-panel-card">
+                <div class="bpw-panel-card-head">
+                    <div>
+                        <span class="bpw-panel-badge">Memory</span>
+                        <h3>Memory Usage Over Time</h3>
+                    </div>
+                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="memory" title="Expand this panel">Expand</button>
+                </div>
+                <div class="bpw-panel-card-body">
+            <div class="chart-container">
+                <div class="downloads-toolbar">
+                    <button class="btn" id="btn-download-png">Download PNG</button>
+                    <button class="btn" id="btn-download-svg">Download SVG</button>
+                    <button class="btn secondary" id="btn-download-json">Download JSON</button>
+                    <button class="btn secondary" id="btn-download-csv">Download CSV</button>
+                </div>
+                ${isFinished === true && samples.length ? `
+                    <div class="replay-controls" id="rss-replay-controls">
+                        <div class="buttons">
+                            <button class="btn" id="btn-rss-replay-play" aria-pressed="false">Play</button>
+                            <button class="btn secondary" id="btn-rss-replay-reset">Reset</button>
+                        </div>
+                        <div class="meta" id="rss-replay-meta">Frame 0 / 0</div>
+                        <div class="timeline">
+                            <input type="range" id="rss-replay-timeline" aria-label="Memory replay timeline" min="0" max="0" value="0">
+                            <div class="meta" id="rss-replay-time-label">Elapsed: 0s</div>
+                            <div class="meta">
+                                Speed:
+                                <select id="rss-replay-speed" aria-label="Memory replay speed">
+                                    <option value="5">5x</option>
+                                    <option value="10">10x</option>
+                                    <option value="15" selected>15x</option>
+                                    <option value="20">20x</option>
+                                    <option value="25">25x</option>
+                                    <option value="30">30x</option>
+                                    <option value="35">35x</option>
+                                    <option value="40">40x</option>
+                                    <option value="45">45x</option>
+                                    <option value="50">50x</option>
+                                </select>
+                            </div>
+                            <div class="meta">
+                                Viewport:
+                                <select id="rss-replay-viewport" aria-label="Memory replay viewport">
+                                    <option value="full" selected>Full timeline</option>
+                                    <option value="follow">Follow playback</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="chart-filters" id="main-chart-filters">
+                        <label><input type="checkbox" id="filter-total-rss" checked> Total RSS</label>
+                        <label><input type="checkbox" id="filter-rss" checked> RSS</label>
+                        <label><input type="checkbox" id="filter-heap" checked> Heap</label>
+                    </div>
+                ` : ''}
+                <div class="chart-wrapper">
+                    <div id="chart" style="width: 100%; height: 500px;"></div>
+                </div>
+            </div>
+                </div>
+            </div>
+            </section>
+
+            ${hasGCData(samples) ? `
+            <section class="bpw-chart-panel" data-bpw-panel="gc" id="section-gc">
+            <div class="bpw-panel-card">
+                <div class="bpw-panel-card-head">
+                    <div>
+                        <span class="bpw-panel-badge">GC</span>
+                        <h3>Garbage Collection Time</h3>
+                    </div>
+                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="gc" title="Expand this panel">Expand</button>
+                </div>
+                <div class="bpw-panel-card-body">
+            <div class="chart-container">
+                <div class="downloads-toolbar">
+                    <button class="btn" id="btn-download-gc-png">Download GC PNG</button>
+                    <button class="btn" id="btn-download-gc-svg">Download GC SVG</button>
+                </div>
+                ${isFinished === true ? `
+                    <div class="replay-controls" id="gc-replay-controls">
+                        <div class="buttons">
+                            <button class="btn" id="btn-gc-replay-play">Play</button>
+                            <button class="btn secondary" id="btn-gc-replay-pause">Pause</button>
+                            <button class="btn secondary" id="btn-gc-replay-reset">Reset</button>
+                        </div>
+                        <div class="meta" id="gc-replay-meta">Frame 0 / 0</div>
+                        <div class="timeline">
+                            <input type="range" id="gc-replay-timeline" aria-label="GC replay timeline" min="0" max="0" value="0">
+                            <div class="meta" id="gc-replay-time-label">Elapsed: 0s</div>
+                            <div class="meta">
+                                Speed:
+                                <select id="gc-replay-speed" aria-label="GC replay speed">
+                                    <option value="5">5x</option>
+                                    <option value="10">10x</option>
+                                    <option value="15" selected>15x</option>
+                                    <option value="20">20x</option>
+                                    <option value="25">25x</option>
+                                    <option value="30">30x</option>
+                                    <option value="35">35x</option>
+                                    <option value="40">40x</option>
+                                    <option value="45">45x</option>
+                                    <option value="50">50x</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                ` : ''}
+                <div class="chart-wrapper">
+                    <div id="gc-chart" style="width: 100%; height: 500px;"></div>
+                </div>
+            </div>
+                </div>
+            </div>
+            </section>
+            ` : ''}
+            ${(hasJITData(samples) || hasClassLoadingData(samples)) ? `<div class="bpw-runtime-stage">` : ''}
+            ${hasJITData(samples) ? `
+            <section class="bpw-chart-panel" data-bpw-panel="jit-time" id="section-jit-time">
+            <div class="bpw-panel-card">
+                <div class="bpw-panel-card-head">
+                    <div>
+                        <span class="bpw-panel-badge">JIT</span>
+                        <h3>Cumulative Compilation Time</h3>
+                    </div>
+                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="jit-time" title="Expand this panel">Expand</button>
+                </div>
+                <div class="bpw-panel-card-body">
+                    <div class="downloads-toolbar">
+                        <button class="btn" id="btn-download-jit-png">Download JIT PNG</button>
+                        <button class="btn" id="btn-download-jit-svg">Download JIT SVG</button>
+                    </div>
+                    ${isFinished === true ? `
+                    <div class="replay-controls" id="jit-replay-controls">
+                        <div class="buttons">
+                            <button class="btn" id="btn-jit-replay-play">Play</button>
+                            <button class="btn secondary" id="btn-jit-replay-pause">Pause</button>
+                            <button class="btn secondary" id="btn-jit-replay-reset">Reset</button>
+                        </div>
+                        <div class="meta" id="jit-replay-meta">Frame 0 / 0</div>
+                        <div class="timeline">
+                            <input type="range" id="jit-replay-timeline" aria-label="JIT replay timeline" min="0" max="0" value="0">
+                            <div class="meta" id="jit-replay-time-label">Elapsed: 0s</div>
+                            <div class="meta">
+                                Speed:
+                                <select id="jit-replay-speed" aria-label="JIT replay speed">
+                                    <option value="5">5x</option>
+                                    <option value="10">10x</option>
+                                    <option value="15" selected>15x</option>
+                                    <option value="20">20x</option>
+                                    <option value="25">25x</option>
+                                    <option value="30">30x</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    ` : ''}
+                    <div class="chart-container">
+                        <div class="chart-wrapper">
+                            <div id="jit-time-chart" class="bpw-chart-plot" style="width:100%;height:450px"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            </section>
+            <section class="bpw-chart-panel" data-bpw-panel="jit-rate" id="section-jit-rate">
+            <div class="bpw-panel-card">
+                <div class="bpw-panel-card-head">
+                    <div>
+                        <span class="bpw-panel-badge">JIT</span>
+                        <h3>Compilation Activity</h3>
+                    </div>
+                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="jit-rate" title="Expand this panel">Expand</button>
+                </div>
+                <div class="bpw-panel-card-body">
+                    <div class="chart-container">
+                        <div class="chart-wrapper">
+                            <div id="jit-rate-chart" class="bpw-chart-plot" style="width:100%;height:450px"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            </section>` : ''}
+            ${hasClassLoadingData(samples) ? `
+            <section class="bpw-chart-panel" data-bpw-panel="classes-loaded" id="section-classes-loaded">
+            <div class="bpw-panel-card">
+                <div class="bpw-panel-card-head">
+                    <div>
+                        <span class="bpw-panel-badge">Classes</span>
+                        <h3>Cumulative Classes Loaded</h3>
+                    </div>
+                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="classes-loaded" title="Expand this panel">Expand</button>
+                </div>
+                <div class="bpw-panel-card-body">
+                    <div class="downloads-toolbar">
+                        <button class="btn" id="btn-download-classes-png">Download Classes PNG</button>
+                        <button class="btn" id="btn-download-classes-svg">Download Classes SVG</button>
+                    </div>
+                    ${isFinished === true ? `
+                    <div class="replay-controls" id="classes-replay-controls">
+                        <div class="buttons">
+                            <button class="btn" id="btn-classes-replay-play">Play</button>
+                            <button class="btn secondary" id="btn-classes-replay-pause">Pause</button>
+                            <button class="btn secondary" id="btn-classes-replay-reset">Reset</button>
+                        </div>
+                        <div class="meta" id="classes-replay-meta">Frame 0 / 0</div>
+                        <div class="timeline">
+                            <input type="range" id="classes-replay-timeline" aria-label="Class loading replay timeline" min="0" max="0" value="0">
+                            <div class="meta" id="classes-replay-time-label">Elapsed: 0s</div>
+                            <div class="meta">
+                                Speed:
+                                <select id="classes-replay-speed" aria-label="Class loading replay speed">
+                                    <option value="5">5x</option>
+                                    <option value="10">10x</option>
+                                    <option value="15" selected>15x</option>
+                                    <option value="20">20x</option>
+                                    <option value="25">25x</option>
+                                    <option value="30">30x</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    ` : ''}
+                    <div class="chart-container">
+                        <div class="chart-wrapper">
+                            <div id="classes-loaded-chart" class="bpw-chart-plot" style="width:100%;height:450px"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            </section>
+            <section class="bpw-chart-panel" data-bpw-panel="class-rate" id="section-class-rate">
+            <div class="bpw-panel-card">
+                <div class="bpw-panel-card-head">
+                    <div>
+                        <span class="bpw-panel-badge">Classes</span>
+                        <h3>Class Loading Activity</h3>
+                    </div>
+                    <button type="button" class="bpw-panel-focus-btn" data-bpw-focus="class-rate" title="Expand this panel">Expand</button>
+                </div>
+                <div class="bpw-panel-card-body">
+                    <div class="chart-container">
+                        <div class="chart-wrapper">
+                            <div id="class-rate-chart" class="bpw-chart-plot" style="width:100%;height:450px"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            </section>` : ''}
+            ${(hasJITData(samples) || hasClassLoadingData(samples)) ? `</div>` : ''}
+            </div>
+
+            ${processInfoHtml}
+
+            ${isFinished === true ? `
+                <div class="compare-controls">
+                    <div class="meta"><strong>Compare runs:</strong> upload a JSON export to overlay in replay</div>
+                    <input type="file" id="compare-file-input" accept=".json">
+                    <button class="btn secondary" id="compare-clear" style="display: none;">Clear comparison</button>
+                    <div class="meta" id="compare-file-name">No file selected</div>
+                </div>
+            ` : ''}
+
+            <div id="compare-section" class="compare-section" style="display: none;"></div>
+            </div>
+
+            <div id="run-panel-predictions" class="run-dashboard-panel" role="tabpanel" aria-labelledby="run-tab-predictions" hidden>
+                <div id="prediction-panel-content">${predictionTabHtml}</div>
+            </div>
+        `;
+
+        if (samples.length > 0) {
+            renderChart(samples, predictionCheckpoints);
+            setupMainChartFilters();
+            if (hasGCData(samples)) {
+                renderGCChart(samples);
+            }
+            renderJvmCounterCharts(samples);
+            if (isFinished === true) {
+                setupCompareControls(samples);
+                initReplay(samples);
+            } else if (window.BpwChartStudio) {
+                BpwChartStudio.init({
+                    samples,
+                    runId,
+                    useElapsedAxis: false
+                });
+            }
+            if (isFinished !== true && window.BpwBuildStory) {
+                BpwBuildStory.init({
+                    samples,
+                    runId,
+                    useElapsedAxis: false,
+                    initialFrame: samples.length - 1
+                });
+            }
+        }
+
+        // Wire download buttons
+        const btnPng = document.getElementById('btn-download-png');
+        const btnSvg = document.getElementById('btn-download-svg');
+        const btnJson = document.getElementById('btn-download-json');
+        const btnCsv = document.getElementById('btn-download-csv');
+        const btnGcPng = document.getElementById('btn-download-gc-png');
+        const btnGcSvg = document.getElementById('btn-download-gc-svg');
+        const btnJitPng = document.getElementById('btn-download-jit-png');
+        const btnJitSvg = document.getElementById('btn-download-jit-svg');
+        const btnClassesPng = document.getElementById('btn-download-classes-png');
+        const btnClassesSvg = document.getElementById('btn-download-classes-svg');
+
+        if (btnPng) btnPng.onclick = () => downloadChart('png');
+        if (btnSvg) btnSvg.onclick = () => downloadChart('svg');
+        if (btnJson) btnJson.onclick = () => downloadJson(runId);
+        if (btnCsv) btnCsv.onclick = () => downloadCsv(runId);
+        if (btnGcPng) btnGcPng.onclick = () => downloadGCChart('png');
+        if (btnGcSvg) btnGcSvg.onclick = () => downloadGCChart('svg');
+        if (btnJitPng) btnJitPng.onclick = () => downloadRuntimeChart('jit-time-chart', 'jit', 'png');
+        if (btnJitSvg) btnJitSvg.onclick = () => downloadRuntimeChart('jit-time-chart', 'jit', 'svg');
+        if (btnClassesPng) btnClassesPng.onclick = () => downloadRuntimeChart('classes-loaded-chart', 'classes', 'png');
+        if (btnClassesSvg) btnClassesSvg.onclick = () => downloadRuntimeChart('classes-loaded-chart', 'classes', 'svg');
+
+        if (window.BpwExperimentLayout) {
+            if (typeof BpwExperimentLayout.initAfterRunRender === 'function') {
+                BpwExperimentLayout.initAfterRunRender();
+            } else {
+                BpwExperimentLayout.initToggleButtons?.();
+                if (typeof BpwExperimentLayout.applyMode === 'function') {
+                    BpwExperimentLayout.applyMode(BpwExperimentLayout.getMode());
+                }
+                const initDeck = BpwExperimentLayout.initWorkspaceDeck || BpwExperimentLayout.initSectionNav;
+                if (typeof initDeck === 'function') initDeck();
+                BpwExperimentLayout.initPanelFocusButtons?.();
+            }
+        }
+
+        bindRunDashboardTabs();
+        bindPredictionPanel(data);
+        bindForecastReplayControls();
+
+        const content = document.getElementById('content');
+        if (content) {
+            content.dataset.bpwLiveMounted = isFinished ? '0' : '1';
+        }
+        liveMountState = { runId, finished: isFinished === true };
+        if (!isFinished) {
+            liveSeriesStore = BpwChartSeriesStore.createChartSeriesStore(samples);
+        }
+    }
+
+
+    function updateMainChartFilterCheckboxes() {
+        const total = document.getElementById('filter-total-rss');
+        const rss = document.getElementById('filter-rss');
+        const heap = document.getElementById('filter-heap');
+        const chart = document.getElementById('chart');
+        if (!total || !rss || !heap || !chart || !chart.data) return;
+        const map = traceVisibility['chart'] || {};
+
+        let rssVisible = false;
+        let heapVisible = false;
+        chart.data.forEach(trace => {
+            if (!trace.name) return;
+            const vis = map[trace.name];
+            const isVisible = vis !== 'legendonly' && vis !== false;
+            if (trace.name.includes('(RSS)')) rssVisible = rssVisible || isVisible;
+            if (trace.name.includes('(Heap)')) heapVisible = heapVisible || isVisible;
+        });
+        const totalVis = map['Total RSS Memory'];
+        total.checked = totalVis === undefined ? true : (totalVis !== 'legendonly' && totalVis !== false);
+        rss.checked = rssVisible;
+        heap.checked = heapVisible;
+    }
+
+    function setupMainChartFilters() {
+        const total = document.getElementById('filter-total-rss');
+        const rss = document.getElementById('filter-rss');
+        const heap = document.getElementById('filter-heap');
+        if (!total || !rss || !heap) return;
+
+        const applyFilters = () => {
+            const chart = document.getElementById('chart');
+            if (!chart || !chart.data) return;
+            const map = traceVisibility['chart'] || (traceVisibility['chart'] = {});
+
+            chart.data.forEach(trace => {
+                if (!trace.name) return;
+                if (trace.name === 'Total RSS Memory') {
+                    map[trace.name] = total.checked ? true : 'legendonly';
+                } else if (trace.name.includes('(RSS)')) {
+                    map[trace.name] = rss.checked ? true : 'legendonly';
+                } else if (trace.name.includes('(Heap)')) {
+                    map[trace.name] = heap.checked ? true : 'legendonly';
+                }
+            });
+
+            const visArray = chart.data.map(trace => map[trace.name] !== undefined ? map[trace.name] : true);
+            Plotly.restyle(chart, 'visible', visArray);
+        };
+
+        total.addEventListener('change', applyFilters);
+        rss.addEventListener('change', applyFilters);
+        heap.addEventListener('change', applyFilters);
+
+        applyFilters();
+    }
+
+    function getMaxHeapGiB(vmFlags) {
+        if (!Array.isArray(vmFlags)) return null;
+        const flag = vmFlags.find(entry => entry.startsWith('-XX:MaxHeapSize='));
+        if (!flag) return null;
+        const value = Number(flag.split('=')[1]);
+        if (!Number.isFinite(value) || value <= 0) return null;
+        const gib = value / (1024 * 1024 * 1024);
+        return gib.toFixed(2);
+    }
+
+    function renderGCChart(samples, options = {}) {
+        if (window.BpwRunCharts) {
+            BpwRunCharts.setRunContext({ runId });
+            return BpwRunCharts.renderGCChart(samples, options);
+        }
+    }
+
+
+    function initReplay(samples) {
+        if (window.BpwExperimentLayout) {
+            BpwExperimentLayout.clearReplayPanels();
+        }
+
+        const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
+        const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
+        const elapsedByTimestamp = new Map();
+        samples.forEach(sample => {
+            if (!elapsedByTimestamp.has(sample.Timestamp)) {
+                elapsedByTimestamp.set(sample.Timestamp, sample.ElapsedTime);
+            }
+        });
+
+        const series = {};
+        const colorMap = buildColorMap(processKeys);
+
+        processKeys.forEach((processKey, index) => {
+            const [processName, pid] = processKey.split('|');
+            const rss = buildForwardFilledSeries(samples, timestamps, processName, pid, s => s.RSS);
+            const heap = buildForwardFilledSeries(samples, timestamps, processName, pid, s => s.HeapUsed);
+            const gc = buildForwardFilledSeries(samples, timestamps, processName, pid, s => {
+                const gcSeconds = s.GCTimeSeconds ?? (s.GCTime !== null && s.GCTime !== undefined && !Number.isNaN(s.GCTime)
+                    ? s.GCTime / 1000
+                    : null);
+                return gcSeconds === null || Number.isNaN(gcSeconds) ? null : gcSeconds;
+            });
+            const ratio = buildForwardFilledSeries(samples, timestamps, processName, pid, s => {
+                if (!s.RSS || s.RSS <= 0) return null;
+                return s.HeapUsed / s.RSS;
+            }, Number.POSITIVE_INFINITY);
+
+            series[processKey] = {
+                processName,
+                pid,
+                color: colorMap[processKey],
+                rss,
+                heap,
+                gc,
+                ratio,
+                firstRss: rss.findIndex(value => value !== null),
+                firstGc: gc.findIndex(value => value !== null),
+                firstRatio: ratio.findIndex(value => value !== null)
+            };
+        });
+
+        const totalSeries = buildTotalRssSeries(samples, timestamps, processKeys);
+        let chartTimestamps = timestamps;
+        let chartSeries = series;
+        let chartTotalSeries = totalSeries;
+        if (totalSeries.buildEndIndex >= 0 && totalSeries.buildEndIndex < timestamps.length) {
+            const end = totalSeries.buildEndIndex;
+            chartTimestamps = timestamps.slice(0, end);
+            chartSeries = {};
+            processKeys.forEach(processKey => {
+                const def = series[processKey];
+                chartSeries[processKey] = {
+                    ...def,
+                    rss: def.rss.slice(0, end),
+                    heap: def.heap.slice(0, end),
+                    gc: def.gc.slice(0, end),
+                    ratio: def.ratio.slice(0, end),
+                    firstRss: def.firstRss >= end ? -1 : def.firstRss,
+                    firstGc: def.firstGc >= end ? -1 : def.firstGc,
+                    firstRatio: def.firstRatio >= end ? -1 : def.firstRatio
+                };
+            });
+            chartTotalSeries = {
+                totalRss: totalSeries.totalRss.slice(0, end),
+                distribution: totalSeries.distribution.slice(0, end)
+            };
+        }
+        const firstTotalRssIndex = chartTotalSeries.totalRss.findIndex(value => value !== null);
+        const counterReplayData = buildReplayData(samples, timestamps);
+        const counterElapsedSeconds = chartTimestamps.map(timestamp => Math.max(0, (timestamp - chartTimestamps[0]) / 1000));
+
+        const memoryGapLimitMs = (getMedianDelta(chartTimestamps) || 0) * 2;
+        const memoryValuePool = [];
+        processKeys.forEach((processKey) => {
+            const def = chartSeries[processKey];
+            (def.rss || []).forEach((value) => { if (value !== null && value !== undefined) memoryValuePool.push(value); });
+            (def.heap || []).forEach((value) => { if (value !== null && value !== undefined) memoryValuePool.push(value); });
+        });
+        (chartTotalSeries.totalRss || []).forEach((value) => {
+            if (value !== null && value !== undefined) memoryValuePool.push(value);
+        });
+        const memoryXDomain = BpwChartViewport.timeDomain(chartTimestamps);
+        const memoryYDomain = BpwChartViewport.memoryDomain(memoryValuePool);
+        const memoryUirevision = `run:${runId}:panel:memory`;
+
+        function revealMetricSeries(timestamps, values, firstIndex, sampleIndex, playheadAbsoluteMs, allowVisual) {
+            if (firstIndex === -1 || sampleIndex < firstIndex) {
+                return { x: [new Date(timestamps[0])], y: [null] };
+            }
+            const endIndex = Math.min(sampleIndex, timestamps.length - 1);
+            const series = BpwChartViewport.measuredSeriesWithGapBreaks(
+                timestamps,
+                values,
+                firstIndex,
+                endIndex,
+                memoryGapLimitMs,
+            );
+            if (!allowVisual) return series;
+            const endpoint = BpwChartViewport.visualEndpoint(timestamps, values, playheadAbsoluteMs, memoryGapLimitMs);
+            if (!endpoint || endpoint.lowerIndex < firstIndex || endpoint.lowerIndex > endIndex) return series;
+            return {
+                x: series.x.concat([new Date(endpoint.time)]),
+                y: series.y.concat([endpoint.value]),
+            };
+        }
+
+        function appendUnobservedConnectors(traces, timestamps, values, firstIndex, sampleIndex, playheadAbsoluteMs, style) {
+            if (firstIndex === -1 || sampleIndex < firstIndex) return;
+            const connectors = BpwChartViewport.unobservedConnectors(
+                timestamps,
+                values,
+                playheadAbsoluteMs,
+                memoryGapLimitMs,
+                { firstIndex, maxIndex: sampleIndex },
+            );
+            connectors.forEach((segment, index) => {
+                traces.push({
+                    x: segment.x.map((time) => new Date(time)),
+                    y: segment.y,
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: style.legendOnce && index === 0 ? 'Unobserved interval' : style.name,
+                    uid: `${style.uid}:gap:${segment.lowerIndex}`,
+                    legendgroup: style.legendgroup || 'unobserved',
+                    showlegend: Boolean(style.legendOnce && index === 0),
+                    hovertemplate: 'Unobserved interval<br>%{x}<br>%{y:.1f} MB<extra></extra>',
+                    line: {
+                        color: style.color,
+                        width: style.width == null ? 2 : style.width,
+                        dash: 'dot',
+                    },
+                    connectgaps: false,
+                });
+            });
+        }
+
+        function buildMemoryTraces(frameIndex, playheadAbsoluteMs, allowVisualEndpoint) {
+            const sampleIndex = Math.max(0, Math.min(
+                Number.isFinite(frameIndex) ? frameIndex : chartTimestamps.length - 1,
+                chartTimestamps.length - 1,
+            ));
+            const absoluteMs = Number.isFinite(playheadAbsoluteMs)
+                ? playheadAbsoluteMs
+                : chartTimestamps[sampleIndex];
+            const traces = [];
+            let unobservedLegendUsed = false;
+            processKeys.forEach((processKey) => {
+                const def = chartSeries[processKey];
+                const uidBase = `${runId}:${processKey}`;
+                const rssSeries = revealMetricSeries(
+                    chartTimestamps,
+                    def.rss,
+                    def.firstRss,
+                    sampleIndex,
+                    absoluteMs,
+                    allowVisualEndpoint,
+                );
+                const heapSeries = revealMetricSeries(
+                    chartTimestamps,
+                    def.heap,
+                    def.firstRss,
+                    sampleIndex,
+                    absoluteMs,
+                    allowVisualEndpoint,
+                );
+                traces.push({
+                    x: rssSeries.x,
+                    y: rssSeries.y,
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: `${def.processName} PID:${def.pid} (RSS)`,
+                    uid: `${uidBase}:rss`,
+                    line: { color: def.color, width: 3 },
+                    connectgaps: false,
+                });
+                traces.push({
+                    x: heapSeries.x,
+                    y: heapSeries.y,
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: `${def.processName} PID:${def.pid} (Heap)`,
+                    uid: `${uidBase}:heap`,
+                    line: { color: def.color, width: 2, dash: 'dash' },
+                    connectgaps: false,
+                });
+                if (allowVisualEndpoint) {
+                    appendUnobservedConnectors(
+                        traces,
+                        chartTimestamps,
+                        def.rss,
+                        def.firstRss,
+                        sampleIndex,
+                        absoluteMs,
+                        {
+                            uid: `${uidBase}:rss`,
+                            color: def.color,
+                            width: 2,
+                            name: `${def.processName} PID:${def.pid} (unobserved)`,
+                            legendOnce: !unobservedLegendUsed,
+                        },
+                    );
+                    if (!unobservedLegendUsed) {
+                        const gaps = BpwChartViewport.findGaps(chartTimestamps, memoryGapLimitMs);
+                        if (gaps.some((gap) => gap.lowerIndex >= def.firstRss && gap.lowerIndex <= sampleIndex && absoluteMs > gap.start)) {
+                            unobservedLegendUsed = true;
+                        }
+                    }
+                }
+            });
+            if (firstTotalRssIndex !== -1) {
+                const totalSeries = revealMetricSeries(
+                    chartTimestamps,
+                    chartTotalSeries.totalRss,
+                    firstTotalRssIndex,
+                    sampleIndex,
+                    absoluteMs,
+                    allowVisualEndpoint,
+                );
+                traces.push({
+                    x: totalSeries.x,
+                    y: totalSeries.y,
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: 'Total RSS Memory',
+                    uid: `${runId}:total-rss`,
+                    line: { color: '#2c3e50', width: 4 },
+                    connectgaps: false,
+                    customdata: sampleIndex >= firstTotalRssIndex
+                        ? chartTotalSeries.distribution.slice(firstTotalRssIndex, sampleIndex + 1)
+                        : [],
+                    hovertemplate: 'Total RSS: %{y} MB<br>%{customdata}<extra></extra>',
+                });
+                if (allowVisualEndpoint) {
+                    appendUnobservedConnectors(
+                        traces,
+                        chartTimestamps,
+                        chartTotalSeries.totalRss,
+                        firstTotalRssIndex,
+                        sampleIndex,
+                        absoluteMs,
+                        {
+                            uid: `${runId}:total-rss`,
+                            color: '#7f8c8d',
+                            width: 3,
+                            name: 'Total RSS (unobserved)',
+                            legendOnce: !unobservedLegendUsed,
+                        },
+                    );
+                }
+            }
+            return applyVisibilityToTraces('chart', traces);
+        }
+
+        function buildGCTraces(frameIndex) {
+            const frameTimestamps = chartTimestamps.slice(0, frameIndex + 1).map(t => new Date(t));
+            const traces = [];
+            processKeys.forEach(processKey => {
+                const def = chartSeries[processKey];
+                if (def.firstGc === -1 || frameIndex < def.firstGc) return;
+                traces.push({
+                    x: frameTimestamps,
+                    y: def.gc.slice(0, frameIndex + 1),
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    name: `${def.processName} PID:${def.pid}`,
+                    line: { color: def.color, width: 3 },
+                    marker: { size: 6, color: def.color },
+                    connectgaps: false
+                });
+            });
+            return applyVisibilityToTraces('gc-chart', traces);
+        }
+
+        
+
+        function setupReplayPanel(options) {
+            const { panelKey, chartId, controlsId, buildTraces, layoutGetter, configGetter, onLegendUpdate, smoothMemory } = options;
+            const controls = document.getElementById(controlsId);
+            const chart = document.getElementById(chartId);
+            if (!controls || !chart || !window.BpwPlaybackClock) return;
+
+            if (!window.replayStops) {
+                window.replayStops = {};
+            }
+            if (window.replayStops[panelKey]) {
+                window.replayStops[panelKey]();
+            }
+
+            const timeline = document.getElementById(`${panelKey}-replay-timeline`);
+            const meta = document.getElementById(`${panelKey}-replay-meta`);
+            const timeLabel = document.getElementById(`${panelKey}-replay-time-label`);
+            const playBtn = document.getElementById(`btn-${panelKey}-replay-play`);
+            const pauseBtn = document.getElementById(`btn-${panelKey}-replay-pause`);
+            const resetBtn = document.getElementById(`btn-${panelKey}-replay-reset`);
+            const speedSelect = document.getElementById(`${panelKey}-replay-speed`);
+            const viewportSelect = document.getElementById(`${panelKey}-replay-viewport`);
+            const useSmoothMemory = smoothMemory === true && window.BpwChartViewport;
+            const followWindowMs = Math.max(
+                30_000,
+                Math.round((memoryXDomain.max - memoryXDomain.min) * 0.28),
+            );
+
+            let latestRender = Promise.resolve();
+            let currentFrame = Math.max(0, chartTimestamps.length - 1);
+            let viewportMode = viewportSelect && viewportSelect.value === 'follow' ? 'follow' : 'full';
+            let playing = false;
+
+            function syncPlayButton() {
+                if (!playBtn) return;
+                playBtn.textContent = playing ? 'Pause' : 'Play';
+                playBtn.setAttribute('aria-pressed', playing ? 'true' : 'false');
+                playBtn.classList.toggle('secondary', playing);
+            }
+
+            function fixedLayout(playheadAbsoluteMs) {
+                const base = layoutGetter();
+                if (!useSmoothMemory) return base;
+                const xDomain = BpwChartViewport.followDomain(
+                    memoryXDomain,
+                    playheadAbsoluteMs,
+                    followWindowMs,
+                    viewportMode,
+                );
+                let layout = BpwChartViewport.applyFixedRanges(base, {
+                    x: {
+                        min: new Date(xDomain.min),
+                        max: new Date(xDomain.max),
+                    },
+                    y: memoryYDomain,
+                    uirevision: `${memoryUirevision}:${viewportMode}`,
+                });
+                layout = BpwChartViewport.applyPlayheadShape(layout, playheadAbsoluteMs);
+                return layout;
+            }
+
+            function updateUi(position) {
+                const sampleIndex = Math.max(0, position.sampleIndex);
+                currentFrame = sampleIndex;
+                timeline.max = String(Math.max(0, Math.round(position.durationMs)));
+                timeline.value = String(Math.round(position.cursorMs));
+                const elapsedSec = Math.round(position.cursorMs / 1000);
+                const sampleLabel = position.sampleCount
+                    ? `Sample ${sampleIndex + 1} / ${position.sampleCount}`
+                    : 'Sample 0 / 0';
+                meta.textContent = `Elapsed ${elapsedSec}s · ${sampleLabel}`;
+                const absolute = chartTimestamps[0] + position.cursorMs;
+                const recordedElapsed = elapsedByTimestamp.get(chartTimestamps[sampleIndex]);
+                timeLabel.textContent = `Playhead: ${elapsedSec}s | ${new Date(absolute).toLocaleTimeString()}${
+                    recordedElapsed !== undefined ? ` | sample ${recordedElapsed}s` : ''
+                }`;
+                syncPlayButton();
+            }
+
+            function renderAt(position) {
+                const allowVisual = useSmoothMemory && !position.reducedMotion;
+                const traces = useSmoothMemory
+                    ? buildTraces(position.sampleIndex, position.absoluteMs, allowVisual)
+                    : buildTraces(position.sampleIndex);
+                updateUi(position);
+                latestRender = Plotly.react(
+                    chartId,
+                    traces,
+                    useSmoothMemory ? fixedLayout(position.absoluteMs) : fixedLayout(),
+                    configGetter(),
+                );
+                return latestRender;
+            }
+
+            const coalescer = useSmoothMemory
+                ? BpwChartViewport.createRenderCoalescer({
+                    minIntervalMs: 70,
+                    render: (position) => renderAt(position),
+                })
+                : null;
+
+            const clock = BpwPlaybackClock.createPlaybackClock({
+                timestamps: chartTimestamps,
+                speed: Number(speedSelect.value) || 15,
+                onPosition: (position) => {
+                    if (coalescer) coalescer.enqueue(position);
+                    else renderAt(position);
+                },
+                onStateChange: (state) => {
+                    playing = Boolean(state.playing);
+                    syncPlayButton();
+                },
+            });
+
+            function pause() {
+                clock.pause();
+            }
+
+            function play() {
+                clock.play();
+            }
+
+            function togglePlay() {
+                if (playing) pause();
+                else play();
+            }
+
+            function renderFrame(frameIndex) {
+                const idx = Math.max(0, Math.min(frameIndex, chartTimestamps.length - 1));
+                clock.seekTo(chartTimestamps[idx] - chartTimestamps[0]);
+                return latestRender;
+            }
+
+            window.replayStops[panelKey] = () => {
+                pause();
+                coalescer?.cancel();
+                clock.destroy();
+            };
+
+            if (playBtn) {
+                playBtn.addEventListener('click', togglePlay);
+            }
+            if (pauseBtn) {
+                pauseBtn.addEventListener('click', pause);
+            }
+            resetBtn.addEventListener('click', () => {
+                pause();
+                clock.reset();
+            });
+            timeline.addEventListener('input', () => {
+                pause();
+                clock.seekTo(Number(timeline.value));
+            });
+            speedSelect.addEventListener('change', () => {
+                const parsed = Number(speedSelect.value);
+                if (!Number.isNaN(parsed) && parsed > 0) clock.setSpeed(parsed);
+            });
+            if (viewportSelect) {
+                viewportSelect.addEventListener('change', () => {
+                    viewportMode = viewportSelect.value === 'follow' ? 'follow' : 'full';
+                    clock.seekTo(Number(timeline.value));
+                });
+            }
+
+            syncPlayButton();
+            clock.seekTo(Math.max(0, chartTimestamps[chartTimestamps.length - 1] - chartTimestamps[0]));
+            latestRender.then(() => {
+                attachLegendVisibilityHandlers(chartId, onLegendUpdate);
+            });
+
+            if (window.BpwExperimentLayout) {
+                BpwExperimentLayout.registerReplayPanel({
+                    pause,
+                    renderFrame,
+                    getMaxFrame: () => chartTimestamps.length - 1
+                });
+            }
+        }
+
+        function setupCounterReplayPanel(options) {
+            const { panelKey, controlsId, charts } = options;
+            const controls = document.getElementById(controlsId);
+            const availableCharts = charts.filter(chart => document.getElementById(chart.id));
+            if (!controls || !availableCharts.length) return;
+
+            if (!window.replayStops) {
+                window.replayStops = {};
+            }
+            if (window.replayStops[panelKey]) {
+                window.replayStops[panelKey]();
+            }
+
+            const timeline = document.getElementById(`${panelKey}-replay-timeline`);
+            const meta = document.getElementById(`${panelKey}-replay-meta`);
+            const timeLabel = document.getElementById(`${panelKey}-replay-time-label`);
+            const playBtn = document.getElementById(`btn-${panelKey}-replay-play`);
+            const pauseBtn = document.getElementById(`btn-${panelKey}-replay-pause`);
+            const resetBtn = document.getElementById(`btn-${panelKey}-replay-reset`);
+            const speedSelect = document.getElementById(`${panelKey}-replay-speed`);
+            if (!timeline || !meta || !timeLabel || !playBtn || !pauseBtn || !resetBtn || !speedSelect) return;
+
+            let isPlaying = false;
+            let playTimer = null;
+            let currentFrame = 0;
+            let speedMultiplier = Number(speedSelect.value) || 15;
+
+            timeline.max = String(Math.max(0, chartTimestamps.length - 1));
+
+            function updateUi(frameIndex) {
+                timeline.value = String(frameIndex);
+                meta.textContent = `Frame ${frameIndex + 1} / ${chartTimestamps.length}`;
+                const timestamp = chartTimestamps[frameIndex];
+                const elapsed = elapsedByTimestamp.get(timestamp);
+                const timeText = new Date(timestamp).toLocaleTimeString();
+                timeLabel.textContent = `Elapsed: ${elapsed}s | ${timeText}`;
+            }
+
+            function renderFrame(frameIndex) {
+                currentFrame = frameIndex;
+                updateUi(frameIndex);
+                const tasks = availableCharts.map(chart => {
+                    const traces = buildMetricTraces(
+                        counterReplayData,
+                        chartTimestamps,
+                        frameIndex,
+                        chart.metric,
+                        {},
+                        counterElapsedSeconds
+                    );
+                    const layout = CompareShared.getCounterLayout(chart.title, chart.yTitle);
+                    layout.xaxis = { ...layout.xaxis, title: 'Elapsed (s)', tickformat: null, type: 'linear' };
+                    return Plotly.react(
+                        chart.id,
+                        applyVisibilityToTraces(chart.id, traces),
+                        layout,
+                        CompareShared.getCounterConfig(`build-monitor-${chart.metric}-${runId}`)
+                    );
+                });
+                return Promise.all(tasks);
+            }
+
+            function scheduleNext() {
+                if (!isPlaying) return;
+                if (currentFrame >= chartTimestamps.length - 1) {
+                    isPlaying = false;
+                    return;
+                }
+                const nextDelay = Math.max(
+                    16,
+                    (chartTimestamps[currentFrame + 1] - chartTimestamps[currentFrame]) / speedMultiplier
+                );
+                playTimer = setTimeout(() => {
+                    renderFrame(currentFrame + 1).then(scheduleNext);
+                }, nextDelay);
+            }
+
+            function play() {
+                if (isPlaying) return;
+                isPlaying = true;
+                scheduleNext();
+            }
+
+            function pause() {
+                isPlaying = false;
+                if (playTimer) {
+                    clearTimeout(playTimer);
+                    playTimer = null;
+                }
+            }
+
+            window.replayStops[panelKey] = pause;
+
+            playBtn.addEventListener('click', play);
+            pauseBtn.addEventListener('click', pause);
+            resetBtn.addEventListener('click', () => {
+                pause();
+                renderFrame(0);
+            });
+            timeline.addEventListener('input', () => {
+                pause();
+                renderFrame(Number(timeline.value));
+            });
+            speedSelect.addEventListener('change', () => {
+                const parsed = Number(speedSelect.value);
+                if (!Number.isNaN(parsed) && parsed > 0) {
+                    speedMultiplier = parsed;
+                }
+            });
+
+            const initialFrame = Math.max(0, chartTimestamps.length - 1);
+            renderFrame(initialFrame).then(() => {
+                availableCharts.forEach(chart => attachLegendVisibilityHandlers(chart.id));
+            });
+
+            if (window.BpwExperimentLayout) {
+                BpwExperimentLayout.registerReplayPanel({
+                    pause,
+                    renderFrame,
+                    getMaxFrame: () => chartTimestamps.length - 1
+                });
+            }
+        }
+
+        setupReplayPanel({
+            panelKey: 'rss',
+            chartId: 'chart',
+            controlsId: 'rss-replay-controls',
+            buildTraces: buildMemoryTraces,
+            layoutGetter: getMemoryLayout,
+            configGetter: getMemoryConfig,
+            onLegendUpdate: updateMainChartFilterCheckboxes,
+            smoothMemory: true
+        });
+        setupReplayPanel({
+            panelKey: 'gc',
+            chartId: 'gc-chart',
+            controlsId: 'gc-replay-controls',
+            buildTraces: buildGCTraces,
+            layoutGetter: getGcLayout,
+            configGetter: getGcConfig
+        });
+        setupCounterReplayPanel({
+            panelKey: 'jit',
+            controlsId: 'jit-replay-controls',
+            charts: [
+                { id: 'jit-time-chart', metric: 'jitTime', title: 'Cumulative JIT Compilation Time', yTitle: 'Compilation Time (s)' },
+                { id: 'jit-rate-chart', metric: 'jitRate', title: 'JIT Compilation Activity', yTitle: 'Compiled Methods / s' }
+            ]
+        });
+        setupCounterReplayPanel({
+            panelKey: 'classes',
+            controlsId: 'classes-replay-controls',
+            charts: [
+                { id: 'classes-loaded-chart', metric: 'classesLoaded', title: 'Cumulative Classes Loaded', yTitle: 'Classes Loaded' },
+                { id: 'class-rate-chart', metric: 'classRate', title: 'Class Loading Activity', yTitle: 'Classes / s' }
+            ]
+        });
+
+        if (window.BpwChartStudio) {
+            BpwChartStudio.init({
+                samples,
+                runId,
+                useElapsedAxis: true,
+                initialFrame: Math.max(0, chartTimestamps.length - 1)
+            });
+        }
+        if (window.BpwBuildStory) {
+            BpwBuildStory.init({
+                samples,
+                runId,
+                useElapsedAxis: true,
+                initialFrame: Math.max(0, chartTimestamps.length - 1)
+            });
+        }
+
+        if (window.BpwExperimentLayout) {
+            BpwExperimentLayout.initUnifiedReplay({
+                timestamps: chartTimestamps,
+                elapsedByTimestamp
+            });
+        }
+    }
+
+    function setupCompareControls(samples) {
+        const input = document.getElementById('compare-file-input');
+        const clearBtn = document.getElementById('compare-clear');
+        const fileName = document.getElementById('compare-file-name');
+        const compareSection = document.getElementById('compare-section');
+        if (!input || !clearBtn || !fileName) return;
+
+        input.addEventListener('change', () => {
+            const file = input.files && input.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                try {
+                    const text = String(reader.result || '');
+                    const parsed = CompareShared.parseJsonText(text);
+                    if (!parsed.samples || !parsed.samples.length) {
+                        throw new Error('JSON missing samples');
+                    }
+                    window.compareSamples = parsed.samples || [];
+                    window.compareProcessSummary = parsed.processSummary || null;
+                    fileName.textContent = file.name;
+                    clearBtn.style.display = 'inline-flex';
+                    if (compareSection) compareSection.style.display = 'block';
+                    renderCompareSection(samples);
+                    initReplay(samples);
+                } catch (err) {
+                    console.error('Failed to parse comparison JSON', err);
+                    window.compareSamples = [];
+                    window.compareProcessSummary = null;
+                    fileName.textContent = 'Failed to parse JSON';
+                }
+            };
+            reader.readAsText(file);
+        });
+
+        clearBtn.addEventListener('click', () => {
+            window.compareSamples = [];
+            window.compareProcessSummary = null;
+            fileName.textContent = 'No file selected';
+            clearBtn.style.display = 'none';
+            input.value = '';
+            if (compareSection) compareSection.style.display = 'none';
+            if (compareSection) compareSection.innerHTML = '';
+            initReplay(samples);
+        });
+    }
+
+
+    function renderCompareSection(baseSamples) {
+        return CompareShared.renderCompareSection({
+            baseSamples,
+            compareSamplesRaw: Array.isArray(window.compareSamples) ? window.compareSamples : [],
+            compareSectionId: 'compare-section',
+            compareModeStorageKey: 'compareMode',
+            baseLabel: 'Current Run',
+            compareLabel: 'Comparison Run',
+            headerTitle: 'Comparison',
+            headerSubtitle: 'Replay both runs with a shared timeline',
+            memoryFilenameBase: `build-monitor-${runId}`,
+            gcFilenameBase: `build-monitor-gc-${runId}`,
+            baseProcessSummary: window.currentProcessSummary || null,
+            compareProcessSummary: window.compareProcessSummary || null
+        });
+    }
+
+    function getGcLayout() {
+        return CompareShared.getGcLayout();
+    }
+
+    function getGcConfig() {
+        return CompareShared.getGcConfig(`build-monitor-gc-${runId}`);
+    }
+
+    function ensureChartResizeHandler() {
+        if (window.BpwRunCharts) return BpwRunCharts.ensureChartResizeHandler();
+    }
+
+    function renderChart(samples, predictionCheckpoints = [], options = {}) {
+        // Process data for chart - group by both Name and PID to handle multiple processes with same name
+        const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
+        // Create unique process keys (Name + PID combination)
+        const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
+        
+        const traces = [];
+        const colorMap = buildColorMap(processKeys);
+        
+        // Create traces for each unique process (Name + PID combination)
+        processKeys.forEach((processKey, index) => {
+            const color = colorMap[processKey];
+            const [processName, pid] = processKey.split('|');
+            
+            // RSS data - use null for timestamps where process doesn't exist yet
+            const rssData = timestamps.map(timestamp => {
+                const sample = samples
+                    .filter(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp)
+                    [0];
+                return sample ? sample.RSS : null;  // null means "no data" - line won't appear
+            });
+            
+            traces.push({
+                x: timestamps.map(t => new Date(t)),
+                y: rssData,
+                type: 'scatter',
+                mode: 'lines',
+                name: `${processName} PID:${pid} (RSS)`,
+                line: { color: color, width: 3 },
+                connectgaps: false  // Don't connect across null values
+            });
+            
+            // Heap data - use null for timestamps where process doesn't exist yet
+            const heapData = timestamps.map(timestamp => {
+                const sample = samples
+                    .filter(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp)
+                    [0];
+                return sample ? sample.HeapUsed : null;  // null means "no data" - line won't appear
+            });
+            
+            traces.push({
+                x: timestamps.map(t => new Date(t)),
+                y: heapData,
+                type: 'scatter',
+                mode: 'lines',
+                name: `${processName} PID:${pid} (Heap)`,
+                line: { color: color, width: 2, dash: 'dash' },
+                connectgaps: false  // Don't connect across null values
+            });
+        });
+        
+        const totalSeries = buildTotalRssSeries(samples, timestamps, processKeys);
+        let chartTimestamps = timestamps;
+        let chartTraces = traces;
+        if (totalSeries.buildEndIndex >= 0 && totalSeries.buildEndIndex < timestamps.length) {
+            const end = totalSeries.buildEndIndex;
+            chartTimestamps = timestamps.slice(0, end);
+            chartTraces = traces.map(trace => ({
+                ...trace,
+                x: trace.x.slice(0, end),
+                y: trace.y.slice(0, end),
+                customdata: trace.customdata ? trace.customdata.slice(0, end) : undefined
+            }));
+        }
+        
+        chartTraces.push({
+            x: chartTimestamps.map(t => new Date(t)),
+            y: totalSeries.buildEndIndex >= 0 && totalSeries.buildEndIndex < timestamps.length
+                ? totalSeries.totalRss.slice(0, totalSeries.buildEndIndex)
+                : totalSeries.totalRss,
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Total RSS Memory',
+            line: { color: '#2c3e50', width: 4 },
+            connectgaps: false,  // Don't connect across null values
+            customdata: totalSeries.buildEndIndex >= 0 && totalSeries.buildEndIndex < timestamps.length
+                ? totalSeries.distribution.slice(0, totalSeries.buildEndIndex)
+                : totalSeries.distribution,
+            hovertemplate: 'Total RSS: %{y} MB<br>%{customdata}<extra></extra>'
+        });
+
+        // Detect if mobile
+        const isMobile = window.innerWidth < 768;
+
+        const predictionMarkers = BpwPredictionView.buildMarkerData(predictionCheckpoints, chartTimestamps);
+        chartTraces.push(...predictionMarkers.traces);
+        const memoryValues = chartTraces.flatMap((trace) => (trace.y || []).filter((value) => Number.isFinite(value)));
+        liveYDomain = BpwChartViewport.growOnlyDomain(liveYDomain, memoryValues, options.live ? 1.20 : 1.10);
+        const baseMemoryLayout = getMemoryLayout();
+        let layout = {
+            ...baseMemoryLayout,
+            uirevision: `run:${runId}:panel:memory`,
+            shapes: [
+                ...(baseMemoryLayout.shapes || []),
+                ...predictionMarkers.shapes
+            ],
+            annotations: [
+                ...(baseMemoryLayout.annotations || []),
+                ...predictionMarkers.annotations
+            ],
+            margin: {
+                ...baseMemoryLayout.margin,
+                t: Math.max(Number(baseMemoryLayout.margin?.t) || 0, predictionMarkers.annotations.length ? 56 : 0)
+            },
+            yaxis2: {
+                overlaying: 'y',
+                side: 'right',
+                range: [0, 1],
+                visible: false,
+                showgrid: false,
+                zeroline: false,
+                fixedrange: true
+            }
+        };
+        if (options.live) {
+            const xDomain = BpwChartViewport.timeDomain(chartTimestamps);
+            layout = BpwChartViewport.applyFixedRanges(layout, {
+                x: { min: new Date(xDomain.min), max: new Date(xDomain.max) },
+                y: liveYDomain,
+                uirevision: `run:${runId}:panel:memory`,
+            });
+        }
+        const config = getMemoryConfig();
+        const preparedTraces = applyVisibilityToTraces('chart', chartTraces);
+        const chartNode = document.getElementById('chart');
+        const alreadyMounted = !!(chartNode && chartNode.data && chartNode.data.length);
+        if (options.live && alreadyMounted) {
+            Plotly.react('chart', preparedTraces, layout, config);
+        } else {
+            Plotly.newPlot('chart', preparedTraces, layout, config);
+        }
+        attachLegendVisibilityHandlers('chart', updateMainChartFilterCheckboxes);
+        attachPredictionMarkerInteractions('chart');
+        ensureChartResizeHandler();
+    }
+
+    function renderJvmCounterCharts(samples, options = {}) {
+        if (!hasJITData(samples) && !hasClassLoadingData(samples)) return;
+        const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
+        const data = buildReplayData(samples, timestamps);
+        const frame = Math.max(0, data.timestamps.length - 1);
+        const charts = [
+            ['jit-time-chart', 'jitTime', 'Cumulative JIT Compilation Time', 'Compilation Time (s)'],
+            ['jit-rate-chart', 'jitRate', 'JIT Compilation Activity', 'Compiled Methods / s'],
+            ['classes-loaded-chart', 'classesLoaded', 'Cumulative Classes Loaded', 'Classes Loaded'],
+            ['class-rate-chart', 'classRate', 'Class Loading Activity', 'Classes / s']
+        ];
+        charts.forEach(([id, metric, title, yTitle]) => {
+            if (!document.getElementById(id)) return;
+            const traces = buildMetricTraces(data, data.timestamps, frame, metric, {});
+            const layout = {
+                ...CompareShared.getCounterLayout(title, yTitle),
+                uirevision: `run:${runId}:panel:${metric}`,
+            };
+            const config = CompareShared.getCounterConfig(`build-monitor-${metric}-${runId}`);
+            const node = document.getElementById(id);
+            if (options.live && node?.data?.length) {
+                Plotly.react(id, applyVisibilityToTraces(id, traces), layout, config);
+            } else {
+                Plotly.newPlot(id, applyVisibilityToTraces(id, traces), layout, config);
+            }
+            attachLegendVisibilityHandlers(id);
+        });
+        ensureChartResizeHandler();
+        if (window.BpwExperimentLayout) {
+            BpwExperimentLayout.resizeCharts();
+        }
+    }
+
+    async function downloadChart(format) {
+        try {
+            const chart = document.getElementById('chart');
+            const isMobile = window.innerWidth < 768;
+            const filename = `build-monitor-${runId}`;
+            const opts = {
+                format: format,
+                filename: filename,
+                height: isMobile ? 400 : 500,
+                width: isMobile ? 800 : 1000,
+                scale: 2
+            };
+            const url = await Plotly.toImage(chart, opts);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${filename}.${format}`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        } catch (e) {
+            console.error('Failed to export chart:', e);
+        }
+    }
+
+    async function downloadGCChart(format) {
+        try {
+            const chart = document.getElementById('gc-chart');
+            const isMobile = window.innerWidth < 768;
+            const filename = `build-monitor-gc-${runId}`;
+            const opts = {
+                format: format,
+                filename: filename,
+                height: isMobile ? 400 : 500,
+                width: isMobile ? 800 : 1000,
+                scale: 2
+            };
+            const url = await Plotly.toImage(chart, opts);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${filename}.${format}`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        } catch (e) {
+            console.error('Failed to export GC chart:', e);
+        }
+    }
+
+    async function downloadRuntimeChart(chartId, metric, format) {
+        try {
+            const chart = document.getElementById(chartId);
+            const isMobile = window.innerWidth < 768;
+            const filename = `build-monitor-${metric}-${runId}`;
+            const opts = {
+                format: format,
+                filename: filename,
+                height: isMobile ? 400 : 500,
+                width: isMobile ? 800 : 1000,
+                scale: 2
+            };
+            const url = await Plotly.toImage(chart, opts);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${filename}.${format}`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        } catch (e) {
+            console.error(`Failed to export ${metric} chart:`, e);
+        }
+    }
+
+    async
+
+    function downloadJson(runId) {
+        try {
+            const data = window.currentRunData || {};
+            const samples = Array.isArray(data.samples) ? data.samples : [];
+            const processInfo = data.process_info || {};
+            const processSummary = CompareShared.buildProcessSummary(samples, processInfo);
+            const payload = CompareShared.compactReportData({
+                ...data,
+                process_summary: processSummary
+            });
+            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `build-monitor-${runId}.json`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+        } catch (e) {
+            console.error('Failed to download JSON:', e);
+        }
+    }
+
+    function downloadCsv(runId) {
+        try {
+            const samples = window.currentSamples || [];
+            if (!samples.length) return;
+            const hasGC = hasGCData(samples);
+            const header = ['timestamp','elapsed_time','pid','name','rss_mb','heap_used_mb','heap_capacity_mb','gc_time_s','jit_compiled_methods','jit_failed_compilations','jit_invalidated_compilations','jit_compilation_time_ms','classes_loaded','classes_unloaded','class_load_time_ms'];
+            const rows = samples.map(s => {
+                const baseRow = [
+                    s.Timestamp,
+                    s.ElapsedTime,
+                    s.PID,
+                    s.Name,
+                    s.RSS,
+                    s.HeapUsed,
+                    s.HeapCap
+                ];
+                baseRow.push(s.GCTime !== null && s.GCTime !== undefined ? (s.GCTime / 1000).toFixed(3) : null);
+                baseRow.push(s.JITCompiledMethods, s.JITFailedCompilations, s.JITInvalidatedCompilations, s.JITCompilationTimeMs, s.ClassesLoaded, s.ClassesUnloaded, s.ClassLoadTimeMs);
+                return baseRow;
+            });
+            const csv = [header.join(','), ...rows.map(r => r.map(escapeCsv).join(','))].join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `build-monitor-${runId}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+        } catch (e) {
+            console.error('Failed to download CSV:', e);
+        }
+    }
+
+    function formatDur(seconds) {
+        const value = Number(seconds) || 0;
+        if (value < 60) return `${value}s`;
+        const minutes = Math.floor(value / 60);
+        const remainder = Math.round(value % 60);
+        return remainder ? `${minutes}m ${remainder}s` : `${minutes}m`;
+    }
+
+    function escapeHtml(str) {
+        if (str === undefined || str === null) return '';
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    function escapeCsv(value) {
+        if (value === undefined || value === null) return '';
+        const str = String(value);
+        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+            return '"' + str.replace(/"/g, '""') + '"';
+        }
+        return str;
+    }
+
+    function getMemoryLayout() {
+        return CompareShared.getMemoryLayout();
+    }
+
+    function getMemoryConfig() {
+        return CompareShared.getMemoryConfig(`build-monitor-${runId}`);
+    }
+
+    function showUnavailableRun(reason) {
+        const unavailableCopy = reason === 'not-found'
+            ? {
+                title: 'Run Unavailable',
+                message: 'This run could not be found. The link may be incorrect, or the run may have expired.'
+            }
+            : reason === 'server'
+                ? {
+                    title: 'Run Temporarily Unavailable',
+                    message: 'The service could not load this run right now. Please try again.'
+                }
+                : {
+                    title: 'Unable to Connect',
+                    message: 'Check your connection, then try loading this run again.'
+                };
+
+        document.getElementById('content').innerHTML = `
+            <div class="error">
+                <h2>${unavailableCopy.title}</h2>
+                <p>${unavailableCopy.message}</p>
+                <div style="display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;">
+                    <button type="button" id="retry-run-load">Retry</button>
+                    <a href="https://process-watcher.web.app" style="color: #2563eb; text-decoration: none; align-self: center;">Back to Home</a>
+                </div>
+            </div>
+        `;
+        setFrontendLinks();
+        document.getElementById('retry-run-load').addEventListener('click', () => loadRunData(runId));
+    }
+
+})();
+

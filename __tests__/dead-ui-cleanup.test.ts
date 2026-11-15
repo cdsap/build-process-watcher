@@ -4,12 +4,13 @@ import * as path from 'path';
 const publicDir = path.join(__dirname, '../frontend/public');
 
 describe('dead compare/ratio UI cleanup', () => {
-  const pages = [
+  const sources = [
     path.join(publicDir, 'runs/[runId].html'),
     path.join(publicDir, 'runs/demo.html'),
+    path.join(publicDir, 'run-dashboard.js'),
   ];
 
-  it.each(pages)('removes unreachable legacy compare and orphaned ratio helpers: %s', (page) => {
+  it.each(sources)('removes unreachable legacy compare and orphaned ratio helpers: %s', (page) => {
     const source = fs.readFileSync(page, 'utf8');
     expect(source).not.toContain('function renderCompareSectionLegacy');
     expect(source).not.toContain('function renderRssHeapRatioChart');
@@ -17,6 +18,10 @@ describe('dead compare/ratio UI cleanup', () => {
     expect(source).not.toContain('function downloadRssHeapRatioChart');
     expect(source).not.toContain('function buildRatioTraces');
     expect(source).not.toContain('ratioFilenameBase');
+  });
+
+  it('keeps the shared compare mount path', () => {
+    const source = fs.readFileSync(path.join(publicDir, 'run-dashboard.js'), 'utf8');
     expect(source).toContain('CompareShared.renderCompareSection');
   });
 

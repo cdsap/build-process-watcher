@@ -3,7 +3,7 @@ import path from 'path';
 
 describe('completed-run replay controls', () => {
   const source = fs.readFileSync(
-    path.join(__dirname, '../frontend/public/runs/[runId].html'),
+    path.join(__dirname, '../frontend/public/run-dashboard.js'),
     'utf8'
   );
 
@@ -26,8 +26,11 @@ describe('remote run dashboard panels', () => {
   test.each([
     '../frontend/public/runs/[runId].html',
     '../frontend/public/runs/demo.html',
-  ])('%s omits the Heap/RSS ratio panel', relativePath => {
-    const source = fs.readFileSync(path.join(__dirname, relativePath), 'utf8');
+  ])('%s omits the Heap/RSS ratio panel', _relativePath => {
+    const source = fs.readFileSync(
+      path.join(__dirname, '../frontend/public/run-dashboard.js'),
+      'utf8',
+    );
 
     expect(source).not.toContain('data-bpw-panel="ratio"');
     expect(source).not.toContain('id="rss-heap-chart"');
@@ -39,7 +42,10 @@ describe('remote run dashboard metric tools', () => {
     '../frontend/public/runs/[runId].html',
     '../frontend/public/runs/demo.html',
   ])('%s gives all four metric groups downloads followed by replay', relativePath => {
-    const source = fs.readFileSync(path.join(__dirname, relativePath), 'utf8');
+    const source = fs.readFileSync(
+      path.join(__dirname, '../frontend/public/run-dashboard.js'),
+      'utf8',
+    );
     const groups = [
       ['rss', 'btn-download-png', 'btn-download-svg'],
       ['gc', 'btn-download-gc-png', 'btn-download-gc-svg'],
@@ -70,7 +76,9 @@ describe('runtime metric panel consistency', () => {
     '../frontend/public/runs/demo.html',
     '../frontend/public/replay.js',
   ])('%s gives every JIT and class loading chart its own chart container', relativePath => {
-    const source = fs.readFileSync(path.join(__dirname, relativePath), 'utf8');
+    const source = relativePath.endsWith('replay.js')
+      ? fs.readFileSync(path.join(__dirname, relativePath), 'utf8')
+      : fs.readFileSync(path.join(__dirname, '../frontend/public/run-dashboard.js'), 'utf8');
     const chartIds = relativePath.endsWith('replay.js')
       ? ['single-jit-time', 'single-jit-rate', 'single-classes-loaded', 'single-class-rate']
       : ['jit-time-chart', 'jit-rate-chart', 'classes-loaded-chart', 'class-rate-chart'];

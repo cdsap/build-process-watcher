@@ -8,14 +8,16 @@ const demoData = path.join(publicDir, 'demo-run.json');
 describe('demo dashboard', () => {
   it('uses the current run dashboard with the checked-in real run fixture', () => {
     const html = fs.readFileSync(demoHtml, 'utf8');
+    const dashboard = fs.readFileSync(path.join(publicDir, 'run-dashboard.js'), 'utf8');
+    const source = `${html}\n${dashboard}`;
 
-    expect(html).toContain("fetch('/demo-run.json')");
-    expect(html).toContain('Cumulative JIT Compilation Time');
-    expect(html).toContain('Class Loading Activity');
+    expect(html).toContain("dataUrl: '/demo-run.json'");
+    expect(source).toContain('Cumulative JIT Compilation Time');
+    expect(source).toContain('Class Loading Activity');
     expect(html).toContain('<script src="/prediction-view.js"></script>');
-    expect(html).toContain('prediction_checkpoints');
-    expect(html).toContain('predictionTabHtml');
-    expect(html).toContain('data-run-tab="predictions"');
+    expect(source).toContain('prediction_checkpoints');
+    expect(source).toContain('predictionTabHtml');
+    expect(source).toContain('data-run-tab="predictions"');
     expect(html).not.toContain('/runs/${runId}');
 
     const data = JSON.parse(fs.readFileSync(demoData, 'utf8'));

@@ -3,7 +3,7 @@ import * as path from 'path';
 
 describe('run dashboard unavailable state', () => {
   const source = fs.readFileSync(
-    path.join(__dirname, '../frontend/public/runs/[runId].html'),
+    path.join(__dirname, '../frontend/public/run-dashboard.js'),
     'utf8',
   );
 

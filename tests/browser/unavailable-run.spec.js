@@ -7,23 +7,49 @@ const runPage = fs.readFileSync(
   'utf8',
 );
 
+function contentTypeFor(pathname) {
+  if (pathname.endsWith('.css')) return 'text/css';
+  if (pathname.endsWith('.js')) return 'text/javascript';
+  if (pathname.endsWith('.json')) return 'application/json';
+  if (pathname.endsWith('.svg')) return 'image/svg+xml';
+  return 'text/plain';
+}
+
 async function serveRunPage(page) {
   await page.route('https://cdn.plot.ly/**', route => route.fulfill({
     contentType: 'text/javascript',
     body: '',
   }));
-  await page.route('https://frontend.test/**', route => {
+  await page.route('https://frontend.test/**', async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     if (pathname.startsWith('/runs/')) {
       return route.fulfill({ contentType: 'text/html', body: runPage });
+    }
+    const assetPath = path.join(__dirname, '../../frontend/public', pathname.replace(/^\//, ''));
+    if (fs.existsSync(assetPath) && fs.statSync(assetPath).isFile()) {
+      return route.fulfill({
+        contentType: contentTypeFor(pathname),
+        body: fs.readFileSync(assetPath, 'utf8'),
+      });
     }
     return route.fulfill({ contentType: 'text/javascript', body: '' });
   });
 }
 
+function isBackendRunRequest(url, runId) {
+  const parsed = new URL(url);
+  // CI rewrites config.js to test-backend.example.com before a second browser run.
+  // Match any backend host, but never the frontend page URL itself.
+  return parsed.hostname !== 'frontend.test'
+    && parsed.pathname.replace(/\/$/, '') === `/runs/${runId}`;
+}
+
 test('shows actions and user-oriented copy for a missing run', async ({ page }) => {
   await serveRunPage(page);
-  await page.route('https://build-process-watcher-backend-685615422311.us-central1.run.app/runs/frontend-qa-missing-run', route => route.fulfill({ status: 404 }));
+  await page.route(
+    (url) => isBackendRunRequest(url, 'frontend-qa-missing-run'),
+    (route) => route.fulfill({ status: 404 }),
+  );
 
   await page.goto('https://frontend.test/runs/frontend-qa-missing-run');
 
@@ -36,7 +62,10 @@ test('shows actions and user-oriented copy for a missing run', async ({ page }) 
 
 test('distinguishes a server failure from a missing run', async ({ page }) => {
   await serveRunPage(page);
-  await page.route('https://build-process-watcher-backend-685615422311.us-central1.run.app/runs/frontend-qa-server-error', route => route.fulfill({ status: 503 }));
+  await page.route(
+    (url) => isBackendRunRequest(url, 'frontend-qa-server-error'),
+    (route) => route.fulfill({ status: 503 }),
+  );
 
   await page.goto('https://frontend.test/runs/frontend-qa-server-error');
 
@@ -47,7 +76,7 @@ test('distinguishes a server failure from a missing run', async ({ page }) => {
 test('distinguishes a connectivity failure and retries the request', async ({ page }) => {
   await serveRunPage(page);
   let attempts = 0;
-  await page.route('https://build-process-watcher-backend-685615422311.us-central1.run.app/runs/frontend-qa-offline-run', async route => {
+  await page.route((url) => isBackendRunRequest(url, 'frontend-qa-offline-run'), async (route) => {
     attempts += 1;
     if (attempts === 1) {
       await route.abort('failed');
