@@ -1,22 +1,46 @@
 import fs from 'fs';
 import path from 'path';
+import vm from 'vm';
+
+function loadChartPanels(): any {
+  const window: any = {};
+  vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, '../frontend/public/chart-panels.js'), 'utf8'),
+    { window },
+  );
+  return window.BpwChartPanels;
+}
+
+const chartPanels = loadChartPanels();
+const runPanelHtml = chartPanels.render({
+  chartIdPrefix: '',
+  showGC: true,
+  showJIT: true,
+  showClasses: true,
+  includeUnifiedReplay: true,
+  includeRunControls: true,
+  showMemoryReplay: true,
+  showMetricReplay: true,
+});
+const replayPanelHtml = chartPanels.render({
+  chartIdPrefix: 'single-',
+  showGC: true,
+  showJIT: true,
+  showClasses: true,
+  includeUnifiedReplay: true,
+});
 
 describe('completed-run replay controls', () => {
-  const source = fs.readFileSync(
-    path.join(__dirname, '../frontend/public/run-dashboard.js'),
-    'utf8'
-  );
-
   test.each([
     ['rss', 'Memory'],
     ['gc', 'GC'],
     ['jit', 'JIT'],
     ['classes', 'Class loading'],
   ])('gives the %s timeline and speed controls unique accessible names', (panel, name) => {
-    expect(source).toContain(
+    expect(runPanelHtml).toContain(
       `<input type="range" id="${panel}-replay-timeline" aria-label="${name} replay timeline"`
     );
-    expect(source).toContain(
+    expect(runPanelHtml).toContain(
       `<select id="${panel}-replay-speed" aria-label="${name} replay speed">`
     );
   });
@@ -38,14 +62,8 @@ describe('remote run dashboard panels', () => {
 });
 
 describe('remote run dashboard metric tools', () => {
-  test.each([
-    '../frontend/public/runs/[runId].html',
-    '../frontend/public/runs/demo.html',
-  ])('%s gives all four metric groups downloads followed by replay', relativePath => {
-    const source = fs.readFileSync(
-      path.join(__dirname, '../frontend/public/run-dashboard.js'),
-      'utf8',
-    );
+  it('gives all four metric groups downloads followed by replay', () => {
+    const source = runPanelHtml;
     const groups = [
       ['rss', 'btn-download-png', 'btn-download-svg'],
       ['gc', 'btn-download-gc-png', 'btn-download-gc-svg'],
@@ -63,26 +81,19 @@ describe('remote run dashboard metric tools', () => {
       expect(replayIndex).toBeGreaterThan(svgIndex);
     });
 
-    expect(source).toContain("downloadRuntimeChart('jit-time-chart', 'jit', 'png')");
-    expect(source).toContain("downloadRuntimeChart('jit-time-chart', 'jit', 'svg')");
-    expect(source).toContain("downloadRuntimeChart('classes-loaded-chart', 'classes', 'png')");
-    expect(source).toContain("downloadRuntimeChart('classes-loaded-chart', 'classes', 'svg')");
+    const runSource = fs.readFileSync(path.join(__dirname, '../frontend/public/run-dashboard.js'), 'utf8');
+    expect(runSource).toContain("downloadRuntimeChart('jit-time-chart', 'jit', 'png')");
+    expect(runSource).toContain("downloadRuntimeChart('jit-time-chart', 'jit', 'svg')");
+    expect(runSource).toContain("downloadRuntimeChart('classes-loaded-chart', 'classes', 'png')");
+    expect(runSource).toContain("downloadRuntimeChart('classes-loaded-chart', 'classes', 'svg')");
   });
 });
 
 describe('runtime metric panel consistency', () => {
   test.each([
-    '../frontend/public/runs/[runId].html',
-    '../frontend/public/runs/demo.html',
-    '../frontend/public/replay.js',
-  ])('%s gives every JIT and class loading chart its own chart container', relativePath => {
-    const source = relativePath.endsWith('replay.js')
-      ? fs.readFileSync(path.join(__dirname, relativePath), 'utf8')
-      : fs.readFileSync(path.join(__dirname, '../frontend/public/run-dashboard.js'), 'utf8');
-    const chartIds = relativePath.endsWith('replay.js')
-      ? ['single-jit-time', 'single-jit-rate', 'single-classes-loaded', 'single-class-rate']
-      : ['jit-time-chart', 'jit-rate-chart', 'classes-loaded-chart', 'class-rate-chart'];
-
+    ['run panels', runPanelHtml, ['jit-time-chart', 'jit-rate-chart', 'classes-loaded-chart', 'class-rate-chart']],
+    ['replay panels', replayPanelHtml, ['single-jit-time', 'single-jit-rate', 'single-classes-loaded', 'single-class-rate']],
+  ])('%s gives every JIT and class loading chart its own chart container', (_label, source, chartIds) => {
     chartIds.forEach(chartId => {
       expect(source).toMatch(new RegExp(
         `<div class="chart-container">\\s*<div class="chart-wrapper">\\s*<div id="${chartId}"`,
@@ -101,9 +112,11 @@ describe('runtime metric panel consistency', () => {
 describe('production replay controls', () => {
   test.each([
     ['Replay', '../frontend/public/replay.js', 'single-replay'],
-    ['Replay unified view', '../frontend/public/replay.js', 'bpw-unified'],
+    ['Replay unified view', '../frontend/public/chart-panels.js', 'bpw-unified'],
   ])('%s exposes a named slider and combobox', (_page, relativePath, controlPrefix) => {
-    const source = fs.readFileSync(path.join(__dirname, relativePath), 'utf8');
+    const source = relativePath.endsWith('chart-panels.js')
+      ? replayPanelHtml
+      : fs.readFileSync(path.join(__dirname, relativePath), 'utf8');
 
     expect(source).toContain(
       `type="range" id="${controlPrefix}-timeline" aria-label="Replay position"`
@@ -126,16 +139,29 @@ describe('production replay controls', () => {
   });
 
   it('uses the classic replay speed options for the unified replay', () => {
-    const source = fs.readFileSync(path.join(__dirname, '../frontend/public/replay.js'), 'utf8');
-    const unifiedOptions = source.match(
+    const classicOptions = `
+                            <option value="5">5x</option>
+                            <option value="10">10x</option>
+                            <option value="15" selected>15x</option>
+                            <option value="20">20x</option>
+                            <option value="25">25x</option>
+                            <option value="30">30x</option>
+                            <option value="35">35x</option>
+                            <option value="40">40x</option>
+                            <option value="45">45x</option>
+                            <option value="50">50x</option>
+                        `;
+    const unifiedOptions = replayPanelHtml.match(
       /<select id="bpw-unified-speed"[^>]*>([\s\S]*?)<\/select>/
     )?.[1];
-    const classicOptions = source.match(
+    const replaySource = fs.readFileSync(path.join(__dirname, '../frontend/public/replay.js'), 'utf8');
+    const classicFromReplay = replaySource.match(
       /<select id="single-replay-speed"[^>]*>([\s\S]*?)<\/select>/
     )?.[1];
 
     expect(unifiedOptions).toBeDefined();
-    expect(unifiedOptions?.replace(/\s+/g, '')).toBe(classicOptions?.replace(/\s+/g, ''));
+    expect(unifiedOptions?.replace(/\s+/g, '')).toBe(classicOptions.replace(/\s+/g, ''));
+    expect(classicFromReplay?.replace(/\s+/g, '')).toBe(classicOptions.replace(/\s+/g, ''));
   });
 
   test.each([
