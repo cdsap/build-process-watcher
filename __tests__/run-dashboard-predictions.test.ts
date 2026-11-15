@@ -68,3 +68,60 @@ describe('run dashboard prediction evolution integration', () => {
     expect(source).toContain("predictionMode === 'bqml-boosted'");
   });
 });
+
+describe('demo run dashboard parity', () => {
+  const requiredScripts = [
+    '/playback-clock.js',
+    '/chart-viewport.js',
+    '/chart-series-store.js',
+    '/live-run-controller.js',
+    '/prediction-view.js',
+    '/freshness-view.js',
+  ];
+
+  it('loads the same supporting modules as the live run dashboard', () => {
+    const demo = fs.readFileSync(pages[1], 'utf8');
+    const run = fs.readFileSync(pages[0], 'utf8');
+    for (const script of requiredScripts) {
+      expect(demo).toContain(`<script src="${script}"></script>`);
+      expect(run).toContain(`<script src="${script}"></script>`);
+    }
+  });
+
+  it('keeps demo initReplay and renderChart aligned with the live run page', () => {
+    const demo = fs.readFileSync(pages[1], 'utf8');
+    const run = fs.readFileSync(pages[0], 'utf8');
+
+    function extractFn(source: string, name: string): string {
+      const start = source.search(new RegExp(`function\\s+${name}\\s*\\(`));
+      if (start < 0) throw new Error(`${name} missing`);
+      let paramsDepth = 0;
+      let i = source.indexOf('(', start);
+      for (; i < source.length; i += 1) {
+        if (source[i] === '(') paramsDepth += 1;
+        else if (source[i] === ')') {
+          paramsDepth -= 1;
+          if (paramsDepth === 0) break;
+        }
+      }
+      let bodyStart = i + 1;
+      while (bodyStart < source.length && /\s/.test(source[bodyStart])) bodyStart += 1;
+      let depth = 0;
+      for (let end = bodyStart; end < source.length; end += 1) {
+        if (source[end] === '{') depth += 1;
+        else if (source[end] === '}') {
+          depth -= 1;
+          if (depth === 0) return source.slice(start, end + 1);
+        }
+      }
+      throw new Error(`${name} body not closed`);
+    }
+
+    expect(extractFn(demo, 'initReplay')).toBe(extractFn(run, 'initReplay'));
+    expect(extractFn(demo, 'renderChart')).toBe(extractFn(run, 'renderChart'));
+    expect(demo).toContain('function ensureChartResizeHandler');
+    expect(demo).toContain('BpwPlaybackClock.createPlaybackClock');
+    expect(demo).toContain('BpwChartViewport');
+  });
+});
+
