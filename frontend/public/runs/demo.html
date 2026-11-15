@@ -22,6 +22,7 @@
     <script src="/playback-clock.js"></script>
     <script src="/replay-controls.js"></script>
     <script src="/compare-shared.js"></script>
+    <script src="/run-charts.js"></script>
     <script src="/chart-viewport.js"></script>
     <script src="/chart-series-store.js"></script>
     <script src="/live-run-controller.js"></script>
@@ -1100,104 +1101,18 @@
             return gib.toFixed(2);
         }
 
-        function renderGCChart(samples) {
-            // Process data for GC chart - group by both Name and PID to handle multiple processes with same name
-            const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
-            // Create unique process keys (Name + PID combination)
-            const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
-
-            const traces = [];
-            const colorMap = buildColorMap(processKeys);
-
-            // Create traces for each unique process (Name + PID combination)
-            processKeys.forEach((processKey, index) => {
-                const color = colorMap[processKey];
-                const [processName, pid] = processKey.split('|');
-
-                // GC time data - use null for timestamps where process doesn't exist yet
-                // Convert from milliseconds (stored in DB) to seconds (for display)
-                const gcData = timestamps.map(timestamp => {
-                    const sample = samples
-                        .filter(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp)
-                        [0];
-                    return sample && sample.GCTime !== undefined && sample.GCTime !== null && !Number.isNaN(sample.GCTime) ? sample.GCTime / 1000 : null;
-                });
-
-                traces.push({
-                    x: timestamps.map(t => new Date(t)),
-                    y: gcData,
-                    type: 'scatter',
-                    mode: 'lines+markers',
-                    name: `${processName} PID:${pid}`,
-                    line: { color: color, width: 3 },
-                    marker: { size: 6, color: color },
-                    connectgaps: false
-                });
-            });
-
-            // Total GC line intentionally omitted.
-
-            const layout = getGcLayout();
-            const config = getGcConfig();
-
-            Plotly.newPlot('gc-chart', applyVisibilityToTraces('gc-chart', traces), layout, config);
-            attachLegendVisibilityHandlers('gc-chart');
-
-            // Handle window resize
-            window.addEventListener('resize', function() {
-                Plotly.Plots.resize('gc-chart');
-            });
+        function renderGCChart(samples, options = {}) {
+            if (window.BpwRunCharts) {
+                BpwRunCharts.setRunContext({ runId });
+                return BpwRunCharts.renderGCChart(samples, options);
+            }
         }
 
         function renderRssHeapRatioChart(samples) {
-            // Process data for Heap/RSS ratio chart - group by both Name and PID to handle multiple processes with same name
-            const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
-            // Create unique process keys (Name + PID combination)
-            const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
-
-            const traces = [];
-            const colorMap = buildColorMap(processKeys);
-
-            // Create traces for each unique process (Name + PID combination)
-            processKeys.forEach((processKey, index) => {
-                const color = colorMap[processKey];
-                const [processName, pid] = processKey.split('|');
-
-                // Heap/RSS ratio data - use null for timestamps where process doesn't exist yet or RSS is 0
-                const ratioData = timestamps.map(timestamp => {
-                    const sample = samples
-                        .filter(s => s.Name === processName && s.PID === pid && s.Timestamp === timestamp)
-                        [0];
-                    if (sample && sample.RSS && sample.RSS > 0) {
-                        return sample.HeapUsed / sample.RSS;
-                    }
-                    return null;
-                });
-
-                traces.push({
-                    x: timestamps.map(t => new Date(t)),
-                    y: ratioData,
-                    type: 'scatter',
-                    mode: 'lines+markers',
-                    name: `${processName} PID:${pid}`,
-                    line: { color: color, width: 3 },
-                    marker: { size: 6, color: color },
-                    connectgaps: false
-                });
-            });
-
-            // Total Heap/RSS ratio line intentionally omitted.
-
-            const layout = getRatioLayout();
-            const config = getRatioConfig();
-
-            Plotly.newPlot('rss-heap-chart', applyVisibilityToTraces('rss-heap-chart', traces), layout, config);
-            attachLegendVisibilityHandlers('rss-heap-chart');
-
-            // Handle window resize
-            window.addEventListener('resize', function() {
-                Plotly.Plots.resize('rss-heap-chart');
-            });
+            if (window.BpwRunCharts) {
+                BpwRunCharts.setRunContext({ runId });
+                return BpwRunCharts.renderRssHeapRatioChart(samples);
+            }
         }
 
         function initReplay(samples) {
@@ -2399,14 +2314,7 @@
 
 
         function ensureChartResizeHandler() {
-            if (window.__bpwChartResizeBound) return;
-            window.__bpwChartResizeBound = true;
-            window.addEventListener('resize', () => {
-                ['chart', 'gc-chart', 'rss-heap-chart', 'jit-time-chart', 'jit-rate-chart', 'classes-loaded-chart', 'class-rate-chart']
-                    .forEach((id) => {
-                        if (document.getElementById(id)) Plotly.Plots.resize(id);
-                    });
-            });
+            if (window.BpwRunCharts) return BpwRunCharts.ensureChartResizeHandler();
         }
 
         function renderChart(samples, predictionCheckpoints = [], options = {}) {
