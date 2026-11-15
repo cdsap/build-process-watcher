@@ -554,6 +554,13 @@
 
         function setRunDashboardTab(tab) {
             activeRunDashboardTab = tab === 'predictions' ? 'predictions' : 'dashboard';
+            if (window.BpwExperimentLayout?.setViewMode) {
+                if (activeRunDashboardTab === 'predictions') {
+                    BpwExperimentLayout.setViewMode(BpwExperimentLayout.VIEW_MODES?.predictions || 'predictions');
+                } else if (BpwExperimentLayout.getViewMode?.() === 'predictions') {
+                    BpwExperimentLayout.setViewMode(BpwExperimentLayout.VIEW_MODES?.classic || 'classic');
+                }
+            }
             const tabs = document.querySelectorAll('.run-dashboard-tab[data-run-tab]');
             const dashboardPanel = document.getElementById('run-panel-dashboard');
             const predictionsPanel = document.getElementById('run-panel-predictions');
@@ -576,14 +583,17 @@
                     setRunDashboardTab(el.getAttribute('data-run-tab'));
                 });
             });
-            setRunDashboardTab(activeRunDashboardTab || 'dashboard');
+            const initial = window.BpwExperimentLayout?.getViewMode?.() === 'predictions'
+                ? 'predictions'
+                : (activeRunDashboardTab || 'dashboard');
+            setRunDashboardTab(initial);
         }
 
         function focusPredictionsTabFromChart() {
             setRunDashboardTab('predictions');
             requestAnimationFrame(() => {
-                const tab = document.getElementById('run-tab-predictions');
-                if (tab && typeof tab.focus === 'function') tab.focus({ preventScroll: true });
+                const modeBtn = document.querySelector('[data-bpw-view-mode="predictions"]');
+                if (modeBtn && typeof modeBtn.focus === 'function') modeBtn.focus({ preventScroll: true });
                 document.getElementById('run-panel-predictions')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
             });
         }
@@ -954,7 +964,7 @@
                     </div>
                 </div>
 
-                <div class="run-dashboard-tabs" role="tablist" aria-label="Run dashboard views">
+                <div class="run-dashboard-tabs run-dashboard-tabs-legacy" role="tablist" aria-label="Run dashboard views" hidden>
                     <button type="button" class="run-dashboard-tab" role="tab" id="run-tab-dashboard" data-run-tab="dashboard" aria-controls="run-panel-dashboard">Dashboard</button>
                     <button type="button" class="run-dashboard-tab" role="tab" id="run-tab-predictions" data-run-tab="predictions" aria-controls="run-panel-predictions">Predictions</button>
                 </div>

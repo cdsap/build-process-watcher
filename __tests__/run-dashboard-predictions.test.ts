@@ -12,10 +12,19 @@ describe('run dashboard prediction evolution integration', () => {
     expect(source).toContain('<script src="/prediction-view.js"></script>');
     expect(source).toContain('data-run-tab="dashboard"');
     expect(source).toContain('data-run-tab="predictions"');
+    expect(source).toContain('run-dashboard-tabs-legacy');
     expect(source).toContain('BpwPredictionView.render');
     expect(source).toContain('data-prediction-window');
     expect(source).toContain('data-prediction-chart-window');
     expect(source).toContain('Prediction checkpoints');
+  });
+
+  it('places Predictions in the Classic/Studio/Story mode switch', () => {
+    const layout = fs.readFileSync(path.join(__dirname, '../frontend/public/experiment-layout.js'), 'utf8');
+    expect(layout).toContain("predictions: 'predictions'");
+    expect(layout).toContain("buildModeButton(VIEW_MODES.predictions, 'Predictions'");
+    expect(layout).toContain('applyPredictionsView');
+    expect(layout).toContain('bpw-view-predictions');
   });
 
   it.each(pages)('preserves marker-to-checkpoint selection wiring: %s', (page) => {

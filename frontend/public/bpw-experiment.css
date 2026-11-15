@@ -619,6 +619,26 @@ body.bpw-perspective-story .bpw-chart-studio {
     box-shadow: 0 8px 22px rgba(22, 26, 29, 0.06);
 }
 
+/* Predictions sits with Classic / Studio / Story; hide the old Dashboard|Predictions strip. */
+.run-dashboard-tabs-legacy[hidden] {
+    display: none !important;
+}
+
+body.bpw-view-predictions #run-panel-dashboard {
+    display: none !important;
+}
+
+body.bpw-view-predictions #run-panel-predictions {
+    display: block;
+}
+
+body.bpw-view-predictions #bpw-chart-studio,
+body.bpw-view-predictions #bpw-build-story,
+body.bpw-view-predictions #bpw-workspace-deck,
+body.bpw-view-predictions #bpw-unified-replay {
+    display: none !important;
+}
+
 .bpw-mode-btn {
     display: inline-grid;
     gap: 0.05rem;
