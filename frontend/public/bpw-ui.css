@@ -12,18 +12,27 @@
     --bpw-shadow: 0 18px 50px rgba(30, 38, 31, 0.08);
 }
 
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
 html {
     background: var(--bpw-paper);
 }
 
 body {
     min-height: 100vh;
+    margin: 0;
     background:
         linear-gradient(90deg, rgba(22, 26, 29, 0.035) 1px, transparent 1px),
         linear-gradient(180deg, rgba(22, 26, 29, 0.035) 1px, transparent 1px),
         linear-gradient(135deg, #f7f8f4 0%, #eef4f2 45%, #f8f1e7 100%);
     background-size: 42px 42px, 42px 42px, auto;
     color: var(--bpw-ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.6;
 }
 
 .container {
@@ -102,6 +111,8 @@ h1 {
 }
 
 .run-header-main {
+    display: flex;
+    flex-wrap: wrap;
     align-items: flex-start !important;
     gap: 0.65rem !important;
 }
@@ -144,7 +155,10 @@ h1 {
 }
 
 .run-header-refresh {
+    display: flex;
+    align-items: center;
     align-self: start;
+    gap: 0.5rem;
     padding: 0.65rem;
     border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 8px;
@@ -811,14 +825,112 @@ input[type="file"] {
     filter: brightness(0.96);
 }
 
+.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Shared run / replay / compare chrome (keep out of page <style>) */
+.downloads-toolbar,
+.chart-filters,
+.compare-controls,
+.upload-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    margin: 0 0 1rem;
+}
+
+.compare-controls,
+.upload-controls {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 1rem 1.25rem !important;
+    margin-bottom: 2rem;
+}
+
+.compare-controls .row,
+.upload-controls .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: center;
+}
+
+.compare-controls input[type="file"],
+.upload-controls input[type="file"] {
+    max-width: 100%;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.9rem;
+}
+
+.compare-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.compare-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
+}
+
+.compare-column,
+.chart-wrapper,
+.js-plotly-plot,
+.plot-container {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.chart-wrapper {
+    width: 100%;
+    min-width: min(600px, 100%);
+}
+
 .replay-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem 1rem;
+    padding: 0.85rem 1rem;
+    margin-bottom: 1.5rem;
     border: 1px solid rgba(8, 127, 140, 0.18) !important;
     border-radius: 8px !important;
     background: linear-gradient(135deg, rgba(8, 127, 140, 0.10), rgba(184, 132, 20, 0.10)) !important;
 }
 
+.replay-controls .buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.replay-controls .meta {
+    font-size: 0.875rem;
+    color: var(--bpw-muted);
+}
+
+.replay-controls .timeline {
+    display: flex;
+    flex: 1 1 14rem;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-width: 0;
+}
+
 .replay-controls input[type="range"] {
+    width: 100%;
     accent-color: var(--bpw-coral);
+}
+
+.compare-replay-controls {
+    position: sticky;
+    top: 0.75rem;
+    z-index: 10;
 }
 
 .process-info-card {
@@ -1029,6 +1141,7 @@ input[type="file"] {
 
 .compare-section,
 .replay-section {
+    display: none;
     padding: 0 !important;
     border: 0 !important;
     background: transparent !important;
@@ -1253,8 +1366,26 @@ input[type="file"] {
 .loading,
 .error,
 .not-found {
+    padding: 1.5rem;
+    text-align: center;
     border-radius: 8px !important;
     box-shadow: var(--bpw-shadow);
+}
+
+.loading {
+    color: var(--bpw-muted);
+}
+
+.error {
+    border: 1px solid rgba(201, 81, 61, 0.28);
+    background: rgba(201, 81, 61, 0.08);
+    color: #9f2d1f;
+}
+
+.not-found {
+    border: 1px solid rgba(184, 132, 20, 0.28);
+    background: rgba(184, 132, 20, 0.10);
+    color: #8a6410;
 }
 
 footer {
@@ -1304,6 +1435,23 @@ footer {
         margin-right: 0 !important;
     }
 
+    .chart-wrapper {
+        min-width: min(500px, 100%);
+    }
+
+    .replay-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .replay-controls .timeline {
+        flex-basis: auto;
+    }
+
+    .compare-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
     .process-info-head,
     .process-card-main {
         grid-template-columns: 1fr;
@@ -1335,6 +1483,10 @@ footer {
     .run-kpi-strip,
     .status-grid {
         grid-template-columns: 1fr;
+    }
+
+    .chart-wrapper {
+        min-width: 0;
     }
 
     .run-header-main .run-id {
