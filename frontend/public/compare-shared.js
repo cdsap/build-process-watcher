@@ -1265,33 +1265,13 @@
                     </select>
                 </label>
             </div>
-            <div class="replay-controls compare-replay-controls" id="compare-replay-controls">
-                <div class="buttons">
-                    <button class="btn" id="btn-compare-replay-play">Play</button>
-                    <button class="btn secondary" id="btn-compare-replay-pause">Pause</button>
-                    <button class="btn secondary" id="btn-compare-replay-reset">Reset</button>
-                </div>
-                <div class="meta" id="compare-replay-meta">Frame 0 / 0</div>
-                <div class="timeline">
-                    <input type="range" id="compare-replay-timeline" aria-label="Replay position" min="0" max="0" value="0">
-                    <div class="meta" id="compare-replay-time-label">Elapsed: 0s</div>
-                    <div class="meta">
-                        Speed:
-                        <select id="compare-replay-speed" aria-label="Playback speed">
-                            <option value="5">5x</option>
-                            <option value="10">10x</option>
-                            <option value="15" selected>15x</option>
-                            <option value="20">20x</option>
-                            <option value="25">25x</option>
-                            <option value="30">30x</option>
-                            <option value="35">35x</option>
-                            <option value="40">40x</option>
-                            <option value="45">45x</option>
-                            <option value="50">50x</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
+            ${(global.BpwReplayControls && typeof global.BpwReplayControls.renderReplayControls === 'function'
+                ? global.BpwReplayControls.renderReplayControls({
+                    idPrefix: 'compare-replay',
+                    sticky: true,
+                    defaultSpeed: 15,
+                })
+                : '<div class="replay-controls compare-replay-controls" id="compare-replay-controls"></div>')}
             <div class="compare-grid">
                 ${isSplitMode ? `
                 <div class="compare-column">
@@ -1434,20 +1414,7 @@
             totalColor: '#0f172a'
         };
 
-        const timeline = document.getElementById('compare-replay-timeline');
-        const meta = document.getElementById('compare-replay-meta');
-        const timeLabel = document.getElementById('compare-replay-time-label');
-        const playBtn = document.getElementById('btn-compare-replay-play');
-        const pauseBtn = document.getElementById('btn-compare-replay-pause');
-        const resetBtn = document.getElementById('btn-compare-replay-reset');
-        const speedSelect = document.getElementById('compare-replay-speed');
-
-        let isPlaying = false;
-        let playTimer = null;
         let currentFrame = 0;
-        let speedMultiplier = Number(speedSelect.value) || 15;
-
-        timeline.max = String(Math.max(0, chartTimestamps.length - 1));
 
         const elapsedByTimestamp = new Map();
         baseSamples.forEach(sample => {
@@ -1511,17 +1478,8 @@
             heap.checked = heapVisible;
         }
 
-        function updateUi(frameIndex) {
-            timeline.value = String(frameIndex);
-            meta.textContent = `Frame ${frameIndex + 1} / ${chartTimestamps.length}`;
-            const timestamp = chartTimestamps[frameIndex];
-            const elapsed = elapsedByTimestamp.get(timestamp) || 0;
-            timeLabel.textContent = `Elapsed: ${elapsed}s`;
-        }
-
         function renderFrame(frameIndex) {
             currentFrame = frameIndex;
-            updateUi(frameIndex);
             const tasks = [];
             const compareLayout = {
                 ...getMemoryLayout(),
@@ -1706,52 +1664,38 @@
             });
         }
 
-        function pause() {
-            if (playTimer) clearTimeout(playTimer);
-            playTimer = null;
-            isPlaying = false;
-        }
-
-        function play() {
-            if (isPlaying) return;
-            isPlaying = true;
-            const tick = () => {
-                if (!isPlaying) return;
-                const nextFrame = Math.min(currentFrame + 1, chartTimestamps.length - 1);
-                renderFrame(nextFrame);
-                if (nextFrame >= chartTimestamps.length - 1) {
-                    pause();
-                    return;
-                }
-                playTimer = setTimeout(tick, 1000 / speedMultiplier);
+        let latestFrameRender = Promise.resolve();
+        const replayApi = global.BpwReplayControls;
+        const binding = replayApi && typeof replayApi.bindReplayControls === 'function'
+            ? replayApi.bindReplayControls({
+                root: compareSection,
+                idPrefix: 'compare-replay',
+                timestamps: chartTimestamps,
+                timelineMode: 'frame',
+                initialFrame: 0,
+                defaultSpeed: 15,
+                formatTime(position) {
+                    if (!chartTimestamps.length || position.sampleIndex < 0) return 'Elapsed: 0s';
+                    const timestamp = chartTimestamps[position.sampleIndex];
+                    const elapsed = elapsedByTimestamp.get(timestamp) || 0;
+                    return `Elapsed: ${elapsed}s`;
+                },
+                onFrame(position) {
+                    if (position.sampleIndex < 0) return;
+                    latestFrameRender = Promise.resolve(renderFrame(position.sampleIndex));
+                },
+            })
+            : {
+                destroy() {},
+                pause() {},
             };
-            playTimer = setTimeout(tick, 1000 / speedMultiplier);
-        }
-
-        function reset() {
-            pause();
-            renderFrame(0);
-        }
-
-        timeline.addEventListener('input', event => {
-            pause();
-            const value = Number(event.target.value) || 0;
-            renderFrame(value);
-        });
-
-        playBtn.addEventListener('click', play);
-        pauseBtn.addEventListener('click', pause);
-        resetBtn.addEventListener('click', reset);
-        speedSelect.addEventListener('change', event => {
-            speedMultiplier = Number(event.target.value) || 15;
-        });
 
         if (!global.compareReplayStops) {
             global.compareReplayStops = {};
         }
-        global.compareReplayStops.default = pause;
+        global.compareReplayStops.default = () => binding.pause();
 
-        renderFrame(0).then(() => {
+        Promise.resolve(latestFrameRender).then(() => {
             const summaryHtml = buildCompareSummaryHtml({
                 baseLabel,
                 compareLabel,
