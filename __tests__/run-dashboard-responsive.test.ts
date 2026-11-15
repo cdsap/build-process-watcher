@@ -22,7 +22,7 @@ describe('run dashboard responsive layout', () => {
     expect(source).toContain('BpwPredictionView.render');
     expect(source).toContain('predictionTabHtml');
     expect(source).toContain('predictionPreviewHtml');
-    expect(source).toContain('data-run-tab="predictions"');
+    expect(source).toContain('data-open-predictions');
 
     expect(source).toContain('predictionEnabled');
   });

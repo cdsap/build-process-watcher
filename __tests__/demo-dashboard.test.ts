@@ -17,7 +17,7 @@ describe('demo dashboard', () => {
     expect(html).toContain('<script src="/prediction-view.js"></script>');
     expect(source).toContain('prediction_checkpoints');
     expect(source).toContain('predictionTabHtml');
-    expect(source).toContain('data-run-tab="predictions"');
+    expect(source).toContain('data-open-predictions');
     expect(html).not.toContain('/runs/${runId}');
 
     const data = JSON.parse(fs.readFileSync(demoData, 'utf8'));
