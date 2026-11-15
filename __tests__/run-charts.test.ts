@@ -56,7 +56,6 @@ describe('shared run charts', () => {
       const html = fs.readFileSync(path.join(__dirname, '../frontend/public', relative), 'utf8');
       expect(html).toContain('<script src="/run-charts.js"></script>');
       expect(html).toContain('BpwRunCharts.renderGCChart');
-      expect(html).toContain('BpwRunCharts.renderRssHeapRatioChart');
-    }
+          }
   });
 });

@@ -39,7 +39,6 @@
             headerSubtitle: 'Replay both JSON runs with a shared timeline',
             memoryFilenameBase: 'build-compare',
             gcFilenameBase: 'build-compare-gc',
-            ratioFilenameBase: 'build-compare-rss-heap',
             baseProcessSummary: summaryA,
             compareProcessSummary: summaryB
         });

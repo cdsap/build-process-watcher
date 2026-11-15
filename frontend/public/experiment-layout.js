@@ -11,7 +11,6 @@
     const PANEL_META = {
         memory: { label: 'Memory', group: 'memory' },
         gc: { label: 'GC time', group: 'memory' },
-        ratio: { label: 'Heap/RSS', group: 'memory' },
         'jit-time': { label: 'JIT time', group: 'runtime' },
         'jit-rate': { label: 'JIT rate', group: 'runtime' },
         'classes-loaded': { label: 'Classes loaded', group: 'runtime' },
@@ -21,11 +20,11 @@
     const PRESETS = {
         overview: {
             label: 'Overview',
-            panels: ['memory', 'gc', 'ratio', 'jit-time', 'jit-rate', 'classes-loaded', 'class-rate']
+            panels: ['memory', 'gc', 'jit-time', 'jit-rate', 'classes-loaded', 'class-rate']
         },
         memory: {
             label: 'Memory',
-            panels: ['memory', 'gc', 'ratio']
+            panels: ['memory', 'gc']
         },
         runtime: {
             label: 'Runtime',

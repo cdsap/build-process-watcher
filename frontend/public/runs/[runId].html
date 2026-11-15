@@ -72,7 +72,6 @@
             applyVisibilityToTraces,
             attachLegendVisibilityHandlers,
             hasGCData,
-            hasRatioData,
             hasJITData,
             hasClassLoadingData,
             buildColorMap,
@@ -1264,10 +1263,6 @@
             }
         }
 
-        function shouldShowRssHeapRatioChart(samples) {
-            const uniqueTimestamps = new Set(samples.map(s => s.Timestamp));
-            return uniqueTimestamps.size > 10;
-        }
 
         function updateMainChartFilterCheckboxes() {
             const total = document.getElementById('filter-total-rss');
@@ -1342,12 +1337,6 @@
             }
         }
 
-        function renderRssHeapRatioChart(samples) {
-            if (window.BpwRunCharts) {
-                BpwRunCharts.setRunContext({ runId });
-                return BpwRunCharts.renderRssHeapRatioChart(samples);
-            }
-        }
 
         function initReplay(samples) {
             if (window.BpwExperimentLayout) {
@@ -1627,25 +1616,7 @@
                 return applyVisibilityToTraces('gc-chart', traces);
             }
 
-            function buildRatioTraces(frameIndex) {
-                const frameTimestamps = chartTimestamps.slice(0, frameIndex + 1).map(t => new Date(t));
-                const traces = [];
-                processKeys.forEach(processKey => {
-                    const def = chartSeries[processKey];
-                    if (def.firstRatio === -1 || frameIndex < def.firstRatio) return;
-                    traces.push({
-                        x: frameTimestamps,
-                        y: def.ratio.slice(0, frameIndex + 1),
-                        type: 'scatter',
-                        mode: 'lines+markers',
-                        name: `${def.processName} PID:${def.pid}`,
-                        line: { color: def.color, width: 3 },
-                        marker: { size: 6, color: def.color },
-                        connectgaps: false
-                    });
-                });
-                return applyVisibilityToTraces('rss-heap-chart', traces);
-            }
+            
 
             function setupReplayPanel(options) {
                 const { panelKey, chartId, controlsId, buildTraces, layoutGetter, configGetter, onLegendUpdate, smoothMemory } = options;
@@ -2056,461 +2027,6 @@
             });
         }
 
-        function renderCompareSectionLegacy(baseSamples) {
-            const compareSection = document.getElementById('compare-section');
-            const compareSamplesRaw = Array.isArray(window.compareSamples) ? window.compareSamples : [];
-            if (!compareSection) return;
-            if (!compareSamplesRaw.length) {
-                compareSection.style.display = 'none';
-                compareSection.innerHTML = '';
-                return;
-            }
-
-            const timestamps = [...new Set(baseSamples.map(s => s.Timestamp))].sort((a, b) => a - b);
-            const compareSamples = normalizeCompareSamples(compareSamplesRaw, timestamps[0]);
-            const baseHasGC = hasGCData(baseSamples);
-            const compareHasGC = hasGCData(compareSamples);
-            const baseHasRatio = hasRatioData(baseSamples);
-            const compareHasRatio = hasRatioData(compareSamples);
-            const showGC = baseHasGC && compareHasGC;
-            const showRatio = baseHasRatio && compareHasRatio;
-            console.log('[compare] baseHasGC:', baseHasGC, 'compareHasGC:', compareHasGC, 'showGC:', showGC);
-            console.log('[compare] Compare GC sample:', compareSamples.slice(0, 5).map(s => ({ name: s.Name, pid: s.PID, gc: s.GCTimeSeconds })));
-            console.log('[compare] compareSamples timestamp range:', compareSamples[0]?.Timestamp, compareSamples[compareSamples.length - 1]?.Timestamp);
-
-            const storedMode = localStorage.getItem('compareMode') || 'split';
-            const compareMode = storedMode === 'side' ? 'side' : 'split';
-            const isSplitMode = compareMode === 'split';
-
-            compareSection.innerHTML = `
-                <div class="compare-header">
-                    <h2>Comparison</h2>
-                    <span class="meta">Replay both runs with a shared timeline</span>
-                    <label class="meta" style="display:flex; align-items:center; gap:0.5rem;">
-                        View:
-                        <select id="compare-view-mode">
-                            <option value="split" ${isSplitMode ? 'selected' : ''}>Split View</option>
-                            <option value="side" ${!isSplitMode ? 'selected' : ''}>Side by Side</option>
-                        </select>
-                    </label>
-                </div>
-                <div class="replay-controls" id="compare-replay-controls">
-                    <div class="buttons">
-                        <button class="btn" id="btn-compare-replay-play">Play</button>
-                        <button class="btn secondary" id="btn-compare-replay-pause">Pause</button>
-                        <button class="btn secondary" id="btn-compare-replay-reset">Reset</button>
-                    </div>
-                    <div class="meta" id="compare-replay-meta">Frame 0 / 0</div>
-                    <div class="timeline">
-                        <input type="range" id="compare-replay-timeline" min="0" max="0" value="0">
-                        <div class="meta" id="compare-replay-time-label">Elapsed: 0s</div>
-                        <div class="meta">
-                            Speed:
-                            <select id="compare-replay-speed">
-                                <option value="5">5x</option>
-                                <option value="10">10x</option>
-                                <option value="15" selected>15x</option>
-                                <option value="20">20x</option>
-                                <option value="25">25x</option>
-                                <option value="30">30x</option>
-                                <option value="35">35x</option>
-                                <option value="40">40x</option>
-                                <option value="45">45x</option>
-                                <option value="50">50x</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-                <div class="compare-grid">
-                    ${isSplitMode ? `
-                    <div class="compare-column">
-                        <h3>Current vs Comparison (Split View)</h3>
-                        <div class="chart-container">
-                            <h4>Memory Usage Over Time</h4>
-                            <div class="chart-wrapper">
-                                <div id="compare-rss" style="width: 100%; height: 460px;"></div>
-                            </div>
-                        </div>
-                        ${showGC ? `
-                        <div class="chart-container">
-                            <h4>Garbage Collection Time Over Time</h4>
-                            <div class="chart-wrapper">
-                                <div id="compare-gc" style="width: 100%; height: 460px;"></div>
-                            </div>
-                        </div>
-                        ` : ''}
-                        ${showRatio ? `
-                        <div class="chart-container">
-                            <h4>Heap/RSS Ratio Over Time</h4>
-                            <div class="chart-wrapper">
-                                <div id="compare-ratio" style="width: 100%; height: 460px;"></div>
-                            </div>
-                        </div>
-                        ` : ''}
-                    </div>
-                    ` : `
-                    <div class="compare-column">
-                        <h3>Current Run</h3>
-                        <div class="chart-container">
-                            <h4>Memory Usage Over Time</h4>
-                            <div class="chart-wrapper">
-                                <div id="compare-current-rss" style="width: 100%; height: 460px;"></div>
-                            </div>
-                        </div>
-                        ${showGC ? `
-                        <div class="chart-container">
-                            <h4>Garbage Collection Time Over Time</h4>
-                            <div class="chart-wrapper">
-                                <div id="compare-current-gc" style="width: 100%; height: 460px;"></div>
-                            </div>
-                        </div>
-                        ` : ''}
-                        ${showRatio ? `
-                        <div class="chart-container">
-                            <h4>Heap/RSS Ratio Over Time</h4>
-                            <div class="chart-wrapper">
-                                <div id="compare-current-ratio" style="width: 100%; height: 460px;"></div>
-                            </div>
-                        </div>
-                        ` : ''}
-                    </div>
-                    <div class="compare-column">
-                        <h3>Comparison Run</h3>
-                        <div class="chart-container">
-                            <h4>Memory Usage Over Time</h4>
-                            <div class="chart-wrapper">
-                                <div id="compare-other-rss" style="width: 100%; height: 460px;"></div>
-                            </div>
-                        </div>
-                        ${showGC ? `
-                        <div class="chart-container">
-                            <h4>Garbage Collection Time Over Time</h4>
-                            <div class="chart-wrapper">
-                                <div id="compare-other-gc" style="width: 100%; height: 460px;"></div>
-                            </div>
-                        </div>
-                        ` : ''}
-                        ${showRatio ? `
-                        <div class="chart-container">
-                            <h4>Heap/RSS Ratio Over Time</h4>
-                            <div class="chart-wrapper">
-                                <div id="compare-other-ratio" style="width: 100%; height: 460px;"></div>
-                            </div>
-                        </div>
-                        ` : ''}
-                    </div>
-                    `}
-                </div>
-            `;
-
-            compareSection.style.display = 'block';
-
-            const baseData = buildReplayData(baseSamples, timestamps, COLOR_PALETTE);
-            const chartTimestamps = baseData.timestamps || timestamps;
-            const compareData = buildReplayData(compareSamples, chartTimestamps, COLOR_PALETTE);
-            const elapsedSeconds = chartTimestamps.map(ts => Math.max(0, (ts - chartTimestamps[0]) / 1000));
-            const maxElapsed = elapsedSeconds.length ? elapsedSeconds[elapsedSeconds.length - 1] : 0;
-            const compareElapsed = elapsedSeconds.map(value => value + maxElapsed);
-            console.log('[compare] Base GC series lengths:', baseData.processKeys.map(k => baseData.series[k].gc.filter(v => v !== null).length));
-            console.log('[compare] Compare GC series lengths:', compareData.processKeys.map(k => compareData.series[k].gc.filter(v => v !== null).length));
-
-            const sharedProcessNames = [...new Set([
-                ...baseSamples.map(s => s.Name),
-                ...compareSamples.map(s => s.Name)
-            ])];
-            const sharedColorMap = buildColorMap(sharedProcessNames, COLOR_PALETTE);
-            [baseData, compareData].forEach(data => {
-                data.processKeys.forEach(processKey => {
-                    const def = data.series[processKey];
-                    def.color = sharedColorMap[def.processName] || def.color;
-                });
-            });
-
-            const baseStyle = {
-                lineWidth: 3,
-                heapLineWidth: 2,
-                markerSize: 6,
-                lineDash: 'solid',
-                heapDash: 'dash',
-                lineOpacity: 1,
-                markerOpacity: 1,
-                includeTotalRss: true,
-                totalLabel: 'Total RSS Memory',
-                totalColor: '#2c3e50'
-            };
-            const compareStyle = {
-                lineWidth: 4,
-                heapLineWidth: 3,
-                markerSize: 8,
-                lineDash: 'solid',
-                heapDash: 'dash',
-                lineOpacity: 0.6,
-                markerOpacity: 0.6,
-                includeTotalRss: true,
-                totalLabel: 'Compare Total RSS Memory',
-                totalColor: '#0f172a'
-            };
-
-            const timeline = document.getElementById('compare-replay-timeline');
-            const meta = document.getElementById('compare-replay-meta');
-            const timeLabel = document.getElementById('compare-replay-time-label');
-            const playBtn = document.getElementById('btn-compare-replay-play');
-            const pauseBtn = document.getElementById('btn-compare-replay-pause');
-            const resetBtn = document.getElementById('btn-compare-replay-reset');
-            const speedSelect = document.getElementById('compare-replay-speed');
-
-            let isPlaying = false;
-            let playTimer = null;
-            let currentFrame = 0;
-            let speedMultiplier = Number(speedSelect.value) || 15;
-
-            timeline.max = String(Math.max(0, chartTimestamps.length - 1));
-
-            const elapsedByTimestamp = new Map();
-            baseSamples.forEach(sample => {
-                if (!elapsedByTimestamp.has(sample.Timestamp)) {
-                    elapsedByTimestamp.set(sample.Timestamp, sample.ElapsedTime);
-                }
-            });
-
-            function updateUi(frameIndex) {
-                timeline.value = String(frameIndex);
-                meta.textContent = `Frame ${frameIndex + 1} / ${chartTimestamps.length}`;
-                const timestamp = chartTimestamps[frameIndex];
-                const elapsed = elapsedByTimestamp.get(timestamp) || 0;
-                timeLabel.textContent = `Elapsed: ${elapsed}s`;
-            }
-
-            function renderFrame(frameIndex) {
-                currentFrame = frameIndex;
-                updateUi(frameIndex);
-                const tasks = [];
-                const compareLayout = {
-                    ...getMemoryLayout(),
-                    xaxis: {
-                        ...getMemoryLayout().xaxis,
-                        title: 'Elapsed (s)',
-                        tickformat: null,
-                        type: 'linear'
-                    },
-                    legend: {
-                        x: 0.5,
-                        y: -0.25,
-                        xanchor: 'center',
-                        orientation: 'h'
-                    },
-                    margin: {
-                        ...getMemoryLayout().margin,
-                        b: 110
-                    },
-                    shapes: [
-                        {
-                            type: 'line',
-                            x0: maxElapsed,
-                            x1: maxElapsed,
-                            y0: 0,
-                            y1: 1,
-                            xref: 'x',
-                            yref: 'paper',
-                            line: { color: '#94a3b8', width: 1, dash: 'dot' }
-                        }
-                    ]
-                };
-                if (isSplitMode) {
-                    const rssTraces = [
-                        ...buildMetricTraces(baseData, chartTimestamps, frameIndex, 'rss', baseStyle, elapsedSeconds),
-                        ...buildMetricTraces(compareData, chartTimestamps, frameIndex, 'rss', compareStyle, compareElapsed)
-                    ];
-                    tasks.push(Plotly.react('compare-rss', applyVisibilityToTraces('compare-rss', rssTraces), compareLayout, getMemoryConfig()));
-                } else {
-                    const sideLayout = {
-                        ...compareLayout,
-                        shapes: []
-                    };
-                    tasks.push(Plotly.react('compare-current-rss', applyVisibilityToTraces('compare-current-rss', buildMetricTraces(baseData, chartTimestamps, frameIndex, 'rss', baseStyle, elapsedSeconds)), sideLayout, getMemoryConfig()));
-                    tasks.push(Plotly.react('compare-other-rss', applyVisibilityToTraces('compare-other-rss', buildMetricTraces(compareData, chartTimestamps, frameIndex, 'rss', compareStyle, elapsedSeconds)), sideLayout, getMemoryConfig()));
-                }
-                if (showGC) {
-                    const compareGcLayout = {
-                        ...getGcLayout(),
-                        xaxis: {
-                            ...getGcLayout().xaxis,
-                            title: 'Elapsed (s)',
-                            tickformat: null,
-                            type: 'linear'
-                        },
-                        legend: {
-                            x: 0.5,
-                            y: -0.25,
-                            xanchor: 'center',
-                            orientation: 'h'
-                        },
-                        margin: {
-                            ...getGcLayout().margin,
-                            b: 110
-                        },
-                        shapes: [
-                            {
-                                type: 'line',
-                                x0: maxElapsed,
-                                x1: maxElapsed,
-                                y0: 0,
-                                y1: 1,
-                                xref: 'x',
-                                yref: 'paper',
-                                line: { color: '#94a3b8', width: 1, dash: 'dot' }
-                            }
-                        ]
-                    };
-                    if (isSplitMode) {
-                        const gcTraces = [
-                            ...buildMetricTraces(baseData, chartTimestamps, frameIndex, 'gc', baseStyle, elapsedSeconds),
-                            ...buildMetricTraces(compareData, chartTimestamps, frameIndex, 'gc', compareStyle, compareElapsed)
-                        ];
-                        tasks.push(Plotly.react('compare-gc', applyVisibilityToTraces('compare-gc', gcTraces), compareGcLayout, getGcConfig()));
-                    } else {
-                        const sideGcLayout = {
-                            ...compareGcLayout,
-                            shapes: []
-                        };
-                        tasks.push(Plotly.react('compare-current-gc', applyVisibilityToTraces('compare-current-gc', buildMetricTraces(baseData, chartTimestamps, frameIndex, 'gc', baseStyle, elapsedSeconds)), sideGcLayout, getGcConfig()));
-                        tasks.push(Plotly.react('compare-other-gc', applyVisibilityToTraces('compare-other-gc', buildMetricTraces(compareData, chartTimestamps, frameIndex, 'gc', compareStyle, elapsedSeconds)), sideGcLayout, getGcConfig()));
-                    }
-                }
-                if (showRatio) {
-                    const compareRatioLayout = {
-                        ...getRatioLayout(),
-                        xaxis: {
-                            ...getRatioLayout().xaxis,
-                            title: 'Elapsed (s)',
-                            tickformat: null,
-                            type: 'linear'
-                        },
-                        legend: {
-                            x: 0.5,
-                            y: -0.25,
-                            xanchor: 'center',
-                            orientation: 'h'
-                        },
-                        margin: {
-                            ...getRatioLayout().margin,
-                            b: 110
-                        },
-                        shapes: [
-                            {
-                                type: 'line',
-                                x0: maxElapsed,
-                                x1: maxElapsed,
-                                y0: 0,
-                                y1: 1,
-                                xref: 'x',
-                                yref: 'paper',
-                                line: { color: '#94a3b8', width: 1, dash: 'dot' }
-                            }
-                        ]
-                    };
-                    if (isSplitMode) {
-                        const ratioTraces = [
-                            ...buildMetricTraces(baseData, chartTimestamps, frameIndex, 'ratio', baseStyle, elapsedSeconds),
-                            ...buildMetricTraces(compareData, chartTimestamps, frameIndex, 'ratio', compareStyle, compareElapsed)
-                        ];
-                        tasks.push(Plotly.react('compare-ratio', applyVisibilityToTraces('compare-ratio', ratioTraces), compareRatioLayout, getRatioConfig()));
-                    } else {
-                        const sideRatioLayout = {
-                            ...compareRatioLayout,
-                            shapes: []
-                        };
-                        tasks.push(Plotly.react('compare-current-ratio', applyVisibilityToTraces('compare-current-ratio', buildMetricTraces(baseData, chartTimestamps, frameIndex, 'ratio', baseStyle, elapsedSeconds)), sideRatioLayout, getRatioConfig()));
-                        tasks.push(Plotly.react('compare-other-ratio', applyVisibilityToTraces('compare-other-ratio', buildMetricTraces(compareData, chartTimestamps, frameIndex, 'ratio', compareStyle, elapsedSeconds)), sideRatioLayout, getRatioConfig()));
-                    }
-                }
-                return Promise.all(tasks);
-            }
-
-            function scheduleNext() {
-                if (!isPlaying) return;
-                if (currentFrame >= chartTimestamps.length - 1) {
-                    isPlaying = false;
-                    return;
-                }
-                const nextDelay = Math.max(
-                    16,
-                    (chartTimestamps[currentFrame + 1] - chartTimestamps[currentFrame]) / speedMultiplier
-                );
-                playTimer = setTimeout(() => {
-                    renderFrame(currentFrame + 1).then(scheduleNext);
-                }, nextDelay);
-            }
-
-            function play() {
-                if (isPlaying) return;
-                isPlaying = true;
-                scheduleNext();
-            }
-
-            function pause() {
-                isPlaying = false;
-                if (playTimer) {
-                    clearTimeout(playTimer);
-                    playTimer = null;
-                }
-            }
-
-            if (!window.compareReplayStops) {
-                window.compareReplayStops = {};
-            }
-            window.compareReplayStops.default = pause;
-
-            playBtn.addEventListener('click', play);
-            pauseBtn.addEventListener('click', pause);
-            resetBtn.addEventListener('click', () => {
-                pause();
-                renderFrame(0);
-            });
-            timeline.addEventListener('input', () => {
-                pause();
-                renderFrame(Number(timeline.value));
-            });
-            speedSelect.addEventListener('change', () => {
-                const parsed = Number(speedSelect.value);
-                if (!Number.isNaN(parsed) && parsed > 0) {
-                    speedMultiplier = parsed;
-                }
-            });
-
-            const initialFrame = Math.max(0, chartTimestamps.length - 1);
-            renderFrame(initialFrame).then(() => {
-                if (isSplitMode) {
-                    attachLegendVisibilityHandlers('compare-rss');
-                    if (showGC) {
-                        attachLegendVisibilityHandlers('compare-gc');
-                    }
-                    if (showRatio) {
-                        attachLegendVisibilityHandlers('compare-ratio');
-                    }
-                } else {
-                    attachLegendVisibilityHandlers('compare-current-rss');
-                    attachLegendVisibilityHandlers('compare-other-rss');
-                    if (showGC) {
-                        attachLegendVisibilityHandlers('compare-current-gc');
-                        attachLegendVisibilityHandlers('compare-other-gc');
-                    }
-                    if (showRatio) {
-                        attachLegendVisibilityHandlers('compare-current-ratio');
-                        attachLegendVisibilityHandlers('compare-other-ratio');
-                    }
-                }
-            });
-
-            const viewSelect = document.getElementById('compare-view-mode');
-            if (viewSelect) {
-                viewSelect.addEventListener('change', (event) => {
-                    const nextMode = event.target.value === 'side' ? 'side' : 'split';
-                    localStorage.setItem('compareMode', nextMode);
-                    renderCompareSection(baseSamples);
-                });
-            }
-        }
 
         function renderCompareSection(baseSamples) {
             return CompareShared.renderCompareSection({
@@ -2524,7 +2040,6 @@
                 headerSubtitle: 'Replay both runs with a shared timeline',
                 memoryFilenameBase: `build-monitor-${runId}`,
                 gcFilenameBase: `build-monitor-gc-${runId}`,
-                ratioFilenameBase: `build-monitor-rss-heap-${runId}`,
                 baseProcessSummary: window.currentProcessSummary || null,
                 compareProcessSummary: window.compareProcessSummary || null
             });
@@ -2538,13 +2053,6 @@
             return CompareShared.getGcConfig(`build-monitor-gc-${runId}`);
         }
 
-        function getRatioLayout() {
-            return CompareShared.getRatioLayout();
-        }
-
-        function getRatioConfig() {
-            return CompareShared.getRatioConfig(`build-monitor-rss-heap-${runId}`);
-        }
 
         function ensureChartResizeHandler() {
             if (window.BpwRunCharts) return BpwRunCharts.ensureChartResizeHandler();
@@ -2791,29 +2299,7 @@
             }
         }
 
-        async function downloadRssHeapRatioChart(format) {
-            try {
-                const chart = document.getElementById('rss-heap-chart');
-                const isMobile = window.innerWidth < 768;
-                const filename = `build-monitor-rss-heap-${runId}`;
-                const opts = {
-                    format: format,
-                    filename: filename,
-                    height: isMobile ? 400 : 500,
-                    width: isMobile ? 800 : 1000,
-                    scale: 2
-                };
-                const url = await Plotly.toImage(chart, opts);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `${filename}.${format}`;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-            } catch (e) {
-                console.error('Failed to export Heap/RSS ratio chart:', e);
-            }
-        }
+        async
 
         function downloadJson(runId) {
             try {
