@@ -24,6 +24,7 @@
     const section = document.getElementById('replay-section');
 
     let samples = [];
+    let stopReplay = null;
 
     function updateHint(message) {
         if (hint) hint.textContent = message;
@@ -33,6 +34,11 @@
         if (!section || !samples.length) {
             updateHint('Select a JSON file to render the replay.');
             return;
+        }
+
+        if (typeof stopReplay === 'function') {
+            stopReplay();
+            stopReplay = null;
         }
 
         const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
@@ -295,6 +301,12 @@
             clock.pause();
         }
 
+        stopReplay = () => {
+            pause();
+            coalescer.cancel();
+            clock.destroy();
+        };
+
         playBtn.addEventListener('click', () => clock.play());
         pauseBtn.addEventListener('click', pause);
         resetBtn.addEventListener('click', () => clock.reset());
@@ -318,6 +330,7 @@
         if (window.BpwChartStudio) {
             BpwChartStudio.init({
                 samples,
+                replayData: data,
                 runId: 'replay',
                 useElapsedAxis: true,
                 initialFrame: Math.max(0, chartTimestamps.length - 1)
@@ -326,6 +339,7 @@
         if (window.BpwBuildStory) {
             BpwBuildStory.init({
                 samples,
+                replayData: data,
                 runId: 'replay',
                 useElapsedAxis: true,
                 initialFrame: Math.max(0, chartTimestamps.length - 1)

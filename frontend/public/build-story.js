@@ -580,8 +580,8 @@
     }
 
     function init(options) {
-        const { samples, runId, useElapsedAxis, initialFrame } = options || {};
-        if (!samples?.length || !shared().buildReplayData) return;
+        const { samples, runId, useElapsedAxis, initialFrame, replayData } = options || {};
+        if (!samples?.length) return;
 
         state.samples = samples;
         state.runId = runId || '';
@@ -590,7 +590,13 @@
         state.scope = ['phase', 'cursor', 'full'].includes(storedScope) ? storedScope : DEFAULT_SCOPE;
         state.cursorFrame = initialFrame ?? 0;
         const rawTimestamps = [...new Set(samples.map((sample) => sample.Timestamp))].sort((a, b) => a - b);
-        state.replayData = shared().buildReplayData(samples, rawTimestamps);
+        if (replayData) {
+            state.replayData = replayData;
+        } else if (shared().buildReplayData) {
+            state.replayData = shared().buildReplayData(samples, rawTimestamps);
+        } else {
+            return;
+        }
         state.timestamps = state.replayData.timestamps || rawTimestamps;
         state.elapsedSeconds = state.timestamps.map((ts) => Math.max(0, (ts - state.timestamps[0]) / 1000));
         state.cursorFrame = Math.min(state.cursorFrame, Math.max(0, state.timestamps.length - 1));

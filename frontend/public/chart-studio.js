@@ -234,15 +234,21 @@
 
     function init(options) {
         const shared = getShared();
-        const { samples, runId, useElapsedAxis, initialFrame } = options || {};
-        if (!samples?.length || !shared.buildReplayData) return;
+        const { samples, runId, useElapsedAxis, initialFrame, replayData } = options || {};
+        if (!samples?.length) return;
 
         state.samples = samples;
         state.runId = runId || '';
         state.useElapsedAxis = useElapsedAxis !== false;
 
         const rawTimestamps = [...new Set(samples.map((s) => s.Timestamp))].sort((a, b) => a - b);
-        state.replayData = shared.buildReplayData(samples, rawTimestamps);
+        if (replayData) {
+            state.replayData = replayData;
+        } else if (shared.buildReplayData) {
+            state.replayData = shared.buildReplayData(samples, rawTimestamps);
+        } else {
+            return;
+        }
         state.timestamps = state.replayData.timestamps || rawTimestamps;
         state.elapsedSeconds = state.timestamps.map((ts) => Math.max(0, (ts - state.timestamps[0]) / 1000));
         state.frameIndex = initialFrame ?? Math.max(0, state.timestamps.length - 1);
