@@ -1365,6 +1365,37 @@ footer {
 
 .forecast-replay-controls {
     margin: 0.75rem 0 1rem;
+    display: grid;
+    gap: 0.65rem;
+}
+.forecast-view-mode {
+    display: inline-flex;
+    gap: 0.4rem;
+}
+.forecast-live-status {
+    margin: 0.35rem 0 0.5rem;
+    font-size: 0.9rem;
+    color: #4b5563;
+}
+.forecast-live-status.is-waiting,
+.forecast-live-status.is-delayed {
+    color: #9a3412;
+}
+.forecast-panel-help {
+    margin: 0 0 0.75rem;
+    font-size: 0.85rem;
+    color: #6b7280;
+}
+.forecast-replay-controls.is-live .forecast-replay-buttons,
+.forecast-replay-controls.is-live .forecast-replay-timeline-wrap {
+    opacity: 0.45;
+}
+.forecast-replay-controls.is-live #forecast-replay-timeline,
+.forecast-replay-controls.is-live #btn-forecast-replay-play,
+.forecast-replay-controls.is-live #btn-forecast-replay-pause,
+.forecast-replay-controls.is-live #btn-forecast-replay-reset,
+.forecast-replay-controls.is-live #forecast-replay-speed {
+    pointer-events: none;
 }
 .process-forecast { margin-top: 1.5rem; }
 .process-forecast-charts {
