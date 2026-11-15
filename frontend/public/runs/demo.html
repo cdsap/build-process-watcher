@@ -22,7 +22,11 @@
     <script src="/playback-clock.js"></script>
     <script src="/replay-controls.js"></script>
     <script src="/compare-shared.js"></script>
+    <script src="/chart-viewport.js"></script>
+    <script src="/chart-series-store.js"></script>
+    <script src="/live-run-controller.js"></script>
     <script src="/prediction-view.js"></script>
+    <script src="/freshness-view.js"></script>
     <script>
         // Set all links dynamically based on config
         (function() {
@@ -74,6 +78,7 @@
             COLOR_PALETTE,
             visibilityStore,
             applyVisibilityToTraces,
+            getMedianDelta,
             attachLegendVisibilityHandlers,
             hasGCData,
             hasRatioData,
@@ -1271,43 +1276,184 @@
             const counterReplayData = buildReplayData(samples, timestamps);
             const counterElapsedSeconds = chartTimestamps.map(timestamp => Math.max(0, (timestamp - chartTimestamps[0]) / 1000));
 
-            function buildMemoryTraces(frameIndex) {
-                const frameTimestamps = chartTimestamps.slice(0, frameIndex + 1).map(t => new Date(t));
-                const traces = [];
-                processKeys.forEach(processKey => {
-                    const def = chartSeries[processKey];
-                    if (def.firstRss === -1 || frameIndex < def.firstRss) return;
+            const memoryGapLimitMs = (getMedianDelta(chartTimestamps) || 0) * 2;
+            const memoryValuePool = [];
+            processKeys.forEach((processKey) => {
+                const def = chartSeries[processKey];
+                (def.rss || []).forEach((value) => { if (value !== null && value !== undefined) memoryValuePool.push(value); });
+                (def.heap || []).forEach((value) => { if (value !== null && value !== undefined) memoryValuePool.push(value); });
+            });
+            (chartTotalSeries.totalRss || []).forEach((value) => {
+                if (value !== null && value !== undefined) memoryValuePool.push(value);
+            });
+            const memoryXDomain = BpwChartViewport.timeDomain(chartTimestamps);
+            const memoryYDomain = BpwChartViewport.memoryDomain(memoryValuePool);
+            const memoryUirevision = `run:${runId}:panel:memory`;
+
+            function revealMetricSeries(timestamps, values, firstIndex, sampleIndex, playheadAbsoluteMs, allowVisual) {
+                if (firstIndex === -1 || sampleIndex < firstIndex) {
+                    return { x: [new Date(timestamps[0])], y: [null] };
+                }
+                const endIndex = Math.min(sampleIndex, timestamps.length - 1);
+                const series = BpwChartViewport.measuredSeriesWithGapBreaks(
+                    timestamps,
+                    values,
+                    firstIndex,
+                    endIndex,
+                    memoryGapLimitMs,
+                );
+                if (!allowVisual) return series;
+                const endpoint = BpwChartViewport.visualEndpoint(timestamps, values, playheadAbsoluteMs, memoryGapLimitMs);
+                if (!endpoint || endpoint.lowerIndex < firstIndex || endpoint.lowerIndex > endIndex) return series;
+                return {
+                    x: series.x.concat([new Date(endpoint.time)]),
+                    y: series.y.concat([endpoint.value]),
+                };
+            }
+
+            function appendUnobservedConnectors(traces, timestamps, values, firstIndex, sampleIndex, playheadAbsoluteMs, style) {
+                if (firstIndex === -1 || sampleIndex < firstIndex) return;
+                const connectors = BpwChartViewport.unobservedConnectors(
+                    timestamps,
+                    values,
+                    playheadAbsoluteMs,
+                    memoryGapLimitMs,
+                    { firstIndex, maxIndex: sampleIndex },
+                );
+                connectors.forEach((segment, index) => {
                     traces.push({
-                        x: frameTimestamps,
-                        y: def.rss.slice(0, frameIndex + 1),
+                        x: segment.x.map((time) => new Date(time)),
+                        y: segment.y,
+                        type: 'scatter',
+                        mode: 'lines',
+                        name: style.legendOnce && index === 0 ? 'Unobserved interval' : style.name,
+                        uid: `${style.uid}:gap:${segment.lowerIndex}`,
+                        legendgroup: style.legendgroup || 'unobserved',
+                        showlegend: Boolean(style.legendOnce && index === 0),
+                        hovertemplate: 'Unobserved interval<br>%{x}<br>%{y:.1f} MB<extra></extra>',
+                        line: {
+                            color: style.color,
+                            width: style.width == null ? 2 : style.width,
+                            dash: 'dot',
+                        },
+                        connectgaps: false,
+                    });
+                });
+            }
+
+            function buildMemoryTraces(frameIndex, playheadAbsoluteMs, allowVisualEndpoint) {
+                const sampleIndex = Math.max(0, Math.min(
+                    Number.isFinite(frameIndex) ? frameIndex : chartTimestamps.length - 1,
+                    chartTimestamps.length - 1,
+                ));
+                const absoluteMs = Number.isFinite(playheadAbsoluteMs)
+                    ? playheadAbsoluteMs
+                    : chartTimestamps[sampleIndex];
+                const traces = [];
+                let unobservedLegendUsed = false;
+                processKeys.forEach((processKey) => {
+                    const def = chartSeries[processKey];
+                    const uidBase = `${runId}:${processKey}`;
+                    const rssSeries = revealMetricSeries(
+                        chartTimestamps,
+                        def.rss,
+                        def.firstRss,
+                        sampleIndex,
+                        absoluteMs,
+                        allowVisualEndpoint,
+                    );
+                    const heapSeries = revealMetricSeries(
+                        chartTimestamps,
+                        def.heap,
+                        def.firstRss,
+                        sampleIndex,
+                        absoluteMs,
+                        allowVisualEndpoint,
+                    );
+                    traces.push({
+                        x: rssSeries.x,
+                        y: rssSeries.y,
                         type: 'scatter',
                         mode: 'lines',
                         name: `${def.processName} PID:${def.pid} (RSS)`,
+                        uid: `${uidBase}:rss`,
                         line: { color: def.color, width: 3 },
-                        connectgaps: false
+                        connectgaps: false,
                     });
                     traces.push({
-                        x: frameTimestamps,
-                        y: def.heap.slice(0, frameIndex + 1),
+                        x: heapSeries.x,
+                        y: heapSeries.y,
                         type: 'scatter',
                         mode: 'lines',
                         name: `${def.processName} PID:${def.pid} (Heap)`,
+                        uid: `${uidBase}:heap`,
                         line: { color: def.color, width: 2, dash: 'dash' },
-                        connectgaps: false
+                        connectgaps: false,
                     });
+                    if (allowVisualEndpoint) {
+                        appendUnobservedConnectors(
+                            traces,
+                            chartTimestamps,
+                            def.rss,
+                            def.firstRss,
+                            sampleIndex,
+                            absoluteMs,
+                            {
+                                uid: `${uidBase}:rss`,
+                                color: def.color,
+                                width: 2,
+                                name: `${def.processName} PID:${def.pid} (unobserved)`,
+                                legendOnce: !unobservedLegendUsed,
+                            },
+                        );
+                        if (!unobservedLegendUsed) {
+                            const gaps = BpwChartViewport.findGaps(chartTimestamps, memoryGapLimitMs);
+                            if (gaps.some((gap) => gap.lowerIndex >= def.firstRss && gap.lowerIndex <= sampleIndex && absoluteMs > gap.start)) {
+                                unobservedLegendUsed = true;
+                            }
+                        }
+                    }
                 });
-                if (firstTotalRssIndex !== -1 && frameIndex >= firstTotalRssIndex) {
+                if (firstTotalRssIndex !== -1) {
+                    const totalSeries = revealMetricSeries(
+                        chartTimestamps,
+                        chartTotalSeries.totalRss,
+                        firstTotalRssIndex,
+                        sampleIndex,
+                        absoluteMs,
+                        allowVisualEndpoint,
+                    );
                     traces.push({
-                        x: frameTimestamps,
-                        y: chartTotalSeries.totalRss.slice(0, frameIndex + 1),
+                        x: totalSeries.x,
+                        y: totalSeries.y,
                         type: 'scatter',
                         mode: 'lines',
                         name: 'Total RSS Memory',
+                        uid: `${runId}:total-rss`,
                         line: { color: '#2c3e50', width: 4 },
                         connectgaps: false,
-                        customdata: chartTotalSeries.distribution.slice(0, frameIndex + 1),
-                        hovertemplate: 'Total RSS: %{y} MB<br>%{customdata}<extra></extra>'
+                        customdata: sampleIndex >= firstTotalRssIndex
+                            ? chartTotalSeries.distribution.slice(firstTotalRssIndex, sampleIndex + 1)
+                            : [],
+                        hovertemplate: 'Total RSS: %{y} MB<br>%{customdata}<extra></extra>',
                     });
+                    if (allowVisualEndpoint) {
+                        appendUnobservedConnectors(
+                            traces,
+                            chartTimestamps,
+                            chartTotalSeries.totalRss,
+                            firstTotalRssIndex,
+                            sampleIndex,
+                            absoluteMs,
+                            {
+                                uid: `${runId}:total-rss`,
+                                color: '#7f8c8d',
+                                width: 3,
+                                name: 'Total RSS (unobserved)',
+                                legendOnce: !unobservedLegendUsed,
+                            },
+                        );
+                    }
                 }
                 return applyVisibilityToTraces('chart', traces);
             }
@@ -1353,10 +1499,10 @@
             }
 
             function setupReplayPanel(options) {
-                const { panelKey, chartId, controlsId, buildTraces, layoutGetter, configGetter, onLegendUpdate } = options;
+                const { panelKey, chartId, controlsId, buildTraces, layoutGetter, configGetter, onLegendUpdate, smoothMemory } = options;
                 const controls = document.getElementById(controlsId);
                 const chart = document.getElementById(chartId);
-                if (!controls || !chart) return;
+                if (!controls || !chart || !window.BpwPlaybackClock) return;
 
                 if (!window.replayStops) {
                     window.replayStops = {};
@@ -1372,79 +1518,152 @@
                 const pauseBtn = document.getElementById(`btn-${panelKey}-replay-pause`);
                 const resetBtn = document.getElementById(`btn-${panelKey}-replay-reset`);
                 const speedSelect = document.getElementById(`${panelKey}-replay-speed`);
+                const viewportSelect = document.getElementById(`${panelKey}-replay-viewport`);
+                const useSmoothMemory = smoothMemory === true && window.BpwChartViewport;
+                const followWindowMs = Math.max(
+                    30_000,
+                    Math.round((memoryXDomain.max - memoryXDomain.min) * 0.28),
+                );
 
-                let isPlaying = false;
-                let playTimer = null;
-                let currentFrame = 0;
-                let speedMultiplier = Number(speedSelect.value) || 15;
+                let latestRender = Promise.resolve();
+                let currentFrame = Math.max(0, chartTimestamps.length - 1);
+                let viewportMode = viewportSelect && viewportSelect.value === 'follow' ? 'follow' : 'full';
+                let playing = false;
 
-                timeline.max = String(Math.max(0, chartTimestamps.length - 1));
-
-                function updateUi(frameIndex) {
-                    timeline.value = String(frameIndex);
-                    meta.textContent = `Frame ${frameIndex + 1} / ${chartTimestamps.length}`;
-                    const timestamp = chartTimestamps[frameIndex];
-                    const elapsed = elapsedByTimestamp.get(timestamp);
-                    const timeText = new Date(timestamp).toLocaleTimeString();
-                    timeLabel.textContent = `Elapsed: ${elapsed}s | ${timeText}`;
+                function syncPlayButton() {
+                    if (!playBtn) return;
+                    playBtn.textContent = playing ? 'Pause' : 'Play';
+                    playBtn.setAttribute('aria-pressed', playing ? 'true' : 'false');
+                    playBtn.classList.toggle('secondary', playing);
                 }
 
-                function renderFrame(frameIndex) {
-                    currentFrame = frameIndex;
-                    updateUi(frameIndex);
-                    return Plotly.react(chartId, buildTraces(frameIndex), layoutGetter(), configGetter());
-                }
-
-                function scheduleNext() {
-                    if (!isPlaying) return;
-                    if (currentFrame >= chartTimestamps.length - 1) {
-                        isPlaying = false;
-                        return;
-                    }
-                    const nextDelay = Math.max(
-                        16,
-                        (chartTimestamps[currentFrame + 1] - chartTimestamps[currentFrame]) / speedMultiplier
+                function fixedLayout(playheadAbsoluteMs) {
+                    const base = layoutGetter();
+                    if (!useSmoothMemory) return base;
+                    const xDomain = BpwChartViewport.followDomain(
+                        memoryXDomain,
+                        playheadAbsoluteMs,
+                        followWindowMs,
+                        viewportMode,
                     );
-                    playTimer = setTimeout(() => {
-                        renderFrame(currentFrame + 1).then(scheduleNext);
-                    }, nextDelay);
+                    let layout = BpwChartViewport.applyFixedRanges(base, {
+                        x: {
+                            min: new Date(xDomain.min),
+                            max: new Date(xDomain.max),
+                        },
+                        y: memoryYDomain,
+                        uirevision: `${memoryUirevision}:${viewportMode}`,
+                    });
+                    layout = BpwChartViewport.applyPlayheadShape(layout, playheadAbsoluteMs);
+                    return layout;
+                }
+
+                function updateUi(position) {
+                    const sampleIndex = Math.max(0, position.sampleIndex);
+                    currentFrame = sampleIndex;
+                    timeline.max = String(Math.max(0, Math.round(position.durationMs)));
+                    timeline.value = String(Math.round(position.cursorMs));
+                    const elapsedSec = Math.round(position.cursorMs / 1000);
+                    const sampleLabel = position.sampleCount
+                        ? `Sample ${sampleIndex + 1} / ${position.sampleCount}`
+                        : 'Sample 0 / 0';
+                    meta.textContent = `Elapsed ${elapsedSec}s · ${sampleLabel}`;
+                    const absolute = chartTimestamps[0] + position.cursorMs;
+                    const recordedElapsed = elapsedByTimestamp.get(chartTimestamps[sampleIndex]);
+                    timeLabel.textContent = `Playhead: ${elapsedSec}s | ${new Date(absolute).toLocaleTimeString()}${
+                        recordedElapsed !== undefined ? ` | sample ${recordedElapsed}s` : ''
+                    }`;
+                    syncPlayButton();
+                }
+
+                function renderAt(position) {
+                    const allowVisual = useSmoothMemory && !position.reducedMotion;
+                    const traces = useSmoothMemory
+                        ? buildTraces(position.sampleIndex, position.absoluteMs, allowVisual)
+                        : buildTraces(position.sampleIndex);
+                    updateUi(position);
+                    latestRender = Plotly.react(
+                        chartId,
+                        traces,
+                        useSmoothMemory ? fixedLayout(position.absoluteMs) : fixedLayout(),
+                        configGetter(),
+                    );
+                    return latestRender;
+                }
+
+                const coalescer = useSmoothMemory
+                    ? BpwChartViewport.createRenderCoalescer({
+                        minIntervalMs: 70,
+                        render: (position) => renderAt(position),
+                    })
+                    : null;
+
+                const clock = BpwPlaybackClock.createPlaybackClock({
+                    timestamps: chartTimestamps,
+                    speed: Number(speedSelect.value) || 15,
+                    onPosition: (position) => {
+                        if (coalescer) coalescer.enqueue(position);
+                        else renderAt(position);
+                    },
+                    onStateChange: (state) => {
+                        playing = Boolean(state.playing);
+                        syncPlayButton();
+                    },
+                });
+
+                function pause() {
+                    clock.pause();
                 }
 
                 function play() {
-                    if (isPlaying) return;
-                    isPlaying = true;
-                    scheduleNext();
+                    clock.play();
                 }
 
-                function pause() {
-                    isPlaying = false;
-                    if (playTimer) {
-                        clearTimeout(playTimer);
-                        playTimer = null;
-                    }
+                function togglePlay() {
+                    if (playing) pause();
+                    else play();
                 }
 
-                window.replayStops[panelKey] = pause;
+                function renderFrame(frameIndex) {
+                    const idx = Math.max(0, Math.min(frameIndex, chartTimestamps.length - 1));
+                    clock.seekTo(chartTimestamps[idx] - chartTimestamps[0]);
+                    return latestRender;
+                }
 
-                playBtn.addEventListener('click', play);
-                pauseBtn.addEventListener('click', pause);
+                window.replayStops[panelKey] = () => {
+                    pause();
+                    coalescer?.cancel();
+                    clock.destroy();
+                };
+
+                if (playBtn) {
+                    playBtn.addEventListener('click', togglePlay);
+                }
+                if (pauseBtn) {
+                    pauseBtn.addEventListener('click', pause);
+                }
                 resetBtn.addEventListener('click', () => {
                     pause();
-                    renderFrame(0);
+                    clock.reset();
                 });
                 timeline.addEventListener('input', () => {
                     pause();
-                    renderFrame(Number(timeline.value));
+                    clock.seekTo(Number(timeline.value));
                 });
                 speedSelect.addEventListener('change', () => {
                     const parsed = Number(speedSelect.value);
-                    if (!Number.isNaN(parsed) && parsed > 0) {
-                        speedMultiplier = parsed;
-                    }
+                    if (!Number.isNaN(parsed) && parsed > 0) clock.setSpeed(parsed);
                 });
+                if (viewportSelect) {
+                    viewportSelect.addEventListener('change', () => {
+                        viewportMode = viewportSelect.value === 'follow' ? 'follow' : 'full';
+                        clock.seekTo(Number(timeline.value));
+                    });
+                }
 
-                const initialFrame = Math.max(0, chartTimestamps.length - 1);
-                renderFrame(initialFrame).then(() => {
+                syncPlayButton();
+                clock.seekTo(Math.max(0, chartTimestamps[chartTimestamps.length - 1] - chartTimestamps[0]));
+                latestRender.then(() => {
                     attachLegendVisibilityHandlers(chartId, onLegendUpdate);
                 });
 
@@ -1588,7 +1807,8 @@
                 buildTraces: buildMemoryTraces,
                 layoutGetter: getMemoryLayout,
                 configGetter: getMemoryConfig,
-                onLegendUpdate: updateMainChartFilterCheckboxes
+                onLegendUpdate: updateMainChartFilterCheckboxes,
+                smoothMemory: true
             });
             setupReplayPanel({
                 panelKey: 'gc',
@@ -2177,20 +2397,32 @@
             return CompareShared.getRatioConfig(`build-monitor-rss-heap-${runId}`);
         }
 
-        function renderChart(samples, predictionCheckpoints = []) {
+
+        function ensureChartResizeHandler() {
+            if (window.__bpwChartResizeBound) return;
+            window.__bpwChartResizeBound = true;
+            window.addEventListener('resize', () => {
+                ['chart', 'gc-chart', 'rss-heap-chart', 'jit-time-chart', 'jit-rate-chart', 'classes-loaded-chart', 'class-rate-chart']
+                    .forEach((id) => {
+                        if (document.getElementById(id)) Plotly.Plots.resize(id);
+                    });
+            });
+        }
+
+        function renderChart(samples, predictionCheckpoints = [], options = {}) {
             // Process data for chart - group by both Name and PID to handle multiple processes with same name
             const timestamps = [...new Set(samples.map(s => s.Timestamp))].sort((a, b) => a - b);
             // Create unique process keys (Name + PID combination)
             const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
-
+            
             const traces = [];
             const colorMap = buildColorMap(processKeys);
-
+            
             // Create traces for each unique process (Name + PID combination)
             processKeys.forEach((processKey, index) => {
                 const color = colorMap[processKey];
                 const [processName, pid] = processKey.split('|');
-
+                
                 // RSS data - use null for timestamps where process doesn't exist yet
                 const rssData = timestamps.map(timestamp => {
                     const sample = samples
@@ -2198,7 +2430,7 @@
                         [0];
                     return sample ? sample.RSS : null;  // null means "no data" - line won't appear
                 });
-
+                
                 traces.push({
                     x: timestamps.map(t => new Date(t)),
                     y: rssData,
@@ -2208,7 +2440,7 @@
                     line: { color: color, width: 3 },
                     connectgaps: false  // Don't connect across null values
                 });
-
+                
                 // Heap data - use null for timestamps where process doesn't exist yet
                 const heapData = timestamps.map(timestamp => {
                     const sample = samples
@@ -2216,7 +2448,7 @@
                         [0];
                     return sample ? sample.HeapUsed : null;  // null means "no data" - line won't appear
                 });
-
+                
                 traces.push({
                     x: timestamps.map(t => new Date(t)),
                     y: heapData,
@@ -2227,7 +2459,7 @@
                     connectgaps: false  // Don't connect across null values
                 });
             });
-
+            
             const totalSeries = buildTotalRssSeries(samples, timestamps, processKeys);
             let chartTimestamps = timestamps;
             let chartTraces = traces;
@@ -2241,7 +2473,7 @@
                     customdata: trace.customdata ? trace.customdata.slice(0, end) : undefined
                 }));
             }
-
+            
             chartTraces.push({
                 x: chartTimestamps.map(t => new Date(t)),
                 y: totalSeries.buildEndIndex >= 0 && totalSeries.buildEndIndex < timestamps.length
@@ -2263,9 +2495,12 @@
 
             const predictionMarkers = BpwPredictionView.buildMarkerData(predictionCheckpoints, chartTimestamps);
             chartTraces.push(...predictionMarkers.traces);
+            const memoryValues = chartTraces.flatMap((trace) => (trace.y || []).filter((value) => Number.isFinite(value)));
+            liveYDomain = BpwChartViewport.growOnlyDomain(liveYDomain, memoryValues, options.live ? 1.20 : 1.10);
             const baseMemoryLayout = getMemoryLayout();
-            const layout = {
+            let layout = {
                 ...baseMemoryLayout,
+                uirevision: `run:${runId}:panel:memory`,
                 shapes: [
                     ...(baseMemoryLayout.shapes || []),
                     ...predictionMarkers.shapes
@@ -2288,16 +2523,26 @@
                     fixedrange: true
                 }
             };
+            if (options.live) {
+                const xDomain = BpwChartViewport.timeDomain(chartTimestamps);
+                layout = BpwChartViewport.applyFixedRanges(layout, {
+                    x: { min: new Date(xDomain.min), max: new Date(xDomain.max) },
+                    y: liveYDomain,
+                    uirevision: `run:${runId}:panel:memory`,
+                });
+            }
             const config = getMemoryConfig();
-
-            Plotly.newPlot('chart', applyVisibilityToTraces('chart', chartTraces), layout, config);
+            const preparedTraces = applyVisibilityToTraces('chart', chartTraces);
+            const chartNode = document.getElementById('chart');
+            const alreadyMounted = !!(chartNode && chartNode.data && chartNode.data.length);
+            if (options.live && alreadyMounted) {
+                Plotly.react('chart', preparedTraces, layout, config);
+            } else {
+                Plotly.newPlot('chart', preparedTraces, layout, config);
+            }
             attachLegendVisibilityHandlers('chart', updateMainChartFilterCheckboxes);
             attachPredictionMarkerInteractions('chart');
-
-            // Handle window resize
-            window.addEventListener('resize', function() {
-                Plotly.Plots.resize('chart');
-            });
+            ensureChartResizeHandler();
         }
 
         function renderJvmCounterCharts(samples) {
