@@ -154,8 +154,11 @@ describe('per-process memory forecasts', () => {
       },
     ];
     const html = view.render({ samples: nearSamples, process_forecasts: nearForecasts }, null).html;
-    expect(html).toContain('Replay scrubs actual and prediction tracks together');
+    expect(html).toContain('Live follows the latest sample');
     expect(html).toContain('id="forecast-replay-controls"');
+    expect(html).toContain('id="btn-forecast-view-live"');
+    expect(html).toContain('id="btn-forecast-view-replay"');
+    expect(html).toContain('id="forecast-live-status"');
     expect(html).toContain('class="forecast-chart"');
     expect(html).toContain('class="forecast-chart-legend"');
     expect(html).toContain('class="process-forecast-charts"');
@@ -200,6 +203,9 @@ describe('per-process memory forecasts', () => {
         textContent: '',
         __innerHTML: '',
         listeners: {} as Record<string, Function>,
+        dataset: {},
+        classList: { toggle: jest.fn() },
+        setAttribute: jest.fn(),
         addEventListener: jest.fn((eventName: string, handler: Function) => {
           el.listeners[eventName] = handler;
         }),
@@ -226,26 +232,65 @@ describe('per-process memory forecasts', () => {
     byId.set('btn-forecast-replay-pause', makeEl());
     byId.set('btn-forecast-replay-reset', makeEl());
     byId.set('forecast-replay-speed', makeEl({ value: '15' }));
+    byId.set('btn-forecast-view-live', makeEl());
+    byId.set('btn-forecast-view-replay', makeEl());
+    byId.set('forecast-live-status', makeEl());
     hosts.push(makeEl());
-    const controls = makeEl();
+    const controls = makeEl({ dataset: { forecastViewMode: 'live' }, classList: { toggle: jest.fn() } });
     byId.set('forecast-replay-controls', controls);
     const root = makeEl();
     root.querySelector = (selector: string) => {
       const idMatch = selector.match(/^#(.+)$/);
       return idMatch ? byId.get(idMatch[1]) || null : null;
     };
+    root.querySelectorAll = (selector: string) => (selector === '[data-forecast-chart-host]' ? hosts : []);
 
-    const stop = view.bindProcessForecastReplay(root);
+    const controller = view.bindProcessForecastView(root, { initialMode: 'live' });
     const timeline = byId.get('forecast-replay-timeline');
     const meta = byId.get('forecast-replay-meta');
     expect(timeline).toBeTruthy();
-    expect(meta.textContent).toContain('Frame 3 / 3');
+    expect(controller.getMode()).toBe('live');
+    expect(meta.textContent).toContain('Live · sample 3 / 3');
     expect(hosts[0].innerHTML).toContain('class="actual-trace"');
     timeline.value = '0';
     timeline.listeners.input();
+    expect(controller.getMode()).toBe('replay');
     expect(meta.textContent).toContain('Frame 1 / 3');
     expect(hosts[0].innerHTML).toContain('class="actual-trace"');
-    stop();
+    controller.stop();
+  });
+
+  it('keeps actual charts while waiting for laggy timeline forecasts', () => {
+    const html = view.render({
+      prediction_mode: 'predict',
+      finished: false,
+      samples: [
+        { Timestamp: 1000, Name: 'GradleDaemon', PID: '1', HeapUsed: 10, RSS: 20 },
+        { Timestamp: 5000, Name: 'GradleDaemon', PID: '1', HeapUsed: 14, RSS: 24 },
+      ],
+      process_forecasts: [],
+    }, null).html;
+    expect(html).toContain('waiting for first forecast');
+    expect(html).toContain('btn-forecast-view-live');
+    expect(html).toContain('class="actual-trace"');
+  });
+
+  it('reports forecast lag for delayed predict issuances', () => {
+    const status = view.formatForecastStatus({
+      prediction_mode: 'predict',
+      samples: [{ Timestamp: 60000, Name: 'GradleDaemon', PID: '1', HeapUsed: 10, RSS: 20 }],
+      process_forecasts: [{
+        process_name: 'GradleDaemon',
+        pid: '1',
+        metric: 'heap',
+        created_at_ms: 10000,
+        method: 'last_value',
+        points: [{ target_at_ms: 20000, value_mb: 12 }],
+      }],
+    }, 'live');
+    expect(status).toContain('Live · predict');
+    expect(status).toContain('forecast 50s behind samples');
+    expect(status).toContain('last_value');
   });
 
   it('ignores malformed data and leaves legacy and pending runs usable', () => {

@@ -55,9 +55,16 @@ describe('run dashboard prediction evolution integration', () => {
   it('binds process forecast replay after the finished dashboard render', () => {
     const source = fs.readFileSync(pages[0], 'utf8');
     expect(source).toContain('bindForecastReplayControls');
-    expect(source).toContain('BpwPredictionView.bindProcessForecastReplay');
+    expect(source).toContain('BpwPredictionView.bindProcessForecastView');
     expect(source).toContain('shouldKeepPollingRun');
     expect(source).toContain('canUpdateFinishedPredictionPanel');
     expect(source).toContain('POST_FINISH_FORECAST_GRACE_MS');
+  });
+
+  it.each(pages)('patches live timeline forecasts without remounting controls: %s', (page) => {
+    const source = fs.readFileSync(page, 'utf8');
+    expect(source).toContain('forecastViewController.update');
+    expect(source).toContain('bindForecastViewControls');
+    expect(source).toContain("predictionMode === 'bqml-boosted'");
   });
 });

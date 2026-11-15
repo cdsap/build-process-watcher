@@ -240,6 +240,74 @@
     // Match an observed sample near a forecast target. Sparse monitor samples almost
     // never land on exact target millis, so allow a ±10s window on the sample clock.
     const ACTUAL_MATCH_WINDOW_MS = 10000;
+    const TIMELINE_MODES = new Set(['forecast', 'predict', 'bqml-boosted']);
+    // TabFM (predict) is often 30–60s behind samples; warn sooner for TimesFM.
+    const TIMELINE_LAG_WARN_S = {
+        predict: 40,
+        'bqml-boosted': 40,
+        forecast: 30,
+    };
+
+    function isTimelinePredictionMode(mode) {
+        return TIMELINE_MODES.has(String(mode || ''));
+    }
+
+    function forecastFreshness(data) {
+        const samples = Array.isArray(data?.samples) ? data.samples : [];
+        const forecasts = Array.isArray(data?.process_forecasts) ? data.process_forecasts : [];
+        let latestSampleMs = null;
+        samples.forEach((sample) => {
+            const timestamp = finiteNumber(sample?.Timestamp);
+            if (timestamp === null) return;
+            if (latestSampleMs === null || timestamp > latestSampleMs) latestSampleMs = timestamp;
+        });
+        let latestForecastMs = null;
+        const methods = {};
+        forecasts.forEach((forecast) => {
+            const created = finiteNumber(forecast?.created_at_ms);
+            if (created === null) return;
+            if (latestForecastMs === null || created > latestForecastMs) latestForecastMs = created;
+            const method = String(forecast?.method || 'unknown');
+            methods[method] = (methods[method] || 0) + 1;
+        });
+        const lagS = latestSampleMs !== null && latestForecastMs !== null
+            ? Math.max(0, Math.round((latestSampleMs - latestForecastMs) / 1000))
+            : null;
+        return {
+            latestSampleMs,
+            latestForecastMs,
+            lagS,
+            methods,
+            forecastCount: forecasts.length,
+        };
+    }
+
+    function formatForecastStatus(data, viewMode) {
+        const mode = String(data?.prediction_mode || '');
+        const freshness = forecastFreshness(data);
+        const parts = [viewMode === 'live' ? 'Live' : 'Replay'];
+        if (isTimelinePredictionMode(mode)) parts.push(mode);
+        if (!freshness.forecastCount) {
+            parts.push(isTimelinePredictionMode(mode) ? 'waiting for first forecast' : 'no forecasts');
+            return parts.join(' · ');
+        }
+        const methodEntries = Object.entries(freshness.methods);
+        if (methodEntries.length === 1) parts.push(methodEntries[0][0]);
+        else if (methodEntries.length > 1) {
+            parts.push(methodEntries.map(([name, count]) => `${name}×${count}`).join(' '));
+        }
+        const warnS = TIMELINE_LAG_WARN_S[mode] || 40;
+        if (freshness.lagS === null) {
+            parts.push('forecast clock unavailable');
+        } else if (freshness.lagS >= warnS) {
+            parts.push(`forecast ${freshness.lagS}s behind samples`);
+        } else if (viewMode === 'live') {
+            parts.push('tracking latest sample');
+        } else {
+            parts.push(`lag ${freshness.lagS}s`);
+        }
+        return parts.join(' · ');
+    }
 
     function actualNear(actuals, targetMs, maxDeltaMs) {
         const target = finiteNumber(targetMs);
@@ -358,7 +426,8 @@
         return points.map((point) => `${xAt(point.time)},${yAt(point[valueKey])}`).join(' ');
     }
 
-    function collectForecastGroups(data) {
+    function collectForecastGroups(data, options = {}) {
+        const allowEmptyPredictions = options.allowEmptyPredictions === true;
         const samples = Array.isArray(data?.samples) ? data.samples : [];
         const forecasts = Array.isArray(data?.process_forecasts) ? data.process_forecasts : [];
         const groups = new Map();
@@ -384,19 +453,22 @@
                 .sort((a, b) => a.time - b.time);
             if (points.length) group.predictions.push({ created, points });
         });
-        return [...groups.values()].filter(group => group.predictions.length).map((group) => {
-            group.actual.sort((a, b) => a.time - b.time);
-            group.predictions.sort((a, b) => a.created - b.created);
-            return group;
-        });
+        return [...groups.values()]
+            .filter((group) => group.actual.length && (allowEmptyPredictions || group.predictions.length))
+            .map((group) => {
+                group.actual.sort((a, b) => a.time - b.time);
+                group.predictions.sort((a, b) => a.created - b.created);
+                return group;
+            });
     }
 
     function renderForecastChartSvg(group, untilMs) {
-        const fullTrack = buildTrackingSeries(group.predictions, group.actual);
+        if (!group?.actual?.length) return '';
+        const fullTrack = buildTrackingSeries(group.predictions || [], group.actual);
         const trackPoints = fullTrack.observed.concat(fullTrack.forward);
         const allValues = group.actual.map((point) => point.value)
             .concat(trackPoints.flatMap((point) => [point.min, point.max, point.mid]));
-        const minTime = Math.min(group.actual[0].time, trackPoints[0]?.time ?? group.actual[0].time);
+        const minTime = group.actual[0].time;
         const maxTime = Math.max(
             group.actual[group.actual.length - 1].time,
             trackPoints[trackPoints.length - 1]?.time ?? group.actual[group.actual.length - 1].time,
@@ -454,18 +526,49 @@
 
     // Optional process_forecasts: {process_name, pid, metric, created_at_ms,
     // points: [{target_at_ms, value_mb}]}. Timestamps use the sample clock.
+    function renderForecastTablesHtml(groups) {
+        const timeLabel = (time) => new Date(time).toISOString();
+        return groups.map((group) => {
+            const rows = group.predictions.slice().reverse().flatMap((prediction) => prediction.points.map((point) => {
+                const actual = actualNear(group.actual, point.time, ACTUAL_MATCH_WINDOW_MS);
+                return `<tr><td>${timeLabel(prediction.created)}</td><td>${timeLabel(point.time)}</td><td>${formatValue(point.value, 'MB')}</td><td>${actual ? formatValue(actual.value, 'MB') : 'Pending'}</td></tr>`;
+            })).join('');
+            const body = rows || '<tr><td colspan="4">Waiting for forecast issuances</td></tr>';
+            return `<article class="process-forecast process-forecast-table"><h3>${escapeHtml(group.name)} · PID ${escapeHtml(group.pid)} · ${group.metric === 'heap' ? 'Heap' : 'RSS'}</h3><div class="forecast-table-scroll" tabindex="0" role="region" aria-label="Forecast values for ${escapeHtml(group.name)} PID ${escapeHtml(group.pid)} ${group.metric}"><table><thead><tr><th>Created (UTC)</th><th>Target (UTC)</th><th>Predicted</th><th>Actual at target</th></tr></thead><tbody>${body}</tbody></table></div></article>`;
+        }).join('');
+    }
+
+    function renderForecastChartsHtml(groups) {
+        return groups.map((group, index) => (
+            `<article class="process-forecast process-forecast-chart" data-forecast-group-index="${index}"><h3>${escapeHtml(group.name)} · PID ${escapeHtml(group.pid)} · ${group.metric === 'heap' ? 'Heap' : 'RSS'}</h3><div class="forecast-chart-host" data-forecast-chart-host>${renderForecastChartSvg(group, null)}</div></article>`
+        )).join('');
+    }
+
     function renderProcessTimelines(data) {
-        const available = collectForecastGroups(data);
-        if (!available.length) return '';
-        const timeLabel = time => new Date(time).toISOString();
-        const replayControls = `<div class="replay-controls forecast-replay-controls" id="forecast-replay-controls">
-            <div class="buttons">
+        const timelineMode = isTimelinePredictionMode(data?.prediction_mode);
+        const available = collectForecastGroups(data, { allowEmptyPredictions: timelineMode });
+        if (!available.length) {
+            if (!timelineMode) return '';
+            return `<section class="prediction-panel process-forecasts" data-forecast-panel data-prediction-mode="${escapeHtml(String(data.prediction_mode || ''))}"><h2>Process memory forecasts</h2><p id="forecast-live-status" class="forecast-live-status">${escapeHtml(formatForecastStatus(data, data?.finished === true ? 'replay' : 'live'))}</p><p>No eligible Gradle/Kotlin process samples yet.</p></section>`;
+        }
+        const defaultMode = (typeof window !== 'undefined' && window.__bpwForecastViewMode)
+            || (data?.finished === true ? 'replay' : 'live');
+        const lagWarn = TIMELINE_LAG_WARN_S[String(data?.prediction_mode || '')] || 40;
+        const freshness = forecastFreshness(data);
+        const delayed = freshness.forecastCount > 0 && freshness.lagS !== null && freshness.lagS >= lagWarn;
+        const waiting = freshness.forecastCount === 0;
+        const replayControls = `<div class="replay-controls forecast-replay-controls" id="forecast-replay-controls" data-forecast-view-mode="${defaultMode}">
+            <div class="forecast-view-mode" role="group" aria-label="Forecast view mode">
+                <button class="btn${defaultMode === 'live' ? '' : ' secondary'}" type="button" id="btn-forecast-view-live" data-forecast-view-mode="live" aria-pressed="${defaultMode === 'live' ? 'true' : 'false'}">Live</button>
+                <button class="btn${defaultMode === 'replay' ? '' : ' secondary'}" type="button" id="btn-forecast-view-replay" data-forecast-view-mode="replay" aria-pressed="${defaultMode === 'replay' ? 'true' : 'false'}">Replay</button>
+            </div>
+            <div class="buttons forecast-replay-buttons">
                 <button class="btn" type="button" id="btn-forecast-replay-play">Play</button>
                 <button class="btn secondary" type="button" id="btn-forecast-replay-pause">Pause</button>
                 <button class="btn secondary" type="button" id="btn-forecast-replay-reset">Reset</button>
             </div>
             <div class="meta" id="forecast-replay-meta">Frame 0 / 0</div>
-            <div class="timeline">
+            <div class="timeline forecast-replay-timeline-wrap">
                 <input type="range" id="forecast-replay-timeline" aria-label="Prediction replay timeline" min="0" max="0" value="0">
                 <div class="meta" id="forecast-replay-time-label">Elapsed: 0s</div>
                 <div class="meta">
@@ -482,37 +585,31 @@
             </div>
         </div>`;
         const sharedLegend = `<ul class="forecast-chart-legend" aria-label="Chart legend"><li><span class="legend-swatch legend-actual"></span>Actual</li><li><span class="legend-swatch legend-prediction"></span>Prediction</li><li><span class="legend-swatch legend-band"></span>Prediction range</li><li><span class="legend-swatch legend-now"></span>Latest sample</li></ul>`;
-        const chartPanels = available.map((group, index) => (
-            `<article class="process-forecast process-forecast-chart" data-forecast-group-index="${index}"><h3>${escapeHtml(group.name)} · PID ${escapeHtml(group.pid)} · ${group.metric === 'heap' ? 'Heap' : 'RSS'}</h3><div class="forecast-chart-host" data-forecast-chart-host>${renderForecastChartSvg(group, null)}</div></article>`
-        )).join('');
-        const tablePanels = available.map((group) => {
-            const rows = group.predictions.slice().reverse().flatMap((prediction) => prediction.points.map((point) => {
-                const actual = actualNear(group.actual, point.time, ACTUAL_MATCH_WINDOW_MS);
-                return `<tr><td>${timeLabel(prediction.created)}</td><td>${timeLabel(point.time)}</td><td>${formatValue(point.value, 'MB')}</td><td>${actual ? formatValue(actual.value, 'MB') : 'Pending'}</td></tr>`;
-            })).join('');
-            return `<article class="process-forecast process-forecast-table"><h3>${escapeHtml(group.name)} · PID ${escapeHtml(group.pid)} · ${group.metric === 'heap' ? 'Heap' : 'RSS'}</h3><div class="forecast-table-scroll" tabindex="0" role="region" aria-label="Forecast values for ${escapeHtml(group.name)} PID ${escapeHtml(group.pid)} ${group.metric}"><table><thead><tr><th>Created (UTC)</th><th>Target (UTC)</th><th>Predicted</th><th>Actual at target</th></tr></thead><tbody>${rows}</tbody></table></div></article>`;
-        }).join('');
-        return `<section class="prediction-panel process-forecasts"><h2>Process memory forecasts</h2><p>Replay scrubs actual and prediction tracks together. Actuals match the nearest sample within 10s.</p>${replayControls}${sharedLegend}<div class="process-forecast-charts" aria-label="Forecast charts">${chartPanels}</div><div class="process-forecast-tables" aria-label="Forecast value tables">${tablePanels}</div><script type="application/json" id="bpw-forecast-replay-data">${JSON.stringify(available).replace(/</g, '\\u003c')}</script></section>`;
+        const statusClass = `forecast-live-status${delayed ? ' is-delayed' : ''}${waiting ? ' is-waiting' : ''}`;
+        return `<section class="prediction-panel process-forecasts" data-forecast-panel data-prediction-mode="${escapeHtml(String(data?.prediction_mode || ''))}"><h2>Process memory forecasts</h2><p id="forecast-live-status" class="${statusClass}">${escapeHtml(formatForecastStatus(data, defaultMode))}</p><p class="forecast-panel-help">Live follows the latest sample and keeps the last forecast while new ones catch up. Replay scrubs actual and prediction tracks together.</p>${replayControls}${sharedLegend}<div class="process-forecast-charts" aria-label="Forecast charts">${renderForecastChartsHtml(available)}</div><div class="process-forecast-tables" aria-label="Forecast value tables">${renderForecastTablesHtml(available)}</div><script type="application/json" id="bpw-forecast-replay-data">${JSON.stringify(available).replace(/</g, '\\u003c')}</script></section>`;
     }
 
-    function bindProcessForecastReplay(root) {
-        if (!root) return () => {};
+    function bindProcessForecastView(root, options = {}) {
+        if (!root) return { stop() {}, update() { return false; }, getMode() { return 'live'; } };
         const controls = root.querySelector('#forecast-replay-controls');
         const dataNode = root.querySelector('#bpw-forecast-replay-data');
-        if (!controls || !dataNode) return () => {};
+        const statusNode = root.querySelector('#forecast-live-status');
+        const chartsNode = root.querySelector('.process-forecast-charts');
+        const tablesNode = root.querySelector('.process-forecast-tables');
+        const liveBtn = root.querySelector('#btn-forecast-view-live');
+        const replayBtn = root.querySelector('#btn-forecast-view-replay');
+        if (!controls || !dataNode) return { stop() {}, update() { return false; }, getMode() { return 'live'; } };
+
         let groups = [];
         try {
             groups = JSON.parse(dataNode.textContent || '[]');
         } catch (error) {
-            return () => {};
+            groups = [];
         }
-        if (!Array.isArray(groups) || !groups.length) return () => {};
+        if (!Array.isArray(groups)) groups = [];
 
-        const timestamps = [...new Set(groups.flatMap((group) => (group.actual || []).map((point) => point.time)))]
-            .filter((time) => Number.isFinite(time))
-            .sort((a, b) => a - b);
-        if (!timestamps.length) return () => {};
-
+        let timestamps = [];
+        let hosts = [];
         const timeline = controls.querySelector('#forecast-replay-timeline');
         const meta = controls.querySelector('#forecast-replay-meta');
         const timeLabel = controls.querySelector('#forecast-replay-time-label');
@@ -520,29 +617,70 @@
         const pauseBtn = controls.querySelector('#btn-forecast-replay-pause');
         const resetBtn = controls.querySelector('#btn-forecast-replay-reset');
         const speedSelect = controls.querySelector('#forecast-replay-speed');
-        const hosts = [...root.querySelectorAll('[data-forecast-chart-host]')];
-        if (!timeline || !meta || !timeLabel || !playBtn || !pauseBtn || !resetBtn || !speedSelect || !hosts.length) {
-            return () => {};
-        }
 
         let isPlaying = false;
         let playTimer = null;
-        let currentFrame = timestamps.length - 1;
-        let speedMultiplier = Number(speedSelect.value) || 15;
-        timeline.min = '0';
-        timeline.max = String(Math.max(0, timestamps.length - 1));
+        let currentFrame = 0;
+        let speedMultiplier = Number(speedSelect?.value) || 15;
+        let mode = options.initialMode
+            || (typeof window !== 'undefined' && window.__bpwForecastViewMode)
+            || (options.finished === true ? 'replay' : 'live');
+        let latestData = options.data || null;
+
+        function rebuildTimestamps() {
+            timestamps = [...new Set(groups.flatMap((group) => (group.actual || []).map((point) => point.time)))]
+                .filter((time) => Number.isFinite(time))
+                .sort((a, b) => a - b);
+            hosts = [...root.querySelectorAll('[data-forecast-chart-host]')];
+            if (timeline) {
+                timeline.min = '0';
+                timeline.max = String(Math.max(0, timestamps.length - 1));
+            }
+        }
 
         function elapsedFor(timestamp) {
-            const first = timestamps[0];
-            return Math.max(0, Math.round((timestamp - first) / 1000));
+            if (!timestamps.length) return 0;
+            return Math.max(0, Math.round((timestamp - timestamps[0]) / 1000));
+        }
+
+        function refreshStatus() {
+            if (!statusNode || !latestData) return;
+            const freshness = forecastFreshness(latestData);
+            const warnS = TIMELINE_LAG_WARN_S[String(latestData?.prediction_mode || '')] || 40;
+            statusNode.textContent = formatForecastStatus(latestData, mode);
+            statusNode.classList.toggle('is-delayed', freshness.forecastCount > 0 && freshness.lagS !== null && freshness.lagS >= warnS);
+            statusNode.classList.toggle('is-waiting', freshness.forecastCount === 0);
+        }
+
+        function applyModeChrome() {
+            controls.dataset.forecastViewMode = mode;
+            controls.classList.toggle('is-live', mode === 'live');
+            controls.classList.toggle('is-replay', mode === 'replay');
+            if (liveBtn) {
+                liveBtn.setAttribute('aria-pressed', mode === 'live' ? 'true' : 'false');
+                liveBtn.classList.toggle('secondary', mode !== 'live');
+            }
+            if (replayBtn) {
+                replayBtn.setAttribute('aria-pressed', mode === 'replay' ? 'true' : 'false');
+                replayBtn.classList.toggle('secondary', mode !== 'replay');
+            }
+            if (typeof window !== 'undefined') window.__bpwForecastViewMode = mode;
+            refreshStatus();
         }
 
         function renderFrame(frameIndex) {
+            if (!timestamps.length || !hosts.length) return;
             currentFrame = Math.max(0, Math.min(frameIndex, timestamps.length - 1));
             const timestamp = timestamps[currentFrame];
-            timeline.value = String(currentFrame);
-            meta.textContent = `Frame ${currentFrame + 1} / ${timestamps.length}`;
-            timeLabel.textContent = `Elapsed: ${elapsedFor(timestamp)}s | ${new Date(timestamp).toLocaleTimeString()}`;
+            if (timeline) timeline.value = String(currentFrame);
+            if (meta) {
+                meta.textContent = mode === 'live'
+                    ? `Live · sample ${currentFrame + 1} / ${timestamps.length}`
+                    : `Frame ${currentFrame + 1} / ${timestamps.length}`;
+            }
+            if (timeLabel) {
+                timeLabel.textContent = `Elapsed: ${elapsedFor(timestamp)}s | ${new Date(timestamp).toLocaleTimeString()}`;
+            }
             hosts.forEach((host, index) => {
                 const group = groups[index];
                 if (!group) return;
@@ -559,7 +697,7 @@
         }
 
         function scheduleNext() {
-            if (!isPlaying) return;
+            if (!isPlaying || mode !== 'replay') return;
             if (currentFrame >= timestamps.length - 1) {
                 isPlaying = false;
                 return;
@@ -575,29 +713,92 @@
         }
 
         function play() {
-            if (isPlaying) return;
+            if (mode !== 'replay' || isPlaying || !timestamps.length) return;
             if (currentFrame >= timestamps.length - 1) renderFrame(0);
             isPlaying = true;
             scheduleNext();
         }
 
+        function setMode(nextMode) {
+            const resolved = nextMode === 'replay' ? 'replay' : 'live';
+            if (resolved === mode) {
+                applyModeChrome();
+                return;
+            }
+            mode = resolved;
+            pause();
+            applyModeChrome();
+            // Live always snaps to the tip. Replay keeps the current frame so scrubbers
+            // can set the target frame after switching without being overwritten.
+            if (mode === 'live') renderFrame(Math.max(0, timestamps.length - 1));
+        }
+
+        function update(data) {
+            if (!data) return false;
+            latestData = data;
+            const timelineMode = isTimelinePredictionMode(data.prediction_mode);
+            const nextGroups = collectForecastGroups(data, { allowEmptyPredictions: timelineMode });
+            if (!nextGroups.length) return false;
+            groups = nextGroups;
+            if (dataNode) dataNode.textContent = JSON.stringify(groups);
+            if (chartsNode) chartsNode.innerHTML = renderForecastChartsHtml(groups);
+            if (tablesNode) tablesNode.innerHTML = renderForecastTablesHtml(groups);
+            rebuildTimestamps();
+            refreshStatus();
+            if (!timestamps.length) return true;
+            if (mode === 'live') {
+                pause();
+                renderFrame(timestamps.length - 1);
+            } else {
+                renderFrame(Math.min(currentFrame, timestamps.length - 1));
+            }
+            return true;
+        }
+
+        rebuildTimestamps();
+        if (!timestamps.length || !timeline || !meta || !timeLabel || !playBtn || !pauseBtn || !resetBtn || !speedSelect) {
+            applyModeChrome();
+            return {
+                stop: pause,
+                update,
+                getMode() { return mode; },
+                setMode,
+            };
+        }
+
+        if (liveBtn) liveBtn.addEventListener('click', () => setMode('live'));
+        if (replayBtn) replayBtn.addEventListener('click', () => setMode('replay'));
         playBtn.addEventListener('click', play);
         pauseBtn.addEventListener('click', pause);
         resetBtn.addEventListener('click', () => {
             pause();
+            setMode('replay');
             renderFrame(0);
         });
         timeline.addEventListener('input', () => {
+            const frame = Number(timeline.value);
             pause();
-            renderFrame(Number(timeline.value));
+            setMode('replay');
+            renderFrame(frame);
         });
         speedSelect.addEventListener('change', () => {
             const parsed = Number(speedSelect.value);
             if (!Number.isNaN(parsed) && parsed > 0) speedMultiplier = parsed;
         });
 
-        renderFrame(timestamps.length - 1);
-        return pause;
+        applyModeChrome();
+        renderFrame(mode === 'live' ? timestamps.length - 1 : timestamps.length - 1);
+        return {
+            stop: pause,
+            update,
+            getMode() { return mode; },
+            setMode,
+        };
+    }
+
+    function bindProcessForecastReplay(root) {
+        const controller = bindProcessForecastView(root, {});
+        return () => controller.stop();
     }
 
     function render(data, selectedWindow) {
@@ -645,6 +846,10 @@
         aggregateRssAtTimestamp,
         peakAggregateRss,
         actualNear,
+        isTimelinePredictionMode,
+        forecastFreshness,
+        formatForecastStatus,
+        bindProcessForecastView,
         bindProcessForecastReplay,
     };
 })();
