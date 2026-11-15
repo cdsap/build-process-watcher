@@ -124,4 +124,30 @@ describe('production replay controls', () => {
     expect(controls).toContain("opts.timelineAriaLabel || 'Replay position'");
     expect(controls).toContain("opts.speedAriaLabel || 'Playback speed'");
   });
+
+  it('uses the classic replay speed options for the unified replay', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../frontend/public/replay.js'), 'utf8');
+    const unifiedOptions = source.match(
+      /<select id="bpw-unified-speed"[^>]*>([\s\S]*?)<\/select>/
+    )?.[1];
+    const classicOptions = source.match(
+      /<select id="single-replay-speed"[^>]*>([\s\S]*?)<\/select>/
+    )?.[1];
+
+    expect(unifiedOptions).toBeDefined();
+    expect(unifiedOptions?.replace(/\s+/g, '')).toBe(classicOptions?.replace(/\s+/g, ''));
+  });
+
+  test.each([
+    '../frontend/public/replay.html',
+    '../frontend/public/runs/[runId].html',
+    '../frontend/public/runs/demo.html',
+  ])('%s loads the playback clock before the experiment layout', relativePath => {
+    const source = fs.readFileSync(path.join(__dirname, relativePath), 'utf8');
+
+    expect(source.indexOf('/playback-clock.js')).toBeGreaterThan(-1);
+    expect(source.indexOf('/experiment-layout.js')).toBeGreaterThan(
+      source.indexOf('/playback-clock.js')
+    );
+  });
 });
