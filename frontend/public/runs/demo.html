@@ -618,14 +618,23 @@
             });
         }
 
+        function bindForecastViewControls(content, data) {
+            if (!content || typeof window.BpwPredictionView?.bindProcessForecastView !== 'function') return;
+            if (window.forecastViewController?.stop) window.forecastViewController.stop();
+            window.forecastViewController = BpwPredictionView.bindProcessForecastView(content, {
+                data,
+                finished: data?.finished === true,
+                initialMode: window.__bpwForecastViewMode || (data?.finished === true ? 'replay' : 'live'),
+            });
+            window.forecastReplayStop = () => {
+                if (window.forecastViewController?.stop) window.forecastViewController.stop();
+            };
+        }
+
         function renderPredictionPanel(data, focusWindow = null) {
             const panel = document.getElementById('run-panel-predictions');
             const content = document.getElementById('prediction-panel-content');
             if (!panel || !content) return;
-            if (window.forecastReplayStop) {
-                window.forecastReplayStop();
-                window.forecastReplayStop = null;
-            }
             const checkpoints = BpwPredictionView.normalizeCheckpoints(data?.prediction_checkpoints);
             const hasProcessForecasts = Array.isArray(data?.process_forecasts) && data.process_forecasts.length > 0;
             const predictionMode = data?.prediction_mode;
@@ -639,10 +648,27 @@
             if (window.BpwExperimentLayout?.setPredictionsEnabled) {
                 BpwExperimentLayout.setPredictionsEnabled(predictionEnabled);
             }
+
+            const canPatchLive = focusWindow === null
+                && window.forecastViewController
+                && typeof window.forecastViewController.update === 'function'
+                && content.querySelector('#forecast-replay-controls')
+                && BpwPredictionView.isTimelinePredictionMode?.(predictionMode)
+                && window.forecastViewController.update(data);
+            if (canPatchLive) return;
+
+            if (window.forecastViewController?.stop) {
+                window.forecastViewController.stop();
+                window.forecastViewController = null;
+            }
+            if (window.forecastReplayStop) {
+                window.forecastReplayStop();
+                window.forecastReplayStop = null;
+            }
             const view = BpwPredictionView.render({ ...data, predictionEnabled }, predictionSelectedWindow);
             predictionSelectedWindow = view.selectedWindow;
             content.innerHTML = view.html;
-            window.forecastReplayStop = BpwPredictionView.bindProcessForecastReplay(content);
+            bindForecastViewControls(content, data);
             if (focusWindow !== null) {
                 const selected = content.querySelector(`[data-prediction-window="${Number(focusWindow)}"]`);
                 if (selected && typeof selected.focus === 'function') selected.focus({ preventScroll: true });
@@ -1396,14 +1422,8 @@
 
             bindRunDashboardTabs();
             bindPredictionPanel(data);
-            if (window.forecastReplayStop) {
-                window.forecastReplayStop();
-                window.forecastReplayStop = null;
-            }
             const predictionContent = document.getElementById('prediction-panel-content');
-            if (predictionContent && typeof window.BpwPredictionView?.bindProcessForecastReplay === 'function') {
-                window.forecastReplayStop = BpwPredictionView.bindProcessForecastReplay(predictionContent);
-            }
+            bindForecastViewControls(predictionContent, data);
         }
 
         function shouldShowRssHeapRatioChart(samples) {
