@@ -22,9 +22,16 @@ describe('run dashboard prediction evolution integration', () => {
   it('places Predictions in the Classic/Studio/Story mode switch', () => {
     const layout = fs.readFileSync(path.join(__dirname, '../frontend/public/experiment-layout.js'), 'utf8');
     expect(layout).toContain("predictions: 'predictions'");
-    expect(layout).toContain("buildModeButton(VIEW_MODES.predictions, 'Predictions'");
+    expect(layout).toContain('Predictions</span>');
     expect(layout).toContain('applyPredictionsView');
     expect(layout).toContain('bpw-view-predictions');
+    expect(layout).toContain('setPredictionsEnabled');
+    expect(layout).toContain('Not enabled');
+  });
+
+  it.each(pages)('wires prediction enablement into the mode switch: %s', (page) => {
+    const source = fs.readFileSync(page, 'utf8');
+    expect(source).toContain('BpwExperimentLayout.setPredictionsEnabled(predictionEnabled)');
   });
 
   it.each(pages)('preserves marker-to-checkpoint selection wiring: %s', (page) => {

@@ -45,6 +45,7 @@
     let unifiedTimestamps = [];
     let unifiedElapsedByTimestamp = null;
     let focusPanelId = null;
+    let predictionsEnabled = false;
 
     function getMode() {
         return localStorage.getItem(STORAGE_KEY) === MODES.experiment ? MODES.experiment : MODES.classic;
@@ -76,14 +77,35 @@
 
     function getViewMode() {
         if (localStorage.getItem(VIEW_STORAGE_KEY) === VIEW_MODES.predictions) {
-            return VIEW_MODES.predictions;
+            if (supportsPredictionsMode()) return VIEW_MODES.predictions;
+            localStorage.removeItem(VIEW_STORAGE_KEY);
         }
         if (!isExperiment()) return VIEW_MODES.classic;
         return getPerspective() === PERSPECTIVES.story ? VIEW_MODES.story : VIEW_MODES.studio;
     }
 
-    function supportsPredictionsMode() {
+    function hasPredictionsPanel() {
         return Boolean(document.getElementById('run-panel-predictions'));
+    }
+
+    function supportsPredictionsMode() {
+        return hasPredictionsPanel() && predictionsEnabled === true;
+    }
+
+    function setPredictionsEnabled(enabled) {
+        predictionsEnabled = enabled === true;
+        if (!predictionsEnabled && getViewMode() === VIEW_MODES.predictions) {
+            localStorage.removeItem(VIEW_STORAGE_KEY);
+            applyMode(getMode());
+        }
+        document.querySelectorAll('.bpw-mode-switch').forEach((switcher) => {
+            refreshPredictionsModeButton(switcher);
+        });
+        updateModeSwitches();
+    }
+
+    function isPredictionsEnabled() {
+        return predictionsEnabled === true;
     }
 
     function setDashboardPanelsVisible(showDashboard) {
@@ -118,7 +140,8 @@
     }
 
     function setViewMode(viewMode) {
-        if (viewMode === VIEW_MODES.predictions && supportsPredictionsMode()) {
+        if (viewMode === VIEW_MODES.predictions) {
+            if (!supportsPredictionsMode()) return;
             localStorage.setItem(VIEW_STORAGE_KEY, VIEW_MODES.predictions);
             applyPredictionsView();
             return;
@@ -403,6 +426,40 @@
         `;
     }
 
+    function predictionsModeButtonHtml() {
+        if (!hasPredictionsPanel()) return '';
+        const enabled = supportsPredictionsMode();
+        const pressed = getViewMode() === VIEW_MODES.predictions;
+        return `
+            <button type="button" class="bpw-mode-btn" data-bpw-view-mode="${VIEW_MODES.predictions}" aria-pressed="${pressed ? 'true' : 'false'}" aria-disabled="${enabled ? 'false' : 'true'}" ${enabled ? '' : 'disabled'}>
+                <span>Predictions</span>
+                <small>${enabled ? 'Forecasts + checkpoints' : 'Not enabled'}</small>
+            </button>
+        `;
+    }
+
+    function refreshPredictionsModeButton(switcher) {
+        if (!switcher) return;
+        const existing = switcher.querySelector('[data-bpw-view-mode="predictions"]');
+        if (!hasPredictionsPanel()) {
+            if (existing) existing.remove();
+            return;
+        }
+        const html = predictionsModeButtonHtml();
+        if (existing) {
+            existing.outerHTML = html;
+        } else {
+            switcher.insertAdjacentHTML('beforeend', html);
+        }
+        const button = switcher.querySelector('[data-bpw-view-mode="predictions"]');
+        if (!button) return;
+        button.dataset.bpwModeBound = 'true';
+        button.addEventListener('click', () => {
+            if (button.disabled || button.getAttribute('aria-disabled') === 'true') return;
+            setViewMode(VIEW_MODES.predictions);
+        });
+    }
+
     function modeSwitchMarkup() {
         const experimentLabel = supportsStoryMode() ? 'Studio' : 'Experiment';
         const experimentDescription = supportsStoryMode() ? 'Overlay + panels' : 'Alternate layout';
@@ -410,14 +467,19 @@
             buildModeButton(VIEW_MODES.classic, 'Classic', 'Stacked charts'),
             buildModeButton(VIEW_MODES.studio, experimentLabel, experimentDescription),
             supportsStoryMode() ? buildModeButton(VIEW_MODES.story, 'Story', 'Detected phases') : '',
-            supportsPredictionsMode() ? buildModeButton(VIEW_MODES.predictions, 'Predictions', 'Forecasts + checkpoints') : ''
+            predictionsModeButtonHtml()
         ].join('');
     }
 
     function bindModeSwitch(switcher) {
         if (!switcher) return;
         switcher.querySelectorAll('[data-bpw-view-mode]').forEach((btn) => {
-            btn.addEventListener('click', () => setViewMode(btn.getAttribute('data-bpw-view-mode')));
+            if (btn.dataset.bpwModeBound === 'true') return;
+            btn.dataset.bpwModeBound = 'true';
+            btn.addEventListener('click', () => {
+                if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') return;
+                setViewMode(btn.getAttribute('data-bpw-view-mode'));
+            });
         });
     }
 
@@ -425,11 +487,8 @@
         if (!toggleButton) return;
         const existing = toggleButton.nextElementSibling;
         if (toggleButton.dataset.bpwModeSwitchReady === 'true' && existing?.classList?.contains('bpw-mode-switch')) {
-            // Run HTML mounts after first paint; rebuild once Predictions panel exists.
-            const wantsPredictions = supportsPredictionsMode();
-            const hasPredictions = Boolean(existing.querySelector('[data-bpw-view-mode="predictions"]'));
-            if (wantsPredictions === hasPredictions) return;
-            existing.innerHTML = modeSwitchMarkup();
+            // Run HTML mounts after first paint; add Predictions once the panel exists.
+            refreshPredictionsModeButton(existing);
             bindModeSwitch(existing);
             updateModeSwitches();
             return;
@@ -680,6 +739,8 @@
         setPerspective,
         isStoryPerspective,
         applyPerspective,
+        setPredictionsEnabled,
+        isPredictionsEnabled,
         clearReplayPanels,
         registerReplayPanel,
         pauseUnifiedReplay,

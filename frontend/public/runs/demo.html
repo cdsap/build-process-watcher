@@ -556,7 +556,14 @@
             activeRunDashboardTab = tab === 'predictions' ? 'predictions' : 'dashboard';
             if (window.BpwExperimentLayout?.setViewMode) {
                 if (activeRunDashboardTab === 'predictions') {
-                    BpwExperimentLayout.setViewMode(BpwExperimentLayout.VIEW_MODES?.predictions || 'predictions');
+                    if (BpwExperimentLayout.isPredictionsEnabled?.() === false) {
+                        activeRunDashboardTab = 'dashboard';
+                        if (BpwExperimentLayout.getViewMode?.() === 'predictions') {
+                            BpwExperimentLayout.setViewMode(BpwExperimentLayout.VIEW_MODES?.classic || 'classic');
+                        }
+                    } else {
+                        BpwExperimentLayout.setViewMode(BpwExperimentLayout.VIEW_MODES?.predictions || 'predictions');
+                    }
                 } else if (BpwExperimentLayout.getViewMode?.() === 'predictions') {
                     BpwExperimentLayout.setViewMode(BpwExperimentLayout.VIEW_MODES?.classic || 'classic');
                 }
@@ -621,7 +628,16 @@
             }
             const checkpoints = BpwPredictionView.normalizeCheckpoints(data?.prediction_checkpoints);
             const hasProcessForecasts = Array.isArray(data?.process_forecasts) && data.process_forecasts.length > 0;
-            const predictionEnabled = window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true || checkpoints.length > 0 || hasProcessForecasts;
+            const predictionMode = data?.prediction_mode;
+            const predictionEnabled = predictionMode === 'predict'
+                || predictionMode === 'forecast'
+                || predictionMode === 'reliability'
+                || window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true
+                || checkpoints.length > 0
+                || hasProcessForecasts;
+            if (window.BpwExperimentLayout?.setPredictionsEnabled) {
+                BpwExperimentLayout.setPredictionsEnabled(predictionEnabled);
+            }
             const view = BpwPredictionView.render({ ...data, predictionEnabled }, predictionSelectedWindow);
             predictionSelectedWindow = view.selectedWindow;
             content.innerHTML = view.html;
@@ -819,7 +835,16 @@
             const formatDur = (s) => s < 60 ? s + 's' : (Math.floor(s / 60) + 'm' + (s % 60 ? ' ' + Math.round(s % 60) + 's' : ''));
             const predictionCheckpoints = BpwPredictionView.normalizeCheckpoints(data.prediction_checkpoints);
             const hasProcessForecasts = Array.isArray(data.process_forecasts) && data.process_forecasts.length > 0;
-            const predictionEnabled = window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true || predictionCheckpoints.length > 0 || hasProcessForecasts;
+            const predictionMode = data.prediction_mode;
+            const predictionEnabled = predictionMode === 'predict'
+                || predictionMode === 'forecast'
+                || predictionMode === 'reliability'
+                || window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true
+                || predictionCheckpoints.length > 0
+                || hasProcessForecasts;
+            if (window.BpwExperimentLayout?.setPredictionsEnabled) {
+                BpwExperimentLayout.setPredictionsEnabled(predictionEnabled);
+            }
             const readyPredictionCount = predictionCheckpoints.filter(checkpoint => checkpoint.status === 'ready').length;
             const latestReadyRisk = [...predictionCheckpoints].reverse().find(checkpoint => checkpoint.status === 'ready')?.risk_level;
             const predictionView = BpwPredictionView.render({ ...data, predictionEnabled }, predictionSelectedWindow);

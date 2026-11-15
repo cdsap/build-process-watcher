@@ -681,6 +681,19 @@ body.bpw-view-predictions #bpw-unified-replay {
     color: var(--bpw-teal, #087f8c);
 }
 
+.bpw-mode-btn:disabled,
+.bpw-mode-btn[aria-disabled="true"] {
+    opacity: 0.45;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.bpw-mode-btn:disabled:hover,
+.bpw-mode-btn[aria-disabled="true"]:hover {
+    border-color: transparent;
+    background: transparent;
+}
+
 .bpw-layout-toggle[aria-pressed="true"] {
     background: var(--bpw-teal, #087f8c) !important;
     border-color: var(--bpw-teal, #087f8c) !important;
