@@ -36,9 +36,20 @@ async function serveRunPage(page) {
   });
 }
 
+function isBackendRunRequest(url, runId) {
+  const parsed = new URL(url);
+  // CI rewrites config.js to test-backend.example.com before a second browser run.
+  // Match any backend host, but never the frontend page URL itself.
+  return parsed.hostname !== 'frontend.test'
+    && parsed.pathname.replace(/\/$/, '') === `/runs/${runId}`;
+}
+
 test('shows actions and user-oriented copy for a missing run', async ({ page }) => {
   await serveRunPage(page);
-  await page.route('https://build-process-watcher-backend-685615422311.us-central1.run.app/runs/frontend-qa-missing-run', route => route.fulfill({ status: 404 }));
+  await page.route(
+    (url) => isBackendRunRequest(url, 'frontend-qa-missing-run'),
+    (route) => route.fulfill({ status: 404 }),
+  );
 
   await page.goto('https://frontend.test/runs/frontend-qa-missing-run');
 
@@ -51,7 +62,10 @@ test('shows actions and user-oriented copy for a missing run', async ({ page }) 
 
 test('distinguishes a server failure from a missing run', async ({ page }) => {
   await serveRunPage(page);
-  await page.route('https://build-process-watcher-backend-685615422311.us-central1.run.app/runs/frontend-qa-server-error', route => route.fulfill({ status: 503 }));
+  await page.route(
+    (url) => isBackendRunRequest(url, 'frontend-qa-server-error'),
+    (route) => route.fulfill({ status: 503 }),
+  );
 
   await page.goto('https://frontend.test/runs/frontend-qa-server-error');
 
@@ -62,7 +76,7 @@ test('distinguishes a server failure from a missing run', async ({ page }) => {
 test('distinguishes a connectivity failure and retries the request', async ({ page }) => {
   await serveRunPage(page);
   let attempts = 0;
-  await page.route('https://build-process-watcher-backend-685615422311.us-central1.run.app/runs/frontend-qa-offline-run', async route => {
+  await page.route((url) => isBackendRunRequest(url, 'frontend-qa-offline-run'), async (route) => {
     attempts += 1;
     if (attempts === 1) {
       await route.abort('failed');
