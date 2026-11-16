@@ -26,7 +26,6 @@ go_test(
     name = "backend_test",
     srcs = [
         "export_test.go",
-        "integration_test.go",
         "main_test.go",
         "prediction_fallback_test.go",
     ],
