@@ -1,17 +1,11 @@
 package predictor
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"net"
 	"net/http"
-	"strings"
 	"time"
-
-	"google.golang.org/api/idtoken"
 )
 
 const defaultRemoteTimeout = 1500 * time.Millisecond
@@ -35,37 +29,22 @@ type RemoteConfig struct {
 
 // RemoteProvider calls a private provider over HTTP using only public telemetry.
 type RemoteProvider struct {
-	url    string
-	client *http.Client
+	client *remoteClient
 }
 
 // NewRemoteProvider creates a provider for a private /predict endpoint.
 func NewRemoteProvider(config RemoteConfig) (*RemoteProvider, error) {
-	providerURL := strings.TrimSpace(config.URL)
-	if providerURL == "" {
-		return nil, fmt.Errorf("remote provider url is required")
+	client, err := newRemoteClient(remoteHTTPConfig{
+		URL:          config.URL,
+		Timeout:      config.Timeout,
+		AuthAudience: config.AuthAudience,
+		HTTPClient:   config.HTTPClient,
+		DefaultPath:  "/predict",
+	}, defaultRemoteTimeout)
+	if err != nil {
+		return nil, err
 	}
-	timeout := config.Timeout
-	if timeout <= 0 {
-		timeout = defaultRemoteTimeout
-	}
-	client := config.HTTPClient
-	if client == nil {
-		if audience := strings.TrimSpace(config.AuthAudience); audience != "" {
-			idTokenClient, err := idtoken.NewClient(context.Background(), audience)
-			if err != nil {
-				return nil, fmt.Errorf("create identity token client: %w", err)
-			}
-			idTokenClient.Timeout = timeout
-			client = idTokenClient
-		} else {
-			client = &http.Client{Timeout: timeout}
-		}
-	}
-	return &RemoteProvider{
-		url:    strings.TrimRight(providerURL, "/") + "/predict",
-		client: client,
-	}, nil
+	return &RemoteProvider{client: client}, nil
 }
 
 // Predict requests one public-safe prediction checkpoint from the private provider.
@@ -78,35 +57,9 @@ func (p *RemoteProvider) Predict(ctx context.Context, snapshot RunSnapshot, obse
 		ExistingCheckpoints: snapshot.ExistingCheckpoints,
 		ConfiguredWindows:   snapshot.ConfiguredCheckpoints,
 	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return PredictionCheckpoint{}, fmt.Errorf("encode prediction request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.url, bytes.NewReader(body))
-	if err != nil {
-		return PredictionCheckpoint{}, fmt.Errorf("create prediction request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := p.client.Do(req)
-	if err != nil {
-		kind := ErrRemoteFailed
-		if isTimeoutError(err) {
-			kind = ErrRemoteTimeout
-		}
-		return PredictionCheckpoint{}, newRemoteError(kind, fmt.Sprintf("remote prediction request failed: %v", err), err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return PredictionCheckpoint{}, newRemoteError(classifyRemoteStatus(resp.StatusCode), fmt.Sprintf("remote prediction provider returned status %d", resp.StatusCode), nil)
-	}
-
-	decoder := json.NewDecoder(resp.Body)
 	var response remotePredictResponse
-	if err := decoder.Decode(&response); err != nil {
-		return PredictionCheckpoint{}, newRemoteError(ErrRemoteFailed, fmt.Sprintf("decode prediction response: %v", err), err)
+	if err := p.client.postJSON(ctx, payload, &response); err != nil {
+		return PredictionCheckpoint{}, err
 	}
 	if response.Checkpoint.ObservationWindowS == 0 {
 		response.Checkpoint.ObservationWindowS = observationWindowS

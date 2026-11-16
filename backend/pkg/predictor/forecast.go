@@ -1,16 +1,11 @@
 package predictor
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
-	"google.golang.org/api/idtoken"
 )
 
 const defaultForecastTimeout = 20 * time.Second
@@ -49,8 +44,7 @@ type RemoteForecastConfig struct {
 
 // RemoteForecastProvider calls a private timeline endpoint (/forecast, /tabpredict, /bqml-boosted).
 type RemoteForecastProvider struct {
-	url    string
-	client *http.Client
+	client *remoteClient
 }
 
 // NewRemoteForecastProvider creates a client for the private forecast endpoint.
@@ -69,42 +63,19 @@ func NewRemoteBQMLBoostedProvider(config RemoteForecastConfig) (*RemoteForecastP
 }
 
 func newRemoteTimelineProvider(config RemoteForecastConfig, defaultPath string) (*RemoteForecastProvider, error) {
-	providerURL := strings.TrimSpace(config.URL)
-	if providerURL == "" {
-		return nil, fmt.Errorf("remote forecast provider url is required")
+	client, err := newRemoteClient(remoteHTTPConfig{
+		URL:                config.URL,
+		Timeout:            config.Timeout,
+		AuthAudience:       config.AuthAudience,
+		HTTPClient:         config.HTTPClient,
+		DefaultPath:        defaultPath,
+		Path:               config.Path,
+		StripPredictSuffix: true,
+	}, defaultForecastTimeout)
+	if err != nil {
+		return nil, err
 	}
-	timeout := config.Timeout
-	if timeout <= 0 {
-		timeout = defaultForecastTimeout
-	}
-	client := config.HTTPClient
-	if client == nil {
-		if audience := strings.TrimSpace(config.AuthAudience); audience != "" {
-			idTokenClient, err := idtoken.NewClient(context.Background(), audience)
-			if err != nil {
-				return nil, fmt.Errorf("create identity token client: %w", err)
-			}
-			idTokenClient.Timeout = timeout
-			client = idTokenClient
-		} else {
-			client = &http.Client{Timeout: timeout}
-		}
-	}
-	base := strings.TrimRight(providerURL, "/")
-	if strings.HasSuffix(base, "/predict") {
-		base = strings.TrimSuffix(base, "/predict")
-	}
-	path := strings.TrimSpace(config.Path)
-	if path == "" {
-		path = defaultPath
-	}
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
-	return &RemoteForecastProvider{
-		url:    base + path,
-		client: client,
-	}, nil
+	return &RemoteForecastProvider{client: client}, nil
 }
 
 type remoteForecastRequest struct {
@@ -122,28 +93,9 @@ func (p *RemoteForecastProvider) Forecast(ctx context.Context, snapshot RunSnaps
 		RunID:   snapshot.RunID,
 		Samples: toRemoteSamples(snapshot.Samples),
 	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("encode forecast request: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.url, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("create forecast request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("remote forecast request failed: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("remote forecast provider returned status %d", resp.StatusCode)
-	}
 	var response remoteForecastResponse
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return nil, fmt.Errorf("decode forecast response: %w", err)
+	if err := p.client.postJSON(ctx, payload, &response); err != nil {
+		return nil, err
 	}
 	return response.Forecasts, nil
 }
