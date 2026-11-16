@@ -40,8 +40,10 @@ func New(exp RunExporter, getRun RunGetter, getProcesses ProcessGetter) *Schedul
 	}
 }
 
-// Run exports runID synchronously. Keeping this work in the request path avoids
-// relying on Cloud Run CPU after an HTTP response has been sent.
+// Run starts a background BigQuery export for runID and returns immediately so
+// HTTP handlers (especially GET /runs stale auto-finish) never block on export.
+// In-flight dedupe is keyed by runID; the entry is pruned when the export ends
+// so the map cannot grow without bound across many finished runs.
 func (s *Scheduler) Run(runID string) {
 	if s == nil || s.exp == nil || s.getRun == nil || runID == "" {
 		return
@@ -50,9 +52,10 @@ func (s *Scheduler) Run(runID string) {
 		log.Printf("BigQuery export already scheduled for %s; skipping duplicate request", runID)
 		return
 	}
-	if !s.exportRunWithRetries(runID) {
-		s.clearScheduled(runID)
-	}
+	go func() {
+		defer s.clearScheduled(runID)
+		s.exportRunWithRetries(runID)
+	}()
 }
 
 func (s *Scheduler) markScheduled(runID string) bool {
