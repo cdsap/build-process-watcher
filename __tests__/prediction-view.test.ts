@@ -465,4 +465,173 @@ describe('per-process memory forecasts', () => {
     expect(view.render({ samples }, null).html).not.toContain('Process memory forecasts');
     expect(view.render({ predictionEnabled: true }, null).html).toContain('Waiting for first checkpoint');
   });
+
+  it('has no local setTimeout frame scheduler for forecast playback', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../frontend/public/prediction-view.js'), 'utf8');
+    expect(source).toContain('createPlaybackClock');
+    expect(source).not.toMatch(/playTimer\s*=\s*setTimeout/);
+    expect(source).not.toContain('playTimer');
+  });
+
+  it('drives forecast replay with BpwPlaybackClock play/pause/reset/speed lifecycle', () => {
+    const sandbox: any = {
+      module: { exports: {} },
+      exports: {},
+      performance: { now: () => sandbox.__now },
+      setTimeout,
+      clearTimeout,
+      matchMedia: () => ({ matches: false }),
+      requestAnimationFrame: (cb: Function) => {
+        sandbox.__raf = cb;
+        return 1;
+      },
+      cancelAnimationFrame: () => { sandbox.__raf = null; },
+      document: { querySelector: () => null },
+      __now: 0,
+      __raf: null as null | Function,
+    };
+    sandbox.globalThis = sandbox;
+    sandbox.window = sandbox;
+    vm.runInNewContext(
+      fs.readFileSync(path.join(__dirname, '../frontend/public/playback-clock.js'), 'utf8'),
+      sandbox,
+    );
+    vm.runInNewContext(
+      fs.readFileSync(path.join(__dirname, '../frontend/public/replay-controls.js'), 'utf8'),
+      sandbox,
+    );
+    vm.runInNewContext(
+      fs.readFileSync(path.join(__dirname, '../frontend/public/prediction-view.js'), 'utf8'),
+      sandbox,
+    );
+    const view = sandbox.BpwPredictionView;
+
+    const html = view.render({
+      prediction_mode: 'forecast',
+      finished: false,
+      samples: [
+        { Timestamp: 1000, Name: 'GradleDaemon', PID: '1', HeapUsed: 10, RSS: 20 },
+        { Timestamp: 6000, Name: 'GradleDaemon', PID: '1', HeapUsed: 12, RSS: 22 },
+        { Timestamp: 11000, Name: 'GradleDaemon', PID: '1', HeapUsed: 14, RSS: 24 },
+      ],
+      process_forecasts: [{
+        process_name: 'GradleDaemon',
+        pid: '1',
+        metric: 'rss',
+        created_at_ms: 1000,
+        points: [{ target_at_ms: 16000, value_mb: 30 }],
+      }],
+    }, null).html;
+
+    const byId = new Map<string, any>();
+    const hosts: any[] = [];
+    const makeEl = (overrides: any = {}) => {
+      const el: any = {
+        __innerHTML: '',
+        textContent: '',
+        value: '0',
+        classList: { toggle: jest.fn() },
+        dataset: {},
+        listeners: {} as Record<string, Function>,
+        setAttribute: jest.fn(),
+        addEventListener: jest.fn((eventName: string, handler: Function) => {
+          el.listeners[eventName] = handler;
+        }),
+        querySelector: (selector: string) => {
+          const idMatch = selector.match(/^#(.+)$/);
+          return idMatch ? byId.get(idMatch[1]) || null : null;
+        },
+        querySelectorAll: (selector: string) => (selector === '[data-forecast-chart-host]' ? hosts : []),
+        ...overrides,
+      };
+      Object.defineProperty(el, 'innerHTML', {
+        get: () => el.__innerHTML,
+        set: (value: string) => { el.__innerHTML = String(value); },
+      });
+      return el;
+    };
+
+    const dataMatch = html.match(/id="bpw-forecast-replay-data">([\s\S]*?)<\/script>/);
+    byId.set('bpw-forecast-replay-data', makeEl({ textContent: dataMatch?.[1] || '[]' }));
+    byId.set('forecast-replay-timeline', makeEl({ value: '0' }));
+    byId.set('forecast-replay-meta', makeEl());
+    byId.set('forecast-replay-time-label', makeEl());
+    const playBtn = makeEl();
+    const pauseBtn = makeEl();
+    const resetBtn = makeEl();
+    const speedSelect = makeEl({ value: '5' });
+    byId.set('btn-forecast-replay-play', playBtn);
+    byId.set('btn-forecast-replay-pause', pauseBtn);
+    byId.set('btn-forecast-replay-reset', resetBtn);
+    byId.set('forecast-replay-speed', speedSelect);
+    byId.set('btn-forecast-view-live', makeEl());
+    byId.set('btn-forecast-view-replay', makeEl());
+    byId.set('forecast-live-status', makeEl());
+    hosts.push(makeEl());
+    byId.set('forecast-replay-controls', makeEl({
+      dataset: { forecastViewMode: 'replay' },
+      classList: { toggle: jest.fn() },
+    }));
+    const root = makeEl();
+    root.querySelector = (selector: string) => {
+      const idMatch = selector.match(/^#(.+)$/);
+      return idMatch ? byId.get(idMatch[1]) || null : null;
+    };
+    root.querySelectorAll = (selector: string) => (selector === '[data-forecast-chart-host]' ? hosts : []);
+
+    const createSpy = jest.spyOn(sandbox.BpwPlaybackClock, 'createPlaybackClock');
+    const controller = view.bindProcessForecastView(root, { initialMode: 'replay' });
+    expect(controller.getMode()).toBe('replay');
+
+    playBtn.listeners.click();
+    expect(createSpy).toHaveBeenCalled();
+    const clock = createSpy.mock.results[0].value;
+    expect(clock.getState().playing).toBe(true);
+
+    sandbox.__now = 200; // 0.2s wall * 5x => 1s logical; sample spacing is 5s so still frame 0
+    sandbox.__raf(sandbox.__now);
+    expect(byId.get('forecast-replay-meta').textContent).toContain('Frame');
+
+    pauseBtn.listeners.click();
+    expect(clock.getState().playing).toBe(false);
+
+    speedSelect.value = '50';
+    speedSelect.listeners.change();
+    expect(clock.getState().speed).toBe(50);
+
+    resetBtn.listeners.click();
+    expect(clock.getState().cursorMs).toBe(0);
+    expect(clock.getState().playing).toBe(false);
+
+    // Live update while unfinished then finish should sticky-flip to Replay.
+    controller.setMode('live');
+    expect(controller.getMode()).toBe('live');
+    controller.update({
+      prediction_mode: 'forecast',
+      finished: true,
+      samples: [
+        { Timestamp: 1000, Name: 'GradleDaemon', PID: '1', HeapUsed: 10, RSS: 20 },
+        { Timestamp: 6000, Name: 'GradleDaemon', PID: '1', HeapUsed: 12, RSS: 22 },
+        { Timestamp: 11000, Name: 'GradleDaemon', PID: '1', HeapUsed: 14, RSS: 24 },
+      ],
+      process_forecasts: [{
+        process_name: 'GradleDaemon',
+        pid: '1',
+        metric: 'rss',
+        created_at_ms: 1000,
+        points: [{ target_at_ms: 16000, value_mb: 30 }],
+      }],
+    });
+    expect(controller.getMode()).toBe('replay');
+
+    const destroySpy = jest.spyOn(clock, 'destroy');
+    // Recreate clock for stop coverage after update may have rebuilt it.
+    playBtn.listeners.click();
+    const activeClock = createSpy.mock.results[createSpy.mock.results.length - 1].value;
+    const activeDestroy = jest.spyOn(activeClock, 'destroy');
+    controller.stop();
+    expect(activeDestroy).toHaveBeenCalled();
+    createSpy.mockRestore();
+  });
+
 });
