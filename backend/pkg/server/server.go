@@ -36,6 +36,13 @@ type Options struct {
 	// Composition roots (for example backend main) supply provider-specific
 	// sentinel mapping; nil uses predictor.DefaultFallbackClassifier.
 	FallbackClassifier predictor.FallbackClassifier
+
+	// Prediction job queue (Cloud Tasks). Empty values disable the scheduler.
+	PredictionTasksQueue    string
+	PredictionTasksLocation string
+	PredictionJobURL        string
+	PredictionJobToken      string
+	PredictionThrottleMode  string
 }
 
 type serverConfig struct {
@@ -80,6 +87,11 @@ func OptionsFromEnv() Options {
 	if err != nil {
 		log.Printf("🔮 Remote predictive provider disabled: %v", err)
 	}
+	options.PredictionTasksQueue = strings.TrimSpace(os.Getenv("PREDICTION_TASKS_QUEUE"))
+	options.PredictionTasksLocation = strings.TrimSpace(firstNonEmpty(os.Getenv("PREDICTION_TASKS_LOCATION"), "us-central1"))
+	options.PredictionJobURL = strings.TrimSpace(os.Getenv("PREDICTION_JOB_URL"))
+	options.PredictionJobToken = strings.TrimSpace(os.Getenv("PREDICTION_JOB_TOKEN"))
+	options.PredictionThrottleMode = timelineThrottleModeFromEnv()
 	return options
 }
 
@@ -97,55 +109,17 @@ func buildOptions(config serverConfig) (Options, error) {
 		}
 	}
 
-	forecastProvider := predictor.ForecastProvider(predictor.NoopForecastProvider{})
-	if config.forecastProviderEnabled {
-		remoteForecast, forecastErr := predictor.NewRemoteForecastProvider(predictor.RemoteForecastConfig{
-			URL:          config.predictionProviderURL,
-			Timeout:      config.forecastProviderTimeout,
-			AuthAudience: config.predictionProviderAuth,
-		})
-		if forecastErr != nil {
-			if providerErr == nil {
-				providerErr = forecastErr
-			}
-			forecastProvider = predictor.NoopForecastProvider{}
-		} else {
-			forecastProvider = remoteForecast
-		}
+	baseRemote := predictor.RemoteForecastConfig{
+		URL:          config.predictionProviderURL,
+		AuthAudience: config.predictionProviderAuth,
 	}
-
-	tabPredictProvider := predictor.ForecastProvider(predictor.NoopForecastProvider{})
-	if config.tabPredictProviderEnabled {
-		remoteTab, tabErr := predictor.NewRemoteTabPredictProvider(predictor.RemoteForecastConfig{
-			URL:          config.predictionProviderURL,
-			Timeout:      config.tabPredictProviderTimeout,
-			AuthAudience: config.predictionProviderAuth,
-		})
-		if tabErr != nil {
-			if providerErr == nil {
-				providerErr = tabErr
-			}
-			tabPredictProvider = predictor.NoopForecastProvider{}
-		} else {
-			tabPredictProvider = remoteTab
-		}
-	}
-
-	bqmlBoostedProvider := predictor.ForecastProvider(predictor.NoopForecastProvider{})
-	if config.bqmlBoostedProviderEnabled {
-		remoteBoosted, boostedErr := predictor.NewRemoteBQMLBoostedProvider(predictor.RemoteForecastConfig{
-			URL:          config.predictionProviderURL,
-			Timeout:      config.bqmlBoostedProviderTimeout,
-			AuthAudience: config.predictionProviderAuth,
-		})
-		if boostedErr != nil {
-			if providerErr == nil {
-				providerErr = boostedErr
-			}
-			bqmlBoostedProvider = predictor.NoopForecastProvider{}
-		} else {
-			bqmlBoostedProvider = remoteBoosted
-		}
+	forecastProvider, tabPredictProvider, bqmlBoostedProvider, timelineErr := buildTimelineProviders(baseRemote, []timelineProviderSpec{
+		{enabled: config.forecastProviderEnabled, timeout: config.forecastProviderTimeout, construct: predictor.NewRemoteForecastProvider},
+		{enabled: config.tabPredictProviderEnabled, timeout: config.tabPredictProviderTimeout, construct: predictor.NewRemoteTabPredictProvider},
+		{enabled: config.bqmlBoostedProviderEnabled, timeout: config.bqmlBoostedProviderTimeout, construct: predictor.NewRemoteBQMLBoostedProvider},
+	})
+	if timelineErr != nil && providerErr == nil {
+		providerErr = timelineErr
 	}
 
 	checkpointValue := strings.TrimSpace(config.predictionCheckpoints)
@@ -228,7 +202,7 @@ func Run(ctx context.Context, options Options) error {
 	}
 	h := handlers.NewHandlersWithPredictor(storageClient, exportSched, provider, options.PredictionCheckpoints, options.FallbackClassifier, forecastProvider, tabPredictProvider, bqmlBoostedProvider)
 
-	predictionSched, predictionCloser := newPredictionScheduler(ctx, options.ProjectID)
+	predictionSched, predictionCloser := newPredictionScheduler(ctx, options)
 	if predictionCloser != nil {
 		defer func() {
 			if err := predictionCloser(); err != nil {
@@ -236,7 +210,7 @@ func Run(ctx context.Context, options Options) error {
 			}
 		}()
 	}
-	h.SetPredictionScheduler(predictionSched, strings.TrimSpace(os.Getenv("PREDICTION_JOB_TOKEN")))
+	h.SetPredictionScheduler(predictionSched, options.PredictionJobToken)
 
 	cleanupService := cleanup.NewService(storageClient, exportSched)
 	mux := NewMux(h, cleanupService)
@@ -255,25 +229,66 @@ func Run(ctx context.Context, options Options) error {
 	return http.ListenAndServe(":"+port, mux)
 }
 
-func newPredictionScheduler(ctx context.Context, projectID string) (predictionqueue.Scheduler, func() error) {
-	queue := strings.TrimSpace(os.Getenv("PREDICTION_TASKS_QUEUE"))
-	location := strings.TrimSpace(firstNonEmpty(os.Getenv("PREDICTION_TASKS_LOCATION"), "us-central1"))
-	targetURL := strings.TrimSpace(os.Getenv("PREDICTION_JOB_URL"))
-	token := strings.TrimSpace(os.Getenv("PREDICTION_JOB_TOKEN"))
+type timelineProviderSpec struct {
+	enabled   bool
+	timeout   time.Duration
+	construct func(predictor.RemoteForecastConfig) (*predictor.RemoteForecastProvider, error)
+}
+
+func buildTimelineProviders(base predictor.RemoteForecastConfig, specs []timelineProviderSpec) (forecast, tab, bqml predictor.ForecastProvider, firstErr error) {
+	out := make([]predictor.ForecastProvider, len(specs))
+	for i := range out {
+		out[i] = predictor.NoopForecastProvider{}
+	}
+	for i, spec := range specs {
+		if !spec.enabled {
+			continue
+		}
+		cfg := base
+		cfg.Timeout = spec.timeout
+		remote, err := spec.construct(cfg)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		out[i] = remote
+	}
+	for len(out) < 3 {
+		out = append(out, predictor.NoopForecastProvider{})
+	}
+	return out[0], out[1], out[2], firstErr
+}
+
+func timelineThrottleModeFromEnv() string {
+	if predictionProviderEnabled(firstNonEmpty(os.Getenv("PREDICTIVE_TABPREDICT_PROVIDER_ENABLED"), os.Getenv("PREDICTIVE_PROVIDER_ENABLED"))) {
+		return "predict"
+	}
+	if predictionProviderEnabled(firstNonEmpty(os.Getenv("PREDICTIVE_FORECAST_PROVIDER_ENABLED"), os.Getenv("PREDICTIVE_PROVIDER_ENABLED"))) {
+		return "forecast"
+	}
+	if predictionProviderEnabled(os.Getenv("PREDICTIVE_BQML_BOOSTED_PROVIDER_ENABLED")) {
+		return "bqml-boosted"
+	}
+	return "predict"
+}
+
+func newPredictionScheduler(ctx context.Context, options Options) (predictionqueue.Scheduler, func() error) {
+	queue := strings.TrimSpace(options.PredictionTasksQueue)
+	location := strings.TrimSpace(firstNonEmpty(options.PredictionTasksLocation, "us-central1"))
+	targetURL := strings.TrimSpace(options.PredictionJobURL)
+	token := strings.TrimSpace(options.PredictionJobToken)
 	if queue == "" || targetURL == "" || token == "" {
 		log.Printf("🔮 Prediction job queue disabled (set PREDICTION_TASKS_QUEUE, PREDICTION_JOB_URL, PREDICTION_JOB_TOKEN to enable Cloud Tasks offload)")
 		return predictionqueue.Noop{}, nil
 	}
-	mode := "predict"
-	if predictionProviderEnabled(firstNonEmpty(os.Getenv("PREDICTIVE_TABPREDICT_PROVIDER_ENABLED"), os.Getenv("PREDICTIVE_PROVIDER_ENABLED"))) {
+	mode := strings.TrimSpace(options.PredictionThrottleMode)
+	if mode == "" {
 		mode = "predict"
-	} else if predictionProviderEnabled(firstNonEmpty(os.Getenv("PREDICTIVE_FORECAST_PROVIDER_ENABLED"), os.Getenv("PREDICTIVE_PROVIDER_ENABLED"))) {
-		mode = "forecast"
-	} else if predictionProviderEnabled(os.Getenv("PREDICTIVE_BQML_BOOSTED_PROVIDER_ENABLED")) {
-		mode = "bqml-boosted"
 	}
 	sched, err := predictionqueue.NewCloudTasks(ctx, predictionqueue.CloudTasksConfig{
-		ProjectID:    projectID,
+		ProjectID:    options.ProjectID,
 		Location:     location,
 		Queue:        queue,
 		TargetURL:    targetURL,

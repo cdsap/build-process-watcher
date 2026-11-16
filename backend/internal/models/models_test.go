@@ -491,3 +491,28 @@ func TestSampleOptionalMetricsJSON(t *testing.T) {
 		t.Fatal("unset optional metric should remain nil")
 	}
 }
+
+func TestParsePredictionMode(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want PredictionMode
+		ok   bool
+	}{
+		{"", PredictionModeUnset, true},
+		{"predict", PredictionModePredict, true},
+		{"bqml-boosted", PredictionModeBQMLBoosted, true},
+		{"nope", "", false},
+	}
+	for _, tc := range cases {
+		got, ok := ParsePredictionMode(tc.raw)
+		if ok != tc.ok || got != tc.want {
+			t.Fatalf("ParsePredictionMode(%q)=(%q,%v), want (%q,%v)", tc.raw, got, ok, tc.want, tc.ok)
+		}
+	}
+	if !PredictionModePredict.IsTimeline() || PredictionModeReliability.IsTimeline() {
+		t.Fatal("timeline classification mismatch")
+	}
+	if ProcessForecastThrottleElapsedS != 20 {
+		t.Fatalf("throttle = %d, want 20", ProcessForecastThrottleElapsedS)
+	}
+}
