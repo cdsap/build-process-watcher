@@ -2,14 +2,198 @@ package storage
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"log"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
 )
+
+type memoryTransactionRunner struct {
+	mu        sync.Mutex
+	documents map[string]map[string]interface{}
+}
+
+type memoryDocumentTransaction struct {
+	fields map[string]interface{}
+}
+
+func newMemoryTransactionRunner() *memoryTransactionRunner {
+	return &memoryTransactionRunner{documents: make(map[string]map[string]interface{})}
+}
+
+func (r *memoryTransactionRunner) Run(
+	_ context.Context,
+	collection string,
+	documentID string,
+	fn func(documentTransaction) error,
+) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	key := collection + "/" + documentID
+	fields := r.documents[key]
+	if fields == nil {
+		fields = make(map[string]interface{})
+		r.documents[key] = fields
+	}
+	return fn(&memoryDocumentTransaction{fields: fields})
+}
+
+func (tx *memoryDocumentTransaction) Get(destination interface{}) (bool, error) {
+	if len(tx.fields) == 0 {
+		return false, nil
+	}
+	switch doc := destination.(type) {
+	case *models.RunDoc:
+		if value, ok := tx.fields["samples"].([]models.Sample); ok {
+			doc.Samples = append([]models.Sample(nil), value...)
+		}
+		if value, ok := tx.fields["prediction_checkpoints"].([]models.PredictionCheckpoint); ok {
+			doc.PredictionCheckpoints = append([]models.PredictionCheckpoint(nil), value...)
+		}
+		if value, ok := tx.fields["process_forecasts"].([]models.ProcessForecast); ok {
+			doc.ProcessForecasts = append([]models.ProcessForecast(nil), value...)
+		}
+		if value, ok := tx.fields["start_time"].(time.Time); ok {
+			doc.StartTime = value
+		}
+		if value, ok := tx.fields["created_at"].(time.Time); ok {
+			doc.CreatedAt = value
+		}
+	case *models.ProcessDoc:
+		if value, ok := tx.fields["process_info"].(map[string]models.ProcessInfo); ok {
+			doc.ProcessInfo = make(map[string]models.ProcessInfo, len(value))
+			for pid, processInfo := range value {
+				doc.ProcessInfo[pid] = processInfo
+			}
+		}
+		if value, ok := tx.fields["created_at"].(time.Time); ok {
+			doc.CreatedAt = value
+		}
+	}
+	return true, nil
+}
+
+func (tx *memoryDocumentTransaction) Merge(fields map[string]interface{}) error {
+	for key, value := range fields {
+		tx.fields[key] = value
+	}
+	return nil
+}
+
+func (r *memoryTransactionRunner) fields(collection, documentID string) map[string]interface{} {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	result := make(map[string]interface{})
+	for key, value := range r.documents[collection+"/"+documentID] {
+		result[key] = value
+	}
+	return result
+}
+
+func TestConcurrentRunWritesPreserveSamplesCheckpointsAndForecasts(t *testing.T) {
+	runner := newMemoryTransactionRunner()
+	runner.documents["runs/run-1"] = map[string]interface{}{
+		"finished":        true,
+		"prediction_mode": "timeline",
+		"prediction_checkpoints": []models.PredictionCheckpoint{
+			{ObservationWindowS: 30, Status: "ready"},
+		},
+		"process_forecasts": []models.ProcessForecast{
+			{PID: "1", Metric: "heap"},
+		},
+	}
+	client := &Client{ctx: context.Background(), transactions: runner}
+	start := make(chan struct{})
+	errors := make(chan error, 3)
+
+	go func() {
+		<-start
+		errors <- client.StoreSamples("run-1", []models.Sample{{PID: "1", Name: "GradleDaemon"}})
+	}()
+	go func() {
+		<-start
+		errors <- client.StorePredictionCheckpoint("run-1", models.PredictionCheckpoint{ObservationWindowS: 60, Status: "ready"})
+	}()
+	go func() {
+		<-start
+		errors <- client.AppendProcessForecasts("run-1", []models.ProcessForecast{{PID: "1", Metric: "rss"}})
+	}()
+
+	close(start)
+	for range 3 {
+		if err := <-errors; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	fields := runner.fields("runs", "run-1")
+	if samples := fields["samples"].([]models.Sample); len(samples) != 1 || samples[0].PID != "1" {
+		t.Fatalf("samples were not preserved: %#v", samples)
+	}
+	if checkpoints := fields["prediction_checkpoints"].([]models.PredictionCheckpoint); len(checkpoints) != 2 || checkpoints[0].ObservationWindowS != 30 || checkpoints[1].ObservationWindowS != 60 {
+		t.Fatalf("checkpoints were not preserved: %#v", checkpoints)
+	}
+	if forecasts := fields["process_forecasts"].([]models.ProcessForecast); len(forecasts) != 2 || forecasts[0].Metric != "heap" || forecasts[1].Metric != "rss" {
+		t.Fatalf("forecasts were not preserved: %#v", forecasts)
+	}
+	if fields["finished"] != true || fields["prediction_mode"] != "timeline" {
+		t.Fatalf("unrelated run fields were overwritten: %#v", fields)
+	}
+}
+
+func TestStoreSamplesLeavesLegacyPredictionFieldsMissing(t *testing.T) {
+	runner := newMemoryTransactionRunner()
+	client := &Client{ctx: context.Background(), transactions: runner}
+
+	if err := client.StoreSamples("legacy-run", []models.Sample{{PID: "1"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	fields := runner.fields("runs", "legacy-run")
+	for _, field := range []string{"prediction_checkpoints", "process_forecasts", "prediction_mode"} {
+		if _, exists := fields[field]; exists {
+			t.Fatalf("StoreSamples added legacy-optional field %q: %#v", field, fields[field])
+		}
+	}
+}
+
+func TestConcurrentProcessInfoWritesPreserveEachPID(t *testing.T) {
+	runner := newMemoryTransactionRunner()
+	client := &Client{ctx: context.Background(), transactions: runner}
+	start := make(chan struct{})
+	errors := make(chan error, 2)
+
+	for _, processInfo := range []models.ProcessInfo{
+		{PID: "1", Name: "GradleDaemon"},
+		{PID: "2", Name: "KotlinCompileDaemon"},
+	} {
+		processInfo := processInfo
+		go func() {
+			<-start
+			errors <- client.StoreProcessInfo("run-1", processInfo)
+		}()
+	}
+
+	close(start)
+	for range 2 {
+		if err := <-errors; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	fields := runner.fields("processes", "run-1")
+	processes := fields["process_info"].(map[string]models.ProcessInfo)
+	if len(processes) != 2 || processes["1"].Name != "GradleDaemon" || processes["2"].Name != "KotlinCompileDaemon" {
+		t.Fatalf("process info was not preserved: %#v", processes)
+	}
+}
 
 func TestParseDataHistoricalAndExtendedRecords(t *testing.T) {
 	start := time.Unix(100, 0)

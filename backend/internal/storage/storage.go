@@ -11,12 +11,69 @@ import (
 	"cloud.google.com/go/firestore"
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
 	"google.golang.org/api/iterator"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Client wraps Firestore operations
 type Client struct {
-	firestore *firestore.Client
-	ctx       context.Context
+	firestore    *firestore.Client
+	ctx          context.Context
+	transactions documentTransactionRunner
+}
+
+type documentTransactionRunner interface {
+	Run(context.Context, string, string, func(documentTransaction) error) error
+}
+
+type documentTransaction interface {
+	Get(interface{}) (bool, error)
+	Merge(map[string]interface{}) error
+}
+
+type firestoreTransactionRunner struct {
+	client *firestore.Client
+}
+
+type firestoreDocumentTransaction struct {
+	transaction *firestore.Transaction
+	document    *firestore.DocumentRef
+}
+
+func (r *firestoreTransactionRunner) Run(
+	ctx context.Context,
+	collection string,
+	documentID string,
+	fn func(documentTransaction) error,
+) error {
+	document := r.client.Collection(collection).Doc(documentID)
+	return r.client.RunTransaction(ctx, func(_ context.Context, transaction *firestore.Transaction) error {
+		return fn(&firestoreDocumentTransaction{
+			transaction: transaction,
+			document:    document,
+		})
+	})
+}
+
+func (tx *firestoreDocumentTransaction) Get(destination interface{}) (bool, error) {
+	snapshot, err := tx.transaction.Get(tx.document)
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return false, nil
+		}
+		return false, err
+	}
+	if !snapshot.Exists() {
+		return false, nil
+	}
+	if err := snapshot.DataTo(destination); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (tx *firestoreDocumentTransaction) Merge(fields map[string]interface{}) error {
+	return tx.transaction.Set(tx.document, fields, firestore.MergeAll)
 }
 
 // NewClient creates a new storage client.
@@ -28,8 +85,9 @@ func NewClient(ctx context.Context, projectID string) (*Client, error) {
 
 	log.Printf("✅ Connected to Firestore project: %s", projectID)
 	return &Client{
-		firestore: client,
-		ctx:       ctx,
+		firestore:    client,
+		ctx:          ctx,
+		transactions: &firestoreTransactionRunner{client: client},
 	}, nil
 }
 
@@ -116,69 +174,56 @@ func (c *Client) GetRunWithContext(ctx context.Context, runID string) (*models.R
 func (c *Client) StoreSamples(runID string, samples []models.Sample) error {
 	log.Printf("🔄 Storing %d samples for run ID: %s", len(samples), runID)
 
-	doc := c.firestore.Collection("runs").Doc(runID)
-
-	// Get existing document or create new one
-	snapshot, err := doc.Get(c.ctx)
-	if err != nil && !strings.Contains(err.Error(), "not found") {
-		log.Printf("❌ Error getting document: %v", err)
-		return err
-	}
-
-	var runDoc models.RunDoc
-	if snapshot != nil && snapshot.Exists() {
-		if err := snapshot.DataTo(&runDoc); err != nil {
-			log.Printf("❌ Error parsing document data: %v", err)
+	err := c.transactions.Run(c.ctx, "runs", runID, func(transaction documentTransaction) error {
+		var runDoc models.RunDoc
+		exists, err := transaction.Get(&runDoc)
+		if err != nil {
 			return err
 		}
-		if runDoc.StartTime.IsZero() {
-			now := time.Now()
-			runDoc.StartTime = now
-			if runDoc.CreatedAt.IsZero() {
-				runDoc.CreatedAt = now
-			}
-			log.Printf("📄 Run %s had no start_time (e.g. export flag only); set to %v", runID, now)
-		}
-		log.Printf("📄 Found existing document with %d samples", len(runDoc.Samples))
-	} else {
+
 		now := time.Now()
-		runDoc = models.RunDoc{
-			ID:                 runID,
-			RunID:              runID,
-			StartTime:          now,
-			CreatedAt:          now,
-			UpdatedAt:          now,
-			UpdatedAtTimestamp: ToMillis(now), // Set timestamp on creation
+		samplesToStore := cloneSamples(samples)
+		if hasFreshness(samplesToStore) {
+			stampFreshnessStored(samplesToStore, now)
 		}
-		log.Printf("📄 Creating new document for run ID: %s", runID)
-	}
+		combinedSamples := make([]models.Sample, 0, len(runDoc.Samples)+len(samplesToStore))
+		combinedSamples = append(combinedSamples, runDoc.Samples...)
+		combinedSamples = append(combinedSamples, samplesToStore...)
+		fields := map[string]interface{}{
+			"id":                   runID,
+			"run_id":               runID,
+			"samples":              combinedSamples,
+			"updated_at":           now,
+			"updated_at_timestamp": ToMillis(now),
+		}
+		if !exists || runDoc.StartTime.IsZero() {
+			fields["start_time"] = now
+		}
+		if !exists || runDoc.CreatedAt.IsZero() {
+			fields["created_at"] = now
+		}
 
-	// Append new samples
-	runDoc.Samples = append(runDoc.Samples, samples...)
-	now := time.Now()
-	runDoc.UpdatedAt = now
-	runDoc.UpdatedAtTimestamp = ToMillis(now) // Store Unix millis for timezone-independent queries
-	log.Printf("📊 Document now has %d samples total", len(runDoc.Samples))
-
-	// Save back to Firestore
-	_, err = doc.Set(c.ctx, runDoc)
+		return transaction.Merge(fields)
+	})
 	if err != nil {
-		log.Printf("❌ Error saving document to Firestore: %v", err)
-		return err
-	}
-
-	if hasFreshness(samples) {
-		storedAt := time.Now()
-		stampFreshnessStored(runDoc.Samples[len(runDoc.Samples)-len(samples):], storedAt)
-		runDoc.UpdatedAt = storedAt
-		runDoc.UpdatedAtTimestamp = ToMillis(storedAt)
-		if _, err = doc.Set(c.ctx, runDoc); err != nil {
-			return fmt.Errorf("store freshness completion for run %s: %w", runID, err)
-		}
+		log.Printf("❌ Error saving samples to Firestore: %v", err)
+		return fmt.Errorf("store samples for run %s: %w", runID, err)
 	}
 
 	log.Printf("✅ Successfully stored %d samples for run ID: %s", len(samples), runID)
 	return nil
+}
+
+func cloneSamples(samples []models.Sample) []models.Sample {
+	cloned := append([]models.Sample(nil), samples...)
+	for i := range cloned {
+		if cloned[i].Freshness == nil {
+			continue
+		}
+		freshness := *cloned[i].Freshness
+		cloned[i].Freshness = &freshness
+	}
+	return cloned
 }
 
 func hasFreshness(samples []models.Sample) bool {
@@ -209,28 +254,20 @@ func stampFreshnessStored(samples []models.Sample, storedAt time.Time) {
 
 // StorePredictionCheckpoint stores or replaces one prediction checkpoint for a run.
 func (c *Client) StorePredictionCheckpoint(runID string, checkpoint models.PredictionCheckpoint) error {
-	doc := c.firestore.Collection("runs").Doc(runID)
-	snapshot, err := doc.Get(c.ctx)
-	if err != nil && !strings.Contains(err.Error(), "not found") {
-		return err
-	}
-
-	var existing []models.PredictionCheckpoint
-	if snapshot != nil && snapshot.Exists() {
+	err := c.transactions.Run(c.ctx, "runs", runID, func(transaction documentTransaction) error {
 		var runDoc models.RunDoc
-		if err := snapshot.DataTo(&runDoc); err != nil {
+		if _, err := transaction.Get(&runDoc); err != nil {
 			return err
 		}
-		existing = runDoc.PredictionCheckpoints
-	}
 
-	now := time.Now()
-	_, err = doc.Set(c.ctx, map[string]interface{}{
-		"run_id":                 runID,
-		"prediction_checkpoints": models.MergePredictionCheckpoint(existing, checkpoint),
-		"updated_at":             now,
-		"updated_at_timestamp":   ToMillis(now),
-	}, firestore.MergeAll)
+		now := time.Now()
+		return transaction.Merge(map[string]interface{}{
+			"run_id":                 runID,
+			"prediction_checkpoints": models.MergePredictionCheckpoint(runDoc.PredictionCheckpoints, checkpoint),
+			"updated_at":             now,
+			"updated_at_timestamp":   ToMillis(now),
+		})
+	})
 	if err != nil {
 		return fmt.Errorf("store prediction checkpoint for run %s: %w", runID, err)
 	}
@@ -242,28 +279,20 @@ func (c *Client) AppendProcessForecasts(runID string, forecasts []models.Process
 	if len(forecasts) == 0 {
 		return nil
 	}
-	doc := c.firestore.Collection("runs").Doc(runID)
-	snapshot, err := doc.Get(c.ctx)
-	if err != nil && !strings.Contains(err.Error(), "not found") {
-		return err
-	}
-
-	var existing []models.ProcessForecast
-	if snapshot != nil && snapshot.Exists() {
+	err := c.transactions.Run(c.ctx, "runs", runID, func(transaction documentTransaction) error {
 		var runDoc models.RunDoc
-		if err := snapshot.DataTo(&runDoc); err != nil {
+		if _, err := transaction.Get(&runDoc); err != nil {
 			return err
 		}
-		existing = runDoc.ProcessForecasts
-	}
 
-	now := time.Now()
-	_, err = doc.Set(c.ctx, map[string]interface{}{
-		"run_id":             runID,
-		"process_forecasts":  models.AppendProcessForecasts(existing, forecasts),
-		"updated_at":         now,
-		"updated_at_timestamp": ToMillis(now),
-	}, firestore.MergeAll)
+		now := time.Now()
+		return transaction.Merge(map[string]interface{}{
+			"run_id":               runID,
+			"process_forecasts":    models.AppendProcessForecasts(runDoc.ProcessForecasts, forecasts),
+			"updated_at":           now,
+			"updated_at_timestamp": ToMillis(now),
+		})
+	})
 	if err != nil {
 		return fmt.Errorf("append process forecasts for run %s: %w", runID, err)
 	}
@@ -274,57 +303,33 @@ func (c *Client) AppendProcessForecasts(runID string, forecasts []models.Process
 func (c *Client) StoreProcessInfo(runID string, processInfo models.ProcessInfo) error {
 	log.Printf("🔄 Storing process info for PID: %s (Name: %s) in run ID: %s", processInfo.PID, processInfo.Name, runID)
 
-	doc := c.firestore.Collection("processes").Doc(runID)
-
-	// Get existing document or create new one
-	snapshot, err := doc.Get(c.ctx)
-	if err != nil && !strings.Contains(err.Error(), "not found") {
-		return fmt.Errorf("failed to get process document: %w", err)
-	}
-
-	var processDoc models.ProcessDoc
-	if snapshot != nil && snapshot.Exists() {
-		if err := snapshot.DataTo(&processDoc); err != nil {
-			log.Printf("❌ Error parsing process document data: %v", err)
-			return fmt.Errorf("failed to parse document data: %w", err)
+	err := c.transactions.Run(c.ctx, "processes", runID, func(transaction documentTransaction) error {
+		var processDoc models.ProcessDoc
+		exists, err := transaction.Get(&processDoc)
+		if err != nil {
+			return err
 		}
-		log.Printf("📄 Found existing process document for run ID: %s", runID)
-	} else {
+
+		processInfoByPID := make(map[string]models.ProcessInfo, len(processDoc.ProcessInfo)+1)
+		for pid, existing := range processDoc.ProcessInfo {
+			processInfoByPID[pid] = existing
+		}
+		processInfoByPID[processInfo.PID] = processInfo
 		now := time.Now()
-		processDoc = models.ProcessDoc{
-			RunID:              runID,
-			ProcessInfo:        make(map[string]models.ProcessInfo),
-			CreatedAt:          now,
-			UpdatedAt:          now,
-			UpdatedAtTimestamp: ToMillis(now),
+		fields := map[string]interface{}{
+			"run_id":               runID,
+			"process_info":         processInfoByPID,
+			"updated_at":           now,
+			"updated_at_timestamp": ToMillis(now),
 		}
-		log.Printf("📄 Creating new process document for run ID: %s", runID)
-	}
-
-	// Initialize ProcessInfo map if nil
-	if processDoc.ProcessInfo == nil {
-		processDoc.ProcessInfo = make(map[string]models.ProcessInfo)
-	}
-
-	// Store or update process info (only if not already exists, or update if exists)
-	if _, exists := processDoc.ProcessInfo[processInfo.PID]; exists {
-		log.Printf("📝 Updating existing process info for PID: %s", processInfo.PID)
-		// Replace with new process info
-		processDoc.ProcessInfo[processInfo.PID] = processInfo
-	} else {
-		log.Printf("➕ Adding new process info for PID: %s", processInfo.PID)
-		processDoc.ProcessInfo[processInfo.PID] = processInfo
-	}
-
-	now := time.Now()
-	processDoc.UpdatedAt = now
-	processDoc.UpdatedAtTimestamp = ToMillis(now)
-
-	// Save back to Firestore
-	_, err = doc.Set(c.ctx, processDoc)
+		if !exists || processDoc.CreatedAt.IsZero() {
+			fields["created_at"] = now
+		}
+		return transaction.Merge(fields)
+	})
 	if err != nil {
 		log.Printf("❌ Error saving process info to Firestore: %v", err)
-		return err
+		return fmt.Errorf("store process info for run %s: %w", runID, err)
 	}
 
 	log.Printf("✅ Successfully stored process info for PID: %s in run ID: %s", processInfo.PID, runID)
@@ -399,8 +404,8 @@ func (c *Client) MarkRunAsFinished(runID string) (newlyFinished bool, err error)
 		return false, nil
 	}
 
-	// Merge-only finish fields so a concurrent AppendProcessForecasts / checkpoint
-	// MergeAll is not clobbered by a full document Set of a stale snapshot.
+	// Merge only finish fields so concurrent sample and prediction transactions
+	// preserve their independently managed fields.
 	fields := map[string]interface{}{
 		"id":                   runID,
 		"run_id":               runID,

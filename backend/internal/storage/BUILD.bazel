@@ -10,6 +10,8 @@ go_library(
         "//pkg/predictor",
         "@com_google_cloud_go_firestore//:firestore",
         "@org_golang_google_api//iterator",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
     ],
 )
 
