@@ -20,12 +20,17 @@ go_library(
 
 go_test(
     name = "server_test",
-    srcs = ["server_test.go"],
+    srcs = [
+        "mux_integration_test.go",
+        "server_test.go",
+    ],
     embed = [":server"],
     deps = [
         "//internal/auth",
         "//internal/cleanup",
         "//internal/handlers",
+        "//internal/models",
+        "//internal/storage",
         "//pkg/predictor",
     ],
 )
