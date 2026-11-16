@@ -321,10 +321,7 @@ func (c *Client) GetProcesses(ctx context.Context, runID string) (*models.Proces
 
 	if !snapshot.Exists() {
 		// Return empty ProcessDoc if not found (not an error)
-		return &models.ProcessDoc{
-			RunID:       runID,
-			ProcessInfo: make(map[string]models.ProcessInfo),
-		}, nil
+		return emptyProcessDoc(runID), nil
 	}
 
 	var processDoc models.ProcessDoc
@@ -381,14 +378,7 @@ func (c *Client) FindStaleRuns(ctx context.Context, timeout time.Duration) ([]st
 			continue
 		}
 
-		// Skip if already finished
-		if runDoc.Finished {
-			continue
-		}
-
-		// Check if this run is stale
-		timeSinceLastUpdate := time.Since(runDoc.UpdatedAt)
-		if timeSinceLastUpdate > timeout {
+		if isRunStale(runDoc.Finished, runDoc.UpdatedAt, time.Now(), timeout) {
 			staleRuns = append(staleRuns, doc.Ref.ID)
 		}
 	}
