@@ -634,13 +634,54 @@
         const speedSelect = controls.querySelector('#forecast-replay-speed');
 
         let isPlaying = false;
-        let playTimer = null;
         let currentFrame = 0;
         let speedMultiplier = Number(speedSelect?.value) || 15;
+        let clock = null;
         let latestData = options.data || (
             options.finished === true ? { finished: true } : { finished: false }
         );
         let mode = preferredForecastViewMode(latestData, options.initialMode);
+        const clockApi = (typeof globalThis !== 'undefined' && globalThis.BpwPlaybackClock)
+            || (typeof window !== 'undefined' && window.BpwPlaybackClock)
+            || null;
+
+        function destroyClock() {
+            if (!clock) return;
+            clock.destroy();
+            clock = null;
+            isPlaying = false;
+        }
+
+        function cursorMsForFrame(frameIndex) {
+            if (!timestamps.length) return 0;
+            const idx = Math.max(0, Math.min(frameIndex, timestamps.length - 1));
+            return timestamps[idx] - timestamps[0];
+        }
+
+        function ensureClock() {
+            if (!clockApi || !timestamps.length) {
+                destroyClock();
+                return null;
+            }
+            const preserveFrame = currentFrame;
+            const wasPlaying = isPlaying && mode === 'replay';
+            destroyClock();
+            clock = clockApi.createPlaybackClock({
+                timestamps,
+                speed: speedMultiplier,
+                onPosition: (position) => {
+                    const idx = position.sampleIndex;
+                    if (idx < 0) return;
+                    renderFrame(idx, { fromClock: true });
+                },
+                onStateChange: (state) => {
+                    isPlaying = Boolean(state.playing);
+                },
+            });
+            clock.seekTo(cursorMsForFrame(preserveFrame));
+            if (wasPlaying) clock.play();
+            return clock;
+        }
 
         function rebuildTimestamps() {
             timestamps = [...new Set(groups.flatMap((group) => (group.actual || []).map((point) => point.time)))]
@@ -650,6 +691,11 @@
             if (timeline) {
                 timeline.min = '0';
                 timeline.max = String(Math.max(0, timestamps.length - 1));
+            }
+            if (clock || (mode === 'replay' && isPlaying)) {
+                ensureClock();
+            } else {
+                destroyClock();
             }
         }
 
@@ -683,7 +729,7 @@
             refreshStatus();
         }
 
-        function renderFrame(frameIndex) {
+        function renderFrame(frameIndex, opts = {}) {
             if (!timestamps.length || !hosts.length) return;
             currentFrame = Math.max(0, Math.min(frameIndex, timestamps.length - 1));
             const timestamp = timestamps[currentFrame];
@@ -701,37 +747,29 @@
                 if (!group) return;
                 host.innerHTML = renderForecastChartSvg(group, timestamp);
             });
+            if (!opts.fromClock && clock) {
+                clock.seekTo(cursorMsForFrame(currentFrame));
+            }
         }
 
         function pause() {
+            if (clock) clock.pause();
             isPlaying = false;
-            if (playTimer) {
-                clearTimeout(playTimer);
-                playTimer = null;
-            }
-        }
-
-        function scheduleNext() {
-            if (!isPlaying || mode !== 'replay') return;
-            if (currentFrame >= timestamps.length - 1) {
-                isPlaying = false;
-                return;
-            }
-            const nextDelay = Math.max(
-                16,
-                (timestamps[currentFrame + 1] - timestamps[currentFrame]) / speedMultiplier,
-            );
-            playTimer = setTimeout(() => {
-                renderFrame(currentFrame + 1);
-                scheduleNext();
-            }, nextDelay);
         }
 
         function play() {
-            if (mode !== 'replay' || isPlaying || !timestamps.length) return;
-            if (currentFrame >= timestamps.length - 1) renderFrame(0);
-            isPlaying = true;
-            scheduleNext();
+            if (mode !== 'replay' || !timestamps.length) return;
+            if (!clock) ensureClock();
+            if (!clock) return;
+            if (currentFrame >= timestamps.length - 1) {
+                clock.seekTo(0);
+            }
+            clock.play();
+        }
+
+        function stop() {
+            pause();
+            destroyClock();
         }
 
         function setMode(nextMode) {
@@ -745,7 +783,10 @@
             applyModeChrome();
             // Live always snaps to the tip. Replay keeps the current frame so scrubbers
             // can set the target frame after switching without being overwritten.
-            if (mode === 'live') renderFrame(Math.max(0, timestamps.length - 1));
+            if (mode === 'live') {
+                destroyClock();
+                renderFrame(Math.max(0, timestamps.length - 1));
+            }
         }
 
         function update(data) {
@@ -768,6 +809,7 @@
             if (!timestamps.length) return true;
             if (mode === 'live') {
                 pause();
+                destroyClock();
                 renderFrame(timestamps.length - 1);
             } else {
                 renderFrame(Math.min(currentFrame, timestamps.length - 1));
@@ -779,7 +821,7 @@
         if (!timestamps.length || !timeline || !meta || !timeLabel || !playBtn || !pauseBtn || !resetBtn || !speedSelect) {
             applyModeChrome();
             return {
-                stop: pause,
+                stop,
                 update,
                 getMode() { return mode; },
                 setMode,
@@ -793,23 +835,28 @@
         resetBtn.addEventListener('click', () => {
             pause();
             setMode('replay');
-            renderFrame(0);
+            if (!clock) ensureClock();
+            if (clock) clock.reset();
+            else renderFrame(0);
         });
         timeline.addEventListener('input', () => {
             const frame = Number(timeline.value);
             pause();
             setMode('replay');
+            if (!clock) ensureClock();
             renderFrame(frame);
         });
         speedSelect.addEventListener('change', () => {
             const parsed = Number(speedSelect.value);
-            if (!Number.isNaN(parsed) && parsed > 0) speedMultiplier = parsed;
+            if (Number.isNaN(parsed) || parsed <= 0) return;
+            speedMultiplier = parsed;
+            if (clock) clock.setSpeed(parsed);
         });
 
         applyModeChrome();
         renderFrame(mode === 'live' ? timestamps.length - 1 : timestamps.length - 1);
         return {
-            stop: pause,
+            stop,
             update,
             getMode() { return mode; },
             setMode,
