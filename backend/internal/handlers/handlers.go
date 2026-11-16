@@ -272,7 +272,7 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 	var startTime time.Time
 	runDoc, err := h.storage.GetRun(req.RunID)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if storage.IsNotFound(err) {
 			// New run, use current time
 			startTime = time.Now()
 			log.Printf("New run, using current time as StartTime: %v", startTime)
@@ -430,6 +430,10 @@ func (h *Handlers) GetRun(w http.ResponseWriter, r *http.Request) {
 
 	runDoc, err := h.storage.GetRun(runID)
 	if err != nil {
+		if storage.IsNotFound(err) {
+			http.Error(w, "Run not found", http.StatusNotFound)
+			return
+		}
 		log.Printf("Error getting run document: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return

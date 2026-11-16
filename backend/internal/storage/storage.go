@@ -99,11 +99,14 @@ func (c *Client) GetRunWithContext(ctx context.Context, runID string) (*models.R
 	doc := c.firestore.Collection("runs").Doc(runID)
 	snapshot, err := doc.Get(ctx)
 	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return nil, fmt.Errorf("%w: %s", ErrRunNotFound, runID)
+		}
 		return nil, err
 	}
 
 	if !snapshot.Exists() {
-		return nil, fmt.Errorf("run %s not found", runID)
+		return nil, fmt.Errorf("%w: %s", ErrRunNotFound, runID)
 	}
 
 	var runDoc models.RunDoc
