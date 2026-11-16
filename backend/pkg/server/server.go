@@ -297,16 +297,16 @@ func providerOrNoop(provider predictor.Provider) predictor.Provider {
 // NewMux registers backend routes on a new ServeMux.
 func NewMux(h *handlers.Handlers, cleanupService *cleanup.Service) *http.ServeMux {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", h.Health)
-	mux.HandleFunc("/auth/run/", h.Auth)
-	mux.HandleFunc("/ingest", h.Ingest)
-	mux.HandleFunc("/internal/prediction-jobs", h.EvaluatePredictionJob)
-	mux.HandleFunc("/runs/", h.GetRun)
-	mux.HandleFunc("/finish/", h.FinishRun)
-	mux.HandleFunc("/cleanup/stale", cleanupService.HandleManualStaleCleanup)
-	mux.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("/healthz", route(h.Health, http.MethodGet))
+	mux.Handle("/auth/run/", route(h.Auth, http.MethodPost))
+	mux.Handle("/ingest", route(h.Ingest, http.MethodPost))
+	mux.Handle("/internal/prediction-jobs", route(h.EvaluatePredictionJob, http.MethodPost))
+	mux.Handle("/runs/", route(h.GetRun, http.MethodGet))
+	mux.Handle("/finish/", route(h.FinishRun, http.MethodPost))
+	mux.Handle("/cleanup/stale", route(cleanupService.HandleManualStaleCleanup, http.MethodPost))
+	mux.Handle("/test", route(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Test endpoint working"))
-	})
+	}, http.MethodGet))
 	return mux
 }
 

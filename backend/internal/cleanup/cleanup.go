@@ -35,20 +35,6 @@ func NewService(storageClient *storage.Client, export *exportqueue.Scheduler) *S
 func (s *Service) HandleManualStaleCleanup(w http.ResponseWriter, r *http.Request) {
 	log.Printf("cleanupStaleHandler called with method: %s", r.Method)
 
-	// Handle CORS preflight
-	if r.Method == http.MethodOptions {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Secret")
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	// Require admin authentication
 	if !auth.RequireAdminAuth(r) {
 		log.Printf("⚠️  Unauthorized cleanup attempt from %s", r.RemoteAddr)
@@ -56,8 +42,6 @@ func (s *Service) HandleManualStaleCleanup(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Set CORS headers
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
 
 	log.Printf("🧹 Manual cleanup triggered...")

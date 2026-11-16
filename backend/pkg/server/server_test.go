@@ -253,3 +253,58 @@ func TestNewMuxRegistersPublicRoutes(t *testing.T) {
 		}
 	}
 }
+
+func TestNewMuxAppliesSharedCORSPolicy(t *testing.T) {
+	mux := NewMux(handlers.NewHandlers(nil, nil), cleanup.NewService(nil, nil))
+	const wantHeaders = "Content-Type, Authorization, X-BPW-Prediction-Job-Token, X-Admin-Secret"
+
+	tests := []struct {
+		path        string
+		wantMethods string
+	}{
+		{path: "/healthz", wantMethods: "GET, OPTIONS"},
+		{path: "/auth/run/run-1", wantMethods: "POST, OPTIONS"},
+		{path: "/ingest", wantMethods: "POST, OPTIONS"},
+		{path: "/internal/prediction-jobs", wantMethods: "POST, OPTIONS"},
+		{path: "/runs/run-1", wantMethods: "GET, OPTIONS"},
+		{path: "/finish/run-1", wantMethods: "POST, OPTIONS"},
+		{path: "/cleanup/stale", wantMethods: "POST, OPTIONS"},
+		{path: "/test", wantMethods: "GET, OPTIONS"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodOptions, tt.path, nil)
+			recorder := httptest.NewRecorder()
+
+			mux.ServeHTTP(recorder, request)
+
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+			}
+			if got := recorder.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+				t.Errorf("Access-Control-Allow-Origin = %q, want %q", got, "*")
+			}
+			if got := recorder.Header().Get("Access-Control-Allow-Headers"); got != wantHeaders {
+				t.Errorf("Access-Control-Allow-Headers = %q, want %q", got, wantHeaders)
+			}
+			if got := recorder.Header().Get("Access-Control-Allow-Methods"); got != tt.wantMethods {
+				t.Errorf("Access-Control-Allow-Methods = %q, want %q", got, tt.wantMethods)
+			}
+		})
+	}
+}
+
+func TestNewMuxRejectsUnsupportedMethods(t *testing.T) {
+	mux := NewMux(handlers.NewHandlers(nil, nil), cleanup.NewService(nil, nil))
+	recorder := httptest.NewRecorder()
+
+	mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodDelete, "/runs/run-1", nil))
+
+	if recorder.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusMethodNotAllowed)
+	}
+	if got := recorder.Header().Get("Allow"); got != "GET, OPTIONS" {
+		t.Fatalf("Allow = %q, want %q", got, "GET, OPTIONS")
+	}
+}
