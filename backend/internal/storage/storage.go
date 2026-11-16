@@ -11,6 +11,8 @@ import (
 	"cloud.google.com/go/firestore"
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
 	"google.golang.org/api/iterator"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Client wraps Firestore operations
@@ -112,69 +114,32 @@ func (c *Client) GetRunWithContext(ctx context.Context, runID string) (*models.R
 	return &runDoc, nil
 }
 
-// StoreSamples stores samples for a run
+// StoreSamples appends samples for a run using a transaction + MergeAll so
+// concurrent checkpoint/forecast/finish writers cannot be wiped by a full Set.
 func (c *Client) StoreSamples(runID string, samples []models.Sample) error {
 	log.Printf("🔄 Storing %d samples for run ID: %s", len(samples), runID)
 
 	doc := c.firestore.Collection("runs").Doc(runID)
-
-	// Get existing document or create new one
-	snapshot, err := doc.Get(c.ctx)
-	if err != nil && !strings.Contains(err.Error(), "not found") {
-		log.Printf("❌ Error getting document: %v", err)
-		return err
-	}
-
-	var runDoc models.RunDoc
-	if snapshot != nil && snapshot.Exists() {
-		if err := snapshot.DataTo(&runDoc); err != nil {
-			log.Printf("❌ Error parsing document data: %v", err)
+	err := c.firestore.RunTransaction(c.ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		existing, err := readRunDocInTx(tx, doc)
+		if err != nil {
 			return err
 		}
-		if runDoc.StartTime.IsZero() {
-			now := time.Now()
-			runDoc.StartTime = now
-			if runDoc.CreatedAt.IsZero() {
-				runDoc.CreatedAt = now
-			}
-			log.Printf("📄 Run %s had no start_time (e.g. export flag only); set to %v", runID, now)
-		}
-		log.Printf("📄 Found existing document with %d samples", len(runDoc.Samples))
-	} else {
 		now := time.Now()
-		runDoc = models.RunDoc{
-			ID:                 runID,
-			RunID:              runID,
-			StartTime:          now,
-			CreatedAt:          now,
-			UpdatedAt:          now,
-			UpdatedAtTimestamp: ToMillis(now), // Set timestamp on creation
+		fields := sampleStoreFields(runID, existing, samples, now)
+		if existing != nil {
+			log.Printf("📄 Found existing document with %d samples", len(existing.Samples))
+		} else {
+			log.Printf("📄 Creating new document for run ID: %s", runID)
 		}
-		log.Printf("📄 Creating new document for run ID: %s", runID)
-	}
-
-	// Append new samples
-	runDoc.Samples = append(runDoc.Samples, samples...)
-	now := time.Now()
-	runDoc.UpdatedAt = now
-	runDoc.UpdatedAtTimestamp = ToMillis(now) // Store Unix millis for timezone-independent queries
-	log.Printf("📊 Document now has %d samples total", len(runDoc.Samples))
-
-	// Save back to Firestore
-	_, err = doc.Set(c.ctx, runDoc)
+		if merged, ok := fields["samples"].([]models.Sample); ok {
+			log.Printf("📊 Document now has %d samples total", len(merged))
+		}
+		return tx.Set(doc, fields, firestore.MergeAll)
+	})
 	if err != nil {
 		log.Printf("❌ Error saving document to Firestore: %v", err)
 		return err
-	}
-
-	if hasFreshness(samples) {
-		storedAt := time.Now()
-		stampFreshnessStored(runDoc.Samples[len(runDoc.Samples)-len(samples):], storedAt)
-		runDoc.UpdatedAt = storedAt
-		runDoc.UpdatedAtTimestamp = ToMillis(storedAt)
-		if _, err = doc.Set(c.ctx, runDoc); err != nil {
-			return fmt.Errorf("store freshness completion for run %s: %w", runID, err)
-		}
 	}
 
 	log.Printf("✅ Successfully stored %d samples for run ID: %s", len(samples), runID)
@@ -210,27 +175,17 @@ func stampFreshnessStored(samples []models.Sample, storedAt time.Time) {
 // StorePredictionCheckpoint stores or replaces one prediction checkpoint for a run.
 func (c *Client) StorePredictionCheckpoint(runID string, checkpoint models.PredictionCheckpoint) error {
 	doc := c.firestore.Collection("runs").Doc(runID)
-	snapshot, err := doc.Get(c.ctx)
-	if err != nil && !strings.Contains(err.Error(), "not found") {
-		return err
-	}
-
-	var existing []models.PredictionCheckpoint
-	if snapshot != nil && snapshot.Exists() {
-		var runDoc models.RunDoc
-		if err := snapshot.DataTo(&runDoc); err != nil {
+	err := c.firestore.RunTransaction(c.ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		existing, err := readRunDocInTx(tx, doc)
+		if err != nil {
 			return err
 		}
-		existing = runDoc.PredictionCheckpoints
-	}
-
-	now := time.Now()
-	_, err = doc.Set(c.ctx, map[string]interface{}{
-		"run_id":                 runID,
-		"prediction_checkpoints": models.MergePredictionCheckpoint(existing, checkpoint),
-		"updated_at":             now,
-		"updated_at_timestamp":   ToMillis(now),
-	}, firestore.MergeAll)
+		var prior []models.PredictionCheckpoint
+		if existing != nil {
+			prior = existing.PredictionCheckpoints
+		}
+		return tx.Set(doc, checkpointStoreFields(runID, prior, checkpoint, time.Now()), firestore.MergeAll)
+	})
 	if err != nil {
 		return fmt.Errorf("store prediction checkpoint for run %s: %w", runID, err)
 	}
@@ -243,27 +198,17 @@ func (c *Client) AppendProcessForecasts(runID string, forecasts []models.Process
 		return nil
 	}
 	doc := c.firestore.Collection("runs").Doc(runID)
-	snapshot, err := doc.Get(c.ctx)
-	if err != nil && !strings.Contains(err.Error(), "not found") {
-		return err
-	}
-
-	var existing []models.ProcessForecast
-	if snapshot != nil && snapshot.Exists() {
-		var runDoc models.RunDoc
-		if err := snapshot.DataTo(&runDoc); err != nil {
+	err := c.firestore.RunTransaction(c.ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		existing, err := readRunDocInTx(tx, doc)
+		if err != nil {
 			return err
 		}
-		existing = runDoc.ProcessForecasts
-	}
-
-	now := time.Now()
-	_, err = doc.Set(c.ctx, map[string]interface{}{
-		"run_id":             runID,
-		"process_forecasts":  models.AppendProcessForecasts(existing, forecasts),
-		"updated_at":         now,
-		"updated_at_timestamp": ToMillis(now),
-	}, firestore.MergeAll)
+		var prior []models.ProcessForecast
+		if existing != nil {
+			prior = existing.ProcessForecasts
+		}
+		return tx.Set(doc, forecastStoreFields(runID, prior, forecasts, time.Now()), firestore.MergeAll)
+	})
 	if err != nil {
 		return fmt.Errorf("append process forecasts for run %s: %w", runID, err)
 	}
@@ -275,53 +220,24 @@ func (c *Client) StoreProcessInfo(runID string, processInfo models.ProcessInfo) 
 	log.Printf("🔄 Storing process info for PID: %s (Name: %s) in run ID: %s", processInfo.PID, processInfo.Name, runID)
 
 	doc := c.firestore.Collection("processes").Doc(runID)
-
-	// Get existing document or create new one
-	snapshot, err := doc.Get(c.ctx)
-	if err != nil && !strings.Contains(err.Error(), "not found") {
-		return fmt.Errorf("failed to get process document: %w", err)
-	}
-
-	var processDoc models.ProcessDoc
-	if snapshot != nil && snapshot.Exists() {
-		if err := snapshot.DataTo(&processDoc); err != nil {
-			log.Printf("❌ Error parsing process document data: %v", err)
-			return fmt.Errorf("failed to parse document data: %w", err)
+	err := c.firestore.RunTransaction(c.ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		existing, err := readProcessDocInTx(tx, doc)
+		if err != nil {
+			return err
 		}
-		log.Printf("📄 Found existing process document for run ID: %s", runID)
-	} else {
-		now := time.Now()
-		processDoc = models.ProcessDoc{
-			RunID:              runID,
-			ProcessInfo:        make(map[string]models.ProcessInfo),
-			CreatedAt:          now,
-			UpdatedAt:          now,
-			UpdatedAtTimestamp: ToMillis(now),
+		if existing != nil {
+			log.Printf("📄 Found existing process document for run ID: %s", runID)
+			if _, exists := existing.ProcessInfo[processInfo.PID]; exists {
+				log.Printf("📝 Updating existing process info for PID: %s", processInfo.PID)
+			} else {
+				log.Printf("➕ Adding new process info for PID: %s", processInfo.PID)
+			}
+		} else {
+			log.Printf("📄 Creating new process document for run ID: %s", runID)
+			log.Printf("➕ Adding new process info for PID: %s", processInfo.PID)
 		}
-		log.Printf("📄 Creating new process document for run ID: %s", runID)
-	}
-
-	// Initialize ProcessInfo map if nil
-	if processDoc.ProcessInfo == nil {
-		processDoc.ProcessInfo = make(map[string]models.ProcessInfo)
-	}
-
-	// Store or update process info (only if not already exists, or update if exists)
-	if _, exists := processDoc.ProcessInfo[processInfo.PID]; exists {
-		log.Printf("📝 Updating existing process info for PID: %s", processInfo.PID)
-		// Replace with new process info
-		processDoc.ProcessInfo[processInfo.PID] = processInfo
-	} else {
-		log.Printf("➕ Adding new process info for PID: %s", processInfo.PID)
-		processDoc.ProcessInfo[processInfo.PID] = processInfo
-	}
-
-	now := time.Now()
-	processDoc.UpdatedAt = now
-	processDoc.UpdatedAtTimestamp = ToMillis(now)
-
-	// Save back to Firestore
-	_, err = doc.Set(c.ctx, processDoc)
+		return tx.Set(doc, processInfoStoreFields(runID, existing, processInfo, time.Now()), firestore.MergeAll)
+	})
 	if err != nil {
 		log.Printf("❌ Error saving process info to Firestore: %v", err)
 		return err
@@ -329,6 +245,42 @@ func (c *Client) StoreProcessInfo(runID string, processInfo models.ProcessInfo) 
 
 	log.Printf("✅ Successfully stored process info for PID: %s in run ID: %s", processInfo.PID, runID)
 	return nil
+}
+
+func readRunDocInTx(tx *firestore.Transaction, doc *firestore.DocumentRef) (*models.RunDoc, error) {
+	snapshot, err := tx.Get(doc)
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if !snapshot.Exists() {
+		return nil, nil
+	}
+	var runDoc models.RunDoc
+	if err := snapshot.DataTo(&runDoc); err != nil {
+		return nil, err
+	}
+	return &runDoc, nil
+}
+
+func readProcessDocInTx(tx *firestore.Transaction, doc *firestore.DocumentRef) (*models.ProcessDoc, error) {
+	snapshot, err := tx.Get(doc)
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if !snapshot.Exists() {
+		return nil, nil
+	}
+	var processDoc models.ProcessDoc
+	if err := snapshot.DataTo(&processDoc); err != nil {
+		return nil, err
+	}
+	return &processDoc, nil
 }
 
 // GetProcesses retrieves process information for a run from the processes collection
@@ -363,68 +315,27 @@ func (c *Client) GetProcessesWithContext(ctx context.Context, runID string) (*mo
 // MarkRunAsFinished marks a run as finished. newlyFinished is true when this call transitioned the run to finished (so callers can enqueue async work such as BigQuery export).
 func (c *Client) MarkRunAsFinished(runID string) (newlyFinished bool, err error) {
 	doc := c.firestore.Collection("runs").Doc(runID)
-	snapshot, err := doc.Get(c.ctx)
-	var runDoc models.RunDoc
-	now := time.Now()
-	if err != nil {
-		if !strings.Contains(err.Error(), "not found") {
-			return false, err
+	var transitioned bool
+	err = c.firestore.RunTransaction(c.ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		transitioned = false
+		existing, err := readRunDocInTx(tx, doc)
+		if err != nil {
+			return err
 		}
-		runDoc = models.RunDoc{
-			ID:        runID,
-			RunID:     runID,
-			StartTime: now,
-			CreatedAt: now,
-			Samples:   []models.Sample{},
+		if existing == nil {
+			log.Printf("Run %s did not exist at finish time; creating finished empty run", runID)
+		} else if existing.Finished {
+			log.Printf("Run %s is already finished", runID)
+			return nil
 		}
-		log.Printf("Run %s did not exist at finish time; creating finished empty run", runID)
-	} else {
-		if !snapshot.Exists() {
-			runDoc = models.RunDoc{
-				ID:        runID,
-				RunID:     runID,
-				StartTime: now,
-				CreatedAt: now,
-				Samples:   []models.Sample{},
-			}
-			log.Printf("Run %s snapshot did not exist at finish time; creating finished empty run", runID)
-		} else if err := snapshot.DataTo(&runDoc); err != nil {
-			return false, err
-		}
-	}
-
-	// If already finished, nothing to do
-	if runDoc.Finished {
-		log.Printf("Run %s is already finished", runID)
-		return false, nil
-	}
-
-	// Merge-only finish fields so a concurrent AppendProcessForecasts / checkpoint
-	// MergeAll is not clobbered by a full document Set of a stale snapshot.
-	fields := map[string]interface{}{
-		"id":                   runID,
-		"run_id":               runID,
-		"finished":             true,
-		"finished_at":          now,
-		"updated_at":           now,
-		"updated_at_timestamp": ToMillis(now),
-		"expire_at":            now.Add(24 * time.Hour),
-	}
-	if runDoc.StartTime.IsZero() {
-		fields["start_time"] = now
-	}
-	if runDoc.CreatedAt.IsZero() {
-		fields["created_at"] = now
-	}
-	if runDoc.Samples == nil {
-		fields["samples"] = []models.Sample{}
-	}
-	_, err = doc.Set(c.ctx, fields, firestore.MergeAll)
+		now := time.Now()
+		transitioned = true
+		return tx.Set(doc, finishStoreFields(runID, existing, now), firestore.MergeAll)
+	})
 	if err != nil {
 		return false, err
 	}
-
-	return true, nil
+	return transitioned, nil
 }
 
 // FindStaleRuns finds runs that haven't been updated within the timeout period
