@@ -61,6 +61,33 @@ export function loadProcessInfoFromFile(logFile: string): Record<string, { name:
 }
 
 /**
+ * Generate CSV report from log file samples.
+ */
+export function generateCsvReport(logFile: string, outputFile: string, hasGcData: boolean): void {
+    const header = ['elapsed_time', 'pid', 'name', 'heap_used_mb', 'heap_capacity_mb', 'rss_mb', 'gc_time_s', 'jit_compiled_methods', 'jit_failed_compilations', 'jit_invalidated_compilations', 'jit_compilation_time_s', 'classes_loaded', 'classes_unloaded', 'class_load_time_s'];
+    const rows = [header.join(',')];
+
+    parseLogSamples(fs.readFileSync(logFile, 'utf8')).forEach(row => {
+        const baseRow = [
+            row.timestamp,
+            row.pid,
+            row.name,
+            row.raw.heapUsedMb,
+            row.raw.heapCapMb,
+            row.raw.rssMb
+        ];
+        baseRow.push(row.columnCount < 7 || !hasGcData
+            ? ''
+            : (row.raw.gcTime ?? '').replace('s', '').replace('N/A', ''));
+        baseRow.push(...Array.from({ length: 7 }, (_, index) =>
+            (row.raw.optionalMetrics[index] ?? '').replace('N/A', '')));
+        rows.push(baseRow.join(','));
+    });
+
+    fs.writeFileSync(outputFile, rows.join('\n'));
+}
+
+/**
  * Generate JSON report from log file, merging vm_flags from process_info when available.
  */
 export function generateJsonReport(logFile: string, outputFile: string, hasGcData: boolean): void {

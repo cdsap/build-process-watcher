@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import {
   loadProcessInfoFromFile,
+  generateCsvReport,
   generateJsonReport,
   parseTimestampSeconds,
 } from '../src/lib/report';
@@ -121,6 +122,53 @@ describe('loadProcessInfoFromFile', () => {
     expect(result['999']).toEqual({ name: 'Name', vm_flags: [] });
     // Lines without proper tab format are skipped
     expect(Object.keys(result)).toHaveLength(2);
+  });
+});
+
+describe('generateCsvReport', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'report-csv-test-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('writes CSV rows with GC and optional metrics when available', () => {
+    const logFile = path.join(tmpDir, 'test.log');
+    const outputFile = path.join(tmpDir, 'out.csv');
+    fs.writeFileSync(
+      logFile,
+      'header\n\n' +
+        '00:00:05 | 1 | Proc | 10MB | 100MB | 50MB | 0.123s | 42 | 1 | 2 | 0.456 | 900 | 12 | 0.789\n'
+    );
+
+    generateCsvReport(logFile, outputFile, true);
+
+    const lines = fs.readFileSync(outputFile, 'utf8').trim().split('\n');
+    expect(lines[0]).toBe(
+      'elapsed_time,pid,name,heap_used_mb,heap_capacity_mb,rss_mb,gc_time_s,jit_compiled_methods,jit_failed_compilations,jit_invalidated_compilations,jit_compilation_time_s,classes_loaded,classes_unloaded,class_load_time_s'
+    );
+    expect(lines[1]).toBe(
+      '00:00:05,1,Proc,10MB,100MB,50MB,0.123,42,1,2,0.456,900,12,0.789'
+    );
+  });
+
+  it('omits GC values when hasGcData is false', () => {
+    const logFile = path.join(tmpDir, 'test.log');
+    const outputFile = path.join(tmpDir, 'out.csv');
+    fs.writeFileSync(
+      logFile,
+      'header\n\n' +
+        '00:00:05 | 1 | Proc | 10MB | 100MB | 50MB | 0.123s\n'
+    );
+
+    generateCsvReport(logFile, outputFile, false);
+
+    const row = fs.readFileSync(outputFile, 'utf8').trim().split('\n')[1];
+    expect(row).toBe('00:00:05,1,Proc,10MB,100MB,50MB,,,,,,,,');
   });
 });
 
