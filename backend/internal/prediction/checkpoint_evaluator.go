@@ -53,25 +53,36 @@ func (e *CheckpointEvaluator) FallbackClassifier() predictor.FallbackClassifier 
 // Evaluate loads run state, predicts any pending configured windows, and stores
 // public-safe checkpoints. Missing process info continues with an empty map.
 func (e *CheckpointEvaluator) Evaluate(ctx context.Context, runID string) {
+	e.EvaluateLoaded(ctx, runID, nil, nil)
+}
+
+// EvaluateLoaded evaluates against an optional preloaded run/process snapshot.
+// Nil docs are loaded from the repository (same behavior as Evaluate).
+func (e *CheckpointEvaluator) EvaluateLoaded(ctx context.Context, runID string, runDoc *models.RunDoc, processDoc *models.ProcessDoc) {
 	if e == nil || e.repo == nil || !predictor.Enabled(e.provider) || len(e.checkpoints) == 0 {
 		return
 	}
 
-	runDoc, err := e.repo.GetRun(ctx, runID)
-	if err != nil {
-		log.Printf("Prediction skipped: could not load run %s: %v", runID, err)
-		return
+	var err error
+	if runDoc == nil {
+		runDoc, err = e.repo.GetRun(ctx, runID)
+		if err != nil {
+			log.Printf("Prediction skipped: could not load run %s: %v", runID, err)
+			return
+		}
 	}
 	mode := models.NormalizePredictionMode(runDoc.PredictionMode)
 	if !runDoc.PredictiveReliability || (mode != models.PredictionModeUnset && mode != models.PredictionModeReliability) {
 		return
 	}
-	processDoc, err := e.repo.GetProcesses(ctx, runID)
-	if err != nil {
-		log.Printf("Prediction continuing without process info for run %s: %v", runID, err)
-		processDoc = &models.ProcessDoc{
-			RunID:       runID,
-			ProcessInfo: make(map[string]models.ProcessInfo),
+	if processDoc == nil {
+		processDoc, err = e.repo.GetProcesses(ctx, runID)
+		if err != nil {
+			log.Printf("Prediction continuing without process info for run %s: %v", runID, err)
+			processDoc = &models.ProcessDoc{
+				RunID:       runID,
+				ProcessInfo: make(map[string]models.ProcessInfo),
+			}
 		}
 	}
 

@@ -13,9 +13,11 @@ type forecastRepoStub struct {
 	appended  []models.ProcessForecast
 	appendErr error
 	lastCtx   context.Context
+	getRunN   int
 }
 
 func (s *forecastRepoStub) GetRun(ctx context.Context, _ string) (*models.RunDoc, error) {
+	s.getRunN++
 	s.lastCtx = ctx
 	return s.run, nil
 }
@@ -262,5 +264,26 @@ func TestIssuanceElapsedSPrefersExactThenNearestBefore(t *testing.T) {
 	}
 	if got := issuanceElapsedS(samples, 50000); got != 40 {
 		t.Fatalf("after last sample = %d, want 40", got)
+	}
+}
+
+func TestForecastEvaluatorEvaluateLoadedSkipsGetRun(t *testing.T) {
+	repo := &forecastRepoStub{run: &models.RunDoc{
+		PredictionMode: "forecast",
+		Samples: []models.Sample{
+			{ElapsedTime: 40, Timestamp: 40000, Name: "GradleDaemon", PID: "1", HeapUsed: 100, RSS: 200},
+		},
+	}}
+	want := []models.ProcessForecast{{
+		ProcessName: "GradleDaemon", PID: "1", Metric: "rss", CreatedAtMs: 40000,
+		Points: []models.ProcessForecastPoint{{TargetAtMs: 50000, ValueMB: 210}},
+	}}
+	evaluator := NewForecastEvaluator(repo, TimelineProviders{Forecast: forecastProviderStub{out: want}})
+	evaluator.EvaluateLoaded(context.Background(), "run-1", repo.run)
+	if repo.getRunN != 0 {
+		t.Fatalf("preloaded EvaluateLoaded GetRun calls = %d, want 0", repo.getRunN)
+	}
+	if len(repo.appended) != 1 {
+		t.Fatalf("appended = %d, want 1", len(repo.appended))
 	}
 }

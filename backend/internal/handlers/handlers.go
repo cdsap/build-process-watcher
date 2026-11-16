@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -121,12 +122,25 @@ func (h *Handlers) SetPredictionScheduler(scheduler predictionqueue.Scheduler, j
 
 // runPredictionEvaluation runs reliability checkpoints and process forecasts.
 // Invoked only from the prediction job handler — never from /ingest.
+// Loads the run once and shares that snapshot with both evaluators.
 func (h *Handlers) runPredictionEvaluation(ctx context.Context, runID string) {
+	if h == nil {
+		return
+	}
+	var runDoc *models.RunDoc
+	if h.storage != nil {
+		doc, err := h.storage.GetRun(ctx, runID)
+		if err != nil {
+			log.Printf("Prediction skipped: could not load run %s: %v", runID, err)
+			return
+		}
+		runDoc = doc
+	}
 	if h.checkpointEvaluator != nil {
-		h.checkpointEvaluator.Evaluate(ctx, runID)
+		h.checkpointEvaluator.EvaluateLoaded(ctx, runID, runDoc, nil)
 	}
 	if h.forecastEvaluator != nil {
-		h.forecastEvaluator.Evaluate(ctx, runID)
+		h.forecastEvaluator.EvaluateLoaded(ctx, runID, runDoc)
 	}
 }
 
