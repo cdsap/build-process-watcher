@@ -127,32 +127,64 @@ func shouldForecast(samples []models.Sample, existing []models.ProcessForecast, 
 	if throttleS <= 0 {
 		throttleS = processForecastThrottleElapsedS
 	}
+	maxElapsed := maxSampleElapsedS(samples)
+	if maxElapsed < throttleS {
+		return false
+	}
+	bucket := maxElapsed / throttleS
+	if len(existing) == 0 {
+		return true
+	}
+	latestIssuanceElapsed := 0
+	for _, forecast := range existing {
+		elapsed := issuanceElapsedS(samples, forecast.CreatedAtMs)
+		if elapsed > latestIssuanceElapsed {
+			latestIssuanceElapsed = elapsed
+		}
+	}
+	return bucket > latestIssuanceElapsed/throttleS
+}
+
+func maxSampleElapsedS(samples []models.Sample) int {
 	maxElapsed := 0
 	for _, sample := range samples {
 		if sample.ElapsedTime > maxElapsed {
 			maxElapsed = sample.ElapsedTime
 		}
 	}
-	if maxElapsed < throttleS {
-		return false
+	return maxElapsed
+}
+
+// issuanceElapsedS maps a forecast CreatedAtMs onto run elapsed seconds.
+// CreatedAtMs is a sample-clock timestamp (not wall clock); never divide epoch
+// millis by 1000 — that yields ~1e9 and permanently suppresses later issuances.
+func issuanceElapsedS(samples []models.Sample, createdAtMs int64) int {
+	if createdAtMs <= 0 || len(samples) == 0 {
+		return 0
 	}
-	bucket := maxElapsed / throttleS
-	latestCreated := int64(0)
-	for _, forecast := range existing {
-		if forecast.CreatedAtMs > latestCreated {
-			latestCreated = forecast.CreatedAtMs
-		}
-	}
-	if latestCreated == 0 {
-		return true
-	}
-	// Approximate prior bucket from latest issuance created_at on sample clock.
-	latestElapsedGuess := int(latestCreated / 1000)
+	nearestBeforeElapsed := -1
+	var nearestBeforeTs int64 = -1
+	nearestAnyElapsed := 0
+	nearestAnyDelta := int64(-1)
 	for _, sample := range samples {
-		if sample.Timestamp == latestCreated {
-			latestElapsedGuess = sample.ElapsedTime
-			break
+		if sample.Timestamp == createdAtMs {
+			return sample.ElapsedTime
+		}
+		if sample.Timestamp <= createdAtMs && sample.Timestamp >= nearestBeforeTs {
+			nearestBeforeTs = sample.Timestamp
+			nearestBeforeElapsed = sample.ElapsedTime
+		}
+		delta := sample.Timestamp - createdAtMs
+		if delta < 0 {
+			delta = -delta
+		}
+		if nearestAnyDelta < 0 || delta < nearestAnyDelta {
+			nearestAnyDelta = delta
+			nearestAnyElapsed = sample.ElapsedTime
 		}
 	}
-	return bucket > latestElapsedGuess/throttleS
+	if nearestBeforeElapsed >= 0 {
+		return nearestBeforeElapsed
+	}
+	return nearestAnyElapsed
 }

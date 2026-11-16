@@ -162,3 +162,74 @@ func TestForecastEvaluatorIgnoresForecastProviderInPredictMode(t *testing.T) {
 		t.Fatalf("appended = %d, want 0 when tabpredict provider is noop", len(repo.appended))
 	}
 }
+
+func TestShouldForecastAllowsSecondIssuanceAfterThrottleWindow(t *testing.T) {
+	samples := []models.Sample{
+		{ElapsedTime: 25, Timestamp: 1_700_000_025_000},
+		{ElapsedTime: 45, Timestamp: 1_700_000_045_000},
+	}
+	existing := []models.ProcessForecast{{
+		ProcessName: "GradleDaemon", Metric: "heap", CreatedAtMs: 1_700_000_025_000,
+	}}
+	if !shouldForecast(samples[:1], nil, 20) {
+		t.Fatal("first issuance at 25s should be allowed")
+	}
+	if shouldForecast(samples[:1], existing, 20) {
+		t.Fatal("second issuance in same 20s bucket must be suppressed")
+	}
+	if !shouldForecast(samples, existing, 20) {
+		t.Fatal("second issuance at 45s (next 20s bucket) must be allowed")
+	}
+}
+
+func TestShouldForecastMapsCreatedAtMsWithoutExactTimestampMatch(t *testing.T) {
+	samples := []models.Sample{
+		{ElapsedTime: 25, Timestamp: 1_700_000_025_000},
+		{ElapsedTime: 26, Timestamp: 1_700_000_026_000},
+		{ElapsedTime: 45, Timestamp: 1_700_000_045_000},
+	}
+	// Provider stamped slightly after the 25s sample; exact match fails.
+	existing := []models.ProcessForecast{{
+		ProcessName: "GradleDaemon", Metric: "heap", CreatedAtMs: 1_700_000_025_500,
+	}}
+	if shouldForecast(samples[:2], existing, 20) {
+		t.Fatal("near-match at ~25s must stay in bucket 1 and suppress")
+	}
+	if !shouldForecast(samples, existing, 20) {
+		t.Fatal("elapsed 45s must open bucket 2 even without exact CreatedAtMs match")
+	}
+}
+
+func TestShouldForecastNeverTreatsEpochMillisAsElapsedSeconds(t *testing.T) {
+	samples := []models.Sample{
+		{ElapsedTime: 25, Timestamp: 1_700_000_025_000},
+		{ElapsedTime: 45, Timestamp: 1_700_000_045_000},
+	}
+	// Pathological wall-clock stamp far from the sample clock. Nearest-sample
+	// mapping must still recover elapsed seconds; millis/1000 would be ~1.7e9.
+	existing := []models.ProcessForecast{{
+		ProcessName: "GradleDaemon", Metric: "heap", CreatedAtMs: 1_700_000_025_000 + 3,
+	}}
+	if issuanceElapsedS(samples, existing[0].CreatedAtMs) != 25 {
+		t.Fatalf("issuanceElapsedS = %d, want 25", issuanceElapsedS(samples, existing[0].CreatedAtMs))
+	}
+	if !shouldForecast(samples, existing, 20) {
+		t.Fatal("second bucket must not be permanently suppressed by epoch-ms/1000")
+	}
+}
+
+func TestIssuanceElapsedSPrefersExactThenNearestBefore(t *testing.T) {
+	samples := []models.Sample{
+		{ElapsedTime: 20, Timestamp: 20000},
+		{ElapsedTime: 40, Timestamp: 40000},
+	}
+	if got := issuanceElapsedS(samples, 40000); got != 40 {
+		t.Fatalf("exact = %d, want 40", got)
+	}
+	if got := issuanceElapsedS(samples, 39999); got != 20 {
+		t.Fatalf("nearest-before = %d, want 20", got)
+	}
+	if got := issuanceElapsedS(samples, 50000); got != 40 {
+		t.Fatalf("after last sample = %d, want 40", got)
+	}
+}
