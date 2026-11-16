@@ -2,12 +2,19 @@ package server
 
 import (
 	"context"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/cdsap/build-process-watcher/backend/internal/bigqueryexport"
 	"github.com/cdsap/build-process-watcher/backend/internal/cleanup"
 	"github.com/cdsap/build-process-watcher/backend/internal/handlers"
+	"github.com/cdsap/build-process-watcher/backend/internal/predictionqueue"
+	"github.com/cdsap/build-process-watcher/backend/internal/storage"
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
 
@@ -242,7 +249,7 @@ func TestOptionsFromEnvLeavesFallbackClassifierUnset(t *testing.T) {
 func TestNewMuxRegistersPublicRoutes(t *testing.T) {
 	mux := NewMux(handlers.NewHandlers(nil, nil), cleanup.NewService(nil, nil))
 
-	for _, route := range []string{"/healthz", "/auth/run/run-1", "/ingest", "/internal/prediction-jobs", "/runs/run-1", "/finish/run-1", "/cleanup/stale", "/test"} {
+	for _, route := range []string{"/healthz", "/auth/run/run-1", "/ingest", "/internal/prediction-jobs", "/runs/run-1", "/finish/run-1", "/cleanup/stale"} {
 		request := httptest.NewRequest(http.MethodOptions, route, nil)
 		recorder := httptest.NewRecorder()
 
@@ -251,5 +258,140 @@ func TestNewMuxRegistersPublicRoutes(t *testing.T) {
 		if recorder.Code == http.StatusNotFound {
 			t.Fatalf("route %s was not registered", route)
 		}
+	}
+}
+
+func TestNewMuxDoesNotRegisterTestRoute(t *testing.T) {
+	mux := NewMux(handlers.NewHandlers(nil, nil), cleanup.NewService(nil, nil))
+
+	request := httptest.NewRequest(http.MethodGet, "/test", nil)
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("/test status = %d, want 404", recorder.Code)
+	}
+}
+
+func TestMonitoredEndpointsMatchMux(t *testing.T) {
+	mux := NewMux(handlers.NewHandlers(nil, nil), cleanup.NewService(nil, nil))
+	for _, endpoint := range monitoredEndpoints {
+		request := httptest.NewRequest(http.MethodOptions, endpoint.probePath, nil)
+		recorder := httptest.NewRecorder()
+		mux.ServeHTTP(recorder, request)
+		if recorder.Code == http.StatusNotFound {
+			t.Fatalf("monitored endpoint %s (%s) was not registered on mux", endpoint.description, endpoint.probePath)
+		}
+	}
+}
+
+func TestBuildRequiresProjectID(t *testing.T) {
+	_, err := Build(context.Background(), Options{Port: "0"}, Deps{})
+	if err == nil {
+		t.Fatal("Build should require ProjectID")
+	}
+}
+
+func TestBuildUsesInjectedFactoriesAndServeShutsDown(t *testing.T) {
+	var storageCalls, bqCalls, predictionCalls atomic.Int32
+	predictionClosed := atomic.Bool{}
+
+	app, err := Build(context.Background(), Options{
+		ProjectID:       "project-1",
+		Port:            "0",
+		BigQueryDataset: "dataset_1",
+	}, Deps{
+		NewStorageClient: func(context.Context, string) (*storage.Client, error) {
+			storageCalls.Add(1)
+			return nil, nil
+		},
+		NewBigQueryExporter: func(context.Context, string, string, string, string) (*bigqueryexport.Exporter, error) {
+			bqCalls.Add(1)
+			return nil, nil
+		},
+		NewPredictionScheduler: func(context.Context, string) (predictionqueue.Scheduler, func() error) {
+			predictionCalls.Add(1)
+			return predictionqueue.Noop{}, func() error {
+				predictionClosed.Store(true)
+				return nil
+			}
+		},
+	})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if storageCalls.Load() != 1 || bqCalls.Load() != 1 || predictionCalls.Load() != 1 {
+		t.Fatalf("factory calls storage=%d bq=%d prediction=%d, want 1 each", storageCalls.Load(), bqCalls.Load(), predictionCalls.Load())
+	}
+	if app == nil || app.Server == nil {
+		t.Fatal("Build should return an App with http.Server")
+	}
+	if app.Server.ReadTimeout <= 0 || app.Server.WriteTimeout <= 0 || app.Server.IdleTimeout <= 0 || app.Server.ReadHeaderTimeout <= 0 {
+		t.Fatalf("http.Server timeouts not configured: readHeader=%v read=%v write=%v idle=%v",
+			app.Server.ReadHeaderTimeout, app.Server.ReadTimeout, app.Server.WriteTimeout, app.Server.IdleTimeout)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() { errCh <- app.Serve(ctx) }()
+
+	var addr string
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		addr = app.Addr()
+		if addr != "" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if addr == "" {
+		cancel()
+		<-errCh
+		t.Fatal("server never reported a listen address")
+	}
+
+	resp, getErr := http.Get("http://" + addr + "/healthz")
+	if getErr != nil {
+		cancel()
+		<-errCh
+		t.Fatalf("healthz: %v", getErr)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		cancel()
+		<-errCh
+		t.Fatalf("healthz status=%d body=%s", resp.StatusCode, body)
+	}
+
+	cancel()
+	select {
+	case serveErr := <-errCh:
+		if serveErr != nil && !errors.Is(serveErr, context.Canceled) {
+			t.Fatalf("Serve after cancel: %v", serveErr)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Serve did not return after cancel")
+	}
+
+	if !predictionClosed.Load() {
+		t.Fatal("prediction closer should run on shutdown")
+	}
+}
+
+func TestBuildStorageFactoryError(t *testing.T) {
+	_, err := Build(context.Background(), Options{ProjectID: "project-1", Port: "0"}, Deps{
+		NewStorageClient: func(context.Context, string) (*storage.Client, error) {
+			return nil, errors.New("firestore unavailable")
+		},
+		NewBigQueryExporter: func(context.Context, string, string, string, string) (*bigqueryexport.Exporter, error) {
+			return nil, nil
+		},
+		NewPredictionScheduler: func(context.Context, string) (predictionqueue.Scheduler, func() error) {
+			return predictionqueue.Noop{}, nil
+		},
+	})
+	if err == nil {
+		t.Fatal("Build should surface storage factory errors")
 	}
 }

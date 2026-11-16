@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cdsap/build-process-watcher/backend/internal/auth"
@@ -19,6 +21,72 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/internal/storage"
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
+
+const (
+	readHeaderTimeout = 10 * time.Second
+	readTimeout       = 30 * time.Second
+	writeTimeout      = 60 * time.Second
+	idleTimeout       = 120 * time.Second
+	shutdownTimeout   = 10 * time.Second
+)
+
+// monitoredEndpoints is the public route inventory used for startup logs and
+// mux registration tests. Keep descriptions and probe paths aligned with NewMux.
+var monitoredEndpoints = []struct {
+	description string
+	probePath   string
+}{
+	{description: "GET  /healthz", probePath: "/healthz"},
+	{description: "POST /auth/run/{runId}", probePath: "/auth/run/run-1"},
+	{description: "POST /ingest (JWT required)", probePath: "/ingest"},
+	{description: "POST /internal/prediction-jobs (prediction job token)", probePath: "/internal/prediction-jobs"},
+	{description: "GET  /runs/{runId}", probePath: "/runs/run-1"},
+	{description: "POST /finish/{runId} (JWT required)", probePath: "/finish/run-1"},
+	{description: "POST /cleanup/stale (Admin required)", probePath: "/cleanup/stale"},
+}
+
+// Deps holds injectable client factories for Build. Nil fields use production constructors.
+type Deps struct {
+	NewBigQueryExporter    func(ctx context.Context, projectID, dataset, samplesTable, processesTable string) (*bigqueryexport.Exporter, error)
+	NewStorageClient       func(ctx context.Context, projectID string) (*storage.Client, error)
+	NewPredictionScheduler func(ctx context.Context, projectID string) (predictionqueue.Scheduler, func() error)
+}
+
+// App is a constructed backend HTTP server with closable dependencies.
+type App struct {
+	Server  *http.Server
+	closers []func() error
+
+	mu   sync.Mutex
+	addr string
+}
+
+// Addr returns the bound listen address once Serve has started, or empty otherwise.
+func (a *App) Addr() string {
+	if a == nil {
+		return ""
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.addr
+}
+
+func (a *App) setAddr(addr string) {
+	a.mu.Lock()
+	a.addr = addr
+	a.mu.Unlock()
+}
+
+func (a *App) close() {
+	for i := len(a.closers) - 1; i >= 0; i-- {
+		if a.closers[i] == nil {
+			continue
+		}
+		if err := a.closers[i](); err != nil {
+			log.Printf("server resource close: %v", err)
+		}
+	}
+}
 
 // Options configures the public backend server composition.
 type Options struct {
@@ -168,38 +236,67 @@ func buildOptions(config serverConfig) (Options, error) {
 	}, providerErr
 }
 
-// Run initializes backend dependencies and starts the HTTP server.
+// Run builds the backend with production dependencies and serves until ctx is cancelled.
 func Run(ctx context.Context, options Options) error {
+	app, err := Build(ctx, options, Deps{})
+	if err != nil {
+		return err
+	}
+	return app.Serve(ctx)
+}
+
+// Build wires backend dependencies and returns an App ready to Serve.
+func Build(ctx context.Context, options Options, deps Deps) (*App, error) {
 	if strings.TrimSpace(options.ProjectID) == "" {
-		return errors.New("GOOGLE_CLOUD_PROJECT environment variable is required")
+		return nil, errors.New("GOOGLE_CLOUD_PROJECT environment variable is required")
 	}
 
 	auth.Initialize()
 
-	bqExporter, err := bigqueryexport.New(ctx, options.ProjectID, options.BigQueryDataset, options.BigQueryTable, options.BigQueryProcessesTable)
+	newBQ := deps.NewBigQueryExporter
+	if newBQ == nil {
+		newBQ = bigqueryexport.New
+	}
+	newStorage := deps.NewStorageClient
+	if newStorage == nil {
+		newStorage = storage.NewClient
+	}
+	newPrediction := deps.NewPredictionScheduler
+	if newPrediction == nil {
+		newPrediction = newPredictionScheduler
+	}
+
+	app := &App{}
+
+	bqExporter, err := newBQ(ctx, options.ProjectID, options.BigQueryDataset, options.BigQueryTable, options.BigQueryProcessesTable)
 	if err != nil {
 		log.Printf("⚠️ BigQuery client init failed; continuing without export: %v", err)
 		bqExporter = nil
 	}
 	if bqExporter != nil {
-		defer func() {
-			if err := bqExporter.Close(); err != nil {
-				log.Printf("BigQuery client close: %v", err)
-			}
-		}()
+		app.closers = append(app.closers, bqExporter.Close)
 		log.Printf("📊 BigQuery export enabled: dataset=%q samples=%q processes=%q",
 			options.BigQueryDataset, bqSamplesTableOrDefault(options.BigQueryTable), bqProcessesTableOrDefault(options.BigQueryProcessesTable))
 	} else {
 		log.Printf("📊 BigQuery export disabled (set BIGQUERY_EXPORT_DATASET to enable)")
 	}
 
-	storageClient, err := storage.NewClient(ctx, options.ProjectID)
+	storageClient, err := newStorage(ctx, options.ProjectID)
 	if err != nil {
-		return err
+		app.close()
+		return nil, err
 	}
-	defer storageClient.Close()
+	if storageClient != nil {
+		app.closers = append(app.closers, storageClient.Close)
+	}
 
-	exportSched := exportqueue.New(bqExporter, storageClient.GetRunWithContext, storageClient.GetProcessesWithContext)
+	var getRun exportqueue.RunGetter
+	var getProcesses exportqueue.ProcessGetter
+	if storageClient != nil {
+		getRun = storageClient.GetRunWithContext
+		getProcesses = storageClient.GetProcessesWithContext
+	}
+	exportSched := exportqueue.New(bqExporter, getRun, getProcesses)
 	provider := providerOrNoop(options.PredictionProvider)
 	if len(options.PredictionCheckpoints) == 0 || !predictor.Enabled(provider) {
 		log.Printf("🔮 Predictive reliability disabled (set private provider and PREDICTIVE_RELIABILITY_CHECKPOINTS to enable)")
@@ -228,13 +325,9 @@ func Run(ctx context.Context, options Options) error {
 	}
 	h := handlers.NewHandlersWithPredictor(storageClient, exportSched, provider, options.PredictionCheckpoints, options.FallbackClassifier, forecastProvider, tabPredictProvider, bqmlBoostedProvider)
 
-	predictionSched, predictionCloser := newPredictionScheduler(ctx, options.ProjectID)
+	predictionSched, predictionCloser := newPrediction(ctx, options.ProjectID)
 	if predictionCloser != nil {
-		defer func() {
-			if err := predictionCloser(); err != nil {
-				log.Printf("prediction scheduler close: %v", err)
-			}
-		}()
+		app.closers = append(app.closers, predictionCloser)
 	}
 	h.SetPredictionScheduler(predictionSched, strings.TrimSpace(os.Getenv("PREDICTION_JOB_TOKEN")))
 
@@ -242,17 +335,62 @@ func Run(ctx context.Context, options Options) error {
 	mux := NewMux(h, cleanupService)
 	port := portOrDefault(options.Port)
 
-	log.Printf("🚀 Server starting on port %s", port)
-	log.Printf("📊 Monitoring endpoints:")
-	log.Printf("   - GET  /healthz")
-	log.Printf("   - POST /auth/run/{runId}")
-	log.Printf("   - POST /ingest (JWT required)")
-	log.Printf("   - POST /internal/prediction-jobs (prediction job token)")
-	log.Printf("   - GET  /runs/{runId}")
-	log.Printf("   - POST /finish/{runId} (JWT required)")
-	log.Printf("   - POST /cleanup/stale (Admin required)")
+	app.Server = &http.Server{
+		Addr:              ":" + port,
+		Handler:           mux,
+		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
+		IdleTimeout:       idleTimeout,
+	}
+	return app, nil
+}
 
-	return http.ListenAndServe(":"+port, mux)
+// Serve starts the HTTP server and shuts it down when ctx is cancelled so dependency closers run.
+func (a *App) Serve(ctx context.Context) error {
+	if a == nil || a.Server == nil {
+		return errors.New("server: App is not built")
+	}
+	defer a.close()
+
+	ln, err := net.Listen("tcp", a.Server.Addr)
+	if err != nil {
+		return err
+	}
+	a.setAddr(ln.Addr().String())
+
+	log.Printf("🚀 Server starting on %s", a.Addr())
+	log.Printf("📊 Monitoring endpoints:")
+	for _, endpoint := range monitoredEndpoints {
+		log.Printf("   - %s", endpoint.description)
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		serveErr := a.Server.Serve(ln)
+		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			errCh <- serveErr
+			return
+		}
+		errCh <- nil
+	}()
+
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		if shutdownErr := a.Server.Shutdown(shutdownCtx); shutdownErr != nil {
+			_ = a.Server.Close()
+			<-errCh
+			return shutdownErr
+		}
+		if serveErr := <-errCh; serveErr != nil {
+			return serveErr
+		}
+		return nil
+	case serveErr := <-errCh:
+		return serveErr
+	}
 }
 
 func newPredictionScheduler(ctx context.Context, projectID string) (predictionqueue.Scheduler, func() error) {
@@ -304,9 +442,6 @@ func NewMux(h *handlers.Handlers, cleanupService *cleanup.Service) *http.ServeMu
 	mux.HandleFunc("/runs/", h.GetRun)
 	mux.HandleFunc("/finish/", h.FinishRun)
 	mux.HandleFunc("/cleanup/stale", cleanupService.HandleManualStaleCleanup)
-	mux.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Test endpoint working"))
-	})
 	return mux
 }
 

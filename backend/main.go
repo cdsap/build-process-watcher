@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/cdsap/build-process-watcher/backend/internal/scoring"
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
@@ -15,7 +18,11 @@ func main() {
 	// Wire scoring sentinel classification at the composition root so the HTTP
 	// adapter stays free of concrete provider/scoring error imports.
 	options.FallbackClassifier = predictionFallbackClassifier
-	if err := server.Run(context.Background(), options); err != nil {
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := server.Run(ctx, options); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }
