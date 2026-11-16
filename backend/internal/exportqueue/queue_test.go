@@ -285,6 +285,7 @@ func Test_Run_allowsRetryAfterExhaustedExport(t *testing.T) {
 
 	s.Run("run-retry")
 	waitForExportCalls(t, exp, 3)
+	waitForScheduledCleared(t, s, "run-retry")
 	if got := exp.exportCallsCount(); got != 3 {
 		t.Fatalf("ExportRun calls after exhausted retries = %d, want 3", got)
 	}
@@ -295,6 +296,7 @@ func Test_Run_allowsRetryAfterExhaustedExport(t *testing.T) {
 
 	s.Run("run-retry")
 	waitForExportCalls(t, exp, 4)
+	waitForScheduledCleared(t, s, "run-retry")
 	if got := exp.exportCallsCount(); got != 4 {
 		t.Fatalf("ExportRun calls after retry = %d, want 4", got)
 	}
@@ -325,12 +327,13 @@ func Test_Run_returnsImmediatelyWithoutBlockingOnExport(t *testing.T) {
 	}
 	close(release)
 	waitForExportCalls(t, exp, 1)
+	waitForScheduledCleared(t, s, "run-async")
 
 	s.mu.Lock()
-	_, stillTracked := s.scheduled["run-async"]
+	_, completed := s.completed["run-async"]
 	s.mu.Unlock()
-	if stillTracked {
-		t.Fatal("scheduled map should prune completed exports")
+	if !completed {
+		t.Fatal("successful export should be recorded in completed dedupe map")
 	}
 }
 
@@ -341,6 +344,25 @@ func waitForExportCalls(t *testing.T, exp *recordingExporter, want int) {
 		select {
 		case <-deadline:
 			t.Fatalf("timed out waiting for %d ExportRun calls, got %d", want, exp.exportCallsCount())
+		default:
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+}
+
+func waitForScheduledCleared(t *testing.T, s *Scheduler, runID string) {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	for {
+		s.mu.Lock()
+		_, present := s.scheduled[runID]
+		s.mu.Unlock()
+		if !present {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for scheduled entry %q to clear", runID)
 		default:
 			time.Sleep(5 * time.Millisecond)
 		}

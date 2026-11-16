@@ -21,13 +21,16 @@ type RunExporter interface {
 	ExportProcesses(ctx context.Context, runID string, proc *models.ProcessDoc, finishedAt time.Time) error
 }
 
+const completedExportTTL = time.Hour
+
 // Scheduler runs BigQuery exports that re-read Firestore before insert.
 type Scheduler struct {
 	exp          RunExporter
 	getRun       RunGetter
 	getProcesses ProcessGetter
 	mu           sync.Mutex
-	scheduled    map[string]struct{}
+	scheduled    map[string]struct{}  // in-flight exports
+	completed    map[string]time.Time // successful exports (TTL-pruned)
 }
 
 // New returns a scheduler. If exp is nil or getRun is nil, Run is a no-op. getProcesses may be nil.
@@ -37,13 +40,14 @@ func New(exp RunExporter, getRun RunGetter, getProcesses ProcessGetter) *Schedul
 		getRun:       getRun,
 		getProcesses: getProcesses,
 		scheduled:    make(map[string]struct{}),
+		completed:    make(map[string]time.Time),
 	}
 }
 
 // Run starts a background BigQuery export for runID and returns immediately so
 // HTTP handlers (especially GET /runs stale auto-finish) never block on export.
-// In-flight dedupe is keyed by runID; the entry is pruned when the export ends
-// so the map cannot grow without bound across many finished runs.
+// In-flight and recent successful run IDs are deduped; completed entries expire
+// after completedExportTTL so memory stays bounded.
 func (s *Scheduler) Run(runID string) {
 	if s == nil || s.exp == nil || s.getRun == nil || runID == "" {
 		return
@@ -53,25 +57,41 @@ func (s *Scheduler) Run(runID string) {
 		return
 	}
 	go func() {
-		defer s.clearScheduled(runID)
-		s.exportRunWithRetries(runID)
+		ok := s.exportRunWithRetries(runID)
+		s.finishScheduled(runID, ok)
 	}()
 }
 
 func (s *Scheduler) markScheduled(runID string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.pruneCompletedLocked(time.Now())
 	if _, ok := s.scheduled[runID]; ok {
+		return false
+	}
+	if _, ok := s.completed[runID]; ok {
 		return false
 	}
 	s.scheduled[runID] = struct{}{}
 	return true
 }
 
-func (s *Scheduler) clearScheduled(runID string) {
+func (s *Scheduler) finishScheduled(runID string, ok bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.scheduled, runID)
+	if ok {
+		s.completed[runID] = time.Now()
+	}
+	s.pruneCompletedLocked(time.Now())
+}
+
+func (s *Scheduler) pruneCompletedLocked(now time.Time) {
+	for id, at := range s.completed {
+		if now.Sub(at) > completedExportTTL {
+			delete(s.completed, id)
+		}
+	}
 }
 
 func procRowCount(p *models.ProcessDoc) int {
