@@ -44,6 +44,12 @@ func TestHandleManualStaleCleanupOptions(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d, want 200", rec.Code)
 	}
+	if got := rec.Header().Get("Access-Control-Allow-Headers"); got != "Content-Type, Authorization, X-Admin-Secret" {
+		t.Fatalf("Allow-Headers=%q", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Methods"); got != "POST, OPTIONS" {
+		t.Fatalf("Allow-Methods=%q", got)
+	}
 }
 
 func TestHandleManualStaleCleanupMethodNotAllowed(t *testing.T) {

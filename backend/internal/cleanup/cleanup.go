@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/cdsap/build-process-watcher/backend/internal/exportqueue"
+	"github.com/cdsap/build-process-watcher/backend/internal/httpx"
 	"github.com/cdsap/build-process-watcher/backend/internal/runlifecycle"
 	"github.com/cdsap/build-process-watcher/backend/internal/storage"
 )
@@ -50,16 +51,10 @@ func NewService(storageClient *storage.Client, export *exportqueue.Scheduler, au
 func (s *Service) HandleManualStaleCleanup(w http.ResponseWriter, r *http.Request) {
 	log.Printf("cleanupStaleHandler called with method: %s", r.Method)
 
-	if r.Method == http.MethodOptions {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Secret")
-		w.WriteHeader(http.StatusOK)
+	if httpx.HandleCORSPreflight(w, r, httpx.MethodsPOST, httpx.HeadersAdmin) {
 		return
 	}
-
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !httpx.RequireMethod(w, r, http.MethodPost) {
 		return
 	}
 
@@ -69,7 +64,7 @@ func (s *Service) HandleManualStaleCleanup(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	httpx.SetCORSHeaders(w, "", "")
 	w.Header().Set("Content-Type", "application/json")
 
 	log.Printf("🧹 Manual cleanup triggered...")
