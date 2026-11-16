@@ -11,6 +11,8 @@ describe('run dashboard freshness integration', () => {
     )}`;
     expect(source).toContain('<script src="/freshness-view.js"></script>');
     expect(source).toContain('id="freshness-diagnostics"');
+    expect(source).toContain('run-header-actions');
+    expect(source).toContain("target.querySelector('details.freshness-info')?.open === true");
     expect(source).toContain('BpwFreshnessView.render');
     expect(source).toContain('performance.now()');
     expect(source).toContain('requestAnimationFrame');
