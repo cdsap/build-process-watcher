@@ -10,6 +10,7 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
 	"github.com/cdsap/build-process-watcher/backend/internal/prediction"
 	"github.com/cdsap/build-process-watcher/backend/internal/predictionqueue"
+	"github.com/cdsap/build-process-watcher/backend/internal/runlifecycle"
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
 
@@ -24,6 +25,7 @@ const predictionJobTokenHeader = "X-BPW-Prediction-Job-Token"
 type Handlers struct {
 	storage             Storage
 	export              Exporter
+	lifecycle           *runlifecycle.Service
 	checkpointEvaluator *prediction.CheckpointEvaluator
 	forecastEvaluator   *prediction.ForecastEvaluator
 	// predictionScheduler enqueues evaluation off the /ingest path (Cloud Tasks).
@@ -70,6 +72,7 @@ func NewHandlersWithPredictor(storageClient Storage, export Exporter, prediction
 	return &Handlers{
 		storage:             storageClient,
 		export:              export,
+		lifecycle:           runlifecycle.New(storageClient, export),
 		checkpointEvaluator: prediction.NewCheckpointEvaluator(checkpointRepo, predictionProvider, checkpoints, fallbackClassifier),
 		forecastEvaluator:   prediction.NewForecastEvaluatorWithProviders(forecastRepo, forecastProvider, tabPredictProvider, bqmlBoostedProvider),
 		predictionScheduler: predictionqueue.Noop{},
