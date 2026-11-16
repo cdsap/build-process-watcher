@@ -1,10 +1,17 @@
 package models
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
-// ProcessForecastThrottleElapsedS is the shared cadence for timeline modes
+// ProcessForecastThrottleElapsedS is the default cadence for timeline modes
 // (forecast / predict / bqml-boosted) across evaluators and Cloud Tasks dedupe.
+// Per-run overrides use prediction_throttle_s.
 const ProcessForecastThrottleElapsedS = 20
+
+// ProcessForecastThrottleElapsedSMax is the largest accepted prediction_throttle_s.
+const ProcessForecastThrottleElapsedSMax = 3600
 
 // PredictionMode is the public run prediction setting.
 type PredictionMode string
@@ -16,6 +23,31 @@ const (
 	PredictionModePredict     PredictionMode = "predict"
 	PredictionModeBQMLBoosted PredictionMode = "bqml-boosted"
 )
+
+// ParseThrottleElapsedS validates a prediction_throttle_s query/input value.
+// Empty means unset (use the default). Values must be integers in [1, Max].
+func ParseThrottleElapsedS(raw string) (int, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, true
+	}
+	seconds, err := strconv.Atoi(raw)
+	if err != nil || seconds < 1 || seconds > ProcessForecastThrottleElapsedSMax {
+		return 0, false
+	}
+	return seconds, true
+}
+
+// NormalizeThrottleElapsedS returns a positive throttle, falling back to the default.
+func NormalizeThrottleElapsedS(seconds int) int {
+	if seconds <= 0 {
+		return ProcessForecastThrottleElapsedS
+	}
+	if seconds > ProcessForecastThrottleElapsedSMax {
+		return ProcessForecastThrottleElapsedSMax
+	}
+	return seconds
+}
 
 // ParsePredictionMode validates a query/env prediction_mode value.
 func ParsePredictionMode(raw string) (PredictionMode, bool) {

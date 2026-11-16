@@ -16,6 +16,7 @@ type FakeStorage struct {
 	ExportToBigQuery      map[string]bool
 	PredictiveReliability map[string]bool
 	PredictionModes       map[string]string
+	PredictionThrottles   map[string]int
 	GetRunErr             error
 	StoredSamples         []models.Sample
 	StoredProcessInfo     []models.ProcessInfo
@@ -34,6 +35,7 @@ func NewFakeStorage() *FakeStorage {
 		ExportToBigQuery:      make(map[string]bool),
 		PredictiveReliability: make(map[string]bool),
 		PredictionModes:       make(map[string]string),
+		PredictionThrottles:   make(map[string]int),
 	}
 }
 
@@ -79,6 +81,7 @@ func (f *FakeStorage) AppendSamples(_ context.Context, runID string, build stora
 	return &storage.SampleAppendResult{
 		Count:                 len(samples),
 		PredictionMode:        existing.PredictionMode,
+		PredictionThrottleS:   existing.PredictionThrottleS,
 		PredictiveReliability: existing.PredictiveReliability,
 	}, nil
 }
@@ -115,6 +118,20 @@ func (f *FakeStorage) SetRunPredictiveReliability(_ context.Context, runID strin
 
 func (f *FakeStorage) SetRunPredictionMode(_ context.Context, runID, mode string) error {
 	f.PredictionModes[runID] = mode
+	if run := f.Runs[runID]; run != nil {
+		run.PredictionMode = mode
+	}
+	return nil
+}
+
+func (f *FakeStorage) SetRunPredictionThrottleS(_ context.Context, runID string, throttleS int) error {
+	throttleS = models.NormalizeThrottleElapsedS(throttleS)
+	f.PredictionThrottles[runID] = throttleS
+	if run := f.Runs[runID]; run != nil {
+		run.PredictionThrottleS = throttleS
+	} else {
+		f.Runs[runID] = &models.RunDoc{RunID: runID, PredictionThrottleS: throttleS}
+	}
 	return nil
 }
 

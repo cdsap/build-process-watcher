@@ -56,6 +56,7 @@ This is not required for normal local or remote monitoring. Use it only when you
 | `disable_summary_output` | Disable GitHub Actions summary output | `false` | No |
 | `export_to_bigquery` | Optional metrics export to BigQuery when Remote Mode finishes | `false` | No |
 | `prediction_mode` | Request `disabled`, `forecast`, `predict`, or `bqml-boosted` | `disabled` | No |
+| `prediction_throttle_s` | Process-forecast cadence in elapsed seconds for timeline modes | `20` | No |
 | `freshness_diagnostics` | Add opt-in collection-to-dashboard timing telemetry; implies Remote Mode | `false` | No |
 
 **Environment variables (for Remote Mode):** Set `BACKEND_URL` and `FRONTEND_URL` as env vars (e.g. from secrets) for custom URLs. If unset, default Cloud Run and dashboard URLs are used.
@@ -64,6 +65,8 @@ This is not required for normal local or remote monitoring. Use it only when you
 
 
 **Prediction mode selection:** Set `prediction_mode` to `forecast`, `predict`, or `bqml-boosted` to request a timeline forecast mode. Values are lowercase; an empty input defaults to `disabled`. Invalid modes fail configuration. The `prediction_mode` output reports the selected request, not provider readiness.
+
+**Prediction throttle:** Set `prediction_throttle_s` to control how often timeline modes issue forecasts (elapsed-seconds buckets shared by Cloud Tasks dedupe). Default is `20`. Valid range is `1`–`3600`.
 
 **Freshness diagnostics are experimental and opt-in:** Set `freshness_diagnostics: 'true'` for a bounded live timing spike. Instrumented samples include collection, backend receipt, and backend storage timing; the run dashboard adds fetch/render timing, p50/p95 latency, sequence gaps, and a cross-host clock-skew warning. The option enables Remote Mode but does not enable prediction or BigQuery export.
 

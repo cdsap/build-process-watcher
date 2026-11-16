@@ -72,6 +72,7 @@ type RunDoc struct {
 	ExportToBigquery      bool                   `firestore:"export_to_bigquery,omitempty"`
 	PredictiveReliability bool                   `firestore:"predictive_reliability,omitempty"`
 	PredictionMode        string                 `firestore:"prediction_mode,omitempty"`
+	PredictionThrottleS   int                    `firestore:"prediction_throttle_s,omitempty"`
 	PredictionCheckpoints []PredictionCheckpoint `firestore:"prediction_checkpoints,omitempty"`
 	ProcessForecasts      []ProcessForecast      `firestore:"process_forecasts,omitempty"`
 }

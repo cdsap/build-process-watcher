@@ -60,12 +60,14 @@ async function run() {
       frontendUrl,
       exportToBigquery,
       predictionMode,
+      predictionThrottleS,
       freshnessDiagnostics,
     } = resolveMonitoringFeatureFlags({
       remoteMonitoringRequested,
       exportToBigqueryRequested,
       freshnessDiagnosticsRequested,
       predictionMode: core.getInput('prediction_mode'),
+      predictionThrottleS: core.getInput('prediction_throttle_s'),
       backendUrl: requestedBackendUrl,
       frontendUrl: requestedFrontendUrl,
       runId,
@@ -102,6 +104,7 @@ async function run() {
     core.exportVariable('DISABLE_SUMMARY_OUTPUT', disableSummaryOutput.toString());
     core.exportVariable('EXPORT_TO_BIGQUERY', exportToBigquery ? 'true' : 'false');
     core.exportVariable('PREDICTION_MODE', predictionMode);
+    core.exportVariable('PREDICTION_THROTTLE_S', String(predictionThrottleS));
     core.exportVariable('FRESHNESS_DIAGNOSTICS', freshnessDiagnostics ? 'true' : 'false');
     
     // Also write RUN_ID to a file as a backup for the post step
@@ -141,6 +144,7 @@ async function run() {
     core.setOutput('frontend_url', frontendUrl);
     core.setOutput('export_to_bigquery', exportToBigquery.toString());
     core.setOutput('prediction_mode', predictionMode);
+    core.setOutput('prediction_throttle_s', String(predictionThrottleS));
     core.setOutput('freshness_diagnostics', freshnessDiagnostics.toString());
 
     // Always show the dashboard URL when remote monitoring is enabled (regardless of debug mode)
@@ -177,6 +181,7 @@ async function run() {
       debugMode,
       exportToBigquery,
       predictionMode,
+      predictionThrottleS,
       freshnessDiagnostics,
       enableBackend,
     });

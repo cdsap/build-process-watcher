@@ -218,6 +218,9 @@ get_auth_token() {
     case "${PREDICTION_MODE:-disabled}" in
         forecast|predict|bqml-boosted) auth_params+=("prediction_mode=$PREDICTION_MODE") ;;
     esac
+    if [ -n "${PREDICTION_THROTTLE_S:-}" ]; then
+        auth_params+=("prediction_throttle_s=$PREDICTION_THROTTLE_S")
+    fi
     if [ ${#auth_params[@]} -gt 0 ]; then
         local joined_params
         joined_params=$(IFS='&'; echo "${auth_params[*]}")

@@ -25,25 +25,26 @@ type Job struct {
 
 // Scheduler enqueues prediction evaluation for a run. Implementations must return
 // quickly; failures are logged by callers and must not fail ingest.
+// throttleS is the per-run cadence in seconds; values <= 0 use the shared default.
 type Scheduler interface {
-	Schedule(ctx context.Context, runID string, maxElapsedS int) error
+	Schedule(ctx context.Context, runID string, maxElapsedS, throttleS int) error
 }
 
 // Noop never schedules work (tests / misconfigured deploys).
 type Noop struct{}
 
 // Schedule implements Scheduler.
-func (Noop) Schedule(context.Context, string, int) error { return nil }
+func (Noop) Schedule(context.Context, string, int, int) error { return nil }
 
 // Func adapts a function to Scheduler.
-type Func func(ctx context.Context, runID string, maxElapsedS int) error
+type Func func(ctx context.Context, runID string, maxElapsedS, throttleS int) error
 
 // Schedule implements Scheduler.
-func (f Func) Schedule(ctx context.Context, runID string, maxElapsedS int) error {
+func (f Func) Schedule(ctx context.Context, runID string, maxElapsedS, throttleS int) error {
 	if f == nil {
 		return nil
 	}
-	return f(ctx, runID, maxElapsedS)
+	return f(ctx, runID, maxElapsedS, throttleS)
 }
 
 var taskIDSanitizer = regexp.MustCompile(`[^A-Za-z0-9_-]+`)

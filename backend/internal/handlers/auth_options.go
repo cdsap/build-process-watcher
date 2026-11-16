@@ -15,6 +15,7 @@ import (
 // authRunOptions is the parsed /auth/run query surface before token minting.
 type authRunOptions struct {
 	Mode             models.PredictionMode
+	ThrottleS        int
 	ExportToBigQuery bool
 }
 
@@ -26,8 +27,13 @@ func parseAuthRunOptions(query url.Values) (authRunOptions, error) {
 	if !ok {
 		return authRunOptions{}, fmt.Errorf("invalid prediction_mode")
 	}
+	throttleS, ok := models.ParseThrottleElapsedS(query.Get("prediction_throttle_s"))
+	if !ok {
+		return authRunOptions{}, fmt.Errorf("invalid prediction_throttle_s")
+	}
 	return authRunOptions{
 		Mode:             mode,
+		ThrottleS:        throttleS,
 		ExportToBigQuery: query.Get("export_to_bigquery") == "true",
 	}, nil
 }
@@ -40,6 +46,11 @@ func (h *Handlers) applyAuthRunOptions(ctx context.Context, runID string, opts a
 	if mode != models.PredictionModeUnset && mode != models.PredictionModeDisabled {
 		if err := h.storage.SetRunPredictionMode(ctx, runID, mode.String()); err != nil {
 			log.Printf("Warning: could not persist prediction mode for run %s: %v", runID, err)
+		}
+	}
+	if opts.ThrottleS > 0 {
+		if err := h.storage.SetRunPredictionThrottleS(ctx, runID, opts.ThrottleS); err != nil {
+			log.Printf("Warning: could not persist prediction_throttle_s for run %s: %v", runID, err)
 		}
 	}
 	if opts.ExportToBigQuery {

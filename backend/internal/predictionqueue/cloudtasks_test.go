@@ -43,7 +43,7 @@ func TestScheduleTreatsAlreadyExistsAsSuccess(t *testing.T) {
 		targetURL: "https://example.test/internal/prediction-jobs",
 		authToken: "secret",
 	}
-	if err := s.Schedule(context.Background(), "run-1", 40); err != nil {
+	if err := s.Schedule(context.Background(), "run-1", 40, 10); err != nil {
 		t.Fatalf("AlreadyExists schedule: %v", err)
 	}
 	if fake.calls != 1 {
@@ -66,7 +66,32 @@ func TestSchedulePropagatesOtherErrors(t *testing.T) {
 		targetURL: "https://example.test/internal/prediction-jobs",
 		authToken: "secret",
 	}
-	if err := s.Schedule(context.Background(), "run-1", 20); err == nil {
+	if err := s.Schedule(context.Background(), "run-1", 20, 10); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestScheduleTaskIDRespectsThrottle(t *testing.T) {
+	fake := &fakeTaskCreator{}
+	s := &CloudTasks{
+		client:    fake,
+		queuePath: "projects/p/locations/l/queues/q",
+		targetURL: "https://example.test/internal/prediction-jobs",
+		authToken: "secret",
+	}
+	if err := s.Schedule(context.Background(), "run-1", 25, 10); err != nil {
+		t.Fatalf("schedule: %v", err)
+	}
+	name := fake.req.GetTask().GetName()
+	if want := "projects/p/locations/l/queues/q/tasks/eval-run-1-b2"; name != want {
+		t.Fatalf("task name = %q, want %q", name, want)
+	}
+	fake.calls = 0
+	if err := s.Schedule(context.Background(), "run-1", 25, 20); err != nil {
+		t.Fatalf("schedule with 20s throttle: %v", err)
+	}
+	name = fake.req.GetTask().GetName()
+	if want := "projects/p/locations/l/queues/q/tasks/eval-run-1-b1"; name != want {
+		t.Fatalf("20s throttle task name = %q, want %q", name, want)
 	}
 }

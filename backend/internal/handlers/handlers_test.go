@@ -321,11 +321,12 @@ func TestIngestSchedulesPredictionWithoutRunningIt(t *testing.T) {
 	}
 
 	var gotRun string
-	var gotElapsed int
+	var gotElapsed, gotThrottle int
 	var scheduled atomic.Bool
-	h.SetPredictionScheduler(predictionqueue.Func(func(_ context.Context, id string, elapsed int) error {
+	h.SetPredictionScheduler(predictionqueue.Func(func(_ context.Context, id string, elapsed, throttle int) error {
 		gotRun = id
 		gotElapsed = elapsed
+		gotThrottle = throttle
 		scheduled.Store(true)
 		time.Sleep(25 * time.Millisecond) // typical enqueue latency, not TabFM
 		return nil
@@ -348,6 +349,9 @@ func TestIngestSchedulesPredictionWithoutRunningIt(t *testing.T) {
 	}
 	if gotElapsed != 40 {
 		t.Fatalf("max elapsed = %d, want 40", gotElapsed)
+	}
+	if gotThrottle != models.ProcessForecastThrottleElapsedS {
+		t.Fatalf("throttle = %d, want default %d", gotThrottle, models.ProcessForecastThrottleElapsedS)
 	}
 	if took > 500*time.Millisecond {
 		t.Fatalf("ingest took %s; expected enqueue-only latency", took)
@@ -386,7 +390,7 @@ func TestIngestSkipsPredictionScheduleWhenModeDisabled(t *testing.T) {
 				t.Fatal(err)
 			}
 			var scheduled atomic.Bool
-			h.SetPredictionScheduler(predictionqueue.Func(func(context.Context, string, int) error {
+			h.SetPredictionScheduler(predictionqueue.Func(func(context.Context, string, int, int) error {
 				scheduled.Store(true)
 				return nil
 			}), "job-secret")
@@ -710,6 +714,7 @@ func TestAuthPredictionModes(t *testing.T) {
 		{"prediction_mode=reliability", "", http.StatusBadRequest},
 		{"predictive_reliability=true", "", http.StatusBadRequest},
 		{"prediction_mode=invalid", "", http.StatusBadRequest},
+		{"prediction_throttle_s=0", "", http.StatusBadRequest},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			store := newFakeStorage()
@@ -719,5 +724,24 @@ func TestAuthPredictionModes(t *testing.T) {
 				t.Fatalf("status=%d mode=%q want status=%d mode=%q", recorder.Code, store.PredictionModes["run-1"], tc.status, tc.mode)
 			}
 		})
+	}
+}
+
+func TestAuthPersistsPredictionThrottle(t *testing.T) {
+	store := newFakeStorage()
+	recorder := httptest.NewRecorder()
+	newTestHandlers(store, nil).Auth(recorder, httptest.NewRequest(
+		http.MethodPost,
+		"/auth/run/run-throttle?prediction_mode=predict&prediction_throttle_s=20",
+		nil,
+	))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if store.PredictionModes["run-throttle"] != "predict" {
+		t.Fatalf("mode=%q, want predict", store.PredictionModes["run-throttle"])
+	}
+	if store.PredictionThrottles["run-throttle"] != 20 {
+		t.Fatalf("throttle=%d, want 20", store.PredictionThrottles["run-throttle"])
 	}
 }

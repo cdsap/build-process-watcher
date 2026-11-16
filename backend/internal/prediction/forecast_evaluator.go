@@ -72,7 +72,7 @@ func (e *ForecastEvaluator) EvaluateLoaded(ctx context.Context, runID string, ru
 	if provider == nil || !predictor.ForecastEnabled(provider) {
 		return
 	}
-	if !shouldForecast(runDoc.Samples, runDoc.ProcessForecasts, models.ProcessForecastThrottleElapsedS) {
+	if !shouldForecast(runDoc.Samples, runDoc.ProcessForecasts, models.NormalizeThrottleElapsedS(runDoc.PredictionThrottleS)) {
 		return
 	}
 

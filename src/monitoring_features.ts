@@ -6,6 +6,8 @@ export { DEFAULT_LOG_FILE_NAME } from './action_config';
 export type PredictionMode = 'disabled' | 'forecast' | 'predict' | 'bqml-boosted';
 
 const VALID_MODES: PredictionMode[] = ['disabled', 'forecast', 'predict', 'bqml-boosted'];
+export const DEFAULT_PREDICTION_THROTTLE_S = 20;
+const MAX_PREDICTION_THROTTLE_S = 3600;
 
 export function resolvePredictionMode(mode: string): PredictionMode {
   if (!mode) return 'disabled';
@@ -15,12 +17,30 @@ export function resolvePredictionMode(mode: string): PredictionMode {
   return mode as PredictionMode;
 }
 
+export function resolvePredictionThrottleS(raw: string | undefined): number {
+  const value = (raw ?? '').trim();
+  if (!value) return DEFAULT_PREDICTION_THROTTLE_S;
+  if (!/^\d+$/.test(value)) {
+    throw new Error(
+      `Invalid prediction_throttle_s; expected integer seconds from 1 to ${MAX_PREDICTION_THROTTLE_S}`,
+    );
+  }
+  const seconds = Number(value);
+  if (seconds < 1 || seconds > MAX_PREDICTION_THROTTLE_S) {
+    throw new Error(
+      `Invalid prediction_throttle_s; expected integer seconds from 1 to ${MAX_PREDICTION_THROTTLE_S}`,
+    );
+  }
+  return seconds;
+}
+
 export interface MonitoringFeatureFlags {
   enableBackend: boolean;
   backendUrl: string;
   frontendUrl: string;
   exportToBigquery: boolean;
   predictionMode: PredictionMode;
+  predictionThrottleS: number;
   freshnessDiagnostics: boolean;
 }
 
@@ -36,11 +56,13 @@ export function resolveMonitoringFeatureFlags(inputs: {
   exportToBigqueryRequested: boolean;
   freshnessDiagnosticsRequested?: boolean;
   predictionMode?: string;
+  predictionThrottleS?: string;
   backendUrl?: string;
   frontendUrl?: string;
   runId: string;
 }): MonitoringFeatureFlags {
   const predictionMode = resolvePredictionMode(inputs.predictionMode || '');
+  const predictionThrottleS = resolvePredictionThrottleS(inputs.predictionThrottleS);
   const enableBackend =
     inputs.remoteMonitoringRequested ||
     predictionMode !== 'disabled' ||
@@ -69,6 +91,7 @@ export function resolveMonitoringFeatureFlags(inputs: {
     frontendUrl,
     exportToBigquery: inputs.exportToBigqueryRequested && useBackend,
     predictionMode,
+    predictionThrottleS,
     freshnessDiagnostics: inputs.freshnessDiagnosticsRequested === true && useBackend,
   };
 }

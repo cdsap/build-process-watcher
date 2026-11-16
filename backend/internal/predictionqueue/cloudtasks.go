@@ -8,6 +8,7 @@ import (
 
 	cloudtasks "cloud.google.com/go/cloudtasks/apiv2"
 	taskspb "cloud.google.com/go/cloudtasks/apiv2/cloudtaskspb"
+	"github.com/cdsap/build-process-watcher/backend/internal/models"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -82,7 +83,7 @@ func (s *CloudTasks) Close() error {
 }
 
 // Schedule enqueues an HTTP task. AlreadyExists is treated as success (dedupe).
-func (s *CloudTasks) Schedule(ctx context.Context, runID string, maxElapsedS int) error {
+func (s *CloudTasks) Schedule(ctx context.Context, runID string, maxElapsedS, throttleS int) error {
 	if s == nil || s.client == nil {
 		return nil
 	}
@@ -94,7 +95,7 @@ func (s *CloudTasks) Schedule(ctx context.Context, runID string, maxElapsedS int
 	if err != nil {
 		return err
 	}
-	taskID := TaskID(runID, maxElapsedS, ThrottleSeconds())
+	taskID := TaskID(runID, maxElapsedS, models.NormalizeThrottleElapsedS(throttleS))
 	headers := map[string]string{
 		"Content-Type": "application/json",
 		JobTokenHeader: s.authToken,
