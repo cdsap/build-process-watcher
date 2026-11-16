@@ -17,6 +17,7 @@ go_library(
         "//internal/models",
         "//internal/prediction",
         "//internal/predictionqueue",
+        "//internal/runlifecycle",
         "//internal/storage",
         "//pkg/predictor",
     ],

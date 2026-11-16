@@ -5,37 +5,34 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"time"
 
 	"github.com/cdsap/build-process-watcher/backend/internal/auth"
 	"github.com/cdsap/build-process-watcher/backend/internal/exportqueue"
+	"github.com/cdsap/build-process-watcher/backend/internal/runlifecycle"
 	"github.com/cdsap/build-process-watcher/backend/internal/storage"
 )
 
-const (
-	// BuildTimeout is the timeout for marking builds as finished (5 minutes)
-	BuildTimeout = 5 * time.Minute
-)
+// BuildTimeout is retained for callers/tests that reference the shared stale window.
+const BuildTimeout = runlifecycle.DefaultStaleTimeout
 
 // Service handles cleanup operations
 type Service struct {
-	storage *storage.Client
-	export  *exportqueue.Scheduler
+	lifecycle *runlifecycle.Service
 }
 
 // NewService creates a new cleanup service. export may be nil.
 func NewService(storageClient *storage.Client, export *exportqueue.Scheduler) *Service {
-	return &Service{
-		storage: storageClient,
-		export:  export,
+	var lifecycle *runlifecycle.Service
+	if storageClient != nil {
+		lifecycle = runlifecycle.NewWithFinder(storageClient, export, storageClient)
 	}
+	return &Service{lifecycle: lifecycle}
 }
 
 // HandleManualStaleCleanup handles manual cleanup of stale runs (admin only)
 func (s *Service) HandleManualStaleCleanup(w http.ResponseWriter, r *http.Request) {
 	log.Printf("cleanupStaleHandler called with method: %s", r.Method)
 
-	// Handle CORS preflight
 	if r.Method == http.MethodOptions {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
@@ -49,53 +46,41 @@ func (s *Service) HandleManualStaleCleanup(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Require admin authentication
 	if !auth.RequireAdminAuth(r) {
 		log.Printf("⚠️  Unauthorized cleanup attempt from %s", r.RemoteAddr)
 		http.Error(w, "Unauthorized - admin secret required", http.StatusUnauthorized)
 		return
 	}
 
-	// Set CORS headers
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
 
 	log.Printf("🧹 Manual cleanup triggered...")
 
-	staleRuns, err := s.storage.FindStaleRuns(BuildTimeout)
+	if s.lifecycle == nil {
+		http.Error(w, "Cleanup service not configured", http.StatusInternalServerError)
+		return
+	}
+
+	result, err := s.lifecycle.FinishAllStale()
 	if err != nil {
 		log.Printf("❌ Error finding stale runs: %v", err)
 		http.Error(w, fmt.Sprintf("Error finding stale runs: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("🧹 Found %d stale runs", len(staleRuns))
-
-	// Mark stale runs as finished
-	var cleanedRuns []string
-	for _, runID := range staleRuns {
-		newlyFinished, err := s.storage.MarkRunAsFinished(runID)
-		if err != nil {
-			log.Printf("❌ Error cleaning up stale run %s: %v", runID, err)
-		} else {
-			log.Printf("✅ Successfully marked stale run %s as finished", runID)
-			cleanedRuns = append(cleanedRuns, runID)
-			if newlyFinished && s.export != nil {
-				s.export.Run(runID)
-			}
-		}
-	}
+	log.Printf("🧹 Found %d stale runs", len(result.StaleFound))
 
 	response := map[string]interface{}{
 		"success":       true,
-		"total_checked": len(staleRuns),
-		"stale_found":   len(staleRuns),
-		"cleaned_up":    len(cleanedRuns),
-		"cleaned_runs":  cleanedRuns,
+		"total_checked": len(result.StaleFound),
+		"stale_found":   len(result.StaleFound),
+		"cleaned_up":    len(result.Cleaned),
+		"cleaned_runs":  result.Cleaned,
 	}
 
-	if len(staleRuns) > 0 {
-		log.Printf("🧹 Manual cleanup completed: cleaned up %d stale runs", len(cleanedRuns))
+	if len(result.StaleFound) > 0 {
+		log.Printf("🧹 Manual cleanup completed: cleaned up %d stale runs", len(result.Cleaned))
 	} else {
 		log.Printf("🧹 Manual cleanup completed: no stale runs found")
 	}

@@ -44,19 +44,14 @@ func (h *Handlers) GetRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Auto-finish stale runs after 5 minutes without updates.
-	if !runDoc.Finished && time.Since(runDoc.UpdatedAt) > 5*time.Minute {
-		log.Printf("Run %s stale for >5m; auto-finishing", runID)
-		if newlyFinished, err := h.storage.MarkRunAsFinished(runID); err != nil {
+	if h.lifecycle.IsStale(runDoc.UpdatedAt, runDoc.Finished) {
+		if _, err := h.lifecycle.Finish(runID); err != nil {
 			log.Printf("Failed to auto-finish run %s: %v", runID, err)
 		} else {
 			now := time.Now()
 			runDoc.Finished = true
 			runDoc.FinishedAt = now
 			runDoc.UpdatedAt = now
-			if newlyFinished && h.export != nil {
-				h.export.Run(runID)
-			}
 		}
 	}
 
@@ -117,14 +112,10 @@ func (h *Handlers) FinishRun(w http.ResponseWriter, r *http.Request) {
 	log.Printf("✅ Token validated successfully for finishing run: %s", runID)
 	log.Printf("Manually finishing run: %s", runID)
 
-	newlyFinished, err := h.storage.MarkRunAsFinished(runID)
-	if err != nil {
+	if _, err := h.lifecycle.Finish(runID); err != nil {
 		log.Printf("Error finishing run %s: %v", runID, err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
-	}
-	if newlyFinished && h.export != nil {
-		h.export.Run(runID)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

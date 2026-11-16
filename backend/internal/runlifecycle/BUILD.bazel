@@ -1,0 +1,14 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "runlifecycle",
+    srcs = ["lifecycle.go"],
+    importpath = "github.com/cdsap/build-process-watcher/backend/internal/runlifecycle",
+    visibility = ["//:__subpackages__"],
+)
+
+go_test(
+    name = "runlifecycle_test",
+    srcs = ["lifecycle_test.go"],
+    embed = [":runlifecycle"],
+)
