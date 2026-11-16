@@ -1,9 +1,7 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,98 +10,38 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/internal/auth"
 	"github.com/cdsap/build-process-watcher/backend/internal/cleanup"
 	"github.com/cdsap/build-process-watcher/backend/internal/handlers"
+	"github.com/cdsap/build-process-watcher/backend/internal/handlers/handlertest"
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
-	"github.com/cdsap/build-process-watcher/backend/internal/storage"
 )
 
-type muxFakeStorage struct {
-	runs      map[string]*models.RunDoc
-	processes map[string]*models.ProcessDoc
-}
-
-func (f *muxFakeStorage) GetRun(_ context.Context, runID string) (*models.RunDoc, error) {
-	run, ok := f.runs[runID]
-	if !ok {
-		return nil, fmt.Errorf("%w: %s", storage.ErrRunNotFound, runID)
-	}
-	return run, nil
-}
-
-func (f *muxFakeStorage) GetProcesses(_ context.Context, runID string) (*models.ProcessDoc, error) {
-	processes, ok := f.processes[runID]
-	if !ok {
-		return nil, fmt.Errorf("processes for run %s not found", runID)
-	}
-	return processes, nil
-}
-
-func (f *muxFakeStorage) AppendSamples(context.Context, string, storage.SampleBuildFunc) (*storage.SampleAppendResult, error) {
-	return &storage.SampleAppendResult{}, nil
-}
-func (f *muxFakeStorage) StoreProcessInfo(context.Context, string, models.ProcessInfo) error {
-	return nil
-}
-func (f *muxFakeStorage) StorePredictionCheckpoint(context.Context, string, models.PredictionCheckpoint) error {
-	return nil
-}
-func (f *muxFakeStorage) AppendProcessForecasts(context.Context, string, []models.ProcessForecast) error {
-	return nil
-}
-func (f *muxFakeStorage) SetRunExportToBigquery(context.Context, string, bool) error {
-	return nil
-}
-func (f *muxFakeStorage) SetRunPredictiveReliability(context.Context, string, bool) error {
-	return nil
-}
-func (f *muxFakeStorage) SetRunPredictionMode(context.Context, string, string) error {
-	return nil
-}
-func (f *muxFakeStorage) MarkRunAsFinished(_ context.Context, runID string) (bool, error) {
-	run, ok := f.runs[runID]
-	if !ok {
-		return false, fmt.Errorf("%w: %s", storage.ErrRunNotFound, runID)
-	}
-	if run.Finished {
-		return false, nil
-	}
-	run.Finished = true
-	run.FinishedAt = time.Now()
-	return true, nil
-}
-
 func TestProductionMuxGetRunJSONFieldNaming(t *testing.T) {
-	store := &muxFakeStorage{
-		runs: map[string]*models.RunDoc{
-			"run-json": {
-				RunID:     "run-json",
-				UpdatedAt: time.Unix(1_700_000_000, 0).UTC(),
-				Samples: []models.Sample{{
-					Timestamp:   1_700_000_010_000,
-					ElapsedTime: 10,
-					PID:         "1",
-					Name:        "GradleDaemon",
-					HeapUsed:    100,
-					HeapCap:     200,
-					RSS:         300,
-				}},
-				ProcessForecasts: []models.ProcessForecast{{
-					ProcessName: "GradleDaemon",
-					PID:         "1",
-					Metric:      "rss",
-					CreatedAtMs: 1_700_000_010_000,
-					Points:      []models.ProcessForecastPoint{{TargetAtMs: 1_700_000_020_000, ValueMB: 310}},
-				}},
-				PredictionCheckpoints: []models.PredictionCheckpoint{{
-					ObservationWindowS: 60,
-					Status:             "ready",
-					CreatedAt:          time.Unix(1_700_000_000, 0).UTC(),
-				}},
-			},
-		},
-		processes: map[string]*models.ProcessDoc{
-			"run-json": {RunID: "run-json", ProcessInfo: map[string]models.ProcessInfo{}},
-		},
+	store := handlertest.NewFakeStorage()
+	store.Runs["run-json"] = &models.RunDoc{
+		RunID:     "run-json",
+		UpdatedAt: time.Unix(1_700_000_000, 0).UTC(),
+		Samples: []models.Sample{{
+			Timestamp:   1_700_000_010_000,
+			ElapsedTime: 10,
+			PID:         "1",
+			Name:        "GradleDaemon",
+			HeapUsed:    100,
+			HeapCap:     200,
+			RSS:         300,
+		}},
+		ProcessForecasts: []models.ProcessForecast{{
+			ProcessName: "GradleDaemon",
+			PID:         "1",
+			Metric:      "rss",
+			CreatedAtMs: 1_700_000_010_000,
+			Points:      []models.ProcessForecastPoint{{TargetAtMs: 1_700_000_020_000, ValueMB: 310}},
+		}},
+		PredictionCheckpoints: []models.PredictionCheckpoint{{
+			ObservationWindowS: 60,
+			Status:             "ready",
+			CreatedAt:          time.Unix(1_700_000_000, 0).UTC(),
+		}},
 	}
+	store.Processes["run-json"] = &models.ProcessDoc{RunID: "run-json", ProcessInfo: map[string]models.ProcessInfo{}}
 	authenticator := auth.NewForTest("mux-test-jwt", "mux-test-admin")
 	h := handlers.New(handlers.Config{Storage: store, Authenticator: authenticator})
 	mux := NewMux(h, cleanup.New(nil, authenticator))
