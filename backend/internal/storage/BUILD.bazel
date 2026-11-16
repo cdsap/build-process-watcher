@@ -4,6 +4,7 @@ go_library(
     name = "storage",
     srcs = [
         "errors.go",
+        "run_reads.go",
         "run_writes.go",
         "storage.go",
     ],
