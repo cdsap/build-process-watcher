@@ -23,6 +23,7 @@ go_test(
         "//internal/auth",
         "//internal/models",
         "//internal/predictionqueue",
+        "//internal/storage",
         "//pkg/predictor",
     ],
 )

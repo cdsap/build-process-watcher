@@ -18,6 +18,7 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/internal/auth"
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
 	"github.com/cdsap/build-process-watcher/backend/internal/predictionqueue"
+	"github.com/cdsap/build-process-watcher/backend/internal/storage"
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
 
@@ -27,6 +28,7 @@ type fakeStorage struct {
 	exportToBigQuery      map[string]bool
 	predictiveReliability map[string]bool
 	predictionModes       map[string]string
+	getRunErr             error
 	storedSamples         []models.Sample
 	storedProcessInfo     []models.ProcessInfo
 	finishedRuns          []string
@@ -51,9 +53,12 @@ func newFakeStorage() *fakeStorage {
 }
 
 func (f *fakeStorage) GetRun(runID string) (*models.RunDoc, error) {
+	if f.getRunErr != nil {
+		return nil, f.getRunErr
+	}
 	run, ok := f.runs[runID]
 	if !ok {
-		return nil, fmt.Errorf("run %s not found", runID)
+		return nil, fmt.Errorf("%w: %s", storage.ErrRunNotFound, runID)
 	}
 	return run, nil
 }
@@ -112,7 +117,7 @@ func (f *fakeStorage) SetRunPredictionMode(runID, mode string) error {
 func (f *fakeStorage) MarkRunAsFinished(runID string) (bool, error) {
 	run, ok := f.runs[runID]
 	if !ok {
-		return false, fmt.Errorf("run %s not found", runID)
+		return false, fmt.Errorf("%w: %s", storage.ErrRunNotFound, runID)
 	}
 	if run.Finished {
 		return false, nil
@@ -511,6 +516,26 @@ func TestGetRunUsesStoragePort(t *testing.T) {
 	}
 	if len(response.Samples) != 1 || response.ProcessInfo["12345"].VMFlags[0] != "-Xmx2g" {
 		t.Fatalf("unexpected response: %#v", response)
+	}
+}
+
+func TestGetRunReturns404WhenMissing(t *testing.T) {
+	h := NewHandlers(newFakeStorage(), nil)
+	recorder := httptest.NewRecorder()
+	h.GetRun(recorder, httptest.NewRequest(http.MethodGet, "/runs/missing-run", nil))
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d body=%s", recorder.Code, http.StatusNotFound, recorder.Body.String())
+	}
+}
+
+func TestGetRunReturns500ForUnexpectedStorageErrors(t *testing.T) {
+	store := newFakeStorage()
+	store.getRunErr = errors.New("firestore unavailable")
+	h := NewHandlers(store, nil)
+	recorder := httptest.NewRecorder()
+	h.GetRun(recorder, httptest.NewRequest(http.MethodGet, "/runs/run-boom", nil))
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusInternalServerError)
 	}
 }
 

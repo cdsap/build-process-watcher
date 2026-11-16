@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"log"
 	"strings"
 	"testing"
@@ -281,5 +282,18 @@ func TestFinishStoreFieldsDoesNotRewritePredictionArrays(t *testing.T) {
 	}
 	if fields["finished"] != true {
 		t.Fatal("expected finished=true")
+	}
+}
+
+func TestIsNotFoundRecognizesWrappedErrRunNotFound(t *testing.T) {
+	err := fmt.Errorf("%w: run-xyz", ErrRunNotFound)
+	if !IsNotFound(err) {
+		t.Fatal("expected wrapped ErrRunNotFound to match IsNotFound")
+	}
+	if IsNotFound(fmt.Errorf("connection reset")) {
+		t.Fatal("unexpected match for unrelated error")
+	}
+	if IsNotFound(nil) {
+		t.Fatal("nil must not be not-found")
 	}
 }
