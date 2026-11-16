@@ -153,3 +153,48 @@ func TestRemoteProviderDefaultsMissingObservationWindow(t *testing.T) {
 		t.Fatalf("observation window = %d, want 180", checkpoint.ObservationWindowS)
 	}
 }
+
+func TestRemoteForecastClassifiesStatus(t *testing.T) {
+	cases := []struct {
+		name       string
+		statusCode int
+		want       error
+	}{
+		{name: "no data", statusCode: http.StatusNotFound, want: ErrRemoteNoData},
+		{name: "timeout", statusCode: http.StatusGatewayTimeout, want: ErrRemoteTimeout},
+		{name: "unavailable", statusCode: http.StatusServiceUnavailable, want: ErrRemoteUnavailable},
+		{name: "failed", statusCode: http.StatusInternalServerError, want: ErrRemoteFailed},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.statusCode)
+			}))
+			defer remote.Close()
+			provider, err := NewRemoteForecastProvider(RemoteForecastConfig{URL: remote.URL})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = provider.Forecast(context.Background(), RunSnapshot{RunID: "run-1"})
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("err=%v, want %v", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeTimelineBaseURLStripsPredictSuffix(t *testing.T) {
+	if got := normalizeTimelineBaseURL("https://provider.example/predict"); got != "https://provider.example" {
+		t.Fatalf("got %q", got)
+	}
+	provider, err := NewRemoteTabPredictProvider(RemoteForecastConfig{
+		URL:        "https://provider.example/predict",
+		HTTPClient: http.DefaultClient,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.client.url != "https://provider.example/tabpredict" {
+		t.Fatalf("url = %q, want .../tabpredict", provider.client.url)
+	}
+}
