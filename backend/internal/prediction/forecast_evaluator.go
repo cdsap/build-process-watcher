@@ -86,6 +86,8 @@ func (e *ForecastEvaluator) EvaluateLoaded(ctx context.Context, runID string, ru
 		return
 	}
 	if len(forecasts) == 0 {
+		log.Printf("%s provider returned no forecasts for run %s (samples=%d max_elapsed=%ds)",
+			mode, runID, len(runDoc.Samples), maxSampleElapsedS(runDoc.Samples))
 		return
 	}
 	if err := e.repo.AppendProcessForecasts(ctx, runID, forecasts); err != nil {

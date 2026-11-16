@@ -100,10 +100,13 @@ jobs:
           exit 1
         fi
 
-        # Progressive samples so timeline throttle can issue forecasts.
+        # TabFM /tabpredict needs >=4 history points on a ~10s grid (features at
+        # t/t-10/t-20/t-30). Three 20s-spaced samples never clear that bar, so the
+        # provider returns HTTP 200 with empty forecasts and smoke times out.
         samples=(
-          '00:00:20 | 101 | GradleDaemon | 128MB | 512MB | 700MB | 0.05s'
+          '00:00:30 | 101 | GradleDaemon | 128MB | 512MB | 700MB | 0.05s'
           '00:00:40 | 101 | GradleDaemon | 160MB | 512MB | 760MB | 0.08s'
+          '00:00:50 | 101 | GradleDaemon | 190MB | 512MB | 800MB | 0.09s'
           '00:01:00 | 101 | GradleDaemon | 220MB | 512MB | 850MB | 0.10s'
         )
         sample_count=0
@@ -134,6 +137,7 @@ jobs:
 
         if [ "$ready" != true ]; then
           echo "Timeline process_forecasts did not appear."
+          echo "Hint: prediction_mode=predict (/tabpredict) needs >=4 samples spanning a 30s lookback."
           jq -c '{samples:(.samples|length), forecasts:((.process_forecasts // [])|length)}' /tmp/smoke-run.json
           exit 1
         fi
