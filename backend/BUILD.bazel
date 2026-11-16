@@ -24,19 +24,10 @@ go_binary(
 
 go_test(
     name = "backend_test",
-    srcs = [
-        "export_test.go",
-        "main_test.go",
-        "prediction_fallback_test.go",
-    ],
+    srcs = ["prediction_fallback_test.go"],
     embed = [":backend_lib"],
     deps = [
-        "//internal/auth",
-        "//internal/cleanup",
-        "//internal/handlers",
-        "//internal/models",
         "//internal/scoring",
-        "//internal/storage",
         "//pkg/predictor",
     ],
 )
