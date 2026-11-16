@@ -190,7 +190,11 @@
         const view = BpwPredictionView.render({ ...data, predictionEnabled }, predictionSelectedWindow);
         predictionSelectedWindow = view.selectedWindow;
         content.innerHTML = view.html;
-        window.forecastReplayStop = BpwPredictionView.bindProcessForecastReplay(content);
+        window.forecastReplayStop = BpwPredictionView.bindProcessForecastReplay(content, {
+            data,
+            finished: data?.finished === true,
+            initialMode: data?.finished === true ? 'replay' : undefined,
+        });
         if (focusWindow !== null) {
             const selected = content.querySelector(`[data-prediction-window="${Number(focusWindow)}"]`);
             if (selected && typeof selected.focus === 'function') selected.focus({ preventScroll: true });
@@ -343,7 +347,11 @@
             window.forecastReplayStop = null;
         }
         if (content && typeof window.BpwPredictionView?.bindProcessForecastReplay === 'function') {
-            window.forecastReplayStop = BpwPredictionView.bindProcessForecastReplay(content);
+            window.forecastReplayStop = BpwPredictionView.bindProcessForecastReplay(content, {
+                data: window.currentRunData,
+                finished: window.currentRunData?.finished === true,
+                initialMode: window.currentRunData?.finished === true ? 'replay' : undefined,
+            });
         }
     }
 
