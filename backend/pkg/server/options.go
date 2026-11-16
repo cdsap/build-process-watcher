@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cdsap/build-process-watcher/backend/internal/bigqueryexport"
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
 
@@ -152,17 +153,11 @@ func portOrDefault(port string) string {
 }
 
 func bqSamplesTableOrDefault(table string) string {
-	if table == "" {
-		return "build_process_samples"
-	}
-	return table
+	return bigqueryexport.SamplesTableOrDefault(table)
 }
 
 func bqProcessesTableOrDefault(table string) string {
-	if table == "" {
-		return "build_process_processes"
-	}
-	return table
+	return bigqueryexport.ProcessesTableOrDefault(table)
 }
 
 func predictionProviderEnabled(value string) bool {
