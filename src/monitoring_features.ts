@@ -3,15 +3,14 @@ export const DEFAULT_BACKEND_URL =
 export const DEFAULT_FRONTEND_BASE_URL = 'https://process-watcher.web.app';
 export { DEFAULT_LOG_FILE_NAME } from './action_config';
 
-export type PredictionMode = 'disabled' | 'reliability' | 'forecast' | 'predict' | 'bqml-boosted';
+export type PredictionMode = 'disabled' | 'forecast' | 'predict' | 'bqml-boosted';
 
-export function resolvePredictionMode(mode: string, legacy: boolean): PredictionMode {
-  if (!mode) return legacy ? 'reliability' : 'disabled';
-  if (!['disabled', 'reliability', 'forecast', 'predict', 'bqml-boosted'].includes(mode)) {
-    throw new Error('Invalid prediction_mode; expected disabled, reliability, forecast, predict, or bqml-boosted');
-  }
-  if (legacy && mode !== 'reliability') {
-    throw new Error('predictive_reliability=true conflicts with prediction_mode');
+const VALID_MODES: PredictionMode[] = ['disabled', 'forecast', 'predict', 'bqml-boosted'];
+
+export function resolvePredictionMode(mode: string): PredictionMode {
+  if (!mode) return 'disabled';
+  if (!VALID_MODES.includes(mode as PredictionMode)) {
+    throw new Error('Invalid prediction_mode; expected disabled, forecast, predict, or bqml-boosted');
   }
   return mode as PredictionMode;
 }
@@ -21,7 +20,6 @@ export interface MonitoringFeatureFlags {
   backendUrl: string;
   frontendUrl: string;
   exportToBigquery: boolean;
-  predictiveReliability: boolean;
   predictionMode: PredictionMode;
   freshnessDiagnostics: boolean;
 }
@@ -36,15 +34,17 @@ function buildFrontendRunUrl(frontendBaseUrl: string, runId: string): string {
 export function resolveMonitoringFeatureFlags(inputs: {
   remoteMonitoringRequested: boolean;
   exportToBigqueryRequested: boolean;
-  predictiveReliabilityRequested: boolean;
   freshnessDiagnosticsRequested?: boolean;
   predictionMode?: string;
   backendUrl?: string;
   frontendUrl?: string;
   runId: string;
 }): MonitoringFeatureFlags {
-  const predictionMode = resolvePredictionMode(inputs.predictionMode || '', inputs.predictiveReliabilityRequested);
-  const enableBackend = inputs.remoteMonitoringRequested || predictionMode !== 'disabled' || inputs.freshnessDiagnosticsRequested === true;
+  const predictionMode = resolvePredictionMode(inputs.predictionMode || '');
+  const enableBackend =
+    inputs.remoteMonitoringRequested ||
+    predictionMode !== 'disabled' ||
+    inputs.freshnessDiagnosticsRequested === true;
 
   let backendUrl = inputs.backendUrl || '';
   if (enableBackend && !backendUrl) {
@@ -67,9 +67,7 @@ export function resolveMonitoringFeatureFlags(inputs: {
     enableBackend,
     backendUrl,
     frontendUrl,
-    exportToBigquery:
-      (inputs.exportToBigqueryRequested || predictionMode === 'reliability') && useBackend,
-    predictiveReliability: predictionMode === 'reliability' && useBackend,
+    exportToBigquery: inputs.exportToBigqueryRequested && useBackend,
     predictionMode,
     freshnessDiagnostics: inputs.freshnessDiagnosticsRequested === true && useBackend,
   };

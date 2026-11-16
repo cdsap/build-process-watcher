@@ -22,12 +22,3 @@ go_binary(
     visibility = ["//visibility:public"],
 )
 
-go_test(
-    name = "backend_test",
-    srcs = ["prediction_fallback_test.go"],
-    embed = [":backend_lib"],
-    deps = [
-        "//internal/scoring",
-        "//pkg/predictor",
-    ],
-)

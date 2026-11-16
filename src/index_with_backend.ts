@@ -52,7 +52,6 @@ async function run() {
     const interval = core.getInput('interval') || '5';
     const disableSummaryOutput = core.getInput('disable_summary_output') === 'true';
     const exportToBigqueryRequested = core.getInput('export_to_bigquery') === 'true';
-    const predictiveReliabilityRequested = core.getInput('predictive_reliability') === 'true';
     const freshnessDiagnosticsRequested = core.getInput('freshness_diagnostics') === 'true';
 
     const {
@@ -60,13 +59,11 @@ async function run() {
       backendUrl,
       frontendUrl,
       exportToBigquery,
-      predictiveReliability,
       predictionMode,
       freshnessDiagnostics,
     } = resolveMonitoringFeatureFlags({
       remoteMonitoringRequested,
       exportToBigqueryRequested,
-      predictiveReliabilityRequested,
       freshnessDiagnosticsRequested,
       predictionMode: core.getInput('prediction_mode'),
       backendUrl: requestedBackendUrl,
@@ -79,9 +76,7 @@ async function run() {
       core.info(`🔧 Backend enabled but no URL provided, using default URL: ${backendUrl}`);
     }
 
-    if (predictiveReliabilityRequested && debugMode) {
-      core.info(`🔮 predictive_reliability enables remote_monitoring and export_to_bigquery for this run`);
-    } else if (exportToBigqueryRequested && !useBackend && debugMode) {
+    if (exportToBigqueryRequested && !useBackend && debugMode) {
       core.info(`ℹ️  export_to_bigquery is ignored without remote_monitoring and a backend URL`);
     }
 
@@ -107,7 +102,6 @@ async function run() {
     core.exportVariable('DISABLE_SUMMARY_OUTPUT', disableSummaryOutput.toString());
     core.exportVariable('EXPORT_TO_BIGQUERY', exportToBigquery ? 'true' : 'false');
     core.exportVariable('PREDICTION_MODE', predictionMode);
-    core.exportVariable('PREDICTIVE_RELIABILITY', predictiveReliability ? 'true' : 'false');
     core.exportVariable('FRESHNESS_DIAGNOSTICS', freshnessDiagnostics ? 'true' : 'false');
     
     // Also write RUN_ID to a file as a backup for the post step
@@ -147,7 +141,6 @@ async function run() {
     core.setOutput('frontend_url', frontendUrl);
     core.setOutput('export_to_bigquery', exportToBigquery.toString());
     core.setOutput('prediction_mode', predictionMode);
-    core.setOutput('predictive_reliability', predictiveReliability.toString());
     core.setOutput('freshness_diagnostics', freshnessDiagnostics.toString());
 
     // Always show the dashboard URL when remote monitoring is enabled (regardless of debug mode)
@@ -183,7 +176,6 @@ async function run() {
       defaultLogFile,
       debugMode,
       exportToBigquery,
-      predictiveReliability,
       predictionMode,
       freshnessDiagnostics,
       enableBackend,

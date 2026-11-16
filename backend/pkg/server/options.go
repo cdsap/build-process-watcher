@@ -18,16 +18,9 @@ type Options struct {
 	BigQueryDataset        string
 	BigQueryTable          string
 	BigQueryProcessesTable string
-	PredictionProvider     predictor.Provider
 	ForecastProvider       predictor.ForecastProvider
 	TabPredictProvider     predictor.ForecastProvider
 	BQMLBoostedProvider    predictor.ForecastProvider
-	PredictionCheckpoints  []int
-	// FallbackClassifier maps provider failures onto public-safe telemetry.
-	// Composition roots (for example backend main) supply provider-specific
-	// sentinel mapping; nil uses predictor.DefaultFallbackClassifier.
-	FallbackClassifier predictor.FallbackClassifier
-
 	// Prediction job queue (Cloud Tasks). Empty values disable the scheduler.
 	PredictionTasksQueue    string
 	PredictionTasksLocation string
@@ -41,11 +34,8 @@ type serverConfig struct {
 	bigQueryDataset            string
 	bigQueryTable              string
 	bigQueryProcessesTable     string
-	predictionProviderEnabled  bool
 	predictionProviderURL      string
 	predictionProviderAuth     string
-	predictionProviderTime     time.Duration
-	predictionCheckpoints      string
 	forecastProviderEnabled    bool
 	forecastProviderTimeout    time.Duration
 	tabPredictProviderEnabled  bool
@@ -62,11 +52,8 @@ func OptionsFromEnv() Options {
 		bigQueryDataset:            strings.TrimSpace(os.Getenv("BIGQUERY_EXPORT_DATASET")),
 		bigQueryTable:              strings.TrimSpace(os.Getenv("BIGQUERY_EXPORT_TABLE")),
 		bigQueryProcessesTable:     strings.TrimSpace(os.Getenv("BIGQUERY_EXPORT_PROCESSES_TABLE")),
-		predictionProviderEnabled:  predictionProviderEnabled(os.Getenv("PREDICTIVE_PROVIDER_ENABLED")),
 		predictionProviderURL:      os.Getenv("PREDICTIVE_PROVIDER_URL"),
 		predictionProviderAuth:     os.Getenv("PREDICTIVE_PROVIDER_AUTH_AUDIENCE"),
-		predictionProviderTime:     parseRemoteProviderTimeout(os.Getenv("PREDICTIVE_PROVIDER_TIMEOUT_MS")),
-		predictionCheckpoints:      os.Getenv("PREDICTIVE_RELIABILITY_CHECKPOINTS"),
 		forecastProviderEnabled:    predictionProviderEnabled(firstNonEmpty(os.Getenv("PREDICTIVE_FORECAST_PROVIDER_ENABLED"), os.Getenv("PREDICTIVE_PROVIDER_ENABLED"))),
 		forecastProviderTimeout:    parseForecastProviderTimeout(os.Getenv("PREDICTIVE_FORECAST_PROVIDER_TIMEOUT_MS")),
 		tabPredictProviderEnabled:  predictionProviderEnabled(firstNonEmpty(os.Getenv("PREDICTIVE_TABPREDICT_PROVIDER_ENABLED"), os.Getenv("PREDICTIVE_PROVIDER_ENABLED"))),
@@ -85,19 +72,6 @@ func OptionsFromEnv() Options {
 }
 
 func buildOptions(config serverConfig) (Options, error) {
-	provider := predictor.Provider(predictor.NoopProvider{})
-	var providerErr error
-	if config.predictionProviderEnabled {
-		provider, providerErr = predictor.NewRemoteProvider(predictor.RemoteConfig{
-			URL:          config.predictionProviderURL,
-			Timeout:      config.predictionProviderTime,
-			AuthAudience: config.predictionProviderAuth,
-		})
-		if providerErr != nil {
-			provider = predictor.NoopProvider{}
-		}
-	}
-
 	baseRemote := predictor.RemoteForecastConfig{
 		URL:          config.predictionProviderURL,
 		AuthAudience: config.predictionProviderAuth,
@@ -107,15 +81,6 @@ func buildOptions(config serverConfig) (Options, error) {
 		{enabled: config.tabPredictProviderEnabled, timeout: config.tabPredictProviderTimeout, construct: predictor.NewRemoteTabPredictProvider},
 		{enabled: config.bqmlBoostedProviderEnabled, timeout: config.bqmlBoostedProviderTimeout, construct: predictor.NewRemoteBQMLBoostedProvider},
 	})
-	if timelineErr != nil && providerErr == nil {
-		providerErr = timelineErr
-	}
-
-	checkpointValue := strings.TrimSpace(config.predictionCheckpoints)
-	checkpoints := predictor.ParseCheckpoints(checkpointValue)
-	if checkpointValue == "" && predictor.Enabled(provider) {
-		checkpoints = predictor.DefaultCheckpoints()
-	}
 
 	return Options{
 		ProjectID:              strings.TrimSpace(config.projectID),
@@ -123,12 +88,10 @@ func buildOptions(config serverConfig) (Options, error) {
 		BigQueryDataset:        strings.TrimSpace(config.bigQueryDataset),
 		BigQueryTable:          strings.TrimSpace(config.bigQueryTable),
 		BigQueryProcessesTable: strings.TrimSpace(config.bigQueryProcessesTable),
-		PredictionProvider:     provider,
 		ForecastProvider:       forecastProvider,
 		TabPredictProvider:     tabPredictProvider,
 		BQMLBoostedProvider:    bqmlBoostedProvider,
-		PredictionCheckpoints:  checkpoints,
-	}, providerErr
+	}, timelineErr
 }
 
 func portOrDefault(port string) string {
@@ -150,14 +113,6 @@ func bqProcessesTableOrDefault(table string) string {
 func predictionProviderEnabled(value string) bool {
 	enabled, err := strconv.ParseBool(strings.TrimSpace(value))
 	return err == nil && enabled
-}
-
-func parseRemoteProviderTimeout(value string) time.Duration {
-	millis, err := strconv.Atoi(strings.TrimSpace(value))
-	if err != nil || millis <= 0 {
-		return 0
-	}
-	return time.Duration(millis) * time.Millisecond
 }
 
 func parseForecastProviderTimeout(value string) time.Duration {

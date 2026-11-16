@@ -38,7 +38,7 @@ func (s forecastProviderStub) Forecast(context.Context, predictor.RunSnapshot) (
 
 func TestForecastEvaluatorOnlyRunsForForecastMode(t *testing.T) {
 	repo := &forecastRepoStub{run: &models.RunDoc{
-		PredictionMode: "reliability",
+		PredictionMode: "disabled",
 		Samples: []models.Sample{
 			{ElapsedTime: 40, Timestamp: 40000, Name: "GradleDaemon", PID: "1", HeapUsed: 100, RSS: 200},
 		},
@@ -49,7 +49,7 @@ func TestForecastEvaluatorOnlyRunsForForecastMode(t *testing.T) {
 	}}}})
 	evaluator.Evaluate(context.Background(), "run-1")
 	if len(repo.appended) != 0 {
-		t.Fatalf("appended = %d, want 0 for reliability mode", len(repo.appended))
+		t.Fatalf("appended = %d, want 0 for disabled mode", len(repo.appended))
 	}
 }
 

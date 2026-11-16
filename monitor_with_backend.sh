@@ -80,7 +80,6 @@ echo "DEBUG_MODE: $DEBUG_MODE" >> "$SCRIPT_DEBUG_LOG"
 echo "REMOTE_MONITORING: $REMOTE_MONITORING" >> "$SCRIPT_DEBUG_LOG"
 echo "INTERVAL: $INTERVAL" >> "$SCRIPT_DEBUG_LOG"
 echo "EXPORT_TO_BIGQUERY: ${EXPORT_TO_BIGQUERY:-false}" >> "$SCRIPT_DEBUG_LOG"
-echo "PREDICTIVE_RELIABILITY: ${PREDICTIVE_RELIABILITY:-false}" >> "$SCRIPT_DEBUG_LOG"
 echo "FRESHNESS_DIAGNOSTICS: $FRESHNESS_DIAGNOSTICS" >> "$SCRIPT_DEBUG_LOG"
 echo "PATTERNS: ${PATTERNS[*]}" >> "$SCRIPT_DEBUG_LOG"
 echo "PID: $$" >> "$SCRIPT_DEBUG_LOG"
@@ -216,11 +215,8 @@ get_auth_token() {
     if [ "${EXPORT_TO_BIGQUERY:-false}" = "true" ]; then
         auth_params+=("export_to_bigquery=true")
     fi
-    if [ "${PREDICTIVE_RELIABILITY:-false}" = "true" ]; then
-        auth_params+=("predictive_reliability=true")
-    fi
     case "${PREDICTION_MODE:-disabled}" in
-        reliability|forecast|predict|bqml-boosted) auth_params+=("prediction_mode=$PREDICTION_MODE") ;;
+        forecast|predict|bqml-boosted) auth_params+=("prediction_mode=$PREDICTION_MODE") ;;
     esac
     if [ ${#auth_params[@]} -gt 0 ]; then
         local joined_params

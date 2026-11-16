@@ -16,11 +16,11 @@ func TestParseAuthRunOptions(t *testing.T) {
 	}{
 		{name: "empty", query: "", want: authRunOptions{}},
 		{name: "disabled", query: "prediction_mode=disabled", want: authRunOptions{Mode: models.PredictionModeDisabled}},
-		{name: "legacy reliability", query: "predictive_reliability=true", want: authRunOptions{Mode: models.PredictionModeReliability}},
 		{name: "forecast", query: "prediction_mode=forecast", want: authRunOptions{Mode: models.PredictionModeForecast}},
 		{name: "export", query: "export_to_bigquery=true", want: authRunOptions{ExportToBigQuery: true}},
 		{name: "invalid mode", query: "prediction_mode=invalid", wantErr: "invalid prediction_mode"},
-		{name: "conflict", query: "prediction_mode=forecast&predictive_reliability=true", wantErr: "conflicting prediction settings"},
+		{name: "reliability removed", query: "prediction_mode=reliability", wantErr: "invalid prediction_mode"},
+		{name: "legacy reliability rejected", query: "predictive_reliability=true", wantErr: "predictive_reliability is no longer supported; use prediction_mode=forecast|predict|bqml-boosted"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

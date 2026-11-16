@@ -17,8 +17,8 @@ describe('run dashboard responsive layout', () => {
     expect(mobileRules?.[1]).not.toMatch(/\.chart-wrapper\s*{[^}]*min-width:\s*[1-9]\d*px\s*;/);
   });
 
-  it('renders predictive reliability when checkpoints are present even if config is disabled', () => {
-    expect(source).toContain('prediction_checkpoints');
+  it('renders timeline predictions from process forecasts', () => {
+    expect(source).toContain('process_forecasts');
     expect(source).toContain('BpwPredictionView.render');
     expect(source).toContain('predictionTabHtml');
     expect(source).toContain('predictionPreviewHtml');

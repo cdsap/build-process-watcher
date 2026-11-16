@@ -558,7 +558,7 @@
                 </article>
                 <article class="news-card">
                     <h3>Experimental prediction</h3>
-                    <p>Opt-in predictive reliability checkpoints are available as advisory signals for triage. They are disabled by default and may change while experimental.</p>
+                    <p>Opt-in predictive timeline forecasts. They are disabled by default and may change while experimental.</p>
                     <a href="#prediction">Read the safeguards →</a>
                 </article>
             </div>
@@ -623,7 +623,7 @@
                 </article>
                 <article class="option-card" id="prediction">
                     <h3>Prediction <span class="version-pill" style="margin: 0; color: var(--bpw-gold); border-color: rgba(184, 132, 20, 0.28); background: #fff9e8;">Experimental</span></h3>
-                    <p><strong>Input:</strong> <code>predictive_reliability: 'true'</code>. Opt in to advisory predictive reliability checkpoints; this implies Remote Mode and requests BigQuery export. It is disabled by default.</p>
+                    <p><strong>Input:</strong> <code>prediction_mode: 'predict'</code>. Opt in to advisory predictive timeline forecasts. It is disabled by default.</p>
                     <a href="https://github.com/cdsap/build-process-watcher#inputs">Read the public contract →</a>
                 </article>
             </div>
@@ -711,7 +711,7 @@
                             <td>No</td>
                         </tr>
                         <tr>
-                            <td><code>predictive_reliability</code></td>
+                            <td><code>prediction_mode</code></td>
                             <td>Experimental, opt-in advisory signals; implies Remote Mode and requests BigQuery export.</td>
                             <td><code>false</code></td>
                             <td>No</td>

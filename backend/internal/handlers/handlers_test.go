@@ -33,16 +33,6 @@ func (f *fakeForecastProvider) Forecast(context.Context, predictor.RunSnapshot) 
 	return f.forecasts, nil
 }
 
-type stubReliabilityProvider struct {
-	checkpoint models.PredictionCheckpoint
-	calls      int
-}
-
-func (s *stubReliabilityProvider) Predict(_ context.Context, _ predictor.RunSnapshot, _ int) (models.PredictionCheckpoint, error) {
-	s.calls++
-	return s.checkpoint, nil
-}
-
 type fakeExporter struct {
 	runIDs []string
 }
@@ -145,19 +135,17 @@ func TestIngestDoesNotLogAuthorizationHeader(t *testing.T) {
 }
 
 func TestBoolQueryAcceptsExplicitTrueOnly(t *testing.T) {
-	request := httptest.NewRequest("POST", "/auth/run/run-1?predictive_reliability=true", nil)
-	if !boolQuery(request, "predictive_reliability") {
-		t.Fatal("expected predictive_reliability=true to be accepted")
+	request := httptest.NewRequest("POST", "/auth/run/run-1?export_to_bigquery=true", nil)
+	if !boolQuery(request, "export_to_bigquery") {
+		t.Fatal("expected export_to_bigquery=true to be accepted")
 	}
-
-	request = httptest.NewRequest("POST", "/auth/run/run-1?predictive_reliability=false", nil)
-	if boolQuery(request, "predictive_reliability") {
-		t.Fatal("expected predictive_reliability=false to be rejected")
+	request = httptest.NewRequest("POST", "/auth/run/run-1?export_to_bigquery=false", nil)
+	if boolQuery(request, "export_to_bigquery") {
+		t.Fatal("expected export_to_bigquery=false to be rejected")
 	}
-
-	request = httptest.NewRequest("POST", "/auth/run/run-1?predictive_reliability=maybe", nil)
-	if boolQuery(request, "predictive_reliability") {
-		t.Fatal("expected invalid predictive_reliability value to be rejected")
+	request = httptest.NewRequest("POST", "/auth/run/run-1?export_to_bigquery=maybe", nil)
+	if boolQuery(request, "export_to_bigquery") {
+		t.Fatal("expected invalid export_to_bigquery value to be rejected")
 	}
 }
 
@@ -269,30 +257,10 @@ func TestRunResponse_WithPredictionCheckpoints(t *testing.T) {
 	}
 }
 
-func TestNewHandlersConfigWiresCheckpointEvaluator(t *testing.T) {
-	h := New(Config{
-		ReliabilityProvider: predictor.NoopProvider{},
-		Checkpoints:         []int{60},
-		FallbackClassifier: func(error) (string, string) {
-			return "no_data", "prediction data unavailable"
-		},
-	})
-	if h.checkpointEvaluator == nil {
-		t.Fatal("expected checkpoint evaluator to be constructed")
-	}
-	state, message := h.checkpointEvaluator.FallbackClassifier()(errors.New("ignored"))
-	if state != "no_data" || message != "prediction data unavailable" {
-		t.Fatalf("classifier = (%q, %q), want injected mapping", state, message)
-	}
-
-	h = New(Config{})
-	err := fmt.Errorf("private stack: customer id 9: boom")
-	state, message = h.checkpointEvaluator.FallbackClassifier()(err)
-	if state != "provider_error" || message != "prediction provider error" {
-		t.Fatalf("classifier = (%q, %q), want default public-safe mapping", state, message)
-	}
-	if strings.Contains(message, "customer id") || message == err.Error() {
-		t.Fatal("default fallback classifier leaked private diagnostic text")
+func TestNewHandlersConfigWiresForecastEvaluator(t *testing.T) {
+	h := New(Config{})
+	if h.forecastEvaluator == nil {
+		t.Fatal("expected forecast evaluator to be constructed")
 	}
 }
 
@@ -300,15 +268,18 @@ func TestAuthUsesStoragePortForRunOptions(t *testing.T) {
 	store := newFakeStorage()
 	h := newTestHandlers(store, nil)
 
-	req := httptest.NewRequest(http.MethodPost, "/auth/run/run-auth?export_to_bigquery=true&predictive_reliability=true", nil)
+	req := httptest.NewRequest(http.MethodPost, "/auth/run/run-auth?export_to_bigquery=true&prediction_mode=forecast", nil)
 	recorder := httptest.NewRecorder()
 	h.Auth(recorder, req)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
 	}
-	if !store.ExportToBigQuery["run-auth"] || !store.PredictiveReliability["run-auth"] {
-		t.Fatalf("auth did not persist requested run options: %#v", store)
+	if !store.ExportToBigQuery["run-auth"] {
+		t.Fatalf("auth did not persist export_to_bigquery: %#v", store.ExportToBigQuery)
+	}
+	if store.PredictionModes["run-auth"] != "forecast" {
+		t.Fatalf("prediction mode = %q, want forecast", store.PredictionModes["run-auth"])
 	}
 }
 
@@ -396,8 +367,8 @@ func TestIngestSkipsPredictionScheduleWhenModeDisabled(t *testing.T) {
 		{name: "unset", mode: "", wantSchedule: false},
 		{name: "disabled", mode: "disabled", wantSchedule: false},
 		{name: "predict", mode: "predict", wantSchedule: true},
-		{name: "reliability flag", reliability: true, wantSchedule: true},
-		{name: "reliability mode", mode: "reliability", wantSchedule: true},
+		{name: "legacy reliability flag ignored", reliability: true, wantSchedule: false},
+		{name: "retired reliability mode ignored", mode: "reliability", wantSchedule: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -511,19 +482,13 @@ func TestEvaluatePredictionJobLoadsRunOnce(t *testing.T) {
 		PredictionMode: "forecast",
 		Samples:        []models.Sample{{ElapsedTime: 40, Timestamp: 40000}},
 	}
-	// Enable reliability evaluator too so both paths would previously each GetRun.
-	reliability := &stubReliabilityProvider{
-		checkpoint: models.PredictionCheckpoint{ObservationWindowS: 60, Status: "ready"},
-	}
 	forecast := &fakeForecastProvider{forecasts: []models.ProcessForecast{{
 		ProcessName: "GradleDaemon",
 		Metric:      "rss",
 		CreatedAtMs: 40_000,
 	}}}
 	h := New(Config{
-		Storage:             store,
-		ReliabilityProvider: reliability,
-		Checkpoints:         []int{60},
+		Storage: store,
 		TimelineProviders: prediction.TimelineProviders{
 			Forecast: forecast,
 		},
@@ -545,9 +510,6 @@ func TestEvaluatePredictionJobLoadsRunOnce(t *testing.T) {
 	}
 	if !forecast.called {
 		t.Fatal("forecast provider was not called")
-	}
-	if reliability.calls != 0 {
-		t.Fatalf("reliability provider calls = %d, want 0 for forecast mode", reliability.calls)
 	}
 }
 
@@ -736,26 +698,25 @@ func TestValidateRunBearerTokenRequiresAuthenticator(t *testing.T) {
 
 func TestAuthPredictionModes(t *testing.T) {
 	for _, tc := range []struct {
-		query, mode string
-		reliability bool
-		status      int
+		query  string
+		mode   string
+		status int
 	}{
-		{"", "", false, http.StatusOK},
-		{"prediction_mode=disabled", "", false, http.StatusOK},
-		{"predictive_reliability=true", "reliability", true, http.StatusOK},
-		{"prediction_mode=reliability", "reliability", true, http.StatusOK},
-		{"prediction_mode=forecast", "forecast", false, http.StatusOK},
-		{"prediction_mode=predict", "predict", false, http.StatusOK},
-		{"prediction_mode=bqml-boosted", "bqml-boosted", false, http.StatusOK},
-		{"prediction_mode=invalid", "", false, http.StatusBadRequest},
-		{"prediction_mode=forecast&predictive_reliability=true", "", false, http.StatusBadRequest},
+		{"", "", http.StatusOK},
+		{"prediction_mode=disabled", "", http.StatusOK},
+		{"prediction_mode=forecast", "forecast", http.StatusOK},
+		{"prediction_mode=predict", "predict", http.StatusOK},
+		{"prediction_mode=bqml-boosted", "bqml-boosted", http.StatusOK},
+		{"prediction_mode=reliability", "", http.StatusBadRequest},
+		{"predictive_reliability=true", "", http.StatusBadRequest},
+		{"prediction_mode=invalid", "", http.StatusBadRequest},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			store := newFakeStorage()
 			recorder := httptest.NewRecorder()
 			newTestHandlers(store, nil).Auth(recorder, httptest.NewRequest(http.MethodPost, "/auth/run/run-1?"+tc.query, nil))
-			if recorder.Code != tc.status || store.PredictionModes["run-1"] != tc.mode || store.PredictiveReliability["run-1"] != tc.reliability {
-				t.Fatalf("status=%d mode=%q reliability=%v", recorder.Code, store.PredictionModes["run-1"], store.PredictiveReliability["run-1"])
+			if recorder.Code != tc.status || store.PredictionModes["run-1"] != tc.mode {
+				t.Fatalf("status=%d mode=%q want status=%d mode=%q", recorder.Code, store.PredictionModes["run-1"], tc.status, tc.mode)
 			}
 		})
 	}

@@ -107,54 +107,31 @@ describe('predictive reliability public boundary', () => {
     expect(violations).toEqual([]);
   });
 
-  it('documents that relative-progress checkpoints need no public schema change', () => {
+  it('retires reliability action inputs and documents timeline modes', () => {
     const readme = readRepoFile('README.md');
-    expect(readme).toContain('Relative-progress checkpoints (v2)');
-    expect(readme).toContain('No public schema or dashboard change is required');
-    expect(readme).toContain('observation_window_s');
-    expect(readme).toContain('Legacy runs that omit `prediction_checkpoints` remain valid');
+    expect(readme).toContain('prediction_mode');
+    expect(readme).toContain('process_forecasts');
+    expect(readme).not.toContain('predictive_reliability');
+    expect(readme).not.toContain('Relative-progress checkpoints (v2)');
 
-    const models = readRepoFile('backend/internal/models/models.go');
-    expect(models).toContain('No additional public fields are required for relative-progress results');
-    expect(models).not.toMatch(/\brelative_progress\b/);
-    expect(models).not.toMatch(/\bprogress_(ratio|pct|percent)\b/);
+    const action = readRepoFile('action.yaml');
+    expect(action).toContain('prediction_mode:');
+    expect(action).not.toContain('predictive_reliability:');
+    expect(action).toContain('bqml-boosted');
   });
 
-  it('aligns predictive contract smoke expectations with reachable production defaults', () => {
-    const predictorSource = readRepoFile('backend/pkg/predictor/predictor.go');
-    const defaultMatch = predictorSource.match(
-      /var defaultCheckpoints = \[\]int\{([^}]+)\}/,
-    );
-    expect(defaultMatch).not.toBeNull();
-
-    const productionDefaults = defaultMatch![1]
-      .split(',')
-      .map(part => Number(part.trim()))
-      .filter(value => Number.isFinite(value) && value > 0);
-    expect(productionDefaults).toEqual([60, 300, 600, 1200]);
-
+  it('aligns predictive contract smoke with timeline process_forecasts', () => {
     const smokeWorkflow = readRepoFile('.github/workflows/predictive-contract-smoke.yml');
-    const expectedDefaults = [...smokeWorkflow.matchAll(
-      /expected_checkpoints:\n(?:[ \t]+.*\n)*?[ \t]+default:\s*['"]?([0-9,\s]+)['"]?/g,
-    )].map(match => match[1].replace(/\s+/g, ''));
-    expect(expectedDefaults.length).toBeGreaterThanOrEqual(2);
-    expect(new Set(expectedDefaults)).toEqual(new Set(['60,300,600,1200']));
-
-    const runSecondsMatch = smokeWorkflow.match(
-      /run_seconds:\n(?:[ \t]+.*\n)*?[ \t]+default:\s*['"]?(\d+)['"]?/,
-    );
-    expect(runSecondsMatch).not.toBeNull();
-    const runSeconds = Number(runSecondsMatch![1]);
-    expect(runSeconds).toBeGreaterThanOrEqual(1200);
-
-    const reachable = productionDefaults.filter(window => window <= runSeconds);
-    for (const expected of expectedDefaults[0].split(',').map(Number)) {
-      expect(reachable).toContain(expected);
-    }
+    expect(smokeWorkflow).toContain('prediction_mode:');
+    expect(smokeWorkflow).toContain('process_forecasts');
+    expect(smokeWorkflow).not.toContain('expected_checkpoints');
+    expect(smokeWorkflow).not.toContain('prediction_checkpoints');
+    expect(smokeWorkflow).not.toContain('predictive_reliability');
 
     const deployWorkflow = readRepoFile('.github/workflows/deploy-backend.yml');
-    expect(deployWorkflow).toContain(
-      'CHECKPOINT_WINDOWS="${PREDICTIVE_RELIABILITY_CHECKPOINTS:-60,300,600,1200}"',
-    );
+    expect(deployWorkflow).toContain('prediction_mode=predict');
+    expect(deployWorkflow).toContain('process_forecasts');
+    expect(deployWorkflow).not.toContain('PREDICTIVE_RELIABILITY_CHECKPOINTS');
+    expect(deployWorkflow).not.toContain('predictive_reliability=true');
   });
 });

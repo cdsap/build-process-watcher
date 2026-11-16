@@ -174,15 +174,11 @@
             window.forecastReplayStop();
             window.forecastReplayStop = null;
         }
-        const checkpoints = BpwPredictionView.normalizeCheckpoints(data?.prediction_checkpoints);
         const hasProcessForecasts = Array.isArray(data?.process_forecasts) && data.process_forecasts.length > 0;
         const predictionMode = data?.prediction_mode;
         const predictionEnabled = predictionMode === 'predict'
             || predictionMode === 'forecast'
             || predictionMode === 'bqml-boosted'
-            || predictionMode === 'reliability'
-            || window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true
-            || checkpoints.length > 0
             || hasProcessForecasts;
         if (window.BpwExperimentLayout?.setPredictionsEnabled) {
             BpwExperimentLayout.setPredictionsEnabled(predictionEnabled);
@@ -637,21 +633,17 @@
         const predictionEnabled = predictionMode === 'predict'
             || predictionMode === 'forecast'
             || predictionMode === 'bqml-boosted'
-            || predictionMode === 'reliability'
-            || window.BUILD_PROCESS_WATCHER_CONFIG?.predictiveReliability === true
-            || predictionCheckpoints.length > 0
             || hasProcessForecasts;
         if (window.BpwExperimentLayout?.setPredictionsEnabled) {
             BpwExperimentLayout.setPredictionsEnabled(predictionEnabled);
         }
-        const readyPredictionCount = predictionCheckpoints.filter(checkpoint => checkpoint.status === 'ready').length;
-        const latestReadyRisk = [...predictionCheckpoints].reverse().find(checkpoint => checkpoint.status === 'ready')?.risk_level;
         const predictionView = BpwPredictionView.render({ ...data, predictionEnabled }, predictionSelectedWindow);
         predictionSelectedWindow = predictionView.selectedWindow;
         const predictionTabHtml = predictionView.html;
-        const predictionPreviewHtml = predictionCheckpoints.length ? `
+        const forecastCount = Array.isArray(data.process_forecasts) ? data.process_forecasts.length : 0;
+        const predictionPreviewHtml = (hasProcessForecasts || predictionEnabled) ? `
             <section class="prediction-preview" aria-label="Prediction preview">
-                <div class="prediction-preview-main"><span class="bpw-panel-badge">Predictions</span><strong>Latest ${escapeHtml(latestReadyRisk || 'not available')}</strong><span>${readyPredictionCount} of ${predictionCheckpoints.length} checkpoints ready</span></div>
+                <div class="prediction-preview-main"><span class="bpw-panel-badge">Predictions</span><strong>${escapeHtml(String(predictionMode || 'timeline'))}</strong><span>${forecastCount} process forecast${forecastCount === 1 ? '' : 's'}</span></div>
                 <button type="button" class="btn secondary" data-open-predictions>Open Predictions</button>
             </section>
         ` : '';

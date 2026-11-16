@@ -14,30 +14,28 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/internal/predictionqueue"
 	"github.com/cdsap/build-process-watcher/backend/internal/runlifecycle"
 	"github.com/cdsap/build-process-watcher/backend/internal/storage"
-	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
 
-// predictionJobTimeout bounds checkpoint/forecast work on the job handler.
+// predictionJobTimeout bounds forecast work on the job handler.
 // TabFM regularly takes 30–45s (BigQuery AI.PREDICT + fallback); keep this above
 // PREDICTIVE_TABPREDICT_PROVIDER_TIMEOUT_MS (default 20s, prod often 60s).
 const predictionJobTimeout = 90 * time.Second
 
 // Handlers contains all HTTP handlers
 type Handlers struct {
-	storage             Storage
-	export              Exporter
-	authn               RunAuthenticator
-	lifecycle           *runlifecycle.Service
-	checkpointEvaluator *prediction.CheckpointEvaluator
-	forecastEvaluator   *prediction.ForecastEvaluator
+	storage           Storage
+	export            Exporter
+	authn             RunAuthenticator
+	lifecycle         *runlifecycle.Service
+	forecastEvaluator *prediction.ForecastEvaluator
 	// predictionScheduler enqueues evaluation off the /ingest path (Cloud Tasks).
 	predictionScheduler predictionqueue.Scheduler
 	// predictionJobToken authorizes POST /internal/prediction-jobs.
 	predictionJobToken string
 }
 
-// Storage is the persistence port used by the HTTP handlers and checkpoint
-// evaluator. The production implementation is storage.Client.
+// Storage is the persistence port used by the HTTP handlers.
+// The production implementation is storage.Client.
 type Storage interface {
 	GetRun(ctx context.Context, runID string) (*models.RunDoc, error)
 	GetProcesses(ctx context.Context, runID string) (*models.ProcessDoc, error)
@@ -68,9 +66,6 @@ type RunAuthenticator interface {
 type Config struct {
 	Storage             Storage
 	Export              Exporter
-	ReliabilityProvider predictor.Provider
-	Checkpoints         []int
-	FallbackClassifier  predictor.FallbackClassifier
 	TimelineProviders   prediction.TimelineProviders
 	Authenticator       RunAuthenticator
 	PredictionScheduler predictionqueue.Scheduler
@@ -79,22 +74,15 @@ type Config struct {
 
 // New constructs handlers from Config.
 func New(cfg Config) *Handlers {
-	var checkpointRepo prediction.CheckpointRepository
 	var forecastRepo prediction.ForecastRepository
 	if cfg.Storage != nil {
-		checkpointRepo = cfg.Storage
 		forecastRepo = cfg.Storage
-	}
-	reliability := cfg.ReliabilityProvider
-	if reliability == nil {
-		reliability = predictor.NoopProvider{}
 	}
 	h := &Handlers{
 		storage:             cfg.Storage,
 		export:              cfg.Export,
 		authn:               cfg.Authenticator,
 		lifecycle:           runlifecycle.New(cfg.Storage, cfg.Export),
-		checkpointEvaluator: prediction.NewCheckpointEvaluator(checkpointRepo, reliability, cfg.Checkpoints, cfg.FallbackClassifier),
 		forecastEvaluator:   prediction.NewForecastEvaluator(forecastRepo, cfg.TimelineProviders),
 		predictionScheduler: predictionqueue.Noop{},
 	}
@@ -127,9 +115,8 @@ func (h *Handlers) SetPredictionScheduler(scheduler predictionqueue.Scheduler, j
 	h.predictionJobToken = strings.TrimSpace(jobToken)
 }
 
-// runPredictionEvaluation runs reliability checkpoints and process forecasts.
+// runPredictionEvaluation runs process forecasts for timeline prediction modes.
 // Invoked only from the prediction job handler — never from /ingest.
-// Loads the run once and shares that snapshot with both evaluators.
 func (h *Handlers) runPredictionEvaluation(ctx context.Context, runID string) {
 	if h == nil {
 		return
@@ -142,9 +129,6 @@ func (h *Handlers) runPredictionEvaluation(ctx context.Context, runID string) {
 			return
 		}
 		runDoc = doc
-	}
-	if h.checkpointEvaluator != nil {
-		h.checkpointEvaluator.EvaluateLoaded(ctx, runID, runDoc, nil)
 	}
 	if h.forecastEvaluator != nil {
 		h.forecastEvaluator.EvaluateLoaded(ctx, runID, runDoc)

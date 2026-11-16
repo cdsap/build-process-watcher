@@ -25,15 +25,14 @@ describe('frontend discovery and social metadata', () => {
     expect(readPage('config.js')).toContain('predictiveReliability: false');
   });
 
-  it('documents predictive reliability as an opt-in action input', () => {
+  it('documents timeline prediction_mode as an opt-in action input', () => {
     const action = fs.readFileSync(path.join(repoRoot, 'action.yaml'), 'utf8');
     const readme = fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf8');
-    expect(action).toContain('predictive_reliability:');
-    expect(action).toContain("default: 'false'");
-    expect(action).toContain('Opt in to advisory predictive reliability checkpoints');
-    expect(readme).toContain('**Predictive reliability is opt-in and advisory:**');
-    expect(readPage('index.html')).toContain('<code>predictive_reliability</code>');
-    expect(readPage('index.html')).toContain('Opt in to advisory predictive reliability checkpoints');
+    expect(action).toContain('prediction_mode:');
+    expect(action).not.toContain('predictive_reliability:');
+    expect(readme).toContain('**Prediction mode selection:**');
+    expect(readme).not.toContain('predictive_reliability');
+    expect(readPage('index.html')).toContain('<code>prediction_mode</code>');
   });
 
   it.each(publicPages)('$file has complete page-specific sharing metadata', ({ file, canonical, noindex }) => {

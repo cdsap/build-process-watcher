@@ -19,16 +19,12 @@ type authRunOptions struct {
 }
 
 func parseAuthRunOptions(query url.Values) (authRunOptions, error) {
+	if strings.TrimSpace(query.Get("predictive_reliability")) != "" {
+		return authRunOptions{}, fmt.Errorf("predictive_reliability is no longer supported; use prediction_mode=forecast|predict|bqml-boosted")
+	}
 	mode, ok := models.ParsePredictionMode(query.Get("prediction_mode"))
 	if !ok {
 		return authRunOptions{}, fmt.Errorf("invalid prediction_mode")
-	}
-	legacy := boolQueryValue(query.Get("predictive_reliability"))
-	if legacy && mode != models.PredictionModeUnset && mode != models.PredictionModeReliability {
-		return authRunOptions{}, fmt.Errorf("conflicting prediction settings")
-	}
-	if mode == models.PredictionModeUnset && legacy {
-		mode = models.PredictionModeReliability
 	}
 	return authRunOptions{
 		Mode:             mode,
@@ -49,11 +45,6 @@ func (h *Handlers) applyAuthRunOptions(ctx context.Context, runID string, opts a
 	if opts.ExportToBigQuery {
 		if err := h.storage.SetRunExportToBigquery(ctx, runID, true); err != nil {
 			log.Printf("Warning: could not persist export_to_bigquery for run %s: %v", runID, err)
-		}
-	}
-	if mode == models.PredictionModeReliability {
-		if err := h.storage.SetRunPredictiveReliability(ctx, runID, true); err != nil {
-			log.Printf("Warning: could not persist predictive_reliability for run %s: %v", runID, err)
 		}
 	}
 }

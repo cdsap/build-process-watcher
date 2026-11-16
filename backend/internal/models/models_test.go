@@ -509,14 +509,14 @@ func TestParsePredictionMode(t *testing.T) {
 			t.Fatalf("ParsePredictionMode(%q)=(%q,%v), want (%q,%v)", tc.raw, got, ok, tc.want, tc.ok)
 		}
 	}
-	if !PredictionModePredict.IsTimeline() || PredictionModeReliability.IsTimeline() {
+	if !PredictionModePredict.IsTimeline() || PredictionModeDisabled.IsTimeline() {
 		t.Fatal("timeline classification mismatch")
 	}
 	if ShouldEnqueuePrediction(PredictionModeUnset, false) || ShouldEnqueuePrediction(PredictionModeDisabled, false) {
 		t.Fatal("unset/disabled should not enqueue")
 	}
-	if !ShouldEnqueuePrediction(PredictionModePredict, false) || !ShouldEnqueuePrediction(PredictionModeUnset, true) {
-		t.Fatal("timeline/reliability should enqueue")
+	if !ShouldEnqueuePrediction(PredictionModePredict, false) || ShouldEnqueuePrediction(PredictionModeUnset, true) {
+		t.Fatal("timeline should enqueue; legacy reliability flag alone should not")
 	}
 	if ProcessForecastThrottleElapsedS != 20 {
 		t.Fatalf("throttle = %d, want 20", ProcessForecastThrottleElapsedS)
