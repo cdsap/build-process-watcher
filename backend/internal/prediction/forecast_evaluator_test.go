@@ -128,6 +128,53 @@ func TestProcessForecastModesShare20sThrottle(t *testing.T) {
 	}
 }
 
+func TestProcessForecastModesAllowSecondIssuanceAfterSharedThrottle(t *testing.T) {
+	const runStartedAtMs = int64(1_700_000_000_000)
+
+	for _, mode := range []string{"predict", "forecast", "bqml-boosted"} {
+		t.Run(mode, func(t *testing.T) {
+			repo := &forecastRepoStub{run: &models.RunDoc{
+				PredictionMode: mode,
+				Samples: []models.Sample{
+					{ElapsedTime: 20, Timestamp: runStartedAtMs, Name: "GradleDaemon", PID: "1", HeapUsed: 100, RSS: 200},
+					{ElapsedTime: 39, Timestamp: runStartedAtMs + 19000, Name: "GradleDaemon", PID: "1", HeapUsed: 110, RSS: 210},
+				},
+				ProcessForecasts: []models.ProcessForecast{{
+					ProcessName: "GradleDaemon", PID: "1", Metric: "heap", CreatedAtMs: runStartedAtMs + 500,
+					Points: []models.ProcessForecastPoint{{TargetAtMs: runStartedAtMs + 10000, ValueMB: 105}},
+				}},
+			}}
+			want := []models.ProcessForecast{{
+				ProcessName: "GradleDaemon", PID: "1", Metric: "heap", CreatedAtMs: runStartedAtMs + 21000,
+				Points: []models.ProcessForecastPoint{{TargetAtMs: runStartedAtMs + 31000, ValueMB: 115}},
+			}}
+			var evaluator *ForecastEvaluator
+			switch mode {
+			case "predict":
+				evaluator = NewForecastEvaluatorWithTabPredict(repo, predictor.NoopForecastProvider{}, forecastProviderStub{out: want})
+			case "bqml-boosted":
+				evaluator = NewForecastEvaluatorWithProviders(repo, predictor.NoopForecastProvider{}, predictor.NoopForecastProvider{}, forecastProviderStub{out: want})
+			default:
+				evaluator = NewForecastEvaluator(repo, forecastProviderStub{out: want})
+			}
+
+			evaluator.Evaluate(context.Background(), "run-1")
+			if len(repo.appended) != 0 {
+				t.Fatalf("appended = %d, want no second issuance inside shared 20s throttle", len(repo.appended))
+			}
+
+			repo.run.Samples = append(repo.run.Samples, models.Sample{
+				ElapsedTime: 41, Timestamp: runStartedAtMs + 21000, Name: "GradleDaemon", PID: "1", HeapUsed: 115, RSS: 215,
+			})
+			evaluator.Evaluate(context.Background(), "run-1")
+
+			if len(repo.appended) != 1 {
+				t.Fatalf("appended = %d, want second issuance after shared 20s throttle", len(repo.appended))
+			}
+		})
+	}
+}
+
 func TestForecastEvaluatorAllowsFinishedRunsForLateJobs(t *testing.T) {
 	repo := &forecastRepoStub{run: &models.RunDoc{
 		Finished:       true,

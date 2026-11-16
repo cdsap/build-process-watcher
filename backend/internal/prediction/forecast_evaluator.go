@@ -146,13 +146,26 @@ func shouldForecast(samples []models.Sample, existing []models.ProcessForecast, 
 	if latestCreated == 0 {
 		return true
 	}
-	// Approximate prior bucket from latest issuance created_at on sample clock.
-	latestElapsedGuess := int(latestCreated / 1000)
-	for _, sample := range samples {
-		if sample.Timestamp == latestCreated {
-			latestElapsedGuess = sample.ElapsedTime
-			break
+	latestElapsed := elapsedTimeAt(samples, latestCreated)
+	return bucket > latestElapsed/throttleS
+}
+
+func elapsedTimeAt(samples []models.Sample, timestampMs int64) int {
+	closest := samples[0]
+	closestDistance := timestampMs - closest.Timestamp
+	if closestDistance < 0 {
+		closestDistance = -closestDistance
+	}
+	for _, sample := range samples[1:] {
+		distance := timestampMs - sample.Timestamp
+		if distance < 0 {
+			distance = -distance
+		}
+		if distance < closestDistance {
+			closest = sample
+			closestDistance = distance
 		}
 	}
-	return bucket > latestElapsedGuess/throttleS
+
+	return closest.ElapsedTime + int((timestampMs-closest.Timestamp)/1000)
 }
