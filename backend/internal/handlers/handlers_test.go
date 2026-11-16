@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cdsap/build-process-watcher/backend/internal/auth"
 	"github.com/cdsap/build-process-watcher/backend/internal/handlers/handlertest"
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
 	"github.com/cdsap/build-process-watcher/backend/internal/prediction"
@@ -47,7 +46,7 @@ func newFakeStorage() *fakeStorage {
 	return handlertest.NewFakeStorage()
 }
 
-var testAuthn = auth.NewForTest("handlers-test-jwt", "handlers-test-admin")
+var testAuthn = handlertest.NewFakeRunAuthenticator()
 
 func newTestHandlers(store Storage, export Exporter) *Handlers {
 	h := NewHandlers(store, export)
@@ -645,6 +644,34 @@ func TestValidateRunBearerTokenRequiresAuthenticator(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/ingest", nil)
 	status, message, ok := h.validateRunBearerToken(req, "run-1")
 	if ok || status != http.StatusInternalServerError || message != "Authenticator not configured" {
+		t.Fatalf("got ok=%v status=%d message=%q", ok, status, message)
+	}
+}
+
+func TestConfigAcceptsFakeRunAuthenticator(t *testing.T) {
+	h := New(Config{Authenticator: handlertest.NewFakeRunAuthenticator()})
+	rec := httptest.NewRecorder()
+	h.Auth(rec, httptest.NewRequest(http.MethodPost, "/auth/run/run-fake-port", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Auth status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var response models.TokenResponse
+	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil || response.Token == "" {
+		t.Fatalf("token response invalid: %v %s", err, rec.Body.String())
+	}
+
+	status, message, ok := h.validateRunBearerToken(
+		httptest.NewRequest(http.MethodPost, "/ingest", nil),
+		"run-fake-port",
+	)
+	if ok || status != http.StatusUnauthorized || message != "Authorization header required" {
+		t.Fatalf("got ok=%v status=%d message=%q", ok, status, message)
+	}
+
+	authed := httptest.NewRequest(http.MethodPost, "/ingest", nil)
+	authed.Header.Set("Authorization", "Bearer "+response.Token)
+	status, message, ok = h.validateRunBearerToken(authed, "run-fake-port")
+	if !ok || status != 0 || message != "" {
 		t.Fatalf("got ok=%v status=%d message=%q", ok, status, message)
 	}
 }

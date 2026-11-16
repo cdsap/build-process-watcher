@@ -12,6 +12,7 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/internal/auth"
 	"github.com/cdsap/build-process-watcher/backend/internal/cleanup"
 	"github.com/cdsap/build-process-watcher/backend/internal/handlers"
+	"github.com/cdsap/build-process-watcher/backend/internal/handlers/handlertest"
 	"github.com/cdsap/build-process-watcher/backend/internal/storage"
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
@@ -246,8 +247,8 @@ func TestOptionsFromEnvLeavesFallbackClassifierUnset(t *testing.T) {
 
 func TestNewMuxRegistersPublicRoutes(t *testing.T) {
 	h := handlers.NewHandlers(nil, nil)
-	h.SetAuthenticator(auth.NewForTest("server-test-jwt", "server-test-admin"))
-	mux := NewMux(h, cleanup.NewService(nil, nil, auth.NewForTest("server-test-jwt", "server-test-admin")))
+	h.SetAuthenticator(handlertest.NewFakeRunAuthenticator())
+	mux := NewMux(h, cleanup.NewService(nil, nil, nil))
 
 	for _, route := range []string{"/healthz", "/auth/run/run-1", "/ingest", "/internal/prediction-jobs", "/runs/run-1", "/finish/run-1", "/cleanup/stale"} {
 		request := httptest.NewRequest(http.MethodOptions, route, nil)

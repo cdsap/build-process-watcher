@@ -25,7 +25,7 @@ const predictionJobTimeout = 90 * time.Second
 type Handlers struct {
 	storage             Storage
 	export              Exporter
-	authn               *auth.Authenticator
+	authn               RunAuthenticator
 	lifecycle           *runlifecycle.Service
 	checkpointEvaluator *prediction.CheckpointEvaluator
 	forecastEvaluator   *prediction.ForecastEvaluator
@@ -56,6 +56,13 @@ type Exporter interface {
 	Run(runID string)
 }
 
+// RunAuthenticator issues and validates run bearer tokens.
+// Production uses *auth.Authenticator.
+type RunAuthenticator interface {
+	GenerateToken(runID string) (string, time.Time, error)
+	ValidateRunBearer(r *http.Request, runID string) auth.BearerResult
+}
+
 // Config wires HTTP handlers without a long positional constructor.
 type Config struct {
 	Storage             Storage
@@ -64,10 +71,13 @@ type Config struct {
 	Checkpoints         []int
 	FallbackClassifier  predictor.FallbackClassifier
 	TimelineProviders   prediction.TimelineProviders
-	Authenticator       *auth.Authenticator
+	Authenticator       RunAuthenticator
 	PredictionScheduler predictionqueue.Scheduler
 	PredictionJobToken  string
 }
+
+// Ensure production auth satisfies the handlers port.
+var _ RunAuthenticator = (*auth.Authenticator)(nil)
 
 // New constructs handlers from Config.
 func New(cfg Config) *Handlers {
@@ -99,8 +109,8 @@ func NewHandlers(storageClient Storage, export Exporter) *Handlers {
 	return New(Config{Storage: storageClient, Export: export})
 }
 
-// SetAuthenticator installs the JWT/admin authenticator used by auth and ingest.
-func (h *Handlers) SetAuthenticator(authenticator *auth.Authenticator) {
+// SetAuthenticator installs the run-token authenticator used by auth and ingest.
+func (h *Handlers) SetAuthenticator(authenticator RunAuthenticator) {
 	if h == nil {
 		return
 	}

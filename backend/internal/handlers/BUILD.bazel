@@ -35,7 +35,6 @@ go_test(
     ],
     embed = [":handlers"],
     deps = [
-        "//internal/auth",
         "//internal/handlers/handlertest",
         "//internal/models",
         "//internal/prediction",

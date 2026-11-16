@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cdsap/build-process-watcher/backend/internal/auth"
 	"github.com/cdsap/build-process-watcher/backend/internal/cleanup"
 	"github.com/cdsap/build-process-watcher/backend/internal/handlers"
 	"github.com/cdsap/build-process-watcher/backend/internal/handlers/handlertest"
@@ -42,9 +41,8 @@ func TestProductionMuxGetRunJSONFieldNaming(t *testing.T) {
 		}},
 	}
 	store.Processes["run-json"] = &models.ProcessDoc{RunID: "run-json", ProcessInfo: map[string]models.ProcessInfo{}}
-	authenticator := auth.NewForTest("mux-test-jwt", "mux-test-admin")
-	h := handlers.New(handlers.Config{Storage: store, Authenticator: authenticator})
-	mux := NewMux(h, cleanup.New(nil, authenticator))
+	h := handlers.New(handlers.Config{Storage: store, Authenticator: handlertest.NewFakeRunAuthenticator()})
+	mux := NewMux(h, cleanup.New(nil, nil))
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/runs/run-json", nil))
@@ -97,9 +95,8 @@ func TestProductionMuxGetRunJSONFieldNaming(t *testing.T) {
 }
 
 func TestProductionMuxHealthAndAuth(t *testing.T) {
-	authenticator := auth.NewForTest("mux-test-jwt", "mux-test-admin")
-	h := handlers.New(handlers.Config{Authenticator: authenticator})
-	mux := NewMux(h, cleanup.New(nil, authenticator))
+	h := handlers.New(handlers.Config{Authenticator: handlertest.NewFakeRunAuthenticator()})
+	mux := NewMux(h, cleanup.New(nil, nil))
 
 	health := httptest.NewRecorder()
 	mux.ServeHTTP(health, httptest.NewRequest(http.MethodGet, "/healthz", nil))
