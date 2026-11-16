@@ -1,7 +1,10 @@
 package storage
 
 import (
+	"bytes"
 	"encoding/json"
+	"log"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,6 +40,35 @@ func TestParseDataAcceptsLegacyMillisecondGC(t *testing.T) {
 	}
 	if samples[0].GCTime != 234 {
 		t.Fatalf("expected 234ms, got %d", samples[0].GCTime)
+	}
+}
+
+func TestParseDataDoesNotLogRawPayload(t *testing.T) {
+	var buf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(prev)
+
+	secretLine := "00:00:01 | 42 | GradleDaemon | 10MB | 20MB | 30MB | 0.1s"
+	samples, err := ParseData(secretLine, time.Unix(0, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(samples) != 1 {
+		t.Fatalf("expected 1 sample, got %d", len(samples))
+	}
+	logged := buf.String()
+	for _, forbidden := range []string{
+		"Raw data:",
+		"PARSING DATA",
+		"Created sample:",
+		"Processing line",
+		secretLine,
+		"GradleDaemon",
+	} {
+		if strings.Contains(logged, forbidden) {
+			t.Fatalf("ParseData logged sensitive/verbose payload marker %q in %q", forbidden, logged)
+		}
 	}
 }
 

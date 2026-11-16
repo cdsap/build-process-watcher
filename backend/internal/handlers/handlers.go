@@ -207,9 +207,6 @@ func (h *Handlers) Auth(w http.ResponseWriter, r *http.Request) {
 // Ingest receives and stores monitoring data
 func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 	requestReceivedAt := time.Now()
-	log.Printf("=== INGEST HANDLER CALLED ===")
-	log.Printf("Method: %s", r.Method)
-	log.Printf("Headers: %v", r.Header)
 
 	// Handle CORS preflight
 	if r.Method == http.MethodOptions {

@@ -522,22 +522,14 @@ func ParseData(data string, startTime time.Time) ([]models.Sample, error) {
 	var samples []models.Sample
 	lines := strings.Split(strings.TrimSpace(data), "\n")
 
-	log.Printf("=== PARSING DATA ===")
-	log.Printf("Raw data: %q", data)
-	log.Printf("Split into %d lines", len(lines))
-
-	for i, line := range lines {
+	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		log.Printf("Processing line %d: %q", i, line)
 		if line == "" {
-			log.Printf("Skipping empty line %d", i)
 			continue
 		}
 
 		parts := strings.Split(line, "|")
-		log.Printf("Split into %d parts: %v", len(parts), parts)
 		if len(parts) != 6 && len(parts) != 7 && len(parts) != 14 {
-			log.Printf("Skipping line %d: expected 6, 7, or 14 parts, got %d", i, len(parts))
 			continue
 		}
 
@@ -547,27 +539,22 @@ func ParseData(data string, startTime time.Time) ([]models.Sample, error) {
 		}
 
 		// Parse elapsed time from "HH:MM:SS" format
-		log.Printf("Parsing time: %q", parts[0])
 		timeParts := strings.Split(parts[0], ":")
 		if len(timeParts) != 3 {
-			log.Printf("Skipping: invalid time format, got %d parts", len(timeParts))
 			continue
 		}
 		hours, err1 := strconv.Atoi(timeParts[0])
 		minutes, err2 := strconv.Atoi(timeParts[1])
 		seconds, err3 := strconv.Atoi(timeParts[2])
 		if err1 != nil || err2 != nil || err3 != nil {
-			log.Printf("Skipping: time parsing failed: %v, %v, %v", err1, err2, err3)
 			continue
 		}
 		elapsedTime := hours*3600 + minutes*60 + seconds
-		log.Printf("Parsed elapsed time: %d seconds", elapsedTime)
 
 		// Parse heap used (remove "MB" suffix and convert float to int)
 		heapUsedStr := strings.TrimSuffix(strings.TrimSuffix(parts[3], "MB"), "MB")
 		heapUsedFloat, err := strconv.ParseFloat(heapUsedStr, 64)
 		if err != nil {
-			log.Printf("Skipping: heap used parsing failed: %v", err)
 			continue
 		}
 		heapUsed := int(heapUsedFloat)
@@ -576,7 +563,6 @@ func ParseData(data string, startTime time.Time) ([]models.Sample, error) {
 		heapCapStr := strings.TrimSuffix(strings.TrimSuffix(parts[4], "MB"), "MB")
 		heapCapFloat, err := strconv.ParseFloat(heapCapStr, 64)
 		if err != nil {
-			log.Printf("Skipping: heap capacity parsing failed: %v", err)
 			continue
 		}
 		heapCap := int(heapCapFloat)
@@ -585,7 +571,6 @@ func ParseData(data string, startTime time.Time) ([]models.Sample, error) {
 		rssStr := strings.TrimSuffix(strings.TrimSuffix(parts[5], "MB"), "MB")
 		rssFloat, err := strconv.ParseFloat(rssStr, 64)
 		if err != nil {
-			log.Printf("Skipping: RSS parsing failed: %v", err)
 			continue
 		}
 		rss := int(rssFloat)
@@ -608,16 +593,11 @@ func ParseData(data string, startTime time.Time) ([]models.Sample, error) {
 			if gcTimeStr != "N/A" && gcTimeStr != "" {
 				gcTimeFloat, err := strconv.ParseFloat(gcTimeStr, 64)
 				if err != nil {
-					log.Printf("Warning: GC time parsing failed: %v, using 0", err)
 					gcTime = 0
+				} else if isSeconds {
+					gcTime = int(gcTimeFloat * 1000) // Convert seconds to milliseconds
 				} else {
-					// If original format had "s" suffix, convert seconds to milliseconds
-					// If original format had "ms" suffix, it's already in milliseconds
-					if isSeconds {
-						gcTime = int(gcTimeFloat * 1000) // Convert seconds to milliseconds
-					} else {
-						gcTime = int(gcTimeFloat) // Already in milliseconds
-					}
+					gcTime = int(gcTimeFloat) // Already in milliseconds
 				}
 			}
 		}
@@ -628,7 +608,6 @@ func ParseData(data string, startTime time.Time) ([]models.Sample, error) {
 			}
 			value, err := strconv.ParseFloat(strings.TrimSuffix(parts[index], "s"), 64)
 			if err != nil {
-				log.Printf("Warning: optional metric %d parsing failed: %v", index, err)
 				return nil
 			}
 			if secondsToMillis {
@@ -660,7 +639,6 @@ func ParseData(data string, startTime time.Time) ([]models.Sample, error) {
 			ClassLoadTimeMs:            parseOptionalInt(13, true),
 		}
 
-		log.Printf("Created sample: %+v", sample)
 		samples = append(samples, sample)
 	}
 
