@@ -8,13 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cdsap/build-process-watcher/backend/internal/auth"
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
 )
 
 // validateRunBearerToken verifies the Authorization Bearer token for a run write.
 // Callers write the HTTP response using the returned status and message when ok is false.
-func validateRunBearerToken(r *http.Request, runID string) (status int, message string, ok bool) {
+func (h *Handlers) validateRunBearerToken(r *http.Request, runID string) (status int, message string, ok bool) {
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
 		log.Printf("No authorization header provided for run_id: %s from %s", runID, r.RemoteAddr)
@@ -28,7 +27,11 @@ func validateRunBearerToken(r *http.Request, runID string) (status int, message 
 	}
 
 	token := tokenParts[1]
-	valid, err := auth.ValidateToken(token, runID)
+	if h == nil || h.authn == nil {
+		log.Printf("Authenticator not configured for run_id: %s", runID)
+		return http.StatusInternalServerError, "Authenticator not configured", false
+	}
+	valid, err := h.authn.ValidateToken(token, runID)
 	if err != nil {
 		log.Printf("Token validation failed for run_id: %s: %v", runID, err)
 		return http.StatusUnauthorized, "Token validation failed", false
@@ -81,7 +84,11 @@ func (h *Handlers) Auth(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("🔐 Auth request for run_id: %s", runID)
 
-	token, expiresAt, err := auth.GenerateToken(runID)
+	if h.authn == nil {
+		http.Error(w, "Authenticator not configured", http.StatusInternalServerError)
+		return
+	}
+	token, expiresAt, err := h.authn.GenerateToken(runID)
 	if err != nil {
 		log.Printf("Failed to generate token: %v", err)
 		http.Error(w, "Failed to generate token", http.StatusInternalServerError)

@@ -22,6 +22,7 @@ go_test(
     srcs = ["server_test.go"],
     embed = [":server"],
     deps = [
+        "//internal/auth",
         "//internal/cleanup",
         "//internal/handlers",
         "//pkg/predictor",

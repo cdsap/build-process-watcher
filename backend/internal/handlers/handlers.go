@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cdsap/build-process-watcher/backend/internal/auth"
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
 	"github.com/cdsap/build-process-watcher/backend/internal/prediction"
 	"github.com/cdsap/build-process-watcher/backend/internal/predictionqueue"
@@ -26,6 +27,7 @@ const predictionJobTokenHeader = "X-BPW-Prediction-Job-Token"
 type Handlers struct {
 	storage             Storage
 	export              Exporter
+	authn               *auth.Authenticator
 	lifecycle           *runlifecycle.Service
 	checkpointEvaluator *prediction.CheckpointEvaluator
 	forecastEvaluator   *prediction.ForecastEvaluator
@@ -78,6 +80,14 @@ func NewHandlersWithPredictor(storageClient Storage, export Exporter, prediction
 		forecastEvaluator:   prediction.NewForecastEvaluatorWithProviders(forecastRepo, forecastProvider, tabPredictProvider, bqmlBoostedProvider),
 		predictionScheduler: predictionqueue.Noop{},
 	}
+}
+
+// SetAuthenticator installs the JWT/admin authenticator used by auth and ingest.
+func (h *Handlers) SetAuthenticator(authenticator *auth.Authenticator) {
+	if h == nil {
+		return
+	}
+	h.authn = authenticator
 }
 
 // SetPredictionScheduler installs the off-ingest prediction job scheduler.

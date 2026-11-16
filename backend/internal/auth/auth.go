@@ -3,6 +3,7 @@ package auth
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -16,135 +17,136 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
 )
 
-var (
-	secretKey   string
-	adminSecret string
+const (
+	devJWTSecret   = "build-process-watcher-secret-2024-dev"
+	devAdminSecret = "admin-dev-secret-change-me"
 )
 
-// Initialize loads secrets from environment variables
-func Initialize() {
-	secretKey = getSecretKey()
-	adminSecret = getAdminSecret()
+// Authenticator issues and verifies run JWTs and admin secrets.
+// Construct via New / NewFromEnv and inject; do not rely on package globals.
+type Authenticator struct {
+	jwtKey      []byte
+	adminSecret []byte
 }
 
-// getSecretKey returns the secret key from environment variable or a default for development
-func getSecretKey() string {
-	key := os.Getenv("JWT_SECRET_KEY")
-	if key == "" {
-		// Use a default key for development/testing only
-		// In production, this should always be set via environment variable
-		return "build-process-watcher-secret-2024-dev"
+// Config configures Authenticator construction.
+type Config struct {
+	JWTSecretKey   string
+	AdminSecret    string
+	RequireSecrets bool // when true, missing secrets are fatal (Cloud Run / prod)
+}
+
+// New builds an Authenticator from explicit secrets.
+func New(cfg Config) (*Authenticator, error) {
+	jwt := strings.TrimSpace(cfg.JWTSecretKey)
+	admin := strings.TrimSpace(cfg.AdminSecret)
+	if cfg.RequireSecrets {
+		if jwt == "" {
+			return nil, fmt.Errorf("JWT_SECRET_KEY is required in production")
+		}
+		if admin == "" {
+			return nil, fmt.Errorf("ADMIN_SECRET is required in production")
+		}
 	}
-	return key
-}
-
-// getAdminSecret returns the admin secret from environment variable or a default for development
-func getAdminSecret() string {
-	secret := os.Getenv("ADMIN_SECRET")
-	if secret == "" {
-		// Use a default secret for development/testing only
-		// In production, this MUST be set via environment variable
-		log.Printf("⚠️  WARNING: ADMIN_SECRET not set, using default (insecure for production!)")
-		return "admin-dev-secret-change-me"
+	if jwt == "" {
+		log.Printf("⚠️  WARNING: JWT_SECRET_KEY not set, using insecure development default")
+		jwt = devJWTSecret
 	}
-	return secret
+	if admin == "" {
+		log.Printf("⚠️  WARNING: ADMIN_SECRET not set, using insecure development default")
+		admin = devAdminSecret
+	}
+	return &Authenticator{
+		jwtKey:      []byte(jwt),
+		adminSecret: []byte(admin),
+	}, nil
 }
 
-// RequireAdminAuth checks if the request has valid admin authentication
-func RequireAdminAuth(r *http.Request) bool {
-	// Check for admin secret in header
-	providedSecret := r.Header.Get("X-Admin-Secret")
-	if providedSecret == "" {
+// NewFromEnv loads secrets from JWT_SECRET_KEY and ADMIN_SECRET.
+// On Cloud Run (K_SERVICE set) missing secrets fail closed.
+func NewFromEnv() (*Authenticator, error) {
+	return New(Config{
+		JWTSecretKey:   os.Getenv("JWT_SECRET_KEY"),
+		AdminSecret:    os.Getenv("ADMIN_SECRET"),
+		RequireSecrets: strings.TrimSpace(os.Getenv("K_SERVICE")) != "",
+	})
+}
+
+// NewForTest returns an Authenticator with explicit test secrets.
+func NewForTest(jwtSecret, adminSecret string) *Authenticator {
+	a, err := New(Config{JWTSecretKey: jwtSecret, AdminSecret: adminSecret})
+	if err != nil {
+		panic(err)
+	}
+	return a
+}
+
+// RequireAdminAuth checks X-Admin-Secret with a constant-time compare.
+func (a *Authenticator) RequireAdminAuth(r *http.Request) bool {
+	if a == nil {
 		return false
 	}
-	return providedSecret == adminSecret
+	provided := r.Header.Get("X-Admin-Secret")
+	if provided == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(provided), a.adminSecret) == 1
 }
 
-// SetAdminSecretForTest allows tests to override the admin secret (test use only!)
-func SetAdminSecretForTest(secret string) {
-	adminSecret = secret
-}
-
-// GetAdminSecret returns the current admin secret (test use only!)
-func GetAdminSecret() string {
-	return adminSecret
-}
-
-// GenerateToken generates a JWT token for a specific run
-func GenerateToken(runID string) (string, time.Time, error) {
-	expiresAt := time.Now().Add(2 * time.Hour) // Token expires in 2 hours
-	
+// GenerateToken generates a JWT-like HMAC token for a specific run.
+func (a *Authenticator) GenerateToken(runID string) (string, time.Time, error) {
+	if a == nil {
+		return "", time.Time{}, fmt.Errorf("authenticator is nil")
+	}
+	expiresAt := time.Now().Add(2 * time.Hour)
 	tokenData := models.TokenData{
 		RunID:     runID,
 		ExpiresAt: expiresAt,
 		CreatedAt: time.Now(),
 	}
-	
-	// Encode token data as JSON
 	payload, err := json.Marshal(tokenData)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("failed to marshal token data: %w", err)
 	}
-	
-	// Create HMAC signature
-	mac := hmac.New(sha256.New, []byte(secretKey))
+	mac := hmac.New(sha256.New, a.jwtKey)
 	mac.Write(payload)
 	signature := mac.Sum(nil)
-	
-	// Combine payload and signature
 	token := base64.URLEncoding.EncodeToString(payload) + "." + hex.EncodeToString(signature)
-	
 	return token, expiresAt, nil
 }
 
-// ValidateToken validates a JWT token for a specific run
-func ValidateToken(token string, runID string) (bool, error) {
-	// Split token into payload and signature
+// ValidateToken validates a token for a specific run.
+func (a *Authenticator) ValidateToken(token string, runID string) (bool, error) {
+	if a == nil {
+		return false, fmt.Errorf("authenticator is nil")
+	}
 	parts := strings.Split(token, ".")
 	if len(parts) != 2 {
 		return false, fmt.Errorf("invalid token format")
 	}
-	
-	payloadEncoded := parts[0]
-	signatureHex := parts[1]
-	
-	// Decode payload
-	payload, err := base64.URLEncoding.DecodeString(payloadEncoded)
+	payload, err := base64.URLEncoding.DecodeString(parts[0])
 	if err != nil {
 		return false, fmt.Errorf("failed to decode payload: %w", err)
 	}
-	
-	// Decode signature
-	signature, err := hex.DecodeString(signatureHex)
+	signature, err := hex.DecodeString(parts[1])
 	if err != nil {
 		return false, fmt.Errorf("failed to decode signature: %w", err)
 	}
-	
-	// Verify signature
-	mac := hmac.New(sha256.New, []byte(secretKey))
+	mac := hmac.New(sha256.New, a.jwtKey)
 	mac.Write(payload)
-	expectedSignature := mac.Sum(nil)
-	
-	if !hmac.Equal(signature, expectedSignature) {
+	expected := mac.Sum(nil)
+	if !hmac.Equal(signature, expected) {
 		return false, fmt.Errorf("invalid signature")
 	}
-	
-	// Parse token data
 	var tokenData models.TokenData
 	if err := json.Unmarshal(payload, &tokenData); err != nil {
 		return false, fmt.Errorf("failed to unmarshal token data: %w", err)
 	}
-	
-	// Check if token has expired
 	if time.Now().After(tokenData.ExpiresAt) {
 		return false, fmt.Errorf("token has expired")
 	}
-	
-	// Check if token is for the correct run_id
-	if tokenData.RunID != runID {
+	if subtle.ConstantTimeCompare([]byte(tokenData.RunID), []byte(runID)) != 1 {
 		return false, fmt.Errorf("token run_id mismatch")
 	}
-	
 	return true, nil
 }
-

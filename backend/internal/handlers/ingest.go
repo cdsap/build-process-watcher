@@ -31,7 +31,7 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if status, message, ok := validateRunBearerToken(r, req.RunID); !ok {
+	if status, message, ok := h.validateRunBearerToken(r, req.RunID); !ok {
 		http.Error(w, message, status)
 		return
 	}

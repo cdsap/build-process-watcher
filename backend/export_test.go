@@ -21,11 +21,6 @@ type TokenRequest = models.TokenRequest
 type TokenResponse = models.TokenResponse
 type TokenData = models.TokenData
 
-// Auth functions
-var generateToken = auth.GenerateToken
-var validateToken = auth.ValidateToken
-var requireAdminAuth = auth.RequireAdminAuth
-
 // Storage functions
 var toMillis = storage.ToMillis
 
@@ -38,21 +33,37 @@ var (
 
 // Global test handlers
 var (
+	testAuth           *auth.Authenticator
 	testHandlers       *handlers.Handlers
 	testCleanupService *cleanup.Service
 )
 
-// Initialize test handlers (called once at package init)
 func init() {
-	auth.Initialize()
-	// Handlers will work without storage for tests that don't need Firestore
+	testAuth = auth.NewForTest("build-process-watcher-secret-2024-dev", "admin-dev-secret-change-me")
 	testHandlers = handlers.NewHandlers(nil, nil)
-	testCleanupService = cleanup.NewService(nil, nil)
+	testHandlers.SetAuthenticator(testAuth)
+	testCleanupService = cleanup.NewService(nil, nil, testAuth)
 }
 
-// SetAdminSecret sets the admin secret for tests
+func generateToken(runID string) (string, time.Time, error) {
+	return testAuth.GenerateToken(runID)
+}
+
+func validateToken(token string, runID string) (bool, error) {
+	return testAuth.ValidateToken(token, runID)
+}
+
+func requireAdminAuth(r *http.Request) bool {
+	return testAuth.RequireAdminAuth(r)
+}
+
 func setAdminSecret(secret string) {
-	auth.SetAdminSecretForTest(secret)
+	if secret == "" {
+		secret = "admin-dev-secret-change-me"
+	}
+	testAuth = auth.NewForTest("build-process-watcher-secret-2024-dev", secret)
+	testHandlers.SetAuthenticator(testAuth)
+	testCleanupService = cleanup.NewService(nil, nil, testAuth)
 }
 
 // Handler functions for tests - delegate to internal handlers
