@@ -15,13 +15,13 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Client wraps Firestore operations
+// Client wraps Firestore operations. Callers pass a request or job context on
+// every method so cancellation and deadlines (e.g. prediction-job timeout) apply.
 type Client struct {
 	firestore *firestore.Client
-	ctx       context.Context
 }
 
-// NewClient creates a new storage client.
+// NewClient creates a new storage client. ctx is used only for Firestore dial.
 func NewClient(ctx context.Context, projectID string) (*Client, error) {
 	client, err := firestore.NewClient(ctx, projectID)
 	if err != nil {
@@ -29,10 +29,7 @@ func NewClient(ctx context.Context, projectID string) (*Client, error) {
 	}
 
 	log.Printf("✅ Connected to Firestore project: %s", projectID)
-	return &Client{
-		firestore: client,
-		ctx:       ctx,
-	}, nil
+	return &Client{firestore: client}, nil
 }
 
 // Close closes the Firestore client
@@ -41,11 +38,11 @@ func (c *Client) Close() error {
 }
 
 // SetRunExportToBigquery records that a run should be exported to BigQuery when it finishes.
-func (c *Client) SetRunExportToBigquery(runID string, enabled bool) error {
+func (c *Client) SetRunExportToBigquery(ctx context.Context, runID string, enabled bool) error {
 	if !enabled {
 		return nil
 	}
-	_, err := c.firestore.Collection("runs").Doc(runID).Set(c.ctx, map[string]interface{}{
+	_, err := c.firestore.Collection("runs").Doc(runID).Set(ctx, map[string]interface{}{
 		"run_id":               runID,
 		"export_to_bigquery":   true,
 		"updated_at":           time.Now(),
@@ -59,12 +56,12 @@ func (c *Client) SetRunExportToBigquery(runID string, enabled bool) error {
 }
 
 // SetRunPredictiveReliability records that a run opted in to private predictive checkpoints.
-func (c *Client) SetRunPredictiveReliability(runID string, enabled bool) error {
+func (c *Client) SetRunPredictiveReliability(ctx context.Context, runID string, enabled bool) error {
 	if !enabled {
 		return nil
 	}
 	now := time.Now()
-	_, err := c.firestore.Collection("runs").Doc(runID).Set(c.ctx, map[string]interface{}{
+	_, err := c.firestore.Collection("runs").Doc(runID).Set(ctx, map[string]interface{}{
 		"run_id":                 runID,
 		"predictive_reliability": true,
 		"updated_at":             now,
@@ -78,9 +75,9 @@ func (c *Client) SetRunPredictiveReliability(runID string, enabled bool) error {
 }
 
 // SetRunPredictionMode records the requested public prediction mode.
-func (c *Client) SetRunPredictionMode(runID, mode string) error {
+func (c *Client) SetRunPredictionMode(ctx context.Context, runID, mode string) error {
 	now := time.Now()
-	_, err := c.firestore.Collection("runs").Doc(runID).Set(c.ctx, map[string]interface{}{
+	_, err := c.firestore.Collection("runs").Doc(runID).Set(ctx, map[string]interface{}{
 		"run_id": runID, "prediction_mode": mode, "updated_at": now, "updated_at_timestamp": ToMillis(now),
 	}, firestore.MergeAll)
 	if err != nil {
@@ -89,13 +86,8 @@ func (c *Client) SetRunPredictionMode(runID, mode string) error {
 	return nil
 }
 
-// GetRun retrieves a run document by ID
-func (c *Client) GetRun(runID string) (*models.RunDoc, error) {
-	return c.GetRunWithContext(c.ctx, runID)
-}
-
-// GetRunWithContext loads a run using ctx (use for requests or background timeouts).
-func (c *Client) GetRunWithContext(ctx context.Context, runID string) (*models.RunDoc, error) {
+// GetRun retrieves a run document by ID using ctx for cancellation/deadlines.
+func (c *Client) GetRun(ctx context.Context, runID string) (*models.RunDoc, error) {
 	doc := c.firestore.Collection("runs").Doc(runID)
 	snapshot, err := doc.Get(ctx)
 	if err != nil {
@@ -119,11 +111,11 @@ func (c *Client) GetRunWithContext(ctx context.Context, runID string) (*models.R
 
 // StoreSamples appends samples for a run using a transaction + MergeAll so
 // concurrent checkpoint/forecast/finish writers cannot be wiped by a full Set.
-func (c *Client) StoreSamples(runID string, samples []models.Sample) error {
+func (c *Client) StoreSamples(ctx context.Context, runID string, samples []models.Sample) error {
 	log.Printf("🔄 Storing %d samples for run ID: %s", len(samples), runID)
 
 	doc := c.firestore.Collection("runs").Doc(runID)
-	err := c.firestore.RunTransaction(c.ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+	err := c.firestore.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		existing, err := readRunDocInTx(tx, doc)
 		if err != nil {
 			return err
@@ -176,9 +168,9 @@ func stampFreshnessStored(samples []models.Sample, storedAt time.Time) {
 }
 
 // StorePredictionCheckpoint stores or replaces one prediction checkpoint for a run.
-func (c *Client) StorePredictionCheckpoint(runID string, checkpoint models.PredictionCheckpoint) error {
+func (c *Client) StorePredictionCheckpoint(ctx context.Context, runID string, checkpoint models.PredictionCheckpoint) error {
 	doc := c.firestore.Collection("runs").Doc(runID)
-	err := c.firestore.RunTransaction(c.ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+	err := c.firestore.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		existing, err := readRunDocInTx(tx, doc)
 		if err != nil {
 			return err
@@ -196,12 +188,12 @@ func (c *Client) StorePredictionCheckpoint(runID string, checkpoint models.Predi
 }
 
 // AppendProcessForecasts appends public-safe process forecast issuances for a run.
-func (c *Client) AppendProcessForecasts(runID string, forecasts []models.ProcessForecast) error {
+func (c *Client) AppendProcessForecasts(ctx context.Context, runID string, forecasts []models.ProcessForecast) error {
 	if len(forecasts) == 0 {
 		return nil
 	}
 	doc := c.firestore.Collection("runs").Doc(runID)
-	err := c.firestore.RunTransaction(c.ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+	err := c.firestore.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		existing, err := readRunDocInTx(tx, doc)
 		if err != nil {
 			return err
@@ -219,11 +211,11 @@ func (c *Client) AppendProcessForecasts(runID string, forecasts []models.Process
 }
 
 // StoreProcessInfo stores or updates process information (VM flags) for a process in the processes collection
-func (c *Client) StoreProcessInfo(runID string, processInfo models.ProcessInfo) error {
+func (c *Client) StoreProcessInfo(ctx context.Context, runID string, processInfo models.ProcessInfo) error {
 	log.Printf("🔄 Storing process info for PID: %s (Name: %s) in run ID: %s", processInfo.PID, processInfo.Name, runID)
 
 	doc := c.firestore.Collection("processes").Doc(runID)
-	err := c.firestore.RunTransaction(c.ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+	err := c.firestore.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		existing, err := readProcessDocInTx(tx, doc)
 		if err != nil {
 			return err
@@ -286,13 +278,8 @@ func readProcessDocInTx(tx *firestore.Transaction, doc *firestore.DocumentRef) (
 	return &processDoc, nil
 }
 
-// GetProcesses retrieves process information for a run from the processes collection
-func (c *Client) GetProcesses(runID string) (*models.ProcessDoc, error) {
-	return c.GetProcessesWithContext(c.ctx, runID)
-}
-
-// GetProcessesWithContext loads processes/{runID} using ctx (for background BigQuery export).
-func (c *Client) GetProcessesWithContext(ctx context.Context, runID string) (*models.ProcessDoc, error) {
+// GetProcesses retrieves process information for a run from the processes collection.
+func (c *Client) GetProcesses(ctx context.Context, runID string) (*models.ProcessDoc, error) {
 	doc := c.firestore.Collection("processes").Doc(runID)
 	snapshot, err := doc.Get(ctx)
 	if err != nil {
@@ -316,10 +303,10 @@ func (c *Client) GetProcessesWithContext(ctx context.Context, runID string) (*mo
 }
 
 // MarkRunAsFinished marks a run as finished. newlyFinished is true when this call transitioned the run to finished (so callers can enqueue async work such as BigQuery export).
-func (c *Client) MarkRunAsFinished(runID string) (newlyFinished bool, err error) {
+func (c *Client) MarkRunAsFinished(ctx context.Context, runID string) (newlyFinished bool, err error) {
 	doc := c.firestore.Collection("runs").Doc(runID)
 	var transitioned bool
-	err = c.firestore.RunTransaction(c.ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+	err = c.firestore.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		transitioned = false
 		existing, err := readRunDocInTx(tx, doc)
 		if err != nil {
@@ -342,8 +329,8 @@ func (c *Client) MarkRunAsFinished(runID string) (newlyFinished bool, err error)
 }
 
 // FindStaleRuns finds runs that haven't been updated within the timeout period
-func (c *Client) FindStaleRuns(timeout time.Duration) ([]string, error) {
-	iter := c.firestore.Collection("runs").Documents(c.ctx)
+func (c *Client) FindStaleRuns(ctx context.Context, timeout time.Duration) ([]string, error) {
+	iter := c.firestore.Collection("runs").Documents(ctx)
 
 	var staleRuns []string
 	for {
@@ -378,7 +365,7 @@ func (c *Client) FindStaleRuns(timeout time.Duration) ([]string, error) {
 
 // DeleteOldRuns deletes runs older than the retention period
 // Uses finished_at if available, otherwise uses created_at + retention period
-func (c *Client) DeleteOldRuns(retentionPeriod time.Duration) ([]string, error) {
+func (c *Client) DeleteOldRuns(ctx context.Context, retentionPeriod time.Duration) ([]string, error) {
 	cutoffTime := time.Now().Add(-retentionPeriod)
 	cutoffTimestamp := ToMillis(cutoffTime)
 
@@ -386,7 +373,7 @@ func (c *Client) DeleteOldRuns(retentionPeriod time.Duration) ([]string, error) 
 
 	// Get all runs - we need to check each one individually because we need to check
 	// finished_at if available, otherwise created_at
-	iter := c.firestore.Collection("runs").Documents(c.ctx)
+	iter := c.firestore.Collection("runs").Documents(ctx)
 
 	var deletedRuns []string
 	for {
@@ -417,7 +404,7 @@ func (c *Client) DeleteOldRuns(retentionPeriod time.Duration) ([]string, error) 
 		// Check if this run should be deleted (older than retention period)
 		if compareTime.Before(cutoffTime) {
 			// Delete the document
-			_, err = doc.Ref.Delete(c.ctx)
+			_, err = doc.Ref.Delete(ctx)
 			if err != nil {
 				log.Printf("❌ Error deleting old run %s: %v", doc.Ref.ID, err)
 				continue

@@ -32,6 +32,7 @@ type fakeStorage struct {
 	storedSamples         []models.Sample
 	storedProcessInfo     []models.ProcessInfo
 	finishedRuns          []string
+	lastCtx               context.Context
 }
 
 type fakeExporter struct {
@@ -52,7 +53,8 @@ func newFakeStorage() *fakeStorage {
 	}
 }
 
-func (f *fakeStorage) GetRun(runID string) (*models.RunDoc, error) {
+func (f *fakeStorage) GetRun(ctx context.Context, runID string) (*models.RunDoc, error) {
+	f.lastCtx = ctx
 	if f.getRunErr != nil {
 		return nil, f.getRunErr
 	}
@@ -63,7 +65,8 @@ func (f *fakeStorage) GetRun(runID string) (*models.RunDoc, error) {
 	return run, nil
 }
 
-func (f *fakeStorage) GetProcesses(runID string) (*models.ProcessDoc, error) {
+func (f *fakeStorage) GetProcesses(ctx context.Context, runID string) (*models.ProcessDoc, error) {
+	f.lastCtx = ctx
 	processes, ok := f.processes[runID]
 	if !ok {
 		return nil, fmt.Errorf("processes for run %s not found", runID)
@@ -71,7 +74,7 @@ func (f *fakeStorage) GetProcesses(runID string) (*models.ProcessDoc, error) {
 	return processes, nil
 }
 
-func (f *fakeStorage) StoreSamples(runID string, samples []models.Sample) error {
+func (f *fakeStorage) StoreSamples(_ context.Context, runID string, samples []models.Sample) error {
 	f.storedSamples = append(f.storedSamples, samples...)
 	if _, ok := f.runs[runID]; !ok {
 		f.runs[runID] = &models.RunDoc{RunID: runID, StartTime: time.Now()}
@@ -80,7 +83,7 @@ func (f *fakeStorage) StoreSamples(runID string, samples []models.Sample) error 
 	return nil
 }
 
-func (f *fakeStorage) StoreProcessInfo(runID string, processInfo models.ProcessInfo) error {
+func (f *fakeStorage) StoreProcessInfo(_ context.Context, runID string, processInfo models.ProcessInfo) error {
 	f.storedProcessInfo = append(f.storedProcessInfo, processInfo)
 	processes := f.processes[runID]
 	if processes == nil {
@@ -91,30 +94,30 @@ func (f *fakeStorage) StoreProcessInfo(runID string, processInfo models.ProcessI
 	return nil
 }
 
-func (f *fakeStorage) StorePredictionCheckpoint(string, models.PredictionCheckpoint) error {
+func (f *fakeStorage) StorePredictionCheckpoint(context.Context, string, models.PredictionCheckpoint) error {
 	return nil
 }
 
-func (f *fakeStorage) AppendProcessForecasts(string, []models.ProcessForecast) error {
+func (f *fakeStorage) AppendProcessForecasts(context.Context, string, []models.ProcessForecast) error {
 	return nil
 }
 
-func (f *fakeStorage) SetRunExportToBigquery(runID string, enabled bool) error {
+func (f *fakeStorage) SetRunExportToBigquery(_ context.Context, runID string, enabled bool) error {
 	f.exportToBigQuery[runID] = enabled
 	return nil
 }
 
-func (f *fakeStorage) SetRunPredictiveReliability(runID string, enabled bool) error {
+func (f *fakeStorage) SetRunPredictiveReliability(_ context.Context, runID string, enabled bool) error {
 	f.predictiveReliability[runID] = enabled
 	return nil
 }
 
-func (f *fakeStorage) SetRunPredictionMode(runID, mode string) error {
+func (f *fakeStorage) SetRunPredictionMode(_ context.Context, runID, mode string) error {
 	f.predictionModes[runID] = mode
 	return nil
 }
 
-func (f *fakeStorage) MarkRunAsFinished(runID string) (bool, error) {
+func (f *fakeStorage) MarkRunAsFinished(_ context.Context, runID string) (bool, error) {
 	run, ok := f.runs[runID]
 	if !ok {
 		return false, fmt.Errorf("%w: %s", storage.ErrRunNotFound, runID)
@@ -516,6 +519,22 @@ func TestGetRunUsesStoragePort(t *testing.T) {
 	}
 	if len(response.Samples) != 1 || response.ProcessInfo["12345"].VMFlags[0] != "-Xmx2g" {
 		t.Fatalf("unexpected response: %#v", response)
+	}
+}
+
+func TestGetRunPassesRequestContextToStorage(t *testing.T) {
+	store := newFakeStorage()
+	store.runs["run-ctx"] = &models.RunDoc{RunID: "run-ctx", Finished: true}
+	store.processes["run-ctx"] = &models.ProcessDoc{RunID: "run-ctx", ProcessInfo: map[string]models.ProcessInfo{}}
+	h := NewHandlers(store, nil)
+	req := httptest.NewRequest(http.MethodGet, "/runs/run-ctx", nil)
+	ctx, cancel := context.WithCancel(req.Context())
+	cancel()
+	req = req.WithContext(ctx)
+
+	h.GetRun(httptest.NewRecorder(), req)
+	if store.lastCtx == nil || store.lastCtx.Err() != context.Canceled {
+		t.Fatalf("storage ctx err = %v, want context.Canceled", store.lastCtx.Err())
 	}
 }
 

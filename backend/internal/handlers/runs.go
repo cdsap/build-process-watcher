@@ -33,7 +33,7 @@ func (h *Handlers) GetRun(w http.ResponseWriter, r *http.Request) {
 	runID := path
 	log.Printf("Fetching data for run ID: %s", runID)
 
-	runDoc, err := h.storage.GetRun(runID)
+	runDoc, err := h.storage.GetRun(r.Context(), runID)
 	if err != nil {
 		if storage.IsNotFound(err) {
 			http.Error(w, "Run not found", http.StatusNotFound)
@@ -45,7 +45,7 @@ func (h *Handlers) GetRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.lifecycle.IsStale(runDoc.UpdatedAt, runDoc.Finished) {
-		if _, err := h.lifecycle.Finish(runID); err != nil {
+		if _, err := h.lifecycle.Finish(r.Context(), runID); err != nil {
 			log.Printf("Failed to auto-finish run %s: %v", runID, err)
 		} else {
 			now := time.Now()
@@ -55,7 +55,7 @@ func (h *Handlers) GetRun(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	processDoc, err := h.storage.GetProcesses(runID)
+	processDoc, err := h.storage.GetProcesses(r.Context(), runID)
 	if err != nil {
 		log.Printf("Warning: Failed to get process info for run %s: %v", runID, err)
 		processDoc = &models.ProcessDoc{
@@ -112,7 +112,7 @@ func (h *Handlers) FinishRun(w http.ResponseWriter, r *http.Request) {
 	log.Printf("✅ Token validated successfully for finishing run: %s", runID)
 	log.Printf("Manually finishing run: %s", runID)
 
-	if _, err := h.lifecycle.Finish(runID); err != nil {
+	if _, err := h.lifecycle.Finish(r.Context(), runID); err != nil {
 		log.Printf("Error finishing run %s: %v", runID, err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return

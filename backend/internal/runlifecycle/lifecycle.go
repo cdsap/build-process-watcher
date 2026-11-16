@@ -1,6 +1,7 @@
 package runlifecycle
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"time"
@@ -11,7 +12,7 @@ const DefaultStaleTimeout = 5 * time.Minute
 
 // Finisher marks a run finished in storage.
 type Finisher interface {
-	MarkRunAsFinished(runID string) (newlyFinished bool, err error)
+	MarkRunAsFinished(ctx context.Context, runID string) (newlyFinished bool, err error)
 }
 
 // Exporter schedules post-finish work (e.g. BigQuery export).
@@ -21,7 +22,7 @@ type Exporter interface {
 
 // StaleFinder lists run IDs that have not been updated within a timeout.
 type StaleFinder interface {
-	FindStaleRuns(timeout time.Duration) ([]string, error)
+	FindStaleRuns(ctx context.Context, timeout time.Duration) ([]string, error)
 }
 
 // Service owns finish + optional export triggering for HTTP and cleanup callers.
@@ -51,11 +52,11 @@ func NewWithFinder(finisher Finisher, export Exporter, finder StaleFinder) *Serv
 }
 
 // Finish marks the run finished and triggers export when this call transitions it.
-func (s *Service) Finish(runID string) (newlyFinished bool, err error) {
+func (s *Service) Finish(ctx context.Context, runID string) (newlyFinished bool, err error) {
 	if s == nil || s.finisher == nil {
 		return false, fmt.Errorf("run lifecycle finisher not configured")
 	}
-	newlyFinished, err = s.finisher.MarkRunAsFinished(runID)
+	newlyFinished, err = s.finisher.MarkRunAsFinished(ctx, runID)
 	if err != nil {
 		return false, err
 	}
@@ -83,12 +84,12 @@ func (s *Service) IsStale(updatedAt time.Time, finished bool) bool {
 
 // FinishIfStale finishes the run when it is stale. newlyFinished is true only when
 // this call transitioned the run (so callers can refresh in-memory state).
-func (s *Service) FinishIfStale(runID string, updatedAt time.Time, finished bool) (newlyFinished bool, err error) {
+func (s *Service) FinishIfStale(ctx context.Context, runID string, updatedAt time.Time, finished bool) (newlyFinished bool, err error) {
 	if !s.IsStale(updatedAt, finished) {
 		return false, nil
 	}
 	log.Printf("Run %s stale for >%s; auto-finishing", runID, s.staleTimeout)
-	return s.Finish(runID)
+	return s.Finish(ctx, runID)
 }
 
 // StaleCleanupResult is the outcome of a bulk stale-finish pass.
@@ -98,7 +99,7 @@ type StaleCleanupResult struct {
 }
 
 // FinishAllStale finds and finishes every stale run.
-func (s *Service) FinishAllStale() (StaleCleanupResult, error) {
+func (s *Service) FinishAllStale(ctx context.Context) (StaleCleanupResult, error) {
 	if s == nil || s.finder == nil {
 		return StaleCleanupResult{}, fmt.Errorf("run lifecycle stale finder not configured")
 	}
@@ -106,13 +107,13 @@ func (s *Service) FinishAllStale() (StaleCleanupResult, error) {
 	if s.staleTimeout > 0 {
 		timeout = s.staleTimeout
 	}
-	staleRuns, err := s.finder.FindStaleRuns(timeout)
+	staleRuns, err := s.finder.FindStaleRuns(ctx, timeout)
 	if err != nil {
 		return StaleCleanupResult{}, err
 	}
 	cleaned := make([]string, 0, len(staleRuns))
 	for _, runID := range staleRuns {
-		if _, err := s.Finish(runID); err != nil {
+		if _, err := s.Finish(ctx, runID); err != nil {
 			log.Printf("❌ Error cleaning up stale run %s: %v", runID, err)
 			continue
 		}

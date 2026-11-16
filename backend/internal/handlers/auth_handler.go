@@ -66,17 +66,17 @@ func (h *Handlers) Auth(w http.ResponseWriter, r *http.Request) {
 		mode = "reliability"
 	}
 	if h.storage != nil && mode != "" && mode != "disabled" {
-		if err := h.storage.SetRunPredictionMode(runID, mode); err != nil {
+		if err := h.storage.SetRunPredictionMode(r.Context(), runID, mode); err != nil {
 			log.Printf("Warning: could not persist prediction mode for run %s: %v", runID, err)
 		}
 	}
 	if h.storage != nil && r.URL.Query().Get("export_to_bigquery") == "true" {
-		if err := h.storage.SetRunExportToBigquery(runID, true); err != nil {
+		if err := h.storage.SetRunExportToBigquery(r.Context(), runID, true); err != nil {
 			log.Printf("Warning: could not persist export_to_bigquery for run %s: %v", runID, err)
 		}
 	}
 	if h.storage != nil && mode == "reliability" {
-		if err := h.storage.SetRunPredictiveReliability(runID, true); err != nil {
+		if err := h.storage.SetRunPredictiveReliability(r.Context(), runID, true); err != nil {
 			log.Printf("Warning: could not persist predictive_reliability for run %s: %v", runID, err)
 		}
 	}

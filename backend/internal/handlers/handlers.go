@@ -37,16 +37,16 @@ type Handlers struct {
 // Storage is the persistence port used by the HTTP handlers and checkpoint
 // evaluator. The production implementation is storage.Client.
 type Storage interface {
-	GetRun(runID string) (*models.RunDoc, error)
-	GetProcesses(runID string) (*models.ProcessDoc, error)
-	StoreSamples(runID string, samples []models.Sample) error
-	StoreProcessInfo(runID string, processInfo models.ProcessInfo) error
-	StorePredictionCheckpoint(runID string, checkpoint models.PredictionCheckpoint) error
-	AppendProcessForecasts(runID string, forecasts []models.ProcessForecast) error
-	SetRunExportToBigquery(runID string, enabled bool) error
-	SetRunPredictiveReliability(runID string, enabled bool) error
-	SetRunPredictionMode(runID, mode string) error
-	MarkRunAsFinished(runID string) (bool, error)
+	GetRun(ctx context.Context, runID string) (*models.RunDoc, error)
+	GetProcesses(ctx context.Context, runID string) (*models.ProcessDoc, error)
+	StoreSamples(ctx context.Context, runID string, samples []models.Sample) error
+	StoreProcessInfo(ctx context.Context, runID string, processInfo models.ProcessInfo) error
+	StorePredictionCheckpoint(ctx context.Context, runID string, checkpoint models.PredictionCheckpoint) error
+	AppendProcessForecasts(ctx context.Context, runID string, forecasts []models.ProcessForecast) error
+	SetRunExportToBigquery(ctx context.Context, runID string, enabled bool) error
+	SetRunPredictiveReliability(ctx context.Context, runID string, enabled bool) error
+	SetRunPredictionMode(ctx context.Context, runID, mode string) error
+	MarkRunAsFinished(ctx context.Context, runID string) (bool, error)
 }
 
 // Exporter is the export scheduling port used by the HTTP handlers. The

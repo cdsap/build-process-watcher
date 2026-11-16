@@ -1,6 +1,7 @@
 package runlifecycle
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -10,9 +11,11 @@ type fakeFinisher struct {
 	finished map[string]bool
 	err      error
 	calls    []string
+	lastCtx  context.Context
 }
 
-func (f *fakeFinisher) MarkRunAsFinished(runID string) (bool, error) {
+func (f *fakeFinisher) MarkRunAsFinished(ctx context.Context, runID string) (bool, error) {
+	f.lastCtx = ctx
 	f.calls = append(f.calls, runID)
 	if f.err != nil {
 		return false, f.err
@@ -36,11 +39,13 @@ func (e *fakeExporter) Run(runID string) {
 }
 
 type fakeFinder struct {
-	ids []string
-	err error
+	ids     []string
+	err     error
+	lastCtx context.Context
 }
 
-func (f *fakeFinder) FindStaleRuns(time.Duration) ([]string, error) {
+func (f *fakeFinder) FindStaleRuns(ctx context.Context, _ time.Duration) ([]string, error) {
+	f.lastCtx = ctx
 	return f.ids, f.err
 }
 
@@ -48,8 +53,9 @@ func TestFinishTriggersExportOnlyOnTransition(t *testing.T) {
 	finisher := &fakeFinisher{finished: map[string]bool{"already": true}}
 	export := &fakeExporter{}
 	svc := New(finisher, export)
+	ctx := context.Background()
 
-	newly, err := svc.Finish("new-run")
+	newly, err := svc.Finish(ctx, "new-run")
 	if err != nil || !newly {
 		t.Fatalf("Finish new-run: newly=%v err=%v", newly, err)
 	}
@@ -57,7 +63,7 @@ func TestFinishTriggersExportOnlyOnTransition(t *testing.T) {
 		t.Fatalf("export runs = %v, want [new-run]", export.runs)
 	}
 
-	newly, err = svc.Finish("already")
+	newly, err = svc.Finish(ctx, "already")
 	if err != nil || newly {
 		t.Fatalf("Finish already: newly=%v err=%v", newly, err)
 	}
@@ -72,9 +78,10 @@ func TestFinishIfStaleUsesSharedTimeout(t *testing.T) {
 	svc := New(finisher, export)
 	fixed := time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
 	svc.now = func() time.Time { return fixed }
+	ctx := context.Background()
 
 	updated := fixed.Add(-6 * time.Minute)
-	newly, err := svc.FinishIfStale("stale-run", updated, false)
+	newly, err := svc.FinishIfStale(ctx, "stale-run", updated, false)
 	if err != nil || !newly {
 		t.Fatalf("FinishIfStale: newly=%v err=%v", newly, err)
 	}
@@ -82,11 +89,11 @@ func TestFinishIfStaleUsesSharedTimeout(t *testing.T) {
 		t.Fatalf("finisher calls = %v", finisher.calls)
 	}
 
-	newly, err = svc.FinishIfStale("fresh-run", fixed.Add(-time.Minute), false)
+	newly, err = svc.FinishIfStale(ctx, "fresh-run", fixed.Add(-time.Minute), false)
 	if err != nil || newly {
 		t.Fatalf("fresh run should not finish: newly=%v err=%v", newly, err)
 	}
-	newly, err = svc.FinishIfStale("done-run", updated, true)
+	newly, err = svc.FinishIfStale(ctx, "done-run", updated, true)
 	if err != nil || newly {
 		t.Fatalf("finished run should not re-finish: newly=%v err=%v", newly, err)
 	}
@@ -97,8 +104,9 @@ func TestFinishAllStaleUsesFinderAndExport(t *testing.T) {
 	export := &fakeExporter{}
 	finder := &fakeFinder{ids: []string{"a", "b"}}
 	svc := NewWithFinder(finisher, export, finder)
+	ctx := context.Background()
 
-	result, err := svc.FinishAllStale()
+	result, err := svc.FinishAllStale(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +118,7 @@ func TestFinishAllStaleUsesFinderAndExport(t *testing.T) {
 	}
 
 	finder.err = errors.New("boom")
-	if _, err := svc.FinishAllStale(); err == nil {
+	if _, err := svc.FinishAllStale(ctx); err == nil {
 		t.Fatal("expected finder error")
 	}
 }
@@ -118,5 +126,19 @@ func TestFinishAllStaleUsesFinderAndExport(t *testing.T) {
 func TestDefaultStaleTimeoutMatchesPriorHardcodedValue(t *testing.T) {
 	if DefaultStaleTimeout != 5*time.Minute {
 		t.Fatalf("DefaultStaleTimeout = %s, want 5m", DefaultStaleTimeout)
+	}
+}
+
+func TestFinishPropagatesContext(t *testing.T) {
+	finisher := &fakeFinisher{}
+	svc := New(finisher, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := svc.Finish(ctx, "run-1"); err != nil {
+		t.Fatal(err)
+	}
+	if finisher.lastCtx == nil || finisher.lastCtx.Err() != context.Canceled {
+		t.Fatalf("finisher ctx err = %v, want context.Canceled", finisher.lastCtx.Err())
 	}
 }

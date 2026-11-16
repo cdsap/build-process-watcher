@@ -14,8 +14,8 @@ const processForecastThrottleElapsedS = 20
 
 // ForecastRepository is the persistence surface used by forecast evaluation.
 type ForecastRepository interface {
-	GetRun(runID string) (*models.RunDoc, error)
-	AppendProcessForecasts(runID string, forecasts []models.ProcessForecast) error
+	GetRun(ctx context.Context, runID string) (*models.RunDoc, error)
+	AppendProcessForecasts(ctx context.Context, runID string, forecasts []models.ProcessForecast) error
 }
 
 // ForecastEvaluator coordinates process-forecast provider calls after ingest.
@@ -64,7 +64,7 @@ func (e *ForecastEvaluator) Evaluate(ctx context.Context, runID string) {
 	if e == nil || e.repo == nil {
 		return
 	}
-	runDoc, err := e.repo.GetRun(runID)
+	runDoc, err := e.repo.GetRun(ctx, runID)
 	if err != nil {
 		log.Printf("Forecast skipped: could not load run %s: %v", runID, err)
 		return
@@ -92,7 +92,7 @@ func (e *ForecastEvaluator) Evaluate(ctx context.Context, runID string) {
 	if len(forecasts) == 0 {
 		return
 	}
-	if err := e.repo.AppendProcessForecasts(runID, forecasts); err != nil {
+	if err := e.repo.AppendProcessForecasts(ctx, runID, forecasts); err != nil {
 		log.Printf("%s store failed for run %s: %v", mode, runID, err)
 	}
 }

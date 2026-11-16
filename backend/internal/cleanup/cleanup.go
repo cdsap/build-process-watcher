@@ -62,7 +62,7 @@ func (s *Service) HandleManualStaleCleanup(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	result, err := s.lifecycle.FinishAllStale()
+	result, err := s.lifecycle.FinishAllStale(r.Context())
 	if err != nil {
 		log.Printf("❌ Error finding stale runs: %v", err)
 		http.Error(w, fmt.Sprintf("Error finding stale runs: %v", err), http.StatusInternalServerError)
