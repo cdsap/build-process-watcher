@@ -13,6 +13,29 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
 )
 
+const (
+	// DefaultSamplesTable is the BigQuery samples table when unset.
+	DefaultSamplesTable = "build_process_samples"
+	// DefaultProcessesTable is the BigQuery processes table when unset.
+	DefaultProcessesTable = "build_process_processes"
+)
+
+// SamplesTableOrDefault returns table or DefaultSamplesTable when empty.
+func SamplesTableOrDefault(table string) string {
+	if strings.TrimSpace(table) == "" {
+		return DefaultSamplesTable
+	}
+	return strings.TrimSpace(table)
+}
+
+// ProcessesTableOrDefault returns table or DefaultProcessesTable when empty.
+func ProcessesTableOrDefault(table string) string {
+	if strings.TrimSpace(table) == "" {
+		return DefaultProcessesTable
+	}
+	return strings.TrimSpace(table)
+}
+
 // Exporter streams finished-run samples and process/JVM metadata into BigQuery. Nil or disabled when dataset is empty.
 type Exporter struct {
 	client         *bigquery.Client
@@ -21,19 +44,13 @@ type Exporter struct {
 	processesTable string
 }
 
-// New creates an exporter for the given dataset. samplesTable and processesTable default to build_process_samples / build_process_processes when empty.
+// New creates an exporter for the given dataset. samplesTable and processesTable default to DefaultSamplesTable / DefaultProcessesTable when empty.
 func New(ctx context.Context, projectID, dataset, samplesTable, processesTable string) (*Exporter, error) {
 	dataset = strings.TrimSpace(dataset)
-	samplesTable = strings.TrimSpace(samplesTable)
-	processesTable = strings.TrimSpace(processesTable)
+	samplesTable = SamplesTableOrDefault(samplesTable)
+	processesTable = ProcessesTableOrDefault(processesTable)
 	if dataset == "" {
 		return nil, nil
-	}
-	if samplesTable == "" {
-		samplesTable = "build_process_samples"
-	}
-	if processesTable == "" {
-		processesTable = "build_process_processes"
 	}
 	client, err := bigquery.NewClient(ctx, projectID)
 	if err != nil {

@@ -90,3 +90,18 @@ func TestSampleRowOptionalMetricTags(t *testing.T) {
 		t.Fatal("sample row must preserve populated and null optional metrics")
 	}
 }
+
+func TestDefaultTableHelpers(t *testing.T) {
+	if got := SamplesTableOrDefault(""); got != DefaultSamplesTable {
+		t.Fatalf("samples default = %q", got)
+	}
+	if got := SamplesTableOrDefault(" custom "); got != "custom" {
+		t.Fatalf("samples trim = %q", got)
+	}
+	if got := ProcessesTableOrDefault(""); got != DefaultProcessesTable {
+		t.Fatalf("processes default = %q", got)
+	}
+	if got := ProcessesTableOrDefault("procs"); got != "procs" {
+		t.Fatalf("processes keep = %q", got)
+	}
+}
