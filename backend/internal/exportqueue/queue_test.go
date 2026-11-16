@@ -284,6 +284,8 @@ func Test_Run_allowsRetryAfterExhaustedExport(t *testing.T) {
 	}, nil)
 
 	s.Run("run-retry")
+	waitForExportCalls(t, exp, 3)
+	waitForScheduledCleared(t, s, "run-retry")
 	if got := exp.exportCallsCount(); got != 3 {
 		t.Fatalf("ExportRun calls after exhausted retries = %d, want 3", got)
 	}
@@ -293,8 +295,77 @@ func Test_Run_allowsRetryAfterExhaustedExport(t *testing.T) {
 	exp.mu.Unlock()
 
 	s.Run("run-retry")
+	waitForExportCalls(t, exp, 4)
+	waitForScheduledCleared(t, s, "run-retry")
 	if got := exp.exportCallsCount(); got != 4 {
 		t.Fatalf("ExportRun calls after retry = %d, want 4", got)
+	}
+}
+
+func Test_Run_returnsImmediatelyWithoutBlockingOnExport(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	exp := &recordingExporter{}
+	s := New(exp, func(ctx context.Context, runID string) (*models.RunDoc, error) {
+		close(started)
+		select {
+		case <-release:
+		case <-ctx.Done():
+		}
+		return sampleDoc(true, true, 1), nil
+	}, nil)
+
+	begin := time.Now()
+	s.Run("run-async")
+	if time.Since(begin) > 200*time.Millisecond {
+		t.Fatalf("Run blocked for %s; expected immediate return", time.Since(begin))
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("export goroutine did not start")
+	}
+	close(release)
+	waitForExportCalls(t, exp, 1)
+	waitForScheduledCleared(t, s, "run-async")
+
+	s.mu.Lock()
+	_, completed := s.completed["run-async"]
+	s.mu.Unlock()
+	if !completed {
+		t.Fatal("successful export should be recorded in completed dedupe map")
+	}
+}
+
+func waitForExportCalls(t *testing.T, exp *recordingExporter, want int) {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	for exp.exportCallsCount() < want {
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for %d ExportRun calls, got %d", want, exp.exportCallsCount())
+		default:
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+}
+
+func waitForScheduledCleared(t *testing.T, s *Scheduler, runID string) {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	for {
+		s.mu.Lock()
+		_, present := s.scheduled[runID]
+		s.mu.Unlock()
+		if !present {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for scheduled entry %q to clear", runID)
+		default:
+			time.Sleep(5 * time.Millisecond)
+		}
 	}
 }
 
