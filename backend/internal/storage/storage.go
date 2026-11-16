@@ -396,61 +396,6 @@ func (c *Client) FindStaleRuns(ctx context.Context, timeout time.Duration) ([]st
 	return staleRuns, nil
 }
 
-// DeleteOldRuns deletes runs older than the retention period
-// Uses finished_at if available, otherwise uses created_at + retention period
-func (c *Client) DeleteOldRuns(ctx context.Context, retentionPeriod time.Duration) ([]string, error) {
-	cutoffTime := time.Now().Add(-retentionPeriod)
-	cutoffTimestamp := ToMillis(cutoffTime)
-
-	log.Printf("🗑️ Deleting data older than: %v (timestamp: %d)", cutoffTime, cutoffTimestamp)
-
-	// Get all runs - we need to check each one individually because we need to check
-	// finished_at if available, otherwise created_at
-	iter := c.firestore.Collection("runs").Documents(ctx)
-
-	var deletedRuns []string
-	for {
-		doc, err := iter.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			return deletedRuns, err
-		}
-
-		var runDoc models.RunDoc
-		if err := doc.DataTo(&runDoc); err != nil {
-			log.Printf("❌ Error parsing run document %s: %v", doc.Ref.ID, err)
-			continue
-		}
-
-		// Determine the timestamp to use for comparison
-		var compareTime time.Time
-		if !runDoc.FinishedAt.IsZero() {
-			// Use finished_at if the run is finished
-			compareTime = runDoc.FinishedAt
-		} else {
-			// Use created_at if the run never finished
-			compareTime = runDoc.CreatedAt
-		}
-
-		// Check if this run should be deleted (older than retention period)
-		if compareTime.Before(cutoffTime) {
-			// Delete the document
-			_, err = doc.Ref.Delete(ctx)
-			if err != nil {
-				log.Printf("❌ Error deleting old run %s: %v", doc.Ref.ID, err)
-				continue
-			}
-
-			deletedRuns = append(deletedRuns, doc.Ref.ID)
-			log.Printf("🗑️ Deleted old run: %s (created: %v, finished: %v)", doc.Ref.ID, runDoc.CreatedAt, runDoc.FinishedAt)
-		}
-	}
-
-	return deletedRuns, nil
-}
-
 // ToMillis converts a time.Time to Unix milliseconds
 func ToMillis(t time.Time) int64 {
 	return t.UnixNano() / int64(time.Millisecond)

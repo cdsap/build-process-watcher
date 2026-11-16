@@ -1,12 +1,12 @@
 package cleanup
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 
-	"github.com/cdsap/build-process-watcher/backend/internal/auth"
 	"github.com/cdsap/build-process-watcher/backend/internal/exportqueue"
 	"github.com/cdsap/build-process-watcher/backend/internal/runlifecycle"
 	"github.com/cdsap/build-process-watcher/backend/internal/storage"
@@ -15,22 +15,38 @@ import (
 // BuildTimeout is retained for callers/tests that reference the shared stale window.
 const BuildTimeout = runlifecycle.DefaultStaleTimeout
 
-// Service handles cleanup operations
-type Service struct {
-	lifecycle *runlifecycle.Service
-	authn     *auth.Authenticator
+// StaleFinisher finishes stale runs. Production uses *runlifecycle.Service.
+type StaleFinisher interface {
+	FinishAllStale(ctx context.Context) (runlifecycle.StaleCleanupResult, error)
 }
 
-// NewService creates a new cleanup service. export and authenticator may be nil.
-func NewService(storageClient *storage.Client, export *exportqueue.Scheduler, authenticator *auth.Authenticator) *Service {
-	var lifecycle *runlifecycle.Service
-	if storageClient != nil {
-		lifecycle = runlifecycle.NewWithFinder(storageClient, export, storageClient)
-	}
+// AdminAuthenticator gates admin-only cleanup. Production uses *auth.Authenticator.
+type AdminAuthenticator interface {
+	RequireAdminAuth(r *http.Request) bool
+}
+
+// Service handles cleanup HTTP operations.
+type Service struct {
+	lifecycle StaleFinisher
+	authn     AdminAuthenticator
+}
+
+// New creates a cleanup service from interface ports (preferred for tests).
+func New(lifecycle StaleFinisher, authenticator AdminAuthenticator) *Service {
 	return &Service{lifecycle: lifecycle, authn: authenticator}
 }
 
-// HandleManualStaleCleanup handles manual cleanup of stale runs (admin only)
+// NewService wires Firestore storage into a runlifecycle-backed cleanup service.
+// export and authenticator may be nil.
+func NewService(storageClient *storage.Client, export *exportqueue.Scheduler, authenticator AdminAuthenticator) *Service {
+	var lifecycle StaleFinisher
+	if storageClient != nil {
+		lifecycle = runlifecycle.NewWithFinder(storageClient, export, storageClient)
+	}
+	return New(lifecycle, authenticator)
+}
+
+// HandleManualStaleCleanup handles manual cleanup of stale runs (admin only).
 func (s *Service) HandleManualStaleCleanup(w http.ResponseWriter, r *http.Request) {
 	log.Printf("cleanupStaleHandler called with method: %s", r.Method)
 
@@ -47,7 +63,7 @@ func (s *Service) HandleManualStaleCleanup(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if s.authn == nil || !s.authn.RequireAdminAuth(r) {
+	if s == nil || s.authn == nil || !s.authn.RequireAdminAuth(r) {
 		log.Printf("⚠️  Unauthorized cleanup attempt from %s", r.RemoteAddr)
 		http.Error(w, "Unauthorized - admin secret required", http.StatusUnauthorized)
 		return
