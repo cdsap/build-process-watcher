@@ -14,6 +14,7 @@ go_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//internal/auth",
+        "//internal/ingest",
         "//internal/models",
         "//internal/prediction",
         "//internal/predictionqueue",
