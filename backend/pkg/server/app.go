@@ -78,10 +78,6 @@ func Build(ctx context.Context, options Options, deps Deps) (*App, error) {
 	closers = append(closers, storageClient.Close)
 
 	exportSched := exportqueue.New(bqExporter, storageClient.GetRun, storageClient.GetProcesses)
-	provider := providerOrNoop(options.PredictionProvider)
-	if len(options.PredictionCheckpoints) == 0 || !predictor.Enabled(provider) {
-		log.Printf("🔮 Predictive reliability disabled (set private provider and PREDICTIVE_RELIABILITY_CHECKPOINTS to enable)")
-	}
 
 	forecastProvider := options.ForecastProvider
 	if forecastProvider == nil {
@@ -113,11 +109,8 @@ func Build(ctx context.Context, options Options, deps Deps) (*App, error) {
 		closers = append(closers, predictionCloser)
 	}
 	h := handlers.New(handlers.Config{
-		Storage:             storageClient,
-		Export:              exportSched,
-		ReliabilityProvider: provider,
-		Checkpoints:         options.PredictionCheckpoints,
-		FallbackClassifier:  options.FallbackClassifier,
+		Storage: storageClient,
+		Export:  exportSched,
 		TimelineProviders: prediction.TimelineProviders{
 			Forecast:    forecastProvider,
 			TabPredict:  tabPredictProvider,

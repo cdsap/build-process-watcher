@@ -17,8 +17,7 @@ const inputs = {
   defaultLogFile: false,
   debugMode: true,
   exportToBigquery: true,
-  predictiveReliability: true,
-  predictionMode: 'reliability' as const,
+  predictionMode: 'forecast' as const,
   freshnessDiagnostics: true,
   enableBackend: true,
 };
@@ -46,8 +45,7 @@ describe('createMonitoringProcessLaunchPlan', () => {
         DEBUG_MODE: 'true',
         REMOTE_MONITORING: 'false',
         EXPORT_TO_BIGQUERY: 'true',
-        PREDICTIVE_RELIABILITY: 'true',
-        PREDICTION_MODE: 'reliability',
+                PREDICTION_MODE: 'forecast',
         FRESHNESS_DIAGNOSTICS: 'true',
         COLLECT_GC: 'true',
       },
@@ -72,8 +70,7 @@ describe('createMonitoringProcessLaunchPlan', () => {
         DEBUG_MODE: 'true',
         REMOTE_MONITORING: 'true',
         EXPORT_TO_BIGQUERY: 'true',
-        PREDICTIVE_RELIABILITY: 'true',
-        PREDICTION_MODE: 'reliability',
+                PREDICTION_MODE: 'forecast',
         FRESHNESS_DIAGNOSTICS: 'true',
         COLLECT_GC: 'true',
       },
@@ -101,7 +98,7 @@ describe('createMonitoringProcessLaunchPlan', () => {
   });
 });
 
-  it.each(['disabled', 'reliability', 'forecast', 'predict', 'bqml-boosted'] as const)('passes %s to the monitor', (predictionMode) => {
+  it.each(['disabled', 'forecast', 'predict', 'bqml-boosted'] as const)('passes %s to the monitor', (predictionMode) => {
     const plan = createMonitoringProcessLaunchPlan({ ...inputs, predictionMode }, {});
     expect(plan.env.PREDICTION_MODE).toBe(predictionMode);
   });

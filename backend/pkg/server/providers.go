@@ -64,10 +64,3 @@ func newPredictionScheduler(ctx context.Context, options Options) (predictionque
 	}
 	return sched, sched.Close
 }
-
-func providerOrNoop(provider predictor.Provider) predictor.Provider {
-	if provider == nil {
-		return predictor.NoopProvider{}
-	}
-	return provider
-}

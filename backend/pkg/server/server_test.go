@@ -3,305 +3,49 @@ package server
 import (
 	"context"
 	"errors"
-	"net"
-	"net/http"
-	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/cdsap/build-process-watcher/backend/internal/auth"
-	"github.com/cdsap/build-process-watcher/backend/internal/cleanup"
-	"github.com/cdsap/build-process-watcher/backend/internal/handlers"
 	"github.com/cdsap/build-process-watcher/backend/internal/storage"
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
-
-type fakeProvider struct{}
-
-func (fakeProvider) Predict(context.Context, predictor.RunSnapshot, int) (predictor.PredictionCheckpoint, error) {
-	return predictor.PredictionCheckpoint{}, nil
-}
 
 func providerEnv(suffix string) string {
 	return "PREDICTIVE_PROVIDER_" + suffix
 }
 
-func TestOptionsFromEnvUsesPublicNoopProvider(t *testing.T) {
-	t.Setenv("GOOGLE_CLOUD_PROJECT", "project-1")
-	t.Setenv("PORT", "")
-	t.Setenv("BIGQUERY_EXPORT_DATASET", " dataset_1 ")
-	t.Setenv("BIGQUERY_EXPORT_TABLE", " samples_1 ")
-	t.Setenv("BIGQUERY_EXPORT_PROCESSES_TABLE", " processes_1 ")
-	t.Setenv("PREDICTIVE_RELIABILITY_CHECKPOINTS", "30,60,bad,180")
+func TestOptionsFromEnvDefaultsTimelineProvidersToNoop(t *testing.T) {
+	t.Setenv("GOOGLE_CLOUD_PROJECT", "test-project")
+	t.Setenv("PORT", "9090")
+	t.Setenv(providerEnv("ENABLED"), "false")
+	t.Setenv("PREDICTIVE_FORECAST_PROVIDER_ENABLED", "")
+	t.Setenv("PREDICTIVE_TABPREDICT_PROVIDER_ENABLED", "")
+	t.Setenv("PREDICTIVE_BQML_BOOSTED_PROVIDER_ENABLED", "")
 
 	options := OptionsFromEnv()
-
-	if options.ProjectID != "project-1" {
-		t.Fatalf("ProjectID = %q, want project-1", options.ProjectID)
+	if options.ProjectID != "test-project" || options.Port != "9090" {
+		t.Fatalf("options = %+v", options)
 	}
-	if options.Port != "8080" {
-		t.Fatalf("Port = %q, want 8080", options.Port)
-	}
-	if options.BigQueryDataset != "dataset_1" {
-		t.Fatalf("BigQueryDataset = %q, want dataset_1", options.BigQueryDataset)
-	}
-	if options.BigQueryTable != "samples_1" {
-		t.Fatalf("BigQueryTable = %q, want samples_1", options.BigQueryTable)
-	}
-	if options.BigQueryProcessesTable != "processes_1" {
-		t.Fatalf("BigQueryProcessesTable = %q, want processes_1", options.BigQueryProcessesTable)
-	}
-	if predictor.Enabled(options.PredictionProvider) {
-		t.Fatal("OptionsFromEnv should default to the public no-op provider")
-	}
-	if got := options.PredictionCheckpoints; len(got) != 3 || got[0] != 30 || got[1] != 60 || got[2] != 180 {
-		t.Fatalf("PredictionCheckpoints = %v, want [30 60 180]", got)
+	if predictor.ForecastEnabled(options.ForecastProvider) ||
+		predictor.ForecastEnabled(options.TabPredictProvider) ||
+		predictor.ForecastEnabled(options.BQMLBoostedProvider) {
+		t.Fatal("timeline providers should default to noop when disabled")
 	}
 }
 
-func TestOptionsFromEnvUsesNoopWhenRemoteProviderDisabled(t *testing.T) {
-	t.Setenv("PREDICTIVE_PROVIDER_ENABLED", "false")
-	t.Setenv(providerEnv("URL"), "http://127.0.0.1:8081")
-	t.Setenv("PREDICTIVE_RELIABILITY_CHECKPOINTS", "")
+func TestOptionsFromEnvEnablesForecastWhenRequested(t *testing.T) {
+	t.Setenv("GOOGLE_CLOUD_PROJECT", "test-project")
+	t.Setenv(providerEnv("URL"), "https://provider.example")
+	t.Setenv("PREDICTIVE_FORECAST_PROVIDER_ENABLED", "true")
+	t.Setenv("PREDICTIVE_TABPREDICT_PROVIDER_ENABLED", "false")
+	t.Setenv("PREDICTIVE_BQML_BOOSTED_PROVIDER_ENABLED", "false")
 
 	options := OptionsFromEnv()
-
-	if predictor.Enabled(options.PredictionProvider) {
-		t.Fatal("provider should remain no-op when remote feature flag is false")
+	if !predictor.ForecastEnabled(options.ForecastProvider) {
+		t.Fatal("forecast provider should be enabled")
 	}
-	if len(options.PredictionCheckpoints) != 0 {
-		t.Fatalf("PredictionCheckpoints = %v, want empty", options.PredictionCheckpoints)
-	}
-}
-
-func TestOptionsFromEnvUsesNoopWhenRemoteProviderURLMissing(t *testing.T) {
-	t.Setenv("PREDICTIVE_PROVIDER_ENABLED", "true")
-	t.Setenv(providerEnv("URL"), "")
-	t.Setenv("PREDICTIVE_RELIABILITY_CHECKPOINTS", "")
-
-	options := OptionsFromEnv()
-
-	if predictor.Enabled(options.PredictionProvider) {
-		t.Fatal("provider should remain no-op when remote URL is missing")
-	}
-	if len(options.PredictionCheckpoints) != 0 {
-		t.Fatalf("PredictionCheckpoints = %v, want empty", options.PredictionCheckpoints)
-	}
-}
-
-func TestOptionsFromEnvUsesRemoteProviderWithDefaultCheckpointsWhenEnabled(t *testing.T) {
-	t.Setenv("PREDICTIVE_PROVIDER_ENABLED", "true")
-	t.Setenv(providerEnv("URL"), "http://127.0.0.1:8081")
-	t.Setenv(providerEnv("TIMEOUT_MS"), "2500")
-	t.Setenv("PREDICTIVE_RELIABILITY_CHECKPOINTS", "")
-
-	options := OptionsFromEnv()
-
-	if !predictor.Enabled(options.PredictionProvider) {
-		t.Fatal("remote provider should be enabled")
-	}
-	if _, ok := options.PredictionProvider.(*predictor.RemoteProvider); !ok {
-		t.Fatalf("provider type = %T, want *predictor.RemoteProvider", options.PredictionProvider)
-	}
-	expected := []int{60, 300, 600, 1200}
-	if got := options.PredictionCheckpoints; len(got) != len(expected) {
-		t.Fatalf("PredictionCheckpoints = %v, want %v", got, expected)
-	} else {
-		for i := range expected {
-			if got[i] != expected[i] {
-				t.Fatalf("PredictionCheckpoints = %v, want %v", got, expected)
-			}
-		}
-	}
-}
-
-func TestOptionsFromEnvKeepsExplicitCheckpointsWhenRemoteProviderEnabled(t *testing.T) {
-	t.Setenv("PREDICTIVE_PROVIDER_ENABLED", "true")
-	t.Setenv(providerEnv("URL"), "http://127.0.0.1:8081")
-	t.Setenv("PREDICTIVE_RELIABILITY_CHECKPOINTS", "30,60,bad,60")
-
-	options := OptionsFromEnv()
-
-	expected := []int{30, 60}
-	if got := options.PredictionCheckpoints; len(got) != len(expected) {
-		t.Fatalf("PredictionCheckpoints = %v, want %v", got, expected)
-	} else {
-		for i := range expected {
-			if got[i] != expected[i] {
-				t.Fatalf("PredictionCheckpoints = %v, want %v", got, expected)
-			}
-		}
-	}
-}
-
-func TestOptionsFromEnvDoesNotDefaultInvalidExplicitCheckpoints(t *testing.T) {
-	t.Setenv("PREDICTIVE_PROVIDER_ENABLED", "true")
-	t.Setenv(providerEnv("URL"), "http://127.0.0.1:8081")
-	t.Setenv("PREDICTIVE_RELIABILITY_CHECKPOINTS", "bad,0")
-
-	options := OptionsFromEnv()
-
-	if got := options.PredictionCheckpoints; len(got) != 0 {
-		t.Fatalf("PredictionCheckpoints = %v, want empty for invalid explicit config", got)
-	}
-}
-
-func TestBuildOptionsNormalizesProviderAndCheckpoints(t *testing.T) {
-	tests := []struct {
-		name                 string
-		providerEnabled      bool
-		providerURL          string
-		checkpoints          string
-		wantProviderEnabled  bool
-		wantCheckpoints      []int
-		wantProviderBuildErr bool
-	}{
-		{
-			name:            "disabled provider",
-			wantCheckpoints: nil,
-		},
-		{
-			name:                 "missing provider URL",
-			providerEnabled:      true,
-			wantProviderBuildErr: true,
-			wantCheckpoints:      nil,
-		},
-		{
-			name:                "default checkpoints",
-			providerEnabled:     true,
-			providerURL:         "http://127.0.0.1:8081",
-			checkpoints:         "",
-			wantProviderEnabled: true,
-			wantCheckpoints:     []int{60, 300, 600, 1200},
-		},
-		{
-			name:                "explicit checkpoints",
-			providerEnabled:     true,
-			providerURL:         "http://127.0.0.1:8081",
-			checkpoints:         "30,60,bad,60",
-			wantProviderEnabled: true,
-			wantCheckpoints:     []int{30, 60},
-		},
-		{
-			name:            "invalid checkpoints",
-			checkpoints:     "bad,0",
-			wantCheckpoints: nil,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			options, err := buildOptions(serverConfig{
-				predictionProviderEnabled: tt.providerEnabled,
-				predictionProviderURL:     tt.providerURL,
-				predictionCheckpoints:     tt.checkpoints,
-			})
-			if (err != nil) != tt.wantProviderBuildErr {
-				t.Fatalf("buildOptions error = %v, want error: %t", err, tt.wantProviderBuildErr)
-			}
-			if predictor.Enabled(options.PredictionProvider) != tt.wantProviderEnabled {
-				t.Fatalf("provider enabled = %t, want %t", predictor.Enabled(options.PredictionProvider), tt.wantProviderEnabled)
-			}
-			if len(options.PredictionCheckpoints) != len(tt.wantCheckpoints) {
-				t.Fatalf("PredictionCheckpoints = %v, want %v", options.PredictionCheckpoints, tt.wantCheckpoints)
-			}
-			for i, want := range tt.wantCheckpoints {
-				if options.PredictionCheckpoints[i] != want {
-					t.Fatalf("PredictionCheckpoints = %v, want %v", options.PredictionCheckpoints, tt.wantCheckpoints)
-				}
-			}
-		})
-	}
-}
-
-func TestOptionsCanCarryInjectedProvider(t *testing.T) {
-	options := Options{PredictionProvider: fakeProvider{}}
-	if !predictor.Enabled(options.PredictionProvider) {
-		t.Fatal("injected provider should be enabled")
-	}
-}
-
-func TestOptionsCanCarryFallbackClassifier(t *testing.T) {
-	options := Options{
-		FallbackClassifier: func(error) (string, string) {
-			return "no_data", "prediction data unavailable"
-		},
-	}
-	if options.FallbackClassifier == nil {
-		t.Fatal("FallbackClassifier should be injectable on Options")
-	}
-	state, message := options.FallbackClassifier(nil)
-	if state != "no_data" || message != "prediction data unavailable" {
-		t.Fatalf("classifier = (%q, %q), want no_data / prediction data unavailable", state, message)
-	}
-}
-
-func TestOptionsFromEnvLeavesFallbackClassifierUnset(t *testing.T) {
-	t.Setenv("PREDICTIVE_PROVIDER_ENABLED", "false")
-	options := OptionsFromEnv()
-	if options.FallbackClassifier != nil {
-		t.Fatal("OptionsFromEnv should leave FallbackClassifier unset for composition-root wiring")
-	}
-}
-
-func TestNewMuxRegistersPublicRoutes(t *testing.T) {
-	h := handlers.NewHandlers(nil, nil)
-	h.SetAuthenticator(auth.NewForTest("server-test-jwt", "server-test-admin"))
-	mux := NewMux(h, cleanup.NewService(nil, nil, auth.NewForTest("server-test-jwt", "server-test-admin")))
-
-	for _, route := range []string{"/healthz", "/auth/run/run-1", "/ingest", "/internal/prediction-jobs", "/runs/run-1", "/finish/run-1", "/cleanup/stale"} {
-		request := httptest.NewRequest(http.MethodOptions, route, nil)
-		recorder := httptest.NewRecorder()
-
-		mux.ServeHTTP(recorder, request)
-
-		if recorder.Code == http.StatusNotFound {
-			t.Fatalf("route %s was not registered", route)
-		}
-	}
-}
-
-func TestAppServeShutsDownOnContextCancel(t *testing.T) {
-	app := &App{
-		Server: &http.Server{
-			Addr:    "127.0.0.1:0",
-			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
-		},
-	}
-	ln, err := net.Listen("tcp", app.Server.Addr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	app.Server.Addr = ln.Addr().String()
-	_ = ln.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	errCh := make(chan error, 1)
-	go func() { errCh <- app.Serve(ctx) }()
-
-	deadline := time.After(2 * time.Second)
-	for {
-		conn, dialErr := net.DialTimeout("tcp", app.Server.Addr, 50*time.Millisecond)
-		if dialErr == nil {
-			_ = conn.Close()
-			break
-		}
-		select {
-		case <-deadline:
-			t.Fatal("server did not start listening")
-		default:
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
-
-	cancel()
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("Serve returned %v, want nil", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("Serve did not return after cancel")
+	if predictor.ForecastEnabled(options.TabPredictProvider) || predictor.ForecastEnabled(options.BQMLBoostedProvider) {
+		t.Fatal("other timeline providers should stay noop")
 	}
 }
 

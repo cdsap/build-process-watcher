@@ -64,7 +64,6 @@ jobs:
         PREDICTIVE_PROVIDER_URL: ${{ secrets.PREDICTIVE_PROVIDER_URL }}
         PREDICTIVE_PROVIDER_AUTH_AUDIENCE: ${{ secrets.PREDICTIVE_PROVIDER_AUTH_AUDIENCE }}
         PREDICTIVE_PROVIDER_TIMEOUT_MS: ${{ secrets.PREDICTIVE_PROVIDER_TIMEOUT_MS }}
-        PREDICTIVE_RELIABILITY_CHECKPOINTS: ${{ secrets.PREDICTIVE_RELIABILITY_CHECKPOINTS }}
         PREDICTION_TASKS_QUEUE: ${{ secrets.PREDICTION_TASKS_QUEUE }}
         PREDICTION_TASKS_LOCATION: ${{ secrets.PREDICTION_TASKS_LOCATION }}
         PREDICTION_JOB_URL: ${{ secrets.PREDICTION_JOB_URL }}
@@ -85,99 +84,61 @@ jobs:
       env:
         SERVICE_URL: ${{ steps.get-url.outputs.service-url }}
         PREDICTIVE_PROVIDER_ENABLED: ${{ secrets.PREDICTIVE_PROVIDER_ENABLED }}
-        PREDICTIVE_RELIABILITY_CHECKPOINTS: ${{ secrets.PREDICTIVE_RELIABILITY_CHECKPOINTS }}
       run: |
         set -euo pipefail
 
         if [ "$PREDICTIVE_PROVIDER_ENABLED" != "true" ]; then
-          echo "Predictive provider is disabled; skipping predictive checkpoint smoke test."
+          echo "Predictive provider is disabled; skipping timeline prediction smoke test."
           exit 0
         fi
 
         RUN_ID="deploy-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-        AUTH_JSON="$(curl --fail --silent --show-error -X POST "$SERVICE_URL/auth/run/$RUN_ID?predictive_reliability=true")"
+        AUTH_JSON="$(curl --fail --silent --show-error -X POST "$SERVICE_URL/auth/run/$RUN_ID?prediction_mode=predict")"
         TOKEN="$(printf '%s' "$AUTH_JSON" | jq -r '.token')"
         if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
           echo "Auth response did not include a token."
           exit 1
         fi
 
-        # Ingest one elapsed sample at a time and wait for newly reached
-        # windows before continuing. Batching 30/60/180 in one request makes
-        # the private provider return skipped/"checkpoint already evaluated"
-        # for all but one window; progressive ingest matches live sampling.
-        CHECKPOINT_WINDOWS="${PREDICTIVE_RELIABILITY_CHECKPOINTS:-60,300,600,1200}"
-        EXPECTED_CHECKPOINTS="$(printf '%s' "$CHECKPOINT_WINDOWS" | jq -cR '
-          split(",")
-          | map(gsub("^\\s+|\\s+$"; ""))
-          | map(select(length > 0))
-          | map(tonumber? // empty)
-          | map(select(. <= 180))
-          | sort
-        ')"
-
+        # Progressive samples so timeline throttle can issue forecasts.
         samples=(
-          '30|00:00:30 | 101 | GradleDaemon | 128MB | 512MB | 700MB | 0.05s'
-          '60|00:01:00 | 101 | GradleDaemon | 160MB | 512MB | 760MB | 0.08s'
-          '180|00:03:00 | 101 | GradleDaemon | 220MB | 512MB | 850MB | 0.10s'
+          '00:00:20 | 101 | GradleDaemon | 128MB | 512MB | 700MB | 0.05s'
+          '00:00:40 | 101 | GradleDaemon | 160MB | 512MB | 760MB | 0.08s'
+          '00:01:00 | 101 | GradleDaemon | 220MB | 512MB | 850MB | 0.10s'
         )
         sample_count=0
-        for entry in "${samples[@]}"; do
-          elapsed="${entry%%|*}"
-          sample="${entry#*|}"
+        for sample in "${samples[@]}"; do
           sample_count=$((sample_count + 1))
-          reached="$(jq -cn --argjson expected "$EXPECTED_CHECKPOINTS" --argjson elapsed "$elapsed" '
-            [$expected[] | select(. <= $elapsed)]
-          ')"
-
-          jq -n \
-            --arg run_id "$RUN_ID" \
-            --arg data "$sample" \
-            '{run_id: $run_id, data: $data}' > /tmp/ingest-request.json
-
+          jq -n --arg run_id "$RUN_ID" --arg data "$sample" '{run_id: $run_id, data: $data}' > /tmp/ingest-request.json
           curl --fail --silent --show-error \
             -X POST "$SERVICE_URL/ingest" \
             -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
             --data @/tmp/ingest-request.json \
             | jq -e '.status == "success"'
-
-          ready=false
-          for attempt in $(seq 1 12); do
-            curl --fail --silent --show-error "$SERVICE_URL/runs/$RUN_ID" > /tmp/smoke-run.json
-            if jq -e --argjson reached "$reached" --argjson sample_count "$sample_count" '
-                (.samples | length) == $sample_count
-                and (
-                  [.prediction_checkpoints[]? | select(.status == "ready") | .observation_window_s]
-                  | sort
-                ) == ($reached | sort)
-              ' /tmp/smoke-run.json; then
-              ready=true
-              break
-            fi
-
-            echo "Waiting after ${elapsed}s sample (${attempt}/12): $(jq -r '
-              "samples=\(.samples | length), reached='"$reached"', checkpoints=\([(.prediction_checkpoints // [])[] | "\(.observation_window_s):\(.status):\(.message // "")"] | join("; "))"
-            ' /tmp/smoke-run.json)"
-            sleep 5
-          done
-
-          if [ "$ready" != true ]; then
-            echo "Predictive checkpoints did not become ready after ${elapsed}s sample."
-            jq -c '{
-              samples: (.samples | length),
-              reached: '"$reached"',
-              checkpoints: [.prediction_checkpoints[]? | {window: .observation_window_s, status, message, provider_id}]
-            }' /tmp/smoke-run.json
-            exit 1
-          fi
         done
 
-        jq -c --argjson expected "$EXPECTED_CHECKPOINTS" '{
-          samples: (.samples | length),
-          expected: $expected,
-          checkpoints: [.prediction_checkpoints[]? | {window: .observation_window_s, status, message}]
-        }' /tmp/smoke-run.json
+        ready=false
+        for attempt in $(seq 1 24); do
+          curl --fail --silent --show-error "$SERVICE_URL/runs/$RUN_ID" > /tmp/smoke-run.json
+          if jq -e --argjson sample_count "$sample_count" '
+              (.samples | length) == $sample_count
+              and ((.process_forecasts // []) | length) > 0
+            ' /tmp/smoke-run.json; then
+            ready=true
+            break
+          fi
+          echo "Waiting for process_forecasts (${attempt}/24): $(jq -r '"samples=\(.samples|length) forecasts=\((.process_forecasts // [])|length)"' /tmp/smoke-run.json)"
+          sleep 5
+        done
+
+        if [ "$ready" != true ]; then
+          echo "Timeline process_forecasts did not appear."
+          jq -c '{samples:(.samples|length), forecasts:((.process_forecasts // [])|length)}' /tmp/smoke-run.json
+          exit 1
+        fi
+
+        jq -c '{samples:(.samples|length), forecasts:((.process_forecasts // [])|length), methods:([.process_forecasts[]?.method]|unique)}' /tmp/smoke-run.json
 
     - name: Output service URL
       run: |

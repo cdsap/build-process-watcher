@@ -55,31 +55,21 @@ This is not required for normal local or remote monitoring. Use it only when you
 | `debug` | Enable debug logging | `false` | No |
 | `disable_summary_output` | Disable GitHub Actions summary output | `false` | No |
 | `export_to_bigquery` | Optional metrics export to BigQuery when Remote Mode finishes | `false` | No |
-| `prediction_mode` | Request `disabled`, `reliability`, `forecast`, or `predict` | `disabled` | No |
-| `predictive_reliability` | Opt in to advisory predictive reliability checkpoints; implies Remote Mode and BigQuery export | `false` | No |
+| `prediction_mode` | Request `disabled`, `forecast`, `predict`, or `bqml-boosted` | `disabled` | No |
 | `freshness_diagnostics` | Add opt-in collection-to-dashboard timing telemetry; implies Remote Mode | `false` | No |
 
 **Environment variables (for Remote Mode):** Set `BACKEND_URL` and `FRONTEND_URL` as env vars (e.g. from secrets) for custom URLs. If unset, default Cloud Run and dashboard URLs are used.
 
-**BigQuery export is optional:** It is only for collecting metrics in BigQuery. Set `export_to_bigquery: 'true'` together with `remote_monitoring: 'true'` when you want that export. Predictive reliability also requests BigQuery export automatically. The backend service must be configured with `BIGQUERY_EXPORT_DATASET`; optional table overrides are `BIGQUERY_EXPORT_TABLE` and `BIGQUERY_EXPORT_PROCESSES_TABLE`.
+**BigQuery export is optional:** It is only for collecting metrics in BigQuery. Set `export_to_bigquery: 'true'` together with `remote_monitoring: 'true'` when you want that export. The backend service must be configured with `BIGQUERY_EXPORT_DATASET`; optional table overrides are `BIGQUERY_EXPORT_TABLE` and `BIGQUERY_EXPORT_PROCESSES_TABLE`.
 
-**Predictive reliability is opt-in and advisory:** Public builds keep prediction disabled by default. Set `predictive_reliability: 'true'` when you want a run to request predictive reliability checkpoints; this automatically enables Remote Mode and requests BigQuery export for the run. Predictions are advisory signals for triage and should not be treated as guaranteed OOM, timeout, or failure outcomes.
 
-**Prediction mode selection:** Set `prediction_mode` to `reliability`, `forecast`, or `predict` to request a mode. Values are lowercase; an empty input defaults to `disabled`, unless the legacy `predictive_reliability: 'true'` selects `reliability`. The legacy input may be combined with `reliability`, but conflicts with any other explicit mode and fails configuration. Invalid modes also fail configuration. The `prediction_mode` output reports the selected request, not provider readiness.
+**Prediction mode selection:** Set `prediction_mode` to `forecast`, `predict`, or `bqml-boosted` to request a timeline forecast mode. Values are lowercase; an empty input defaults to `disabled`. Invalid modes fail configuration. The `prediction_mode` output reports the selected request, not provider readiness.
 
 **Freshness diagnostics are experimental and opt-in:** Set `freshness_diagnostics: 'true'` for a bounded live timing spike. Instrumented samples include collection, backend receipt, and backend storage timing; the run dashboard adds fetch/render timing, p50/p95 latency, sequence gaps, and a cross-host clock-skew warning. The option enables Remote Mode but does not enable prediction or BigQuery export.
 
-All requested modes enable Remote Mode. Reliability also requests BigQuery export, matching the legacy input; forecast and predict do not imply export. The backend records the requested mode, but forecast and predict are contract-only until compatible providers are available. They do not invoke the reliability provider or produce predictions. A disabled or unavailable reliability provider likewise does not prevent monitoring and may produce no checkpoints. Older backends may ignore the new mode, so they cannot support forecast or predict; older runs without a mode remain valid and their legacy reliability flag retains its meaning. No additional mode-specific inputs are required for this contract.
+Timeline modes (`forecast`, `predict`, `bqml-boosted`) enable Remote Mode. They do not imply BigQuery export. Set `export_to_bigquery: 'true'` separately when export is needed.
 
-When run data contains public-safe `prediction_checkpoints`, the dashboard renders those checkpoint records in observation-window order. The public contract intentionally omits non-public implementation details, exact checkpoint policy, training data, and service endpoints.
-
-**Relative-progress checkpoints (v2):** No public schema or dashboard change is required. Private providers may schedule evaluations by relative progress, but public run JSON continues to use the existing `prediction_checkpoints` fields keyed by `observation_window_s` (elapsed seconds at evaluation). Optional public-safe labels, if ever needed, can use existing `signals` or `message` without new required fields. Legacy runs that omit `prediction_checkpoints` remain valid.
-
-`PREDICTIVE_RELIABILITY_CHECKPOINTS` can set a comma-separated checkpoint window list. When a production provider is enabled and this value is empty, the backend uses `60,300,600,1200`.
-
-The public backend sends only public run telemetry to `/predict` and stores only the returned public-safe checkpoint. Do not add private model names, thresholds, feature formulas, training data paths, or customer-specific tuning to this repository or to public frontend config.
-
-The reusable workflow `.github/workflows/predictive-contract-smoke.yml` validates this public contract end to end. It runs the public action with `predictive_reliability: 'true'`, waits for the action post-step to finish the backend run, and verifies that the public backend stores samples plus ready expected checkpoints. Provider deployment pipelines can call this workflow after deploy without exposing private provider internals.
+When run data contains public-safe `process_forecasts`, the dashboard renders timeline forecast overlays. The public contract intentionally omits non-public implementation details, training data, and service endpoints.
 
 ---
 

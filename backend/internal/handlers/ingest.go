@@ -101,7 +101,7 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 			predictionqueue.LogScheduleError(req.RunID, err)
 		}
 	} else if h.predictionScheduler != nil {
-		log.Printf("Skipping prediction schedule for run %s (mode=%q reliability=%v)", req.RunID, mode, appendResult.PredictiveReliability)
+		log.Printf("Skipping prediction schedule for run %s (mode=%q)", req.RunID, mode)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

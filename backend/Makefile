@@ -27,7 +27,7 @@ build:
 
 # Deploy to Google Cloud Run
 # Optional: BIGQUERY_EXPORT_DATASET, BIGQUERY_EXPORT_TABLE, BIGQUERY_EXPORT_PROCESSES_TABLE — BigQuery export
-# Optional: PREDICTIVE_PROVIDER_ENABLED, PREDICTIVE_PROVIDER_URL, PREDICTIVE_PROVIDER_AUTH_AUDIENCE, PREDICTIVE_PROVIDER_TIMEOUT_MS, PREDICTIVE_RELIABILITY_CHECKPOINTS — private predictive provider integration
+# Optional: PREDICTIVE_PROVIDER_ENABLED/URL/AUTH_AUDIENCE and PREDICTIVE_*_PROVIDER_* — timeline forecast provider integration
 deploy:
 	@echo "Deploying to Google Cloud Run..."
 	@ENV_VARS="GOOGLE_CLOUD_PROJECT=$(GOOGLE_CLOUD_PROJECT)|JWT_SECRET_KEY=$(JWT_SECRET_KEY)|ADMIN_SECRET=$(ADMIN_SECRET)"; \
@@ -38,7 +38,6 @@ deploy:
 	if [ -n "$(PREDICTIVE_PROVIDER_URL)" ]; then ENV_VARS="$$ENV_VARS|PREDICTIVE_PROVIDER_URL=$(PREDICTIVE_PROVIDER_URL)"; fi; \
 	if [ -n "$(PREDICTIVE_PROVIDER_AUTH_AUDIENCE)" ]; then ENV_VARS="$$ENV_VARS|PREDICTIVE_PROVIDER_AUTH_AUDIENCE=$(PREDICTIVE_PROVIDER_AUTH_AUDIENCE)"; fi; \
 	if [ -n "$(PREDICTIVE_PROVIDER_TIMEOUT_MS)" ]; then ENV_VARS="$$ENV_VARS|PREDICTIVE_PROVIDER_TIMEOUT_MS=$(PREDICTIVE_PROVIDER_TIMEOUT_MS)"; fi; \
-	if [ -n "$(PREDICTIVE_RELIABILITY_CHECKPOINTS)" ]; then ENV_VARS="$$ENV_VARS|PREDICTIVE_RELIABILITY_CHECKPOINTS=$(PREDICTIVE_RELIABILITY_CHECKPOINTS)"; fi; \
 	if [ -n "$(PREDICTION_TASKS_QUEUE)" ]; then ENV_VARS="$$ENV_VARS|PREDICTION_TASKS_QUEUE=$(PREDICTION_TASKS_QUEUE)"; fi; \
 	if [ -n "$(PREDICTION_TASKS_LOCATION)" ]; then ENV_VARS="$$ENV_VARS|PREDICTION_TASKS_LOCATION=$(PREDICTION_TASKS_LOCATION)"; fi; \
 	if [ -n "$(PREDICTION_JOB_URL)" ]; then ENV_VARS="$$ENV_VARS|PREDICTION_JOB_URL=$(PREDICTION_JOB_URL)"; fi; \
@@ -73,7 +72,7 @@ test-coverage:
 # Run integration tests
 test-integration:
 	@echo "Running integration tests..."
-	@bazel test //:backend_test --test_filter=TestFullAPIIntegration
+	@bazel test //pkg/server:server_test --test_filter=TestProductionMux
 
 # Run all tests (unit + integration)
 test-all: test test-race test-integration

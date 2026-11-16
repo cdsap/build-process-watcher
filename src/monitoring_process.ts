@@ -27,7 +27,6 @@ export interface MonitoringProcessLaunchInputs {
   defaultLogFile: boolean;
   debugMode: boolean;
   exportToBigquery: boolean;
-  predictiveReliability: boolean;
   predictionMode: PredictionMode;
   freshnessDiagnostics: boolean;
   enableBackend: boolean;
@@ -56,7 +55,6 @@ export function createMonitoringProcessLaunchPlan(
       DEBUG_MODE: inputs.debugMode.toString(),
       REMOTE_MONITORING: inputs.enableBackend && inputs.backendUrl ? 'true' : 'false',
       EXPORT_TO_BIGQUERY: inputs.exportToBigquery ? 'true' : 'false',
-      PREDICTIVE_RELIABILITY: inputs.predictiveReliability ? 'true' : 'false',
       PREDICTION_MODE: inputs.predictionMode,
       FRESHNESS_DIAGNOSTICS: inputs.freshnessDiagnostics ? 'true' : 'false',
       COLLECT_GC: 'true',

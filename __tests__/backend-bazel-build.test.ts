@@ -28,7 +28,7 @@ describe('backend Bazel build integration', () => {
     expect(read('backend/.bazelversion').trim()).toBe('latest');
     expect(buildFiles.join('\n')).toContain('name = "server"');
     expect(buildFiles.join('\n')).toContain('importpath = "github.com/cdsap/build-process-watcher/backend/pkg/server"');
-    expect(buildFiles.filter((contents) => contents.includes('go_test('))).toHaveLength(11);
+    expect(buildFiles.filter((contents) => contents.includes('go_test('))).toHaveLength(10);
   });
 
   it('uses Bazel in local, container, and CI build paths', () => {

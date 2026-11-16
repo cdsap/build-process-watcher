@@ -22,7 +22,7 @@ describe('public homepage content', () => {
   it('labels prediction as experimental and states its limits', () => {
     expect(homepage).toContain('id="prediction"');
     expect(homepage).toContain('Experimental');
-    expect(homepage).toContain("predictive_reliability: 'true'");
+    expect(homepage).toContain("prediction_mode: 'predict'");
     expect(homepage).toContain('disabled by default');
     expect(homepage).toContain('implies Remote Mode and requests BigQuery export');
     expect(homepage).toContain('advisory signal for triage');

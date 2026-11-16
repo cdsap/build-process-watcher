@@ -12,7 +12,6 @@ type PredictionMode string
 const (
 	PredictionModeUnset       PredictionMode = ""
 	PredictionModeDisabled    PredictionMode = "disabled"
-	PredictionModeReliability PredictionMode = "reliability"
 	PredictionModeForecast    PredictionMode = "forecast"
 	PredictionModePredict     PredictionMode = "predict"
 	PredictionModeBQMLBoosted PredictionMode = "bqml-boosted"
@@ -22,7 +21,7 @@ const (
 func ParsePredictionMode(raw string) (PredictionMode, bool) {
 	mode := PredictionMode(strings.TrimSpace(raw))
 	switch mode {
-	case PredictionModeUnset, PredictionModeDisabled, PredictionModeReliability,
+	case PredictionModeUnset, PredictionModeDisabled,
 		PredictionModeForecast, PredictionModePredict, PredictionModeBQMLBoosted:
 		return mode, true
 	default:
@@ -30,7 +29,7 @@ func ParsePredictionMode(raw string) (PredictionMode, bool) {
 	}
 }
 
-// Normalize returns a canonical mode for evaluation (unknown → unset).
+// NormalizePredictionMode returns a canonical mode for evaluation (unknown → unset).
 func NormalizePredictionMode(raw string) PredictionMode {
 	mode, ok := ParsePredictionMode(raw)
 	if !ok {
@@ -55,10 +54,6 @@ func (m PredictionMode) String() string {
 }
 
 // ShouldEnqueuePrediction reports whether ingest should schedule a prediction job.
-// Unset/disabled modes skip the queue; reliability and timeline modes enqueue.
-func ShouldEnqueuePrediction(mode PredictionMode, predictiveReliability bool) bool {
-	if predictiveReliability || mode == PredictionModeReliability {
-		return true
-	}
+func ShouldEnqueuePrediction(mode PredictionMode, _ bool) bool {
 	return mode.IsTimeline()
 }

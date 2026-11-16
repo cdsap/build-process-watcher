@@ -27,16 +27,12 @@ inputs:
     required: false
     default: 'false'
   export_to_bigquery:
-    description: "Optional metrics export: when true and remote_monitoring is true, ask the backend to export this run's samples to BigQuery when the run finishes; also enabled by predictive_reliability (requires BIGQUERY_EXPORT_DATASET on the backend service)"
+    description: "Optional metrics export: when true and remote_monitoring is true, ask the backend to export this run's samples to BigQuery when the run finishes (requires BIGQUERY_EXPORT_DATASET on the backend service)"
     required: false
     default: 'false'
   prediction_mode:
-    description: 'Prediction request: disabled, reliability, forecast, predict, or bqml-boosted (default disabled; legacy predictive_reliability=true selects reliability)'
+    description: 'Prediction request: disabled, forecast, predict, or bqml-boosted (default disabled)'
     required: false
-  predictive_reliability:
-    description: "Opt in to advisory predictive reliability checkpoints; this enables remote_monitoring and export_to_bigquery for the run when the hosted backend supports predictions"
-    required: false
-    default: 'false'
   freshness_diagnostics:
     description: 'Opt in to live collection-to-dashboard timing diagnostics; enables remote monitoring and adds per-sample timing metadata'
     required: false
@@ -55,8 +51,6 @@ outputs:
     description: 'Whether optional BigQuery metrics export was requested for this run (backend must be configured with BIGQUERY_EXPORT_DATASET)'
   prediction_mode:
     description: 'Selected prediction mode; a request does not imply provider availability'
-  predictive_reliability:
-    description: 'Whether advisory predictive reliability checkpoints were requested for this run'
   freshness_diagnostics:
     description: 'Whether live collection-to-dashboard timing diagnostics were enabled'
 

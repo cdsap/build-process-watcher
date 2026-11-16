@@ -55,15 +55,15 @@ describe('prediction view model', () => {
       { observation_window_s: 60, status: 'ready' },
       { observation_window_s: 120, status: 'error' },
     ]);
-    expect(view.render({ prediction_checkpoints: checkpoints }, null).selectedWindow).toBe(60);
-    expect(view.render({ prediction_checkpoints: checkpoints }, 120).selectedWindow).toBe(120);
-    expect(view.render({ prediction_checkpoints: [{ observation_window_s: 60, status: 'pending' }] }, null).selectedWindow).toBe(60);
+    // Checkpoint panels are retired; render ignores stored checkpoints.
+    expect(view.render({ prediction_checkpoints: checkpoints }, null).selectedWindow).toBeNull();
+    expect(view.render({ prediction_checkpoints: checkpoints }, 120).selectedWindow).toBeNull();
   });
 
-  it('renders unavailable values without converting them to zero', () => {
+  it('does not render retired reliability checkpoint panels', () => {
     const rendered = view.render({ prediction_checkpoints: [{ observation_window_s: 60, status: 'ready' }] }, null).html;
-    expect(rendered).toContain('Not available');
-    expect(rendered).not.toContain('0 MB');
+    expect(rendered).not.toContain('Latest prediction');
+    expect(rendered).not.toContain('Checkpoint details');
   });
 
   it('aligns observed RSS to the latest sample at or before the checkpoint', () => {
@@ -85,41 +85,20 @@ describe('prediction view model', () => {
     ])).toBe(40);
   });
 
-  it('builds timestamp-axis prediction markers with status and risk details', () => {
+  it('returns empty marker overlays after reliability retirement', () => {
     const markers = view.buildMarkerData([
-      {
-        observation_window_s: 60,
-        status: 'ready',
-        risk_level: 'high',
-        confidence: 'medium',
-        predicted_peak_rss_mb: 512,
-        predicted_duration_s: 180,
-        signals: ['heap pressure', '<unsafe>'],
-      },
-      { observation_window_s: 120, status: 'pending' },
-    ], [1000, 121000]);
-
-    expect(markers.traces).toHaveLength(1);
-    expect(markers.traces[0].x).toEqual([new Date(61000), new Date(121000)]);
-    expect(markers.traces[0].customdata).toEqual([60, 120]);
-    expect(markers.traces[0].marker.color).toEqual(['#dc2626', '#94a3b8']);
-    expect(markers.traces[0].text[0]).toContain('Predicted peak RSS: 512.0 MB');
-    expect(markers.traces[0].text[0]).toContain('Top signals: heap pressure, &lt;unsafe&gt;');
-    expect(markers.annotations.map((annotation: any) => annotation.text)).toEqual(['P 60s', 'pending 120s']);
+      { observation_window_s: 60, status: 'ready', risk_level: 'high' },
+    ], [0, 60_000]);
+    expect(markers).toEqual({ shapes: [], annotations: [], traces: [] });
   });
 
-  it('supports elapsed axes and ignores unusable marker input', () => {
-    expect(view.buildMarkerData([], [1000])).toEqual({ shapes: [], annotations: [], traces: [] });
-    expect(view.buildMarkerData([{ observation_window_s: 'bad' }], [1000])).toEqual({ shapes: [], annotations: [], traces: [] });
 
-    const markers = view.buildMarkerData(
-      [{ observation_window_s: 60, status: 'ready', risk_level: 'low' }],
-      [1000],
-      { axisMode: 'elapsed' },
-    );
-    expect(markers.traces[0].x).toEqual([60]);
-    expect(markers.shapes[0]).toEqual(expect.objectContaining({ x0: 60, x1: 60 }));
+  it('supports elapsed axes by returning empty overlays', () => {
+    expect(view.buildMarkerData([{ observation_window_s: 60, status: 'ready' }], [0, 60], { axis: 'elapsed' }))
+      .toEqual({ shapes: [], annotations: [], traces: [] });
+    expect(view.buildMarkerData(null, [0, 60])).toEqual({ shapes: [], annotations: [], traces: [] });
   });
+
 });
 
 describe('per-process memory forecasts', () => {
@@ -463,7 +442,7 @@ describe('per-process memory forecasts', () => {
   it('ignores malformed data and leaves legacy and pending runs usable', () => {
     expect(() => view.render({ samples, process_forecasts: [{ process_name: 'GradleDaemon', pid: 1, metric: 'heap', created_at_ms: 1e20, points: [] }] }, null)).not.toThrow();
     expect(view.render({ samples }, null).html).not.toContain('Process memory forecasts');
-    expect(view.render({ predictionEnabled: true }, null).html).toContain('Waiting for first checkpoint');
+    expect(view.render({ predictionEnabled: true }, null).html).not.toContain('Waiting for first checkpoint');
   });
 
   it('has no local setTimeout frame scheduler for forecast playback', () => {

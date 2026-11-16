@@ -6,7 +6,7 @@
 
 1. `POST /ingest` → `StoreSamples` → `Cloud Tasks CreateTask` (~ms) → `200`
 2. Cloud Tasks → `POST /internal/prediction-jobs` with `X-BPW-Prediction-Job-Token`
-3. Job handler runs `CheckpointEvaluator` + `ForecastEvaluator`
+3. Job handler runs `ForecastEvaluator` (timeline process forecasts)
 
 ## Required secrets / env (Deploy Backend)
 

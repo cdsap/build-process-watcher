@@ -8,11 +8,6 @@ on:
         required: false
         default: https://build-process-watcher-backend-685615422311.us-central1.run.app
         type: string
-      expected_checkpoints:
-        description: Ready checkpoint windows to require (subset of production defaults 60,300,600,1200 reachable within run_seconds)
-        required: false
-        default: 60,300,600,1200
-        type: string
       action_ref:
         description: Build Process Watcher ref to test
         required: false
@@ -21,12 +16,17 @@ on:
       run_seconds:
         description: Synthetic GradleDaemon runtime in seconds
         required: false
-        default: '1250'
+        default: '90'
         type: string
       interval:
         description: Monitor interval in seconds
         required: false
         default: '2'
+        type: string
+      prediction_mode:
+        description: Timeline prediction mode (forecast, predict, or bqml-boosted)
+        required: false
+        default: predict
         type: string
   workflow_call:
     inputs:
@@ -35,11 +35,6 @@ on:
         required: false
         default: https://build-process-watcher-backend-685615422311.us-central1.run.app
         type: string
-      expected_checkpoints:
-        description: Ready checkpoint windows to require (subset of production defaults 60,300,600,1200 reachable within run_seconds)
-        required: false
-        default: 60,300,600,1200
-        type: string
       action_ref:
         description: Build Process Watcher ref to test
         required: false
@@ -48,12 +43,17 @@ on:
       run_seconds:
         description: Synthetic GradleDaemon runtime in seconds
         required: false
-        default: '1250'
+        default: '90'
         type: string
       interval:
         description: Monitor interval in seconds
         required: false
         default: '2'
+        type: string
+      prediction_mode:
+        description: Timeline prediction mode (forecast, predict, or bqml-boosted)
+        required: false
+        default: predict
         type: string
     outputs:
       bpw_run_id:
@@ -94,7 +94,7 @@ jobs:
         env:
           BACKEND_URL: ${{ inputs.backend_url }}
         with:
-          predictive_reliability: 'true'
+          prediction_mode: ${{ inputs.prediction_mode }}
           interval: ${{ inputs.interval }}
           debug: 'true'
           run_id: ${{ steps.run-id.outputs.bpw_run_id }}
@@ -105,8 +105,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          if ! [[ "$RUN_SECONDS" =~ ^[0-9]+$ ]] || [ "$RUN_SECONDS" -lt 180 ]; then
-            echo "run_seconds must be an integer >= 180."
+          if ! [[ "$RUN_SECONDS" =~ ^[0-9]+$ ]] || [ "$RUN_SECONDS" -lt 40 ]; then
+            echo "run_seconds must be an integer >= 40."
             exit 1
           fi
 
@@ -136,37 +136,22 @@ jobs:
     needs: run-public-action
 
     steps:
-      - name: Verify finished run and ready checkpoints
+      - name: Verify finished run and process forecasts
         env:
           BACKEND_URL: ${{ inputs.backend_url }}
           BPW_RUN_ID: ${{ needs.run-public-action.outputs.bpw_run_id }}
-          EXPECTED_CHECKPOINTS: ${{ inputs.expected_checkpoints }}
         run: |
           set -euo pipefail
-
-          expected_checkpoints="$(jq -Rc '
-            split(",")
-            | map(gsub("^\\s+|\\s+$"; ""))
-            | map(select(length > 0))
-            | map(tonumber? // empty)
-          ' <<<"$EXPECTED_CHECKPOINTS")"
 
           for attempt in {1..60}; do
             if curl --fail --silent --show-error "$BACKEND_URL/runs/$BPW_RUN_ID" > /tmp/predictive-contract-run.json; then
               if jq -e \
-                --argjson expected_checkpoints "$expected_checkpoints" \
                 '.finished == true
                   and (.samples | type == "array" and length > 0)
-                  and ([
-                    .prediction_checkpoints[]?
-                    | select(.status == "ready")
-                    | .observation_window_s
-                  ] | sort) as $ready
-                  | ($expected_checkpoints | sort) as $expected
-                  | all($expected[]; . as $checkpoint | $ready | index($checkpoint))' \
+                  and ((.process_forecasts // []) | length) > 0' \
                 /tmp/predictive-contract-run.json; then
                 jq \
-                  '{finished, finished_at, sample_count: (.samples | length), checkpoints: [.prediction_checkpoints[]? | {window: .observation_window_s, status, risk: .risk_level, score: .risk_score}]}' \
+                  '{finished, finished_at, sample_count: (.samples | length), forecast_count: ((.process_forecasts // []) | length), methods: ([.process_forecasts[]?.method] | unique), prediction_mode}' \
                   /tmp/predictive-contract-run.json
                 exit 0
               fi
@@ -176,8 +161,8 @@ jobs:
             sleep 10
           done
 
-          echo "Predictive contract smoke did not produce a finished BPW run with ready checkpoints."
+          echo "Predictive contract smoke did not produce a finished BPW run with process_forecasts."
           jq \
-            '{finished, finished_at, sample_count: (.samples | length), checkpoints: [.prediction_checkpoints[]? | {window: .observation_window_s, status, risk: .risk_level, score: .risk_score}]}' \
+            '{finished, finished_at, sample_count: (.samples | length), forecast_count: ((.process_forecasts // []) | length), prediction_mode}' \
             /tmp/predictive-contract-run.json || true
           exit 1

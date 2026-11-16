@@ -105,78 +105,8 @@
     }
 
     function buildMarkerData(checkpoints, timestamps, options = {}) {
-        if (!Array.isArray(checkpoints) || !checkpoints.length || !Array.isArray(timestamps) || !timestamps.length) {
-            return { shapes: [], annotations: [], traces: [] };
-        }
-        const firstTimestamp = Number(timestamps[0]);
-        const elapsedAxis = options.axisMode === 'elapsed';
-        if (!elapsedAxis && !Number.isFinite(firstTimestamp)) {
-            return { shapes: [], annotations: [], traces: [] };
-        }
-        const markers = checkpoints
-            .map(checkpoint => {
-                const windowSeconds = Number(checkpoint?.observation_window_s);
-                if (!Number.isFinite(windowSeconds) || windowSeconds < 0) return null;
-                const status = checkpoint.status || 'unknown';
-                const ready = status === 'ready';
-                const color = markerColor(checkpoint);
-                return {
-                    checkpoint,
-                    windowSeconds,
-                    status,
-                    ready,
-                    color,
-                    x: elapsedAxis ? windowSeconds : new Date(firstTimestamp + windowSeconds * 1000),
-                    label: ready ? `P ${windowSeconds}s` : `${status} ${windowSeconds}s`
-                };
-            })
-            .filter(Boolean);
-        if (!markers.length) return { shapes: [], annotations: [], traces: [] };
-        return {
-            shapes: markers.map(marker => ({
-                type: 'line',
-                xref: 'x',
-                yref: 'paper',
-                x0: marker.x,
-                x1: marker.x,
-                y0: 0,
-                y1: 1,
-                line: { color: marker.color, width: marker.ready ? 2 : 1, dash: 'dot' },
-                opacity: marker.ready ? 0.85 : 0.45
-            })),
-            annotations: markers.map(marker => ({
-                x: marker.x,
-                y: 1.02,
-                xref: 'x',
-                yref: 'paper',
-                text: escapeHtml(marker.label),
-                showarrow: false,
-                font: { size: 11, color: marker.color },
-                bgcolor: 'rgba(255,255,255,0.86)',
-                bordercolor: marker.color,
-                borderwidth: 1,
-                borderpad: 2
-            })),
-            traces: [{
-                x: markers.map(marker => marker.x),
-                y: markers.map(() => 0.98),
-                yaxis: 'y2',
-                type: 'scatter',
-                mode: 'markers',
-                name: 'Prediction checkpoints',
-                marker: {
-                    symbol: 'triangle-down',
-                    size: markers.map(marker => marker.ready ? 12 : 10),
-                    color: markers.map(marker => marker.color),
-                    line: { color: '#ffffff', width: 1 }
-                },
-                text: markers.map(marker => markerHoverText(marker.checkpoint)),
-                hoverinfo: 'text',
-                hovertemplate: '%{text}<extra>Prediction checkpoint</extra>',
-                customdata: markers.map(marker => marker.windowSeconds),
-                showlegend: true
-            }]
-        };
+        // Reliability checkpoint markers are retired.
+        return { shapes: [], annotations: [], traces: [] };
     }
 
     function observedAtCheckpoint(samples, checkpoint) {
@@ -869,38 +799,8 @@
     }
 
     function render(data, selectedWindow) {
-        const processTimelines = renderProcessTimelines(data);
-        const checkpoints = normalizeCheckpoints(data?.prediction_checkpoints);
-        const selected = selectCheckpoint(checkpoints, selectedWindow);
-        const latest = latestReady(checkpoints);
-        const selectedObserved = observedAtCheckpoint(data?.samples, selected);
-        const ready = checkpoints.filter(checkpoint => statusOf(checkpoint) === 'ready');
-        const peakRows = evolution(ready, 'predicted_peak_rss_mb', 'MB');
-        const durationRows = evolution(ready, 'predicted_duration_s', 's');
-        const timeline = checkpoints.length ? `<div class="prediction-timeline" role="list" aria-label="Prediction evaluation timeline">${checkpoints.map((checkpoint) => {
-            const status = statusOf(checkpoint);
-            const risk = riskOf(checkpoint);
-            const isSelected = selected?.observation_window_s === checkpoint.observation_window_s;
-            return `<button type="button" role="listitem" class="prediction-event status-${status}${isSelected ? ' is-selected' : ''}" aria-pressed="${isSelected ? 'true' : 'false'}" data-prediction-window="${checkpoint.observation_window_s}" aria-label="Prediction checkpoint at ${escapeHtml(formatElapsed(checkpoint.observation_window_s))}, status ${escapeHtml(status)}${status === 'ready' ? `, risk ${escapeHtml(risk)}` : ''}"><span class="prediction-event-time">${escapeHtml(formatElapsed(checkpoint.observation_window_s))}</span><span class="prediction-event-status">${escapeHtml(status)}</span><span class="prediction-event-risk">${status === 'ready' ? escapeHtml(risk) : 'Unavailable'}</span></button>`;
-        }).join('')}</div>` : '';
-
-        if (!checkpoints.length) {
-            const enabled = data?.predictionEnabled === true || processTimelines !== '';
-            return { selectedWindow: null, html: `${processTimelines}<section class="prediction-empty" aria-label="Prediction checkpoints"><span class="bpw-panel-badge">Predictions</span><h2>${enabled ? 'Waiting for first checkpoint' : 'No prediction checkpoints'}</h2><p>${enabled ? 'Predictions will appear here as observation windows complete.' : 'This legacy run does not contain prediction checkpoints.'}</p></section>` };
-        }
-
-        const summaryCheckpoint = latest;
-        const summary = summaryCheckpoint ? `<section class="prediction-summary prediction-panel"><div><span class="bpw-panel-badge">Latest prediction</span><h2>Latest prediction</h2><p>At ${escapeHtml(formatElapsed(summaryCheckpoint.observation_window_s))} into build</p></div><div class="prediction-summary-metrics"><div><span>Risk</span><strong class="risk-${escapeHtml(riskOf(summaryCheckpoint))}">${escapeHtml(riskOf(summaryCheckpoint))}</strong></div><div><span>Confidence</span><strong>${escapeHtml(summaryCheckpoint.confidence || 'Not available')}</strong></div><div><span>Peak RSS</span><strong>${formatValue(summaryCheckpoint.predicted_peak_rss_mb, 'MB')}</strong></div><div><span>Duration</span><strong>${formatValue(summaryCheckpoint.predicted_duration_s, 's')}</strong></div></div><small>${ready.length} of ${checkpoints.length} checkpoints ready. Predictions are advisory, not guaranteed outcomes.</small></section>` : `<section class="prediction-summary prediction-panel"><h2>No prediction available yet</h2><p>The stored checkpoints have not produced a ready prediction.</p></section>`;
-
-        const selectedStatus = statusOf(selected);
-        const selectedSignals = Array.isArray(selected?.signals) ? selected.signals : [];
-        const details = selected ? `<section class="prediction-details-panel prediction-panel"><div class="prediction-panel-head"><div><span class="bpw-panel-badge">Checkpoint details</span><h2>At ${escapeHtml(formatElapsed(selected.observation_window_s))}</h2></div><span class="prediction-status">${escapeHtml(selectedStatus)}</span></div><div class="prediction-detail-grid"><div><span>Status</span><strong>${escapeHtml(selectedStatus)}</strong></div><div><span>Risk</span><strong>${selectedStatus === 'ready' ? escapeHtml(riskOf(selected)) : 'Unavailable'}</strong></div><div><span>Risk score</span><strong>${formatValue(selected.risk_score, '')}</strong></div><div><span>Confidence</span><strong>${escapeHtml(selected.confidence || 'Not available')}</strong></div><div><span>Predicted peak RSS</span><strong>${formatValue(selected.predicted_peak_rss_mb, 'MB')}</strong></div><div><span>Predicted duration</span><strong>${formatValue(selected.predicted_duration_s, 's')}</strong></div></div>${selectedSignals.length ? `<div class="prediction-signals"><strong>Signals</strong>${selectedSignals.slice(0, 4).map(signal => `<span>${escapeHtml(signal)}</span>`).join('')}${selectedSignals.length > 4 ? `<details><summary>More signals</summary>${selectedSignals.slice(4).map(signal => `<span>${escapeHtml(signal)}</span>`).join('')}</details>` : ''}</div>` : ''}${selected.message && (selectedStatus === 'error' || selectedStatus === 'skipped') ? `<p class="prediction-message">${escapeHtml(selected.message)}</p>` : ''}${selectedObserved ? `<div class="prediction-observed"><strong>Observed at checkpoint</strong><span>Aggregate RSS at ${escapeHtml(formatElapsed((selectedObserved.timestamp - Math.min(...data.samples.map(sample => Number(sample.Timestamp)))) / 1000))}: ${formatValue(selectedObserved.rss, 'MB')}</span></div>` : '<div class="prediction-observed"><strong>Observed at checkpoint</strong><span>Not available</span></div>'}<div class="prediction-detail-actions"><button type="button" class="btn secondary" data-prediction-chart-window="${selected.observation_window_s}">View on memory chart</button>${selected.provider_id || selected.model_version ? `<details><summary>Details</summary><span>${selected.provider_id ? `Provider: ${escapeHtml(selected.provider_id)}` : ''}${selected.model_version ? ` Model: ${escapeHtml(selected.model_version)}` : ''}</span></details>` : ''}</div></section>` : '';
-        const riskRows = ready.length ? `<div class="prediction-evolution-row"><div><strong>Risk progression</strong><span>Discrete evaluation labels</span></div><div class="prediction-evolution-values">${ready.map(checkpoint => `<button type="button" class="prediction-evolution-value" data-prediction-window="${checkpoint.observation_window_s}"><span>${escapeHtml(formatElapsed(checkpoint.observation_window_s))}</span><strong>${escapeHtml(riskOf(checkpoint))}</strong></button>`).join('')}</div></div>` : '';
-        const elapsedValues = (data?.samples || []).map(sample => finiteNumber(sample?.ElapsedTime)).filter(value => value !== null);
-        const observedPeakRss = peakAggregateRss(data?.samples);
-        const outcome = data?.finished === true ? `<section class="prediction-panel prediction-outcome"><div class="prediction-panel-head"><div><span class="bpw-panel-badge">Final observed outcome</span><h2>Completed run</h2></div></div><div class="prediction-detail-grid"><div><span>Observed duration</span><strong>${formatElapsed(elapsedValues.length ? Math.max(...elapsedValues) : null)}</strong></div><div><span>Observed peak RSS</span><strong>${formatValue(observedPeakRss, 'MB')}</strong></div></div><p>Observed values are shown separately; no accuracy or error claim is made without confirmed metric comparability.</p></section>` : '<section class="prediction-panel prediction-outcome"><h2>Final observed outcome</h2><p>Pending completion.</p></section>';
-
-        return { selectedWindow: selected?.observation_window_s ?? null, html: `${processTimelines}${summary}<section class="prediction-panel"><div class="prediction-panel-head"><div><span class="bpw-panel-badge">Evolution</span><h2>Prediction evolution</h2></div><span class="prediction-panel-meta">${ready.length} of ${checkpoints.length} ready</span></div>${timeline}</section>${details}<section class="prediction-panel prediction-evolution"><div class="prediction-panel-head"><div><span class="bpw-panel-badge">Changes</span><h2>How estimates changed</h2></div></div>${renderMetricRow('Predicted peak RSS', peakRows, 'MB')}${renderMetricRow('Predicted duration', durationRows, 's')}${riskRows || '<p>Not enough ready checkpoints to show evolution.</p>'}</section>${outcome}` };
+        // Reliability checkpoint panels are retired; timeline modes use process forecasts only.
+        return { selectedWindow: null, html: renderProcessTimelines(data) };
     }
 
     window.BpwPredictionView = {
