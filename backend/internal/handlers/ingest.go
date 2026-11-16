@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -10,7 +11,6 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/internal/ingest"
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
 	"github.com/cdsap/build-process-watcher/backend/internal/predictionqueue"
-	"github.com/cdsap/build-process-watcher/backend/internal/storage"
 )
 
 // Ingest receives and stores monitoring data
@@ -64,65 +64,54 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var startTime time.Time
-	runDoc, err := h.storage.GetRun(r.Context(), req.RunID)
-	if err != nil {
-		if storage.IsNotFound(err) {
-			startTime = time.Now()
-			log.Printf("New run, using current time as StartTime: %v", startTime)
-		} else {
-			log.Printf("Error getting run document: %v", err)
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
-			return
+	var maxElapsed int
+	appendResult, err := h.storage.AppendSamples(r.Context(), req.RunID, func(startTime time.Time) ([]models.Sample, error) {
+		samples, err := ingest.ParseData(req.Data, startTime)
+		if err != nil {
+			return nil, err
 		}
-	} else {
-		startTime = runDoc.StartTime
-		if startTime.IsZero() {
-			startTime = time.Now()
-			log.Printf("Run %s had no StartTime yet; using current time: %v", req.RunID, startTime)
+		if req.Freshness != nil {
+			if len(samples) != 1 || !validFreshness(req.Freshness) {
+				return nil, errInvalidFreshness
+			}
+			samples[0].Freshness = &models.FreshnessTiming{
+				SampleID:                req.Freshness.SampleID,
+				Sequence:                req.Freshness.Sequence,
+				CollectedAtUnixMs:       req.Freshness.CollectedAtUnixMs,
+				BackendReceivedAtUnixMs: requestReceivedAt.UnixMilli(),
+				BackendReceivedAt:       requestReceivedAt,
+			}
 		}
-		log.Printf("Using existing StartTime: %v", startTime)
-	}
-
-	samples, err := ingest.ParseData(req.Data, startTime)
+		maxElapsed = maxSampleElapsed(samples)
+		return samples, nil
+	})
 	if err != nil {
-		log.Printf("Failed to parse data: %v", err)
-		http.Error(w, "Invalid data format", http.StatusBadRequest)
-		return
-	}
-	if req.Freshness != nil {
-		if len(samples) != 1 || !validFreshness(req.Freshness) {
+		if errors.Is(err, errInvalidFreshness) {
 			http.Error(w, "Invalid freshness metadata", http.StatusBadRequest)
 			return
 		}
-		samples[0].Freshness = &models.FreshnessTiming{
-			SampleID:                req.Freshness.SampleID,
-			Sequence:                req.Freshness.Sequence,
-			CollectedAtUnixMs:       req.Freshness.CollectedAtUnixMs,
-			BackendReceivedAtUnixMs: requestReceivedAt.UnixMilli(),
-			BackendReceivedAt:       requestReceivedAt,
-		}
-	}
-
-	if err := h.storage.StoreSamples(r.Context(), req.RunID, samples); err != nil {
 		log.Printf("Failed to store samples: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	maxElapsed := maxSampleElapsed(samples)
-	if h.predictionScheduler != nil {
+	mode := models.NormalizePredictionMode(appendResult.PredictionMode)
+	if h.predictionScheduler != nil && models.ShouldEnqueuePrediction(mode, appendResult.PredictiveReliability) {
 		if err := h.predictionScheduler.Schedule(r.Context(), req.RunID, maxElapsed); err != nil {
 			predictionqueue.LogScheduleError(req.RunID, err)
 		}
+	} else if h.predictionScheduler != nil {
+		log.Printf("Skipping prediction schedule for run %s (mode=%q reliability=%v)", req.RunID, mode, appendResult.PredictiveReliability)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(map[string]string{"status": "success", "samples": fmt.Sprintf("%d", len(samples))}); err != nil {
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "success", "samples": fmt.Sprintf("%d", appendResult.Count)}); err != nil {
 		log.Printf("Failed to encode ingest response for run %s: %v", req.RunID, err)
 	}
 }
+
+var errInvalidFreshness = fmt.Errorf("invalid freshness metadata")
 
 func maxSampleElapsed(samples []models.Sample) int {
 	maxElapsed := 0
