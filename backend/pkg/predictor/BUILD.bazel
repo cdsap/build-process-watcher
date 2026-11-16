@@ -6,6 +6,7 @@ go_library(
         "forecast.go",
         "predictor.go",
         "remote.go",
+        "remote_client.go",
     ],
     importpath = "github.com/cdsap/build-process-watcher/backend/pkg/predictor",
     visibility = ["//visibility:public"],
@@ -19,6 +20,7 @@ go_test(
     name = "predictor_test",
     srcs = [
         "predictor_test.go",
+        "remote_client_test.go",
         "remote_test.go",
     ],
     embed = [":predictor"],
