@@ -119,17 +119,28 @@ func (c *Client) GetRunWithContext(ctx context.Context, runID string) (*models.R
 
 // StoreSamples appends samples for a run using a transaction + MergeAll so
 // concurrent checkpoint/forecast/finish writers cannot be wiped by a full Set.
-func (c *Client) StoreSamples(runID string, samples []models.Sample) error {
+// When hint.AvoidFullReload is set (ingest already called GetRun), samples are
+// appended with ArrayUnion and the second full-document decode is skipped.
+func (c *Client) StoreSamples(runID string, samples []models.Sample, hint SampleAppendHint) error {
 	log.Printf("🔄 Storing %d samples for run ID: %s", len(samples), runID)
 
 	doc := c.firestore.Collection("runs").Doc(runID)
 	err := c.firestore.RunTransaction(c.ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		now := time.Now()
+		if hint.AvoidFullReload {
+			fields := sampleAppendFields(runID, samples, now, hint)
+			if hint.Prior != nil {
+				log.Printf("📄 Appending without full reload (prior had %d samples)", len(hint.Prior.Samples))
+			} else {
+				log.Printf("📄 Creating/appending without full reload for run ID: %s", runID)
+			}
+			return tx.Set(doc, fields, firestore.MergeAll)
+		}
 		existing, err := readRunDocInTx(tx, doc)
 		if err != nil {
 			return err
 		}
-		now := time.Now()
-		fields := sampleStoreFields(runID, existing, samples, now)
+		fields := sampleStoreFieldsWithStart(runID, existing, samples, now, hint.StartTime)
 		if existing != nil {
 			log.Printf("📄 Found existing document with %d samples", len(existing.Samples))
 		} else {

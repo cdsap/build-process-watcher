@@ -160,6 +160,60 @@ func TestSampleStoreFieldsOmitsPredictionAndFinishKeys(t *testing.T) {
 	}
 }
 
+func TestSampleStoreFieldsUsesKnownStartTimeForNewRun(t *testing.T) {
+	now := time.Unix(1_700_000_050, 0)
+	known := time.Unix(1_700_000_000, 0)
+	fields := sampleStoreFieldsWithStart("run-new", nil, []models.Sample{{PID: "1"}}, now, known)
+	got, ok := fields["start_time"].(time.Time)
+	if !ok || !got.Equal(known) {
+		t.Fatalf("start_time = %#v, want %v", fields["start_time"], known)
+	}
+}
+
+func TestSampleAppendFieldsAvoidsFullSampleRewrite(t *testing.T) {
+	now := time.Unix(1_700_000_100, 0)
+	known := time.Unix(1_700_000_000, 0)
+	prior := &models.RunDoc{
+		StartTime: known,
+		CreatedAt: known,
+		Samples:   []models.Sample{{PID: "old", RSS: 1}},
+	}
+	incoming := []models.Sample{{PID: "new", RSS: 2}}
+
+	fields := sampleAppendFields("run-1", incoming, now, SampleAppendHint{
+		StartTime:       known,
+		Prior:           prior,
+		AvoidFullReload: true,
+	})
+
+	if key := containsReservedRunWriteKey(fields); key != "" {
+		t.Fatalf("append fields write reserved key %q", key)
+	}
+	if _, hasStart := fields["start_time"]; hasStart {
+		t.Fatal("should not rewrite existing start_time on append path")
+	}
+	if _, isSlice := fields["samples"].([]models.Sample); isSlice {
+		t.Fatal("append path must not rewrite the full samples slice")
+	}
+	typeName := fmt.Sprintf("%T", fields["samples"])
+	if !strings.Contains(typeName, "arrayUnion") {
+		t.Fatalf("samples type = %s, want firestore arrayUnion transform", typeName)
+	}
+}
+
+func TestSampleAppendFieldsSetsStartTimeWhenPriorMissing(t *testing.T) {
+	now := time.Unix(1_700_000_100, 0)
+	known := time.Unix(1_700_000_000, 0)
+	fields := sampleAppendFields("run-new", []models.Sample{{PID: "1"}}, now, SampleAppendHint{
+		StartTime:       known,
+		AvoidFullReload: true,
+	})
+	got, ok := fields["start_time"].(time.Time)
+	if !ok || !got.Equal(known) {
+		t.Fatalf("start_time = %#v, want %v", fields["start_time"], known)
+	}
+}
+
 func TestSampleStoreFieldsStampsFreshnessInOneWrite(t *testing.T) {
 	now := time.Unix(1_700_000_100, 0)
 	received := now.Add(-40 * time.Millisecond)

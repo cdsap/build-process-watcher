@@ -3,8 +3,23 @@ package storage
 import (
 	"time"
 
+	"cloud.google.com/go/firestore"
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
 )
+
+// SampleAppendHint carries the ingest GetRun snapshot so StoreSamples can append
+// without decoding the full samples array a second time.
+type SampleAppendHint struct {
+	// StartTime is the run clock already chosen for ParseData.
+	StartTime time.Time
+	// Prior is the GetRun document, or nil when the run did not exist yet.
+	Prior *models.RunDoc
+	// AvoidFullReload skips the transactional full-document read when the
+	// caller already holds Prior/StartTime from ingest. Sample appends use
+	// ArrayUnion so concurrent ingests do not clobber each other; prediction
+	// and finish fields remain untouched via MergeAll key isolation.
+	AvoidFullReload bool
+}
 
 // reservedRunWriteKeys must never appear in sample/checkpoint/forecast merge maps,
 // so concurrent writers cannot clobber sibling fields via a full document Set.
@@ -23,6 +38,10 @@ var reservedRunWriteKeys = map[string]struct{}{
 // identity/timestamp metadata. Prediction and finish fields are intentionally
 // omitted so a concurrent checkpoint/forecast write cannot be wiped.
 func sampleStoreFields(runID string, existing *models.RunDoc, incoming []models.Sample, now time.Time) map[string]interface{} {
+	return sampleStoreFieldsWithStart(runID, existing, incoming, now, time.Time{})
+}
+
+func sampleStoreFieldsWithStart(runID string, existing *models.RunDoc, incoming []models.Sample, now, knownStart time.Time) map[string]interface{} {
 	base := []models.Sample(nil)
 	if existing != nil {
 		base = existing.Samples
@@ -43,9 +62,44 @@ func sampleStoreFields(runID string, existing *models.RunDoc, incoming []models.
 		"updated_at_timestamp": ToMillis(now),
 	}
 	if existing == nil || existing.StartTime.IsZero() {
-		fields["start_time"] = now
+		start := knownStart
+		if start.IsZero() {
+			start = now
+		}
+		fields["start_time"] = start
 	}
 	if existing == nil || existing.CreatedAt.IsZero() {
+		fields["created_at"] = now
+	}
+	return fields
+}
+
+// sampleAppendFields builds a MergeAll payload that appends via ArrayUnion so
+// StoreSamples does not need to decode the existing samples array.
+func sampleAppendFields(runID string, incoming []models.Sample, now time.Time, hint SampleAppendHint) map[string]interface{} {
+	if hasFreshness(incoming) && len(incoming) > 0 {
+		stampFreshnessStored(incoming, now)
+	}
+	elems := make([]interface{}, len(incoming))
+	for i := range incoming {
+		elems[i] = incoming[i]
+	}
+	fields := map[string]interface{}{
+		"id":                   runID,
+		"run_id":               runID,
+		"samples":              firestore.ArrayUnion(elems...),
+		"updated_at":           now,
+		"updated_at_timestamp": ToMillis(now),
+	}
+	prior := hint.Prior
+	if prior == nil || prior.StartTime.IsZero() {
+		start := hint.StartTime
+		if start.IsZero() {
+			start = now
+		}
+		fields["start_time"] = start
+	}
+	if prior == nil || prior.CreatedAt.IsZero() {
 		fields["created_at"] = now
 	}
 	return fields

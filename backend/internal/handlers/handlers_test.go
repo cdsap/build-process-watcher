@@ -32,6 +32,7 @@ type fakeStorage struct {
 	storedSamples         []models.Sample
 	storedProcessInfo     []models.ProcessInfo
 	finishedRuns          []string
+	lastSampleHint storage.SampleAppendHint
 }
 
 type fakeExporter struct {
@@ -71,10 +72,15 @@ func (f *fakeStorage) GetProcesses(runID string) (*models.ProcessDoc, error) {
 	return processes, nil
 }
 
-func (f *fakeStorage) StoreSamples(runID string, samples []models.Sample) error {
+func (f *fakeStorage) StoreSamples(runID string, samples []models.Sample, hint storage.SampleAppendHint) error {
+	f.lastSampleHint = hint
 	f.storedSamples = append(f.storedSamples, samples...)
 	if _, ok := f.runs[runID]; !ok {
-		f.runs[runID] = &models.RunDoc{RunID: runID, StartTime: time.Now()}
+		start := hint.StartTime
+		if start.IsZero() {
+			start = time.Now()
+		}
+		f.runs[runID] = &models.RunDoc{RunID: runID, StartTime: start}
 	}
 	f.runs[runID].Samples = append(f.runs[runID].Samples, samples...)
 	return nil
@@ -396,8 +402,14 @@ func TestIngestUsesStoragePortWithoutFirestore(t *testing.T) {
 
 func TestIngestSchedulesPredictionWithoutRunningIt(t *testing.T) {
 	store := newFakeStorage()
-	h := NewHandlers(store, nil)
 	const runID = "run-ingest-schedule"
+	startTime := time.Unix(1_700_000_000, 0)
+	store.runs[runID] = &models.RunDoc{
+		RunID:          runID,
+		StartTime:      startTime,
+		PredictionMode: "predict",
+	}
+	h := NewHandlers(store, nil)
 	token, _, err := auth.GenerateToken(runID)
 	if err != nil {
 		t.Fatalf("GenerateToken failed: %v", err)
@@ -437,6 +449,98 @@ func TestIngestSchedulesPredictionWithoutRunningIt(t *testing.T) {
 	}
 	if len(store.storedSamples) != 1 {
 		t.Fatalf("stored samples = %d, want 1", len(store.storedSamples))
+	}
+	if !store.lastSampleHint.AvoidFullReload || store.lastSampleHint.Prior == nil || !store.lastSampleHint.StartTime.Equal(startTime) {
+		t.Fatalf("sample hint = %#v, want AvoidFullReload with prior start time", store.lastSampleHint)
+	}
+}
+
+func TestIngestSkipsPredictionScheduleWhenModeDisabled(t *testing.T) {
+	cases := []struct {
+		name       string
+		run        *models.RunDoc
+		wantSched  bool
+		wantLogSub string
+	}{
+		{
+			name:       "missing run",
+			run:        nil,
+			wantSched:  false,
+			wantLogSub: "reason=mode_disabled",
+		},
+		{
+			name:       "empty mode",
+			run:        &models.RunDoc{RunID: "run-disabled", StartTime: time.Unix(1, 0)},
+			wantSched:  false,
+			wantLogSub: "reason=mode_disabled",
+		},
+		{
+			name:       "disabled mode",
+			run:        &models.RunDoc{RunID: "run-disabled", StartTime: time.Unix(1, 0), PredictionMode: "disabled"},
+			wantSched:  false,
+			wantLogSub: "reason=mode_disabled",
+		},
+		{
+			name:      "reliability mode",
+			run:       &models.RunDoc{RunID: "run-rel", StartTime: time.Unix(1, 0), PredictionMode: "reliability"},
+			wantSched: true,
+		},
+		{
+			name:      "legacy predictive reliability flag",
+			run:       &models.RunDoc{RunID: "run-legacy", StartTime: time.Unix(1, 0), PredictiveReliability: true},
+			wantSched: true,
+		},
+		{
+			name:      "forecast mode",
+			run:       &models.RunDoc{RunID: "run-forecast", StartTime: time.Unix(1, 0), PredictionMode: "forecast"},
+			wantSched: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newFakeStorage()
+			runID := "run-disabled"
+			if tc.run != nil {
+				runID = tc.run.RunID
+				store.runs[runID] = tc.run
+			}
+			h := NewHandlers(store, nil)
+			token, _, err := auth.GenerateToken(runID)
+			if err != nil {
+				t.Fatalf("GenerateToken failed: %v", err)
+			}
+
+			var scheduled atomic.Bool
+			h.SetPredictionScheduler(predictionqueue.Func(func(context.Context, string, int) error {
+				scheduled.Store(true)
+				return nil
+			}), "job-secret")
+
+			var logBuf bytes.Buffer
+			prev := log.Writer()
+			log.SetOutput(&logBuf)
+			defer log.SetOutput(prev)
+
+			body := fmt.Sprintf(`{"run_id":%q,"data":"00:00:40 | 12345 | GradleDaemon | 100MB | 200MB | 300MB"}`, runID)
+			req := httptest.NewRequest(http.MethodPost, "/ingest", strings.NewReader(body))
+			req.Header.Set("Authorization", "Bearer "+token)
+			recorder := httptest.NewRecorder()
+			h.Ingest(recorder, req)
+
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
+			}
+			if scheduled.Load() != tc.wantSched {
+				t.Fatalf("scheduled=%v want %v", scheduled.Load(), tc.wantSched)
+			}
+			if tc.wantLogSub != "" && !strings.Contains(logBuf.String(), tc.wantLogSub) {
+				t.Fatalf("log missing %q; got %s", tc.wantLogSub, logBuf.String())
+			}
+			if !store.lastSampleHint.AvoidFullReload {
+				t.Fatal("expected AvoidFullReload hint on ingest StoreSamples")
+			}
+		})
 	}
 }
 

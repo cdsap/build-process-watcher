@@ -11,6 +11,7 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/internal/prediction"
 	"github.com/cdsap/build-process-watcher/backend/internal/predictionqueue"
 	"github.com/cdsap/build-process-watcher/backend/internal/runlifecycle"
+	"github.com/cdsap/build-process-watcher/backend/internal/storage"
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
 
@@ -39,7 +40,7 @@ type Handlers struct {
 type Storage interface {
 	GetRun(runID string) (*models.RunDoc, error)
 	GetProcesses(runID string) (*models.ProcessDoc, error)
-	StoreSamples(runID string, samples []models.Sample) error
+	StoreSamples(runID string, samples []models.Sample, hint storage.SampleAppendHint) error
 	StoreProcessInfo(runID string, processInfo models.ProcessInfo) error
 	StorePredictionCheckpoint(runID string, checkpoint models.PredictionCheckpoint) error
 	AppendProcessForecasts(runID string, forecasts []models.ProcessForecast) error

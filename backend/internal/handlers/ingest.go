@@ -68,6 +68,7 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if storage.IsNotFound(err) {
 			startTime = time.Now()
+			runDoc = nil
 			log.Printf("New run, using current time as StartTime: %v", startTime)
 		} else {
 			log.Printf("Error getting run document: %v", err)
@@ -103,7 +104,12 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := h.storage.StoreSamples(req.RunID, samples); err != nil {
+	hint := storage.SampleAppendHint{
+		StartTime:       startTime,
+		Prior:           runDoc,
+		AvoidFullReload: true,
+	}
+	if err := h.storage.StoreSamples(req.RunID, samples, hint); err != nil {
 		log.Printf("Failed to store samples: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
@@ -111,8 +117,12 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 
 	maxElapsed := maxSampleElapsed(samples)
 	if h.predictionScheduler != nil {
-		if err := h.predictionScheduler.Schedule(r.Context(), req.RunID, maxElapsed); err != nil {
-			predictionqueue.LogScheduleError(req.RunID, err)
+		if predictionScheduleEnabled(runDoc) {
+			if err := h.predictionScheduler.Schedule(r.Context(), req.RunID, maxElapsed); err != nil {
+				predictionqueue.LogScheduleError(req.RunID, err)
+			}
+		} else {
+			log.Printf("prediction schedule skipped run=%s reason=mode_disabled", req.RunID)
 		}
 	}
 
@@ -131,6 +141,23 @@ func maxSampleElapsed(samples []models.Sample) int {
 		}
 	}
 	return maxElapsed
+}
+
+// predictionScheduleEnabled is true when the run opted into reliability or a
+// timeline prediction mode. Disabled / empty mode must not enqueue Cloud Tasks.
+func predictionScheduleEnabled(run *models.RunDoc) bool {
+	if run == nil {
+		return false
+	}
+	if run.PredictiveReliability {
+		return true
+	}
+	switch run.PredictionMode {
+	case "reliability", "forecast", "predict", "bqml-boosted":
+		return true
+	default:
+		return false
+	}
 }
 
 func validFreshness(value *models.IngestFreshness) bool {
