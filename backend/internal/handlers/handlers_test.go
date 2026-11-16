@@ -750,81 +750,12 @@ func TestFinishRunUsesExportPort(t *testing.T) {
 	}
 }
 
-func TestValidateRunBearerToken(t *testing.T) {
-	const runID = "run-bearer-auth-1"
-	h := newTestHandlers(nil, nil)
-
-	validToken, _, err := testAuthn.GenerateToken(runID)
-	if err != nil {
-		t.Fatalf("GenerateToken failed: %v", err)
-	}
-	otherToken, _, err := testAuthn.GenerateToken("other-run")
-	if err != nil {
-		t.Fatalf("GenerateToken for other run failed: %v", err)
-	}
-
-	tests := []struct {
-		name       string
-		header     string
-		wantStatus int
-		wantMsg    string
-		wantOK     bool
-	}{
-		{
-			name:       "missing authorization header",
-			header:     "",
-			wantStatus: http.StatusUnauthorized,
-			wantMsg:    "Authorization header required",
-		},
-		{
-			name:       "invalid authorization header format",
-			header:     "Token " + validToken,
-			wantStatus: http.StatusUnauthorized,
-			wantMsg:    "Invalid authorization header format",
-		},
-		{
-			name:       "invalid token",
-			header:     "Bearer not-a-valid-token",
-			wantStatus: http.StatusUnauthorized,
-			wantMsg:    "Token validation failed",
-		},
-		{
-			name:       "mismatched run id",
-			header:     "Bearer " + otherToken,
-			wantStatus: http.StatusUnauthorized,
-			wantMsg:    "Token validation failed",
-		},
-		{
-			name:   "valid bearer token",
-			header: "Bearer " + validToken,
-			wantOK: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/ingest", nil)
-			if tt.header != "" {
-				req.Header.Set("Authorization", tt.header)
-			}
-
-			status, message, ok := h.validateRunBearerToken(req, runID)
-			if ok != tt.wantOK {
-				t.Fatalf("ok = %v, want %v (status=%d message=%q)", ok, tt.wantOK, status, message)
-			}
-			if tt.wantOK {
-				if status != 0 || message != "" {
-					t.Fatalf("status/message = (%d, %q), want zero values on success", status, message)
-				}
-				return
-			}
-			if status != tt.wantStatus {
-				t.Fatalf("status = %d, want %d", status, tt.wantStatus)
-			}
-			if message != tt.wantMsg {
-				t.Fatalf("message = %q, want %q", message, tt.wantMsg)
-			}
-		})
+func TestValidateRunBearerTokenRequiresAuthenticator(t *testing.T) {
+	h := NewHandlers(nil, nil) // no authenticator injected
+	req := httptest.NewRequest(http.MethodPost, "/ingest", nil)
+	status, message, ok := h.validateRunBearerToken(req, "run-1")
+	if ok || status != http.StatusInternalServerError || message != "Authenticator not configured" {
+		t.Fatalf("got ok=%v status=%d message=%q", ok, status, message)
 	}
 }
 

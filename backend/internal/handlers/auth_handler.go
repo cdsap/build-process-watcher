@@ -11,38 +11,15 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
 )
 
-// validateRunBearerToken verifies the Authorization Bearer token for a run write.
+// validateRunBearerToken adapts auth.ValidateRunBearer for HTTP handlers.
 // Callers write the HTTP response using the returned status and message when ok is false.
 func (h *Handlers) validateRunBearerToken(r *http.Request, runID string) (status int, message string, ok bool) {
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" {
-		log.Printf("No authorization header provided for run_id: %s from %s", runID, r.RemoteAddr)
-		return http.StatusUnauthorized, "Authorization header required", false
-	}
-
-	tokenParts := strings.Split(authHeader, " ")
-	if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
-		log.Printf("Invalid authorization header format for run_id: %s from %s", runID, r.RemoteAddr)
-		return http.StatusUnauthorized, "Invalid authorization header format", false
-	}
-
-	token := tokenParts[1]
 	if h == nil || h.authn == nil {
 		log.Printf("Authenticator not configured for run_id: %s", runID)
 		return http.StatusInternalServerError, "Authenticator not configured", false
 	}
-	valid, err := h.authn.ValidateToken(token, runID)
-	if err != nil {
-		log.Printf("Token validation failed for run_id: %s: %v", runID, err)
-		return http.StatusUnauthorized, "Token validation failed", false
-	}
-
-	if !valid {
-		log.Printf("Invalid token for run_id: %s from %s", runID, r.RemoteAddr)
-		return http.StatusUnauthorized, "Invalid token", false
-	}
-
-	return 0, "", true
+	result := h.authn.ValidateRunBearer(r, runID)
+	return result.Status, result.Message, result.OK
 }
 
 // Auth generates a JWT token for a run

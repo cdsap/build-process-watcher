@@ -93,6 +93,43 @@ func (a *Authenticator) RequireAdminAuth(r *http.Request) bool {
 	return subtle.ConstantTimeCompare([]byte(provided), a.adminSecret) == 1
 }
 
+// BearerResult is the HTTP-facing outcome of ValidateRunBearer.
+// Callers map Status/Message into responses when OK is false.
+type BearerResult struct {
+	Status  int
+	Message string
+	OK      bool
+}
+
+// ValidateRunBearer verifies Authorization: Bearer <token> for runID.
+// Policy (header shape, token checks, public messages, failure logs) lives here
+// so HTTP handlers stay adapters. A nil Authenticator is not handled; callers
+// must check configuration before invoking.
+func (a *Authenticator) ValidateRunBearer(r *http.Request, runID string) BearerResult {
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		log.Printf("No authorization header provided for run_id: %s from %s", runID, r.RemoteAddr)
+		return BearerResult{Status: http.StatusUnauthorized, Message: "Authorization header required"}
+	}
+
+	tokenParts := strings.Split(authHeader, " ")
+	if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
+		log.Printf("Invalid authorization header format for run_id: %s from %s", runID, r.RemoteAddr)
+		return BearerResult{Status: http.StatusUnauthorized, Message: "Invalid authorization header format"}
+	}
+
+	valid, err := a.ValidateToken(tokenParts[1], runID)
+	if err != nil {
+		log.Printf("Token validation failed for run_id: %s: %v", runID, err)
+		return BearerResult{Status: http.StatusUnauthorized, Message: "Token validation failed"}
+	}
+	if !valid {
+		log.Printf("Invalid token for run_id: %s from %s", runID, r.RemoteAddr)
+		return BearerResult{Status: http.StatusUnauthorized, Message: "Invalid token"}
+	}
+	return BearerResult{OK: true}
+}
+
 // GenerateToken generates a JWT-like HMAC token for a specific run.
 func (a *Authenticator) GenerateToken(runID string) (string, time.Time, error) {
 	if a == nil {
