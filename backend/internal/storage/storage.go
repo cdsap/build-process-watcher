@@ -107,14 +107,38 @@ func (c *Client) GetRun(ctx context.Context, runID string) (*models.RunDoc, erro
 	return &runDoc, nil
 }
 
-// StoreSamples appends samples for a run using a transaction + MergeAll so
-// concurrent checkpoint/forecast/finish writers cannot be wiped by a full Set.
-func (c *Client) StoreSamples(ctx context.Context, runID string, samples []models.Sample) error {
-	log.Printf("🔄 Storing %d samples for run ID: %s", len(samples), runID)
+// SampleBuildFunc builds samples once the run start_time is known from the
+// transactional read (or time.Now for a new run).
+type SampleBuildFunc func(startTime time.Time) ([]models.Sample, error)
 
+// SampleAppendResult summarizes one AppendSamples call after a single read.
+type SampleAppendResult struct {
+	Count                 int
+	PredictionMode        string
+	PredictiveReliability bool
+}
+
+// AppendSamples reads the run once inside a transaction, builds samples with the
+// resolved start_time, then MergeAll-appends them. Callers that previously did
+// GetRun + ParseData + StoreSamples should use this to avoid the double full read.
+func (c *Client) AppendSamples(ctx context.Context, runID string, build SampleBuildFunc) (*SampleAppendResult, error) {
+	if build == nil {
+		return nil, fmt.Errorf("sample build func is required")
+	}
+	log.Printf("🔄 Appending samples for run ID: %s", runID)
+
+	result := &SampleAppendResult{}
 	doc := c.firestore.Collection("runs").Doc(runID)
 	err := c.firestore.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		existing, err := readRunDocInTx(tx, doc)
+		if err != nil {
+			return err
+		}
+		startTime := time.Now()
+		if existing != nil && !existing.StartTime.IsZero() {
+			startTime = existing.StartTime
+		}
+		samples, err := build(startTime)
 		if err != nil {
 			return err
 		}
@@ -122,9 +146,12 @@ func (c *Client) StoreSamples(ctx context.Context, runID string, samples []model
 		fields := sampleStoreFields(runID, existing, samples, now)
 		if existing != nil {
 			log.Printf("📄 Found existing document with %d samples", len(existing.Samples))
+			result.PredictionMode = existing.PredictionMode
+			result.PredictiveReliability = existing.PredictiveReliability
 		} else {
 			log.Printf("📄 Creating new document for run ID: %s", runID)
 		}
+		result.Count = len(samples)
 		if merged, ok := fields["samples"].([]models.Sample); ok {
 			log.Printf("📊 Document now has %d samples total", len(merged))
 		}
@@ -132,11 +159,19 @@ func (c *Client) StoreSamples(ctx context.Context, runID string, samples []model
 	})
 	if err != nil {
 		log.Printf("❌ Error saving document to Firestore: %v", err)
-		return err
+		return nil, err
 	}
 
-	log.Printf("✅ Successfully stored %d samples for run ID: %s", len(samples), runID)
-	return nil
+	log.Printf("✅ Successfully stored %d samples for run ID: %s", result.Count, runID)
+	return result, nil
+}
+
+// StoreSamples appends already-parsed samples (tests and callers that own timestamps).
+func (c *Client) StoreSamples(ctx context.Context, runID string, samples []models.Sample) error {
+	_, err := c.AppendSamples(ctx, runID, func(time.Time) ([]models.Sample, error) {
+		return samples, nil
+	})
+	return err
 }
 
 func hasFreshness(samples []models.Sample) bool {

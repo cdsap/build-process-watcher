@@ -53,3 +53,12 @@ func (m PredictionMode) IsTimeline() bool {
 func (m PredictionMode) String() string {
 	return string(m)
 }
+
+// ShouldEnqueuePrediction reports whether ingest should schedule a prediction job.
+// Unset/disabled modes skip the queue; reliability and timeline modes enqueue.
+func ShouldEnqueuePrediction(mode PredictionMode, predictiveReliability bool) bool {
+	if predictiveReliability || mode == PredictionModeReliability {
+		return true
+	}
+	return mode.IsTimeline()
+}

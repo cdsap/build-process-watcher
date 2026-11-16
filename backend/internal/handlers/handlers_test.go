@@ -74,13 +74,27 @@ func (f *fakeStorage) GetProcesses(ctx context.Context, runID string) (*models.P
 	return processes, nil
 }
 
-func (f *fakeStorage) StoreSamples(_ context.Context, runID string, samples []models.Sample) error {
-	f.storedSamples = append(f.storedSamples, samples...)
-	if _, ok := f.runs[runID]; !ok {
-		f.runs[runID] = &models.RunDoc{RunID: runID, StartTime: time.Now()}
+func (f *fakeStorage) AppendSamples(_ context.Context, runID string, build storage.SampleBuildFunc) (*storage.SampleAppendResult, error) {
+	existing := f.runs[runID]
+	startTime := time.Now()
+	if existing != nil && !existing.StartTime.IsZero() {
+		startTime = existing.StartTime
 	}
-	f.runs[runID].Samples = append(f.runs[runID].Samples, samples...)
-	return nil
+	samples, err := build(startTime)
+	if err != nil {
+		return nil, err
+	}
+	f.storedSamples = append(f.storedSamples, samples...)
+	if existing == nil {
+		existing = &models.RunDoc{RunID: runID, StartTime: startTime}
+		f.runs[runID] = existing
+	}
+	existing.Samples = append(existing.Samples, samples...)
+	return &storage.SampleAppendResult{
+		Count:                 len(samples),
+		PredictionMode:        existing.PredictionMode,
+		PredictiveReliability: existing.PredictiveReliability,
+	}, nil
 }
 
 func (f *fakeStorage) StoreProcessInfo(_ context.Context, runID string, processInfo models.ProcessInfo) error {
@@ -399,8 +413,13 @@ func TestIngestUsesStoragePortWithoutFirestore(t *testing.T) {
 
 func TestIngestSchedulesPredictionWithoutRunningIt(t *testing.T) {
 	store := newFakeStorage()
-	h := NewHandlers(store, nil)
 	const runID = "run-ingest-schedule"
+	store.runs[runID] = &models.RunDoc{
+		RunID:          runID,
+		StartTime:      time.Unix(1_700_000_000, 0),
+		PredictionMode: "predict",
+	}
+	h := NewHandlers(store, nil)
 	token, _, err := auth.GenerateToken(runID)
 	if err != nil {
 		t.Fatalf("GenerateToken failed: %v", err)
@@ -440,6 +459,55 @@ func TestIngestSchedulesPredictionWithoutRunningIt(t *testing.T) {
 	}
 	if len(store.storedSamples) != 1 {
 		t.Fatalf("stored samples = %d, want 1", len(store.storedSamples))
+	}
+}
+
+func TestIngestSkipsPredictionScheduleWhenModeDisabled(t *testing.T) {
+	cases := []struct {
+		name         string
+		mode         string
+		reliability  bool
+		wantSchedule bool
+	}{
+		{name: "unset", mode: "", wantSchedule: false},
+		{name: "disabled", mode: "disabled", wantSchedule: false},
+		{name: "predict", mode: "predict", wantSchedule: true},
+		{name: "reliability flag", reliability: true, wantSchedule: true},
+		{name: "reliability mode", mode: "reliability", wantSchedule: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newFakeStorage()
+			runID := "run-skip-" + tc.name
+			store.runs[runID] = &models.RunDoc{
+				RunID:                 runID,
+				StartTime:             time.Unix(1_700_000_000, 0),
+				PredictionMode:        tc.mode,
+				PredictiveReliability: tc.reliability,
+			}
+			h := NewHandlers(store, nil)
+			token, _, err := auth.GenerateToken(runID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var scheduled atomic.Bool
+			h.SetPredictionScheduler(predictionqueue.Func(func(context.Context, string, int) error {
+				scheduled.Store(true)
+				return nil
+			}), "job-secret")
+
+			body := fmt.Sprintf(`{"run_id":%q,"data":"00:00:10 | 1 | Proc | 1MB | 2MB | 3MB"}`, runID)
+			req := httptest.NewRequest(http.MethodPost, "/ingest", strings.NewReader(body))
+			req.Header.Set("Authorization", "Bearer "+token)
+			rec := httptest.NewRecorder()
+			h.Ingest(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+			if scheduled.Load() != tc.wantSchedule {
+				t.Fatalf("scheduled=%v, want %v", scheduled.Load(), tc.wantSchedule)
+			}
+		})
 	}
 }
 
