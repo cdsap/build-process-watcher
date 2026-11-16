@@ -161,7 +161,10 @@ func Build(ctx context.Context, options Options, deps Deps) (*App, error) {
 		return nil, errors.New("GOOGLE_CLOUD_PROJECT environment variable is required")
 	}
 
-	auth.Initialize()
+	authenticator, err := auth.NewFromEnv()
+	if err != nil {
+		return nil, err
+	}
 
 	newBQ := deps.NewBigQuery
 	if newBQ == nil {
@@ -220,6 +223,7 @@ func Build(ctx context.Context, options Options, deps Deps) (*App, error) {
 		log.Printf("🔮 Process bqml-boosted provider enabled")
 	}
 	h := handlers.NewHandlersWithPredictor(storageClient, exportSched, provider, options.PredictionCheckpoints, options.FallbackClassifier, forecastProvider, tabPredictProvider, bqmlBoostedProvider)
+	h.SetAuthenticator(authenticator)
 
 	newSched := deps.NewPredictionScheduler
 	if newSched == nil {
@@ -231,7 +235,7 @@ func Build(ctx context.Context, options Options, deps Deps) (*App, error) {
 	}
 	h.SetPredictionScheduler(predictionSched, options.PredictionJobToken)
 
-	cleanupService := cleanup.NewService(storageClient, exportSched)
+	cleanupService := cleanup.NewService(storageClient, exportSched, authenticator)
 	mux := NewMux(h, cleanupService)
 	port := portOrDefault(options.Port)
 

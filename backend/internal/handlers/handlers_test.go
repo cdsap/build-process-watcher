@@ -144,8 +144,15 @@ func (f *fakeStorage) MarkRunAsFinished(_ context.Context, runID string) (bool, 
 	return true, nil
 }
 
+var testAuthn = auth.NewForTest("handlers-test-jwt", "handlers-test-admin")
+
+func newTestHandlers(store Storage, export Exporter) *Handlers {
+	h := NewHandlers(store, export)
+	h.SetAuthenticator(testAuthn)
+	return h
+}
+
 func TestMain(m *testing.M) {
-	auth.Initialize()
 	os.Exit(m.Run())
 }
 
@@ -192,8 +199,8 @@ func TestIngestDoesNotLogAuthorizationHeader(t *testing.T) {
 	defer log.SetOutput(prev)
 
 	storage := newFakeStorage()
-	h := NewHandlers(storage, nil)
-	token, _, err := auth.GenerateToken("run-ingest-log")
+	h := newTestHandlers(storage, nil)
+	token, _, err := testAuthn.GenerateToken("run-ingest-log")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -374,7 +381,7 @@ func TestNewHandlersWithPredictorWiresCheckpointEvaluator(t *testing.T) {
 
 func TestAuthUsesStoragePortForRunOptions(t *testing.T) {
 	store := newFakeStorage()
-	h := NewHandlers(store, nil)
+	h := newTestHandlers(store, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/auth/run/run-auth?export_to_bigquery=true&predictive_reliability=true", nil)
 	recorder := httptest.NewRecorder()
@@ -390,9 +397,9 @@ func TestAuthUsesStoragePortForRunOptions(t *testing.T) {
 
 func TestIngestUsesStoragePortWithoutFirestore(t *testing.T) {
 	store := newFakeStorage()
-	h := NewHandlers(store, nil)
+	h := newTestHandlers(store, nil)
 	const runID = "run-ingest"
-	token, _, err := auth.GenerateToken(runID)
+	token, _, err := testAuthn.GenerateToken(runID)
 	if err != nil {
 		t.Fatalf("GenerateToken failed: %v", err)
 	}
@@ -419,8 +426,8 @@ func TestIngestSchedulesPredictionWithoutRunningIt(t *testing.T) {
 		StartTime:      time.Unix(1_700_000_000, 0),
 		PredictionMode: "predict",
 	}
-	h := NewHandlers(store, nil)
-	token, _, err := auth.GenerateToken(runID)
+	h := newTestHandlers(store, nil)
+	token, _, err := testAuthn.GenerateToken(runID)
 	if err != nil {
 		t.Fatalf("GenerateToken failed: %v", err)
 	}
@@ -485,8 +492,8 @@ func TestIngestSkipsPredictionScheduleWhenModeDisabled(t *testing.T) {
 				PredictionMode:        tc.mode,
 				PredictiveReliability: tc.reliability,
 			}
-			h := NewHandlers(store, nil)
-			token, _, err := auth.GenerateToken(runID)
+			h := newTestHandlers(store, nil)
+			token, _, err := testAuthn.GenerateToken(runID)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -513,7 +520,7 @@ func TestIngestSkipsPredictionScheduleWhenModeDisabled(t *testing.T) {
 
 func TestEvaluatePredictionJobRequiresToken(t *testing.T) {
 	store := newFakeStorage()
-	h := NewHandlers(store, nil)
+	h := newTestHandlers(store, nil)
 	h.SetPredictionScheduler(predictionqueue.Noop{}, "job-secret")
 
 	okReq := httptest.NewRequest(http.MethodPost, "/internal/prediction-jobs", strings.NewReader(`{"run_id":"run-job"}`))
@@ -533,9 +540,9 @@ func TestEvaluatePredictionJobRequiresToken(t *testing.T) {
 
 func TestIngestAttachesFreshnessReceiptMetadata(t *testing.T) {
 	store := newFakeStorage()
-	h := NewHandlers(store, nil)
+	h := newTestHandlers(store, nil)
 	const runID = "run-freshness"
-	token, _, err := auth.GenerateToken(runID)
+	token, _, err := testAuthn.GenerateToken(runID)
 	if err != nil {
 		t.Fatalf("GenerateToken failed: %v", err)
 	}
@@ -574,7 +581,7 @@ func TestGetRunUsesStoragePort(t *testing.T) {
 			"12345": {PID: "12345", Name: "GradleDaemon", VMFlags: []string{"-Xmx2g"}},
 		},
 	}
-	h := NewHandlers(store, nil)
+	h := newTestHandlers(store, nil)
 	recorder := httptest.NewRecorder()
 	h.GetRun(recorder, httptest.NewRequest(http.MethodGet, "/runs/run-retrieve", nil))
 
@@ -594,7 +601,7 @@ func TestGetRunPassesRequestContextToStorage(t *testing.T) {
 	store := newFakeStorage()
 	store.runs["run-ctx"] = &models.RunDoc{RunID: "run-ctx", Finished: true}
 	store.processes["run-ctx"] = &models.ProcessDoc{RunID: "run-ctx", ProcessInfo: map[string]models.ProcessInfo{}}
-	h := NewHandlers(store, nil)
+	h := newTestHandlers(store, nil)
 	req := httptest.NewRequest(http.MethodGet, "/runs/run-ctx", nil)
 	ctx, cancel := context.WithCancel(req.Context())
 	cancel()
@@ -607,7 +614,7 @@ func TestGetRunPassesRequestContextToStorage(t *testing.T) {
 }
 
 func TestGetRunReturns404WhenMissing(t *testing.T) {
-	h := NewHandlers(newFakeStorage(), nil)
+	h := newTestHandlers(newFakeStorage(), nil)
 	recorder := httptest.NewRecorder()
 	h.GetRun(recorder, httptest.NewRequest(http.MethodGet, "/runs/missing-run", nil))
 	if recorder.Code != http.StatusNotFound {
@@ -618,7 +625,7 @@ func TestGetRunReturns404WhenMissing(t *testing.T) {
 func TestGetRunReturns500ForUnexpectedStorageErrors(t *testing.T) {
 	store := newFakeStorage()
 	store.getRunErr = errors.New("firestore unavailable")
-	h := NewHandlers(store, nil)
+	h := newTestHandlers(store, nil)
 	recorder := httptest.NewRecorder()
 	h.GetRun(recorder, httptest.NewRequest(http.MethodGet, "/runs/run-boom", nil))
 	if recorder.Code != http.StatusInternalServerError {
@@ -629,10 +636,10 @@ func TestGetRunReturns500ForUnexpectedStorageErrors(t *testing.T) {
 func TestFinishRunUsesExportPort(t *testing.T) {
 	store := newFakeStorage()
 	exporter := &fakeExporter{}
-	h := NewHandlers(store, exporter)
+	h := newTestHandlers(store, exporter)
 	const runID = "run-finish"
 	store.runs[runID] = &models.RunDoc{RunID: runID}
-	token, _, err := auth.GenerateToken(runID)
+	token, _, err := testAuthn.GenerateToken(runID)
 	if err != nil {
 		t.Fatalf("GenerateToken failed: %v", err)
 	}
@@ -652,12 +659,13 @@ func TestFinishRunUsesExportPort(t *testing.T) {
 
 func TestValidateRunBearerToken(t *testing.T) {
 	const runID = "run-bearer-auth-1"
+	h := newTestHandlers(nil, nil)
 
-	validToken, _, err := auth.GenerateToken(runID)
+	validToken, _, err := testAuthn.GenerateToken(runID)
 	if err != nil {
 		t.Fatalf("GenerateToken failed: %v", err)
 	}
-	otherToken, _, err := auth.GenerateToken("other-run")
+	otherToken, _, err := testAuthn.GenerateToken("other-run")
 	if err != nil {
 		t.Fatalf("GenerateToken for other run failed: %v", err)
 	}
@@ -707,7 +715,7 @@ func TestValidateRunBearerToken(t *testing.T) {
 				req.Header.Set("Authorization", tt.header)
 			}
 
-			status, message, ok := validateRunBearerToken(req, runID)
+			status, message, ok := h.validateRunBearerToken(req, runID)
 			if ok != tt.wantOK {
 				t.Fatalf("ok = %v, want %v (status=%d message=%q)", ok, tt.wantOK, status, message)
 			}
@@ -746,7 +754,7 @@ func TestAuthPredictionModes(t *testing.T) {
 		t.Run(tc.query, func(t *testing.T) {
 			store := newFakeStorage()
 			recorder := httptest.NewRecorder()
-			NewHandlers(store, nil).Auth(recorder, httptest.NewRequest(http.MethodPost, "/auth/run/run-1?"+tc.query, nil))
+			newTestHandlers(store, nil).Auth(recorder, httptest.NewRequest(http.MethodPost, "/auth/run/run-1?"+tc.query, nil))
 			if recorder.Code != tc.status || store.predictionModes["run-1"] != tc.mode || store.predictiveReliability["run-1"] != tc.reliability {
 				t.Fatalf("status=%d mode=%q reliability=%v", recorder.Code, store.predictionModes["run-1"], store.predictiveReliability["run-1"])
 			}

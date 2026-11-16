@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -18,7 +19,8 @@ func (h *Handlers) EvaluatePredictionJob(w http.ResponseWriter, r *http.Request)
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if h.predictionJobToken == "" || r.Header.Get(predictionJobTokenHeader) != h.predictionJobToken {
+	provided := r.Header.Get(predictionJobTokenHeader)
+	if h.predictionJobToken == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(h.predictionJobToken)) != 1 {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}

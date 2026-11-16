@@ -18,15 +18,16 @@ const BuildTimeout = runlifecycle.DefaultStaleTimeout
 // Service handles cleanup operations
 type Service struct {
 	lifecycle *runlifecycle.Service
+	authn     *auth.Authenticator
 }
 
-// NewService creates a new cleanup service. export may be nil.
-func NewService(storageClient *storage.Client, export *exportqueue.Scheduler) *Service {
+// NewService creates a new cleanup service. export and authenticator may be nil.
+func NewService(storageClient *storage.Client, export *exportqueue.Scheduler, authenticator *auth.Authenticator) *Service {
 	var lifecycle *runlifecycle.Service
 	if storageClient != nil {
 		lifecycle = runlifecycle.NewWithFinder(storageClient, export, storageClient)
 	}
-	return &Service{lifecycle: lifecycle}
+	return &Service{lifecycle: lifecycle, authn: authenticator}
 }
 
 // HandleManualStaleCleanup handles manual cleanup of stale runs (admin only)
@@ -46,7 +47,7 @@ func (s *Service) HandleManualStaleCleanup(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if !auth.RequireAdminAuth(r) {
+	if s.authn == nil || !s.authn.RequireAdminAuth(r) {
 		log.Printf("⚠️  Unauthorized cleanup attempt from %s", r.RemoteAddr)
 		http.Error(w, "Unauthorized - admin secret required", http.StatusUnauthorized)
 		return

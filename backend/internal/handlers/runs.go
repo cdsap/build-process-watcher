@@ -104,7 +104,7 @@ func (h *Handlers) FinishRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if status, message, ok := validateRunBearerToken(r, runID); !ok {
+	if status, message, ok := h.validateRunBearerToken(r, runID); !ok {
 		http.Error(w, message, status)
 		return
 	}
