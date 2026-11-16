@@ -51,7 +51,7 @@ func TestRequireMethodRejectsMismatch(t *testing.T) {
 }
 
 func TestIngestOPTIONSUsesSharedCORS(t *testing.T) {
-	h := NewHandlers(newFakeStorage(), nil)
+	h := NewHandlers(Config{Storage: newFakeStorage(), Export: nil})
 	recorder := httptest.NewRecorder()
 	h.Ingest(recorder, httptest.NewRequest(http.MethodOptions, "/ingest", nil))
 	if recorder.Code != http.StatusOK {

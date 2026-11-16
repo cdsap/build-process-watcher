@@ -41,10 +41,12 @@ func TestForecastEvaluatorOnlyRunsForForecastMode(t *testing.T) {
 			{ElapsedTime: 40, Timestamp: 40000, Name: "GradleDaemon", PID: "1", HeapUsed: 100, RSS: 200},
 		},
 	}}
-	evaluator := NewForecastEvaluator(repo, forecastProviderStub{out: []models.ProcessForecast{{
-		ProcessName: "GradleDaemon", PID: "1", Metric: "heap", CreatedAtMs: 40000,
-		Points: []models.ProcessForecastPoint{{TargetAtMs: 50000, ValueMB: 110}},
-	}}})
+	evaluator := NewForecastEvaluator(repo, predictor.ForecastProviders{
+		predictor.PredictionModeForecast: forecastProviderStub{out: []models.ProcessForecast{{
+			ProcessName: "GradleDaemon", PID: "1", Metric: "heap", CreatedAtMs: 40000,
+			Points: []models.ProcessForecastPoint{{TargetAtMs: 50000, ValueMB: 110}},
+		}}},
+	})
 	evaluator.Evaluate(context.Background(), "run-1")
 	if len(repo.appended) != 0 {
 		t.Fatalf("appended = %d, want 0 for reliability mode", len(repo.appended))
@@ -62,7 +64,9 @@ func TestForecastEvaluatorAppendsForForecastMode(t *testing.T) {
 		ProcessName: "GradleDaemon", PID: "1", Metric: "rss", CreatedAtMs: 40000,
 		Points: []models.ProcessForecastPoint{{TargetAtMs: 50000, ValueMB: 210}},
 	}}
-	evaluator := NewForecastEvaluator(repo, forecastProviderStub{out: want})
+	evaluator := NewForecastEvaluator(repo, predictor.ForecastProviders{
+		predictor.PredictionModeForecast: forecastProviderStub{out: want},
+	})
 	evaluator.Evaluate(context.Background(), "run-1")
 	if len(repo.appended) != 1 {
 		t.Fatalf("appended = %d, want 1", len(repo.appended))
@@ -82,7 +86,9 @@ func TestForecastEvaluatorPropagatesContextToRepo(t *testing.T) {
 	}}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	NewForecastEvaluator(repo, forecastProviderStub{out: want}).Evaluate(ctx, "run-1")
+	NewForecastEvaluator(repo, predictor.ForecastProviders{
+		predictor.PredictionModeForecast: forecastProviderStub{out: want},
+	}).Evaluate(ctx, "run-1")
 	if repo.lastCtx == nil || repo.lastCtx.Err() != context.Canceled {
 		t.Fatalf("repo ctx err = %v, want context.Canceled", repo.lastCtx.Err())
 	}
@@ -102,7 +108,9 @@ func TestForecastEvaluatorAppendsForPredictMode(t *testing.T) {
 		ProcessName: "GradleDaemon", PID: "1", Metric: "heap", CreatedAtMs: 40000,
 		Points: []models.ProcessForecastPoint{{TargetAtMs: 50000, ValueMB: 105}},
 	}}
-	evaluator := NewForecastEvaluatorWithTabPredict(repo, forecastProviderStub{}, forecastProviderStub{out: want})
+	evaluator := NewForecastEvaluator(repo, predictor.ForecastProviders{
+		predictor.PredictionModePredict: forecastProviderStub{out: want},
+	})
 	evaluator.Evaluate(context.Background(), "run-1")
 	if len(repo.appended) != 1 {
 		t.Fatalf("appended = %d, want 1 for predict mode", len(repo.appended))
@@ -120,7 +128,9 @@ func TestForecastEvaluatorAppendsForBQMLBoostedMode(t *testing.T) {
 		ProcessName: "GradleDaemon", PID: "1", Metric: "heap", CreatedAtMs: 40000,
 		Points: []models.ProcessForecastPoint{{TargetAtMs: 50000, ValueMB: 108}},
 	}}
-	evaluator := NewForecastEvaluatorWithProviders(repo, predictor.NoopForecastProvider{}, predictor.NoopForecastProvider{}, forecastProviderStub{out: want})
+	evaluator := NewForecastEvaluator(repo, predictor.ForecastProviders{
+		predictor.PredictionModeBQMLBoosted: forecastProviderStub{out: want},
+	})
 	evaluator.Evaluate(context.Background(), "run-1")
 	if len(repo.appended) != 1 {
 		t.Fatalf("appended = %d, want 1 for bqml-boosted mode", len(repo.appended))
@@ -128,9 +138,13 @@ func TestForecastEvaluatorAppendsForBQMLBoostedMode(t *testing.T) {
 }
 
 func TestProcessForecastModesShare20sThrottle(t *testing.T) {
-	for _, mode := range []string{"predict", "forecast", "bqml-boosted"} {
+	for _, mode := range []predictor.PredictionMode{
+		predictor.PredictionModePredict,
+		predictor.PredictionModeForecast,
+		predictor.PredictionModeBQMLBoosted,
+	} {
 		repo := &forecastRepoStub{run: &models.RunDoc{
-			PredictionMode: mode,
+			PredictionMode: string(mode),
 			Samples: []models.Sample{
 				{ElapsedTime: 25, Timestamp: 25000, Name: "GradleDaemon", PID: "1", HeapUsed: 100, RSS: 200},
 			},
@@ -139,15 +153,9 @@ func TestProcessForecastModesShare20sThrottle(t *testing.T) {
 			ProcessName: "GradleDaemon", PID: "1", Metric: "heap", CreatedAtMs: 25000,
 			Points: []models.ProcessForecastPoint{{TargetAtMs: 35000, ValueMB: 110}},
 		}}
-		var evaluator *ForecastEvaluator
-		switch mode {
-		case "predict":
-			evaluator = NewForecastEvaluatorWithTabPredict(repo, predictor.NoopForecastProvider{}, forecastProviderStub{out: want})
-		case "bqml-boosted":
-			evaluator = NewForecastEvaluatorWithProviders(repo, predictor.NoopForecastProvider{}, predictor.NoopForecastProvider{}, forecastProviderStub{out: want})
-		default:
-			evaluator = NewForecastEvaluator(repo, forecastProviderStub{out: want})
-		}
+		evaluator := NewForecastEvaluator(repo, predictor.ForecastProviders{
+			mode: forecastProviderStub{out: want},
+		})
 		evaluator.Evaluate(context.Background(), "run-1")
 		if len(repo.appended) != 1 {
 			t.Fatalf("%s appended = %d, want 1 at 25s with shared 20s throttle", mode, len(repo.appended))
@@ -163,10 +171,12 @@ func TestForecastEvaluatorAllowsFinishedRunsForLateJobs(t *testing.T) {
 			{ElapsedTime: 40, Timestamp: 40000, Name: "GradleDaemon", PID: "1", HeapUsed: 100, RSS: 200},
 		},
 	}}
-	evaluator := NewForecastEvaluatorWithTabPredict(repo, predictor.NoopForecastProvider{}, forecastProviderStub{out: []models.ProcessForecast{{
-		ProcessName: "GradleDaemon", PID: "1", Metric: "heap", CreatedAtMs: 40000,
-		Points: []models.ProcessForecastPoint{{TargetAtMs: 50000, ValueMB: 110}},
-	}}})
+	evaluator := NewForecastEvaluator(repo, predictor.ForecastProviders{
+		predictor.PredictionModePredict: forecastProviderStub{out: []models.ProcessForecast{{
+			ProcessName: "GradleDaemon", PID: "1", Metric: "heap", CreatedAtMs: 40000,
+			Points: []models.ProcessForecastPoint{{TargetAtMs: 50000, ValueMB: 110}},
+		}}},
+	})
 	evaluator.Evaluate(context.Background(), "run-1")
 	if len(repo.appended) != 1 {
 		t.Fatalf("appended = %d, want 1 for late job after finish", len(repo.appended))
@@ -180,10 +190,13 @@ func TestForecastEvaluatorIgnoresForecastProviderInPredictMode(t *testing.T) {
 			{ElapsedTime: 40, Timestamp: 40000, Name: "GradleDaemon", PID: "1", HeapUsed: 100, RSS: 200},
 		},
 	}}
-	evaluator := NewForecastEvaluatorWithTabPredict(repo, forecastProviderStub{out: []models.ProcessForecast{{
-		ProcessName: "GradleDaemon", PID: "1", Metric: "rss", CreatedAtMs: 40000,
-		Points: []models.ProcessForecastPoint{{TargetAtMs: 50000, ValueMB: 210}},
-	}}}, predictor.NoopForecastProvider{})
+	evaluator := NewForecastEvaluator(repo, predictor.ForecastProviders{
+		predictor.PredictionModeForecast: forecastProviderStub{out: []models.ProcessForecast{{
+			ProcessName: "GradleDaemon", PID: "1", Metric: "rss", CreatedAtMs: 40000,
+			Points: []models.ProcessForecastPoint{{TargetAtMs: 50000, ValueMB: 210}},
+		}}},
+		predictor.PredictionModePredict: predictor.NoopForecastProvider{},
+	})
 	evaluator.Evaluate(context.Background(), "run-1")
 	if len(repo.appended) != 0 {
 		t.Fatalf("appended = %d, want 0 when tabpredict provider is noop", len(repo.appended))

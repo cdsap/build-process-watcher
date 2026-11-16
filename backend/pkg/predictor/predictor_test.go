@@ -255,3 +255,44 @@ func TestParseCheckpoints(t *testing.T) {
 		}
 	}
 }
+
+type namedForecastProvider struct{}
+
+func (namedForecastProvider) Forecast(context.Context, RunSnapshot) ([]ProcessForecast, error) {
+	return []ProcessForecast{{
+		ProcessName: "GradleDaemon",
+		Metric:      "heap",
+		Points:      []ProcessForecastPoint{{TargetAtMs: 1, ValueMB: 2}},
+	}}, nil
+}
+
+func TestForecastProviderUsesPublicProcessForecastTypes(t *testing.T) {
+	var provider ForecastProvider = namedForecastProvider{}
+	out, err := provider.Forecast(context.Background(), RunSnapshot{RunID: "run-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 1 || out[0].ProcessName != "GradleDaemon" || len(out[0].Points) != 1 {
+		t.Fatalf("forecasts = %#v", out)
+	}
+}
+
+func TestForecastProvidersProviderFor(t *testing.T) {
+	var nilMap ForecastProviders
+	if _, ok := nilMap.ProviderFor(PredictionModeForecast).(NoopForecastProvider); !ok {
+		t.Fatal("nil map should return noop")
+	}
+	if ForecastEnabled(nilMap.ProviderFor(PredictionModeForecast)) {
+		t.Fatal("nil map provider should not be enabled")
+	}
+
+	providers := ForecastProviders{
+		PredictionModePredict: namedForecastProvider{},
+	}
+	if _, ok := providers.ProviderFor(PredictionModeForecast).(NoopForecastProvider); !ok {
+		t.Fatal("missing mode should return noop")
+	}
+	if !ForecastEnabled(providers.ProviderFor(PredictionModePredict)) {
+		t.Fatal("configured mode should be enabled")
+	}
+}

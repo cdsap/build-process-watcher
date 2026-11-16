@@ -13,6 +13,18 @@ import (
 type Sample = models.Sample
 type ProcessInfo = models.ProcessInfo
 type PredictionCheckpoint = models.PredictionCheckpoint
+type ProcessForecast = models.ProcessForecast
+type ProcessForecastPoint = models.ProcessForecastPoint
+type PredictionMode = models.PredictionMode
+
+const (
+	PredictionModeUnset       = models.PredictionModeUnset
+	PredictionModeDisabled    = models.PredictionModeDisabled
+	PredictionModeReliability = models.PredictionModeReliability
+	PredictionModeForecast    = models.PredictionModeForecast
+	PredictionModePredict     = models.PredictionModePredict
+	PredictionModeBQMLBoosted = models.PredictionModeBQMLBoosted
+)
 
 var defaultCheckpoints = []int{60, 300, 600, 1200}
 
@@ -136,12 +148,6 @@ func PendingCheckpoints(samples []Sample, existing []PredictionCheckpoint, confi
 	}
 	sort.Ints(pending)
 	return pending
-}
-
-// MergePredictionCheckpoint forwards to the prediction model invariant.
-// Deprecated: use models.MergePredictionCheckpoint.
-func MergePredictionCheckpoint(existing []PredictionCheckpoint, checkpoint PredictionCheckpoint) []PredictionCheckpoint {
-	return models.MergePredictionCheckpoint(existing, checkpoint)
 }
 
 // ParseCheckpoints parses a comma-separated checkpoint list.

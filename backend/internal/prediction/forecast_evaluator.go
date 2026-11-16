@@ -21,38 +21,15 @@ type ForecastRepository interface {
 // prediction_mode=bqml-boosted → trained BQML boosted trees (/bqml-boosted)
 // All write the same public process_forecasts contract.
 type ForecastEvaluator struct {
-	repo                ForecastRepository
-	forecastProvider    predictor.ForecastProvider
-	tabPredictProvider  predictor.ForecastProvider
-	bqmlBoostedProvider predictor.ForecastProvider
+	repo      ForecastRepository
+	providers predictor.ForecastProviders
 }
 
-// NewForecastEvaluator constructs a forecast evaluator.
-func NewForecastEvaluator(repo ForecastRepository, forecastProvider predictor.ForecastProvider) *ForecastEvaluator {
-	return NewForecastEvaluatorWithProviders(repo, forecastProvider, predictor.NoopForecastProvider{}, predictor.NoopForecastProvider{})
-}
-
-// NewForecastEvaluatorWithTabPredict constructs an evaluator for forecast and predict modes.
-func NewForecastEvaluatorWithTabPredict(repo ForecastRepository, forecastProvider, tabPredictProvider predictor.ForecastProvider) *ForecastEvaluator {
-	return NewForecastEvaluatorWithProviders(repo, forecastProvider, tabPredictProvider, predictor.NoopForecastProvider{})
-}
-
-// NewForecastEvaluatorWithProviders constructs an evaluator for all timeline modes.
-func NewForecastEvaluatorWithProviders(repo ForecastRepository, forecastProvider, tabPredictProvider, bqmlBoostedProvider predictor.ForecastProvider) *ForecastEvaluator {
-	if forecastProvider == nil {
-		forecastProvider = predictor.NoopForecastProvider{}
-	}
-	if tabPredictProvider == nil {
-		tabPredictProvider = predictor.NoopForecastProvider{}
-	}
-	if bqmlBoostedProvider == nil {
-		bqmlBoostedProvider = predictor.NoopForecastProvider{}
-	}
+// NewForecastEvaluator constructs a forecast evaluator keyed by prediction mode.
+func NewForecastEvaluator(repo ForecastRepository, providers predictor.ForecastProviders) *ForecastEvaluator {
 	return &ForecastEvaluator{
-		repo:                repo,
-		forecastProvider:    forecastProvider,
-		tabPredictProvider:  tabPredictProvider,
-		bqmlBoostedProvider: bqmlBoostedProvider,
+		repo:      repo,
+		providers: providers,
 	}
 }
 
@@ -69,8 +46,8 @@ func (e *ForecastEvaluator) Evaluate(ctx context.Context, runID string) {
 	// Do not skip when Finished: prediction jobs are enqueued from /ingest and may
 	// run after /finish. Throttle + AppendProcessForecasts idempotency prevent storms.
 	mode := models.NormalizePredictionMode(runDoc.PredictionMode)
-	provider := e.providerForMode(mode)
-	if provider == nil || !predictor.ForecastEnabled(provider) {
+	provider := e.providers.ProviderFor(mode)
+	if !predictor.ForecastEnabled(provider) {
 		return
 	}
 	if !shouldForecast(runDoc.Samples, runDoc.ProcessForecasts, models.ProcessForecastThrottleElapsedS) {
@@ -91,19 +68,6 @@ func (e *ForecastEvaluator) Evaluate(ctx context.Context, runID string) {
 	}
 	if err := e.repo.AppendProcessForecasts(ctx, runID, forecasts); err != nil {
 		log.Printf("%s store failed for run %s: %v", mode, runID, err)
-	}
-}
-
-func (e *ForecastEvaluator) providerForMode(mode models.PredictionMode) predictor.ForecastProvider {
-	switch mode {
-	case models.PredictionModeForecast:
-		return e.forecastProvider
-	case models.PredictionModePredict:
-		return e.tabPredictProvider
-	case models.PredictionModeBQMLBoosted:
-		return e.bqmlBoostedProvider
-	default:
-		return nil
 	}
 }
 

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cdsap/build-process-watcher/backend/internal/models"
 	"google.golang.org/api/idtoken"
 )
 
@@ -17,14 +16,29 @@ const defaultForecastTimeout = 20 * time.Second
 
 // ForecastProvider returns public-safe process memory forecasts.
 type ForecastProvider interface {
-	Forecast(ctx context.Context, snapshot RunSnapshot) ([]models.ProcessForecast, error)
+	Forecast(ctx context.Context, snapshot RunSnapshot) ([]ProcessForecast, error)
+}
+
+// ForecastProviders maps timeline prediction modes to providers.
+type ForecastProviders map[PredictionMode]ForecastProvider
+
+// ProviderFor returns the provider for mode, or NoopForecastProvider when unset.
+func (p ForecastProviders) ProviderFor(mode PredictionMode) ForecastProvider {
+	if p == nil {
+		return NoopForecastProvider{}
+	}
+	provider := p[mode]
+	if provider == nil {
+		return NoopForecastProvider{}
+	}
+	return provider
 }
 
 // NoopForecastProvider never produces forecasts.
 type NoopForecastProvider struct{}
 
 // Forecast returns no issuances.
-func (NoopForecastProvider) Forecast(context.Context, RunSnapshot) ([]models.ProcessForecast, error) {
+func (NoopForecastProvider) Forecast(context.Context, RunSnapshot) ([]ProcessForecast, error) {
 	return nil, nil
 }
 
@@ -113,11 +127,11 @@ type remoteForecastRequest struct {
 }
 
 type remoteForecastResponse struct {
-	Forecasts []models.ProcessForecast `json:"forecasts"`
+	Forecasts []ProcessForecast `json:"forecasts"`
 }
 
 // Forecast requests process forecasts from the private provider.
-func (p *RemoteForecastProvider) Forecast(ctx context.Context, snapshot RunSnapshot) ([]models.ProcessForecast, error) {
+func (p *RemoteForecastProvider) Forecast(ctx context.Context, snapshot RunSnapshot) ([]ProcessForecast, error) {
 	payload := remoteForecastRequest{
 		RunID:   snapshot.RunID,
 		Samples: toRemoteSamples(snapshot.Samples),

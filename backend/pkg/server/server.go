@@ -198,28 +198,25 @@ func Build(ctx context.Context, options Options, deps Deps) (*App, error) {
 		log.Printf("🔮 Predictive reliability disabled (set private provider and PREDICTIVE_RELIABILITY_CHECKPOINTS to enable)")
 	}
 
-	forecastProvider := options.ForecastProvider
-	if forecastProvider == nil {
-		forecastProvider = predictor.NoopForecastProvider{}
+	forecastProviders := predictor.ForecastProviders{}
+	if options.ForecastProvider != nil {
+		forecastProviders[predictor.PredictionModeForecast] = options.ForecastProvider
 	}
-	if predictor.ForecastEnabled(forecastProvider) {
+	if predictor.ForecastEnabled(forecastProviders.ProviderFor(predictor.PredictionModeForecast)) {
 		log.Printf("🔮 Process forecast provider enabled")
 	}
-	tabPredictProvider := options.TabPredictProvider
-	if tabPredictProvider == nil {
-		tabPredictProvider = predictor.NoopForecastProvider{}
+	if options.TabPredictProvider != nil {
+		forecastProviders[predictor.PredictionModePredict] = options.TabPredictProvider
 	}
-	if predictor.ForecastEnabled(tabPredictProvider) {
+	if predictor.ForecastEnabled(forecastProviders.ProviderFor(predictor.PredictionModePredict)) {
 		log.Printf("🔮 Process tabpredict provider enabled")
 	}
-	bqmlBoostedProvider := options.BQMLBoostedProvider
-	if bqmlBoostedProvider == nil {
-		bqmlBoostedProvider = predictor.NoopForecastProvider{}
+	if options.BQMLBoostedProvider != nil {
+		forecastProviders[predictor.PredictionModeBQMLBoosted] = options.BQMLBoostedProvider
 	}
-	if predictor.ForecastEnabled(bqmlBoostedProvider) {
+	if predictor.ForecastEnabled(forecastProviders.ProviderFor(predictor.PredictionModeBQMLBoosted)) {
 		log.Printf("🔮 Process bqml-boosted provider enabled")
 	}
-	h := handlers.NewHandlersWithPredictor(storageClient, exportSched, provider, options.PredictionCheckpoints, options.FallbackClassifier, forecastProvider, tabPredictProvider, bqmlBoostedProvider)
 
 	newSched := deps.NewPredictionScheduler
 	if newSched == nil {
@@ -229,7 +226,16 @@ func Build(ctx context.Context, options Options, deps Deps) (*App, error) {
 	if predictionCloser != nil {
 		closers = append(closers, predictionCloser)
 	}
-	h.SetPredictionScheduler(predictionSched, options.PredictionJobToken)
+	h := handlers.NewHandlers(handlers.Config{
+		Storage:             storageClient,
+		Export:              exportSched,
+		PredictionProvider:  provider,
+		Checkpoints:         options.PredictionCheckpoints,
+		FallbackClassifier:  options.FallbackClassifier,
+		ForecastProviders:   forecastProviders,
+		PredictionScheduler: predictionSched,
+		PredictionJobToken:  options.PredictionJobToken,
+	})
 
 	cleanupService := cleanup.NewService(storageClient, exportSched)
 	mux := NewMux(h, cleanupService)

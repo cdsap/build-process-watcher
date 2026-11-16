@@ -46,7 +46,7 @@ var (
 func init() {
 	auth.Initialize()
 	// Handlers will work without storage for tests that don't need Firestore
-	testHandlers = handlers.NewHandlers(nil, nil)
+	testHandlers = handlers.NewHandlers(handlers.Config{Storage: nil, Export: nil})
 	testCleanupService = cleanup.NewService(nil, nil)
 }
 

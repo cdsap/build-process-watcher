@@ -34,6 +34,18 @@ type Handlers struct {
 	predictionJobToken string
 }
 
+// Config configures HTTP handlers and optional prediction wiring.
+type Config struct {
+	Storage             Storage
+	Export              Exporter
+	PredictionProvider  predictor.Provider
+	Checkpoints         []int
+	FallbackClassifier  predictor.FallbackClassifier
+	ForecastProviders   predictor.ForecastProviders
+	PredictionScheduler predictionqueue.Scheduler
+	PredictionJobToken  string
+}
+
 // Storage is the persistence port used by the HTTP handlers and checkpoint
 // evaluator. The production implementation is storage.Client.
 type Storage interface {
@@ -55,27 +67,26 @@ type Exporter interface {
 	Run(runID string)
 }
 
-// NewHandlers creates a new handlers instance. export may be nil (no BigQuery jobs).
-func NewHandlers(storageClient Storage, export Exporter) *Handlers {
-	return NewHandlersWithPredictor(storageClient, export, predictor.NoopProvider{}, nil, nil, predictor.NoopForecastProvider{}, predictor.NoopForecastProvider{}, predictor.NoopForecastProvider{})
-}
-
-// NewHandlersWithPredictor creates handlers with optional reliability and timeline
-// providers (forecast / tabpredict / bqml-boosted) plus an optional fallback classifier.
-func NewHandlersWithPredictor(storageClient Storage, export Exporter, predictionProvider predictor.Provider, checkpoints []int, fallbackClassifier predictor.FallbackClassifier, forecastProvider, tabPredictProvider, bqmlBoostedProvider predictor.ForecastProvider) *Handlers {
+// NewHandlers creates handlers from Config. Nil providers and scheduler use noops.
+func NewHandlers(cfg Config) *Handlers {
 	var checkpointRepo prediction.CheckpointRepository
 	var forecastRepo prediction.ForecastRepository
-	if storageClient != nil {
-		checkpointRepo = storageClient
-		forecastRepo = storageClient
+	if cfg.Storage != nil {
+		checkpointRepo = cfg.Storage
+		forecastRepo = cfg.Storage
+	}
+	scheduler := cfg.PredictionScheduler
+	if scheduler == nil {
+		scheduler = predictionqueue.Noop{}
 	}
 	return &Handlers{
-		storage:             storageClient,
-		export:              export,
-		lifecycle:           runlifecycle.New(storageClient, export),
-		checkpointEvaluator: prediction.NewCheckpointEvaluator(checkpointRepo, predictionProvider, checkpoints, fallbackClassifier),
-		forecastEvaluator:   prediction.NewForecastEvaluatorWithProviders(forecastRepo, forecastProvider, tabPredictProvider, bqmlBoostedProvider),
-		predictionScheduler: predictionqueue.Noop{},
+		storage:             cfg.Storage,
+		export:              cfg.Export,
+		lifecycle:           runlifecycle.New(cfg.Storage, cfg.Export),
+		checkpointEvaluator: prediction.NewCheckpointEvaluator(checkpointRepo, cfg.PredictionProvider, cfg.Checkpoints, cfg.FallbackClassifier),
+		forecastEvaluator:   prediction.NewForecastEvaluator(forecastRepo, cfg.ForecastProviders),
+		predictionScheduler: scheduler,
+		predictionJobToken:  strings.TrimSpace(cfg.PredictionJobToken),
 	}
 }
 

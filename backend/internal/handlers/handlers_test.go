@@ -178,7 +178,7 @@ func TestIngestDoesNotLogAuthorizationHeader(t *testing.T) {
 	defer log.SetOutput(prev)
 
 	storage := newFakeStorage()
-	h := NewHandlers(storage, nil)
+	h := NewHandlers(Config{Storage: storage, Export: nil})
 	token, _, err := auth.GenerateToken("run-ingest-log")
 	if err != nil {
 		t.Fatal(err)
@@ -335,10 +335,19 @@ func TestRunResponse_WithPredictionCheckpoints(t *testing.T) {
 	}
 }
 
-func TestNewHandlersWithPredictorWiresCheckpointEvaluator(t *testing.T) {
-	h := NewHandlersWithPredictor(nil, nil, predictor.NoopProvider{}, []int{60}, func(error) (string, string) {
-		return "no_data", "prediction data unavailable"
-	}, predictor.NoopForecastProvider{}, predictor.NoopForecastProvider{}, predictor.NoopForecastProvider{})
+func TestNewHandlersConfigWiresCheckpointEvaluator(t *testing.T) {
+	h := NewHandlers(Config{
+		PredictionProvider: predictor.NoopProvider{},
+		Checkpoints:        []int{60},
+		FallbackClassifier: func(error) (string, string) {
+			return "no_data", "prediction data unavailable"
+		},
+		ForecastProviders: predictor.ForecastProviders{
+			predictor.PredictionModeForecast:    predictor.NoopForecastProvider{},
+			predictor.PredictionModePredict:     predictor.NoopForecastProvider{},
+			predictor.PredictionModeBQMLBoosted: predictor.NoopForecastProvider{},
+		},
+	})
 	if h.checkpointEvaluator == nil {
 		t.Fatal("expected checkpoint evaluator to be constructed")
 	}
@@ -347,7 +356,7 @@ func TestNewHandlersWithPredictorWiresCheckpointEvaluator(t *testing.T) {
 		t.Fatalf("classifier = (%q, %q), want injected mapping", state, message)
 	}
 
-	h = NewHandlersWithPredictor(nil, nil, nil, nil, nil, nil, nil, nil)
+	h = NewHandlers(Config{})
 	err := fmt.Errorf("private stack: customer id 9: boom")
 	state, message = h.checkpointEvaluator.FallbackClassifier()(err)
 	if state != "provider_error" || message != "prediction provider error" {
@@ -358,9 +367,30 @@ func TestNewHandlersWithPredictorWiresCheckpointEvaluator(t *testing.T) {
 	}
 }
 
+func TestNewHandlersConfigWiresPredictionScheduler(t *testing.T) {
+	var called bool
+	sched := predictionqueue.Func(func(context.Context, string, int) error {
+		called = true
+		return nil
+	})
+	h := NewHandlers(Config{
+		PredictionScheduler: sched,
+		PredictionJobToken:  " job-secret ",
+	})
+	if h.predictionJobToken != "job-secret" {
+		t.Fatalf("PredictionJobToken = %q, want trimmed job-secret", h.predictionJobToken)
+	}
+	if err := h.predictionScheduler.Schedule(context.Background(), "run-1", 40); err != nil {
+		t.Fatalf("Schedule: %v", err)
+	}
+	if !called {
+		t.Fatal("expected config scheduler to be installed without SetPredictionScheduler")
+	}
+}
+
 func TestAuthUsesStoragePortForRunOptions(t *testing.T) {
 	store := newFakeStorage()
-	h := NewHandlers(store, nil)
+	h := NewHandlers(Config{Storage: store, Export: nil})
 
 	req := httptest.NewRequest(http.MethodPost, "/auth/run/run-auth?export_to_bigquery=true&predictive_reliability=true", nil)
 	recorder := httptest.NewRecorder()
@@ -376,7 +406,7 @@ func TestAuthUsesStoragePortForRunOptions(t *testing.T) {
 
 func TestIngestUsesStoragePortWithoutFirestore(t *testing.T) {
 	store := newFakeStorage()
-	h := NewHandlers(store, nil)
+	h := NewHandlers(Config{Storage: store, Export: nil})
 	const runID = "run-ingest"
 	token, _, err := auth.GenerateToken(runID)
 	if err != nil {
@@ -399,7 +429,7 @@ func TestIngestUsesStoragePortWithoutFirestore(t *testing.T) {
 
 func TestIngestSchedulesPredictionWithoutRunningIt(t *testing.T) {
 	store := newFakeStorage()
-	h := NewHandlers(store, nil)
+	h := NewHandlers(Config{Storage: store, Export: nil})
 	const runID = "run-ingest-schedule"
 	token, _, err := auth.GenerateToken(runID)
 	if err != nil {
@@ -445,7 +475,7 @@ func TestIngestSchedulesPredictionWithoutRunningIt(t *testing.T) {
 
 func TestEvaluatePredictionJobRequiresToken(t *testing.T) {
 	store := newFakeStorage()
-	h := NewHandlers(store, nil)
+	h := NewHandlers(Config{Storage: store, Export: nil})
 	h.SetPredictionScheduler(predictionqueue.Noop{}, "job-secret")
 
 	okReq := httptest.NewRequest(http.MethodPost, "/internal/prediction-jobs", strings.NewReader(`{"run_id":"run-job"}`))
@@ -465,7 +495,7 @@ func TestEvaluatePredictionJobRequiresToken(t *testing.T) {
 
 func TestIngestAttachesFreshnessReceiptMetadata(t *testing.T) {
 	store := newFakeStorage()
-	h := NewHandlers(store, nil)
+	h := NewHandlers(Config{Storage: store, Export: nil})
 	const runID = "run-freshness"
 	token, _, err := auth.GenerateToken(runID)
 	if err != nil {
@@ -506,7 +536,7 @@ func TestGetRunUsesStoragePort(t *testing.T) {
 			"12345": {PID: "12345", Name: "GradleDaemon", VMFlags: []string{"-Xmx2g"}},
 		},
 	}
-	h := NewHandlers(store, nil)
+	h := NewHandlers(Config{Storage: store, Export: nil})
 	recorder := httptest.NewRecorder()
 	h.GetRun(recorder, httptest.NewRequest(http.MethodGet, "/runs/run-retrieve", nil))
 
@@ -526,7 +556,7 @@ func TestGetRunPassesRequestContextToStorage(t *testing.T) {
 	store := newFakeStorage()
 	store.runs["run-ctx"] = &models.RunDoc{RunID: "run-ctx", Finished: true}
 	store.processes["run-ctx"] = &models.ProcessDoc{RunID: "run-ctx", ProcessInfo: map[string]models.ProcessInfo{}}
-	h := NewHandlers(store, nil)
+	h := NewHandlers(Config{Storage: store, Export: nil})
 	req := httptest.NewRequest(http.MethodGet, "/runs/run-ctx", nil)
 	ctx, cancel := context.WithCancel(req.Context())
 	cancel()
@@ -539,7 +569,7 @@ func TestGetRunPassesRequestContextToStorage(t *testing.T) {
 }
 
 func TestGetRunReturns404WhenMissing(t *testing.T) {
-	h := NewHandlers(newFakeStorage(), nil)
+	h := NewHandlers(Config{Storage: newFakeStorage(), Export: nil})
 	recorder := httptest.NewRecorder()
 	h.GetRun(recorder, httptest.NewRequest(http.MethodGet, "/runs/missing-run", nil))
 	if recorder.Code != http.StatusNotFound {
@@ -550,7 +580,7 @@ func TestGetRunReturns404WhenMissing(t *testing.T) {
 func TestGetRunReturns500ForUnexpectedStorageErrors(t *testing.T) {
 	store := newFakeStorage()
 	store.getRunErr = errors.New("firestore unavailable")
-	h := NewHandlers(store, nil)
+	h := NewHandlers(Config{Storage: store, Export: nil})
 	recorder := httptest.NewRecorder()
 	h.GetRun(recorder, httptest.NewRequest(http.MethodGet, "/runs/run-boom", nil))
 	if recorder.Code != http.StatusInternalServerError {
@@ -561,7 +591,7 @@ func TestGetRunReturns500ForUnexpectedStorageErrors(t *testing.T) {
 func TestFinishRunUsesExportPort(t *testing.T) {
 	store := newFakeStorage()
 	exporter := &fakeExporter{}
-	h := NewHandlers(store, exporter)
+	h := NewHandlers(Config{Storage: store, Export: exporter})
 	const runID = "run-finish"
 	store.runs[runID] = &models.RunDoc{RunID: runID}
 	token, _, err := auth.GenerateToken(runID)
@@ -678,7 +708,7 @@ func TestAuthPredictionModes(t *testing.T) {
 		t.Run(tc.query, func(t *testing.T) {
 			store := newFakeStorage()
 			recorder := httptest.NewRecorder()
-			NewHandlers(store, nil).Auth(recorder, httptest.NewRequest(http.MethodPost, "/auth/run/run-1?"+tc.query, nil))
+			NewHandlers(Config{Storage: store, Export: nil}).Auth(recorder, httptest.NewRequest(http.MethodPost, "/auth/run/run-1?"+tc.query, nil))
 			if recorder.Code != tc.status || store.predictionModes["run-1"] != tc.mode || store.predictiveReliability["run-1"] != tc.reliability {
 				t.Fatalf("status=%d mode=%q reliability=%v", recorder.Code, store.predictionModes["run-1"], store.predictiveReliability["run-1"])
 			}
