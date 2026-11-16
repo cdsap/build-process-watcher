@@ -72,7 +72,7 @@ test-coverage:
 # Run integration tests
 test-integration:
 	@echo "Running integration tests..."
-	@bazel test //:backend_test --test_filter=TestFullAPIIntegration
+	@bazel test //pkg/server:server_test --test_filter=TestProductionMux
 
 # Run all tests (unit + integration)
 test-all: test test-race test-integration
