@@ -17,6 +17,7 @@ import (
 
 	"github.com/cdsap/build-process-watcher/backend/internal/auth"
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
+	"github.com/cdsap/build-process-watcher/backend/internal/prediction"
 	"github.com/cdsap/build-process-watcher/backend/internal/predictionqueue"
 	"github.com/cdsap/build-process-watcher/backend/internal/storage"
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
@@ -31,8 +32,19 @@ type fakeStorage struct {
 	getRunErr             error
 	storedSamples         []models.Sample
 	storedProcessInfo     []models.ProcessInfo
+	appendedForecasts     []models.ProcessForecast
 	finishedRuns          []string
 	lastCtx               context.Context
+}
+
+type fakeForecastProvider struct {
+	called    bool
+	forecasts []models.ProcessForecast
+}
+
+func (f *fakeForecastProvider) Forecast(context.Context, predictor.RunSnapshot) ([]models.ProcessForecast, error) {
+	f.called = true
+	return f.forecasts, nil
 }
 
 type fakeExporter struct {
@@ -112,7 +124,8 @@ func (f *fakeStorage) StorePredictionCheckpoint(context.Context, string, models.
 	return nil
 }
 
-func (f *fakeStorage) AppendProcessForecasts(context.Context, string, []models.ProcessForecast) error {
+func (f *fakeStorage) AppendProcessForecasts(_ context.Context, _ string, forecasts []models.ProcessForecast) error {
+	f.appendedForecasts = append(f.appendedForecasts, forecasts...)
 	return nil
 }
 
@@ -528,17 +541,93 @@ func TestEvaluatePredictionJobRequiresToken(t *testing.T) {
 	h.SetPredictionScheduler(predictionqueue.Noop{}, "job-secret")
 
 	okReq := httptest.NewRequest(http.MethodPost, "/internal/prediction-jobs", strings.NewReader(`{"run_id":"run-job"}`))
-	okReq.Header.Set(predictionJobTokenHeader, "job-secret")
+	okReq.Header.Set(predictionqueue.JobTokenHeader, "job-secret")
 	okRec := httptest.NewRecorder()
 	h.EvaluatePredictionJob(okRec, okReq)
 	if okRec.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", okRec.Code, okRec.Body.String())
+	}
+	var okBody map[string]string
+	if err := json.Unmarshal(okRec.Body.Bytes(), &okBody); err != nil || okBody["status"] != "success" || okBody["run_id"] != "run-job" {
+		t.Fatalf("success body=%s", okRec.Body.String())
 	}
 
 	badRec := httptest.NewRecorder()
 	h.EvaluatePredictionJob(badRec, httptest.NewRequest(http.MethodPost, "/internal/prediction-jobs", strings.NewReader(`{"run_id":"run-job"}`)))
 	if badRec.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthorized status = %d", badRec.Code)
+	}
+}
+
+func TestEvaluatePredictionJobRunsForecastEvaluation(t *testing.T) {
+	store := newFakeStorage()
+	store.runs["run-job"] = &models.RunDoc{
+		RunID:          "run-job",
+		PredictionMode: "forecast",
+		Samples:        []models.Sample{{ElapsedTime: 20}},
+	}
+	forecast := &fakeForecastProvider{forecasts: []models.ProcessForecast{{
+		ProcessName: "GradleDaemon",
+		Metric:      "rss",
+		CreatedAtMs: 20_000,
+	}}}
+	h := New(Config{
+		Storage: store,
+		TimelineProviders: prediction.TimelineProviders{
+			Forecast: forecast,
+		},
+		Authenticator:       testAuthn,
+		PredictionScheduler: predictionqueue.Noop{},
+		PredictionJobToken:  "job-secret",
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/internal/prediction-jobs", strings.NewReader(`{"run_id":"run-job"}`))
+	req.Header.Set(predictionqueue.JobTokenHeader, "job-secret")
+	recorder := httptest.NewRecorder()
+	h.EvaluatePredictionJob(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !forecast.called {
+		t.Fatal("forecast provider was not called")
+	}
+	if len(store.appendedForecasts) != 1 || store.appendedForecasts[0].ProcessName != "GradleDaemon" {
+		t.Fatalf("stored forecasts = %#v", store.appendedForecasts)
+	}
+	var response map[string]string
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if response["status"] != "success" || response["run_id"] != "run-job" {
+		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestGetRunAutoFinishesStaleRuns(t *testing.T) {
+	store := newFakeStorage()
+	store.runs["run-stale"] = &models.RunDoc{
+		RunID:     "run-stale",
+		UpdatedAt: time.Now().Add(-10 * time.Minute),
+		Finished:  false,
+		Samples:   []models.Sample{{PID: "1", Name: "GradleDaemon"}},
+	}
+	store.processes["run-stale"] = &models.ProcessDoc{RunID: "run-stale", ProcessInfo: map[string]models.ProcessInfo{}}
+	h := newTestHandlers(store, nil)
+	rec := httptest.NewRecorder()
+	h.GetRun(rec, httptest.NewRequest(http.MethodGet, "/runs/run-stale", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(store.finishedRuns) != 1 || store.finishedRuns[0] != "run-stale" {
+		t.Fatalf("finishedRuns=%v, want [run-stale]", store.finishedRuns)
+	}
+	var response models.RunResponse
+	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Finished {
+		t.Fatal("response should report finished after stale auto-finish")
 	}
 }
 

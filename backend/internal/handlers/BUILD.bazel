@@ -34,6 +34,7 @@ go_test(
     deps = [
         "//internal/auth",
         "//internal/models",
+        "//internal/prediction",
         "//internal/predictionqueue",
         "//internal/storage",
         "//pkg/predictor",
