@@ -14,12 +14,11 @@ import (
 
 // CloudTasksConfig configures HTTP task delivery to the prediction job handler.
 type CloudTasksConfig struct {
-	ProjectID    string
-	Location     string
-	Queue        string
-	TargetURL    string // full URL to POST /internal/prediction-jobs
-	AuthToken    string // shared secret header value
-	ThrottleMode string // "predict" or "forecast" for dedupe bucket size
+	ProjectID string
+	Location  string
+	Queue     string
+	TargetURL string // full URL to POST /internal/prediction-jobs
+	AuthToken string // shared secret header value
 }
 
 type taskCreator interface {
@@ -41,11 +40,10 @@ func (c cloudTasksAPIClient) Close() error {
 
 // CloudTasks enqueues prediction jobs onto a Cloud Tasks HTTP queue.
 type CloudTasks struct {
-	client       taskCreator
-	queuePath    string
-	targetURL    string
-	authToken    string
-	throttleMode string
+	client    taskCreator
+	queuePath string
+	targetURL string
+	authToken string
 
 	// test hooks
 	lastHeaders map[string]string
@@ -65,16 +63,11 @@ func NewCloudTasks(ctx context.Context, cfg CloudTasksConfig) (*CloudTasks, erro
 	if err != nil {
 		return nil, fmt.Errorf("cloud tasks client: %w", err)
 	}
-	mode := strings.TrimSpace(cfg.ThrottleMode)
-	if mode == "" {
-		mode = "predict"
-	}
 	s := &CloudTasks{
-		client:       cloudTasksAPIClient{inner: client},
-		queuePath:    fmt.Sprintf("projects/%s/locations/%s/queues/%s", projectID, location, queue),
-		targetURL:    targetURL,
-		authToken:    token,
-		throttleMode: mode,
+		client:    cloudTasksAPIClient{inner: client},
+		queuePath: fmt.Sprintf("projects/%s/locations/%s/queues/%s", projectID, location, queue),
+		targetURL: targetURL,
+		authToken: token,
 	}
 	log.Printf("🔮 Prediction jobs scheduled via Cloud Tasks queue %s → %s", s.queuePath, s.targetURL)
 	return s, nil

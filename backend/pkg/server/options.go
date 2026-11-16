@@ -32,7 +32,6 @@ type Options struct {
 	PredictionTasksLocation string
 	PredictionJobURL        string
 	PredictionJobToken      string
-	PredictionThrottleMode  string
 }
 
 type serverConfig struct {
@@ -81,7 +80,6 @@ func OptionsFromEnv() Options {
 	options.PredictionTasksLocation = strings.TrimSpace(firstNonEmpty(os.Getenv("PREDICTION_TASKS_LOCATION"), "us-central1"))
 	options.PredictionJobURL = strings.TrimSpace(os.Getenv("PREDICTION_JOB_URL"))
 	options.PredictionJobToken = strings.TrimSpace(os.Getenv("PREDICTION_JOB_TOKEN"))
-	options.PredictionThrottleMode = timelineThrottleModeFromEnv()
 	return options
 }
 
@@ -131,18 +129,7 @@ func buildOptions(config serverConfig) (Options, error) {
 		PredictionCheckpoints:  checkpoints,
 	}, providerErr
 }
-func timelineThrottleModeFromEnv() string {
-	if predictionProviderEnabled(firstNonEmpty(os.Getenv("PREDICTIVE_TABPREDICT_PROVIDER_ENABLED"), os.Getenv("PREDICTIVE_PROVIDER_ENABLED"))) {
-		return "predict"
-	}
-	if predictionProviderEnabled(firstNonEmpty(os.Getenv("PREDICTIVE_FORECAST_PROVIDER_ENABLED"), os.Getenv("PREDICTIVE_PROVIDER_ENABLED"))) {
-		return "forecast"
-	}
-	if predictionProviderEnabled(os.Getenv("PREDICTIVE_BQML_BOOSTED_PROVIDER_ENABLED")) {
-		return "bqml-boosted"
-	}
-	return "predict"
-}
+
 func portOrDefault(port string) string {
 	port = strings.TrimSpace(port)
 	if port == "" {

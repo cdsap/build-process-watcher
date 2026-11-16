@@ -38,11 +38,10 @@ func TestIgnoreAlreadyExists(t *testing.T) {
 func TestScheduleTreatsAlreadyExistsAsSuccess(t *testing.T) {
 	fake := &fakeTaskCreator{err: status.Error(codes.AlreadyExists, "already exists")}
 	s := &CloudTasks{
-		client:       fake,
-		queuePath:    "projects/p/locations/l/queues/q",
-		targetURL:    "https://example.test/internal/prediction-jobs",
-		authToken:    "secret",
-		throttleMode: "predict",
+		client:    fake,
+		queuePath: "projects/p/locations/l/queues/q",
+		targetURL: "https://example.test/internal/prediction-jobs",
+		authToken: "secret",
 	}
 	if err := s.Schedule(context.Background(), "run-1", 40); err != nil {
 		t.Fatalf("AlreadyExists schedule: %v", err)
