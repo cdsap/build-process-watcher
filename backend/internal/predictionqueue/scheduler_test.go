@@ -2,12 +2,14 @@ package predictionqueue
 
 import (
 	"testing"
+
+	"github.com/cdsap/build-process-watcher/backend/internal/models"
 )
 
 func TestTaskIDStableWithinBucket(t *testing.T) {
-	a := TaskID("predict-1-baseline", 41, 20)
-	b := TaskID("predict-1-baseline", 59, 20)
-	c := TaskID("predict-1-baseline", 60, 20)
+	a := TaskID("predict-1-baseline", 41, 0) // 0 → ThrottleElapsedSeconds
+	b := TaskID("predict-1-baseline", 59, models.ThrottleElapsedSeconds)
+	c := TaskID("predict-1-baseline", 60, models.ThrottleElapsedSeconds)
 	if a != b {
 		t.Fatalf("same bucket ids differ: %q vs %q", a, b)
 	}

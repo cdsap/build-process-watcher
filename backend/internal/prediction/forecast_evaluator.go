@@ -9,9 +9,6 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
 
-// Shared cadence for timeline modes (forecast / predict / bqml-boosted).
-const processForecastThrottleElapsedS = 20
-
 // ForecastRepository is the persistence surface used by forecast evaluation.
 type ForecastRepository interface {
 	GetRun(runID string) (*models.RunDoc, error)
@@ -71,12 +68,15 @@ func (e *ForecastEvaluator) Evaluate(ctx context.Context, runID string) {
 	}
 	// Do not skip when Finished: prediction jobs are enqueued from /ingest and may
 	// run after /finish. Throttle + AppendProcessForecasts idempotency prevent storms.
-	mode := normalizeMode(runDoc.PredictionMode)
+	mode, ok := models.ParsePredictionMode(runDoc.PredictionMode)
+	if !ok || !mode.IsTimeline() {
+		return
+	}
 	provider := e.providerForMode(mode)
 	if provider == nil || !predictor.ForecastEnabled(provider) {
 		return
 	}
-	if !shouldForecast(runDoc.Samples, runDoc.ProcessForecasts, throttleForMode(mode)) {
+	if !shouldForecast(runDoc.Samples, runDoc.ProcessForecasts, models.ThrottleElapsedSeconds) {
 		return
 	}
 
@@ -97,35 +97,22 @@ func (e *ForecastEvaluator) Evaluate(ctx context.Context, runID string) {
 	}
 }
 
-func (e *ForecastEvaluator) providerForMode(mode string) predictor.ForecastProvider {
+func (e *ForecastEvaluator) providerForMode(mode models.PredictionMode) predictor.ForecastProvider {
 	switch mode {
-	case "forecast":
+	case models.PredictionModeForecast:
 		return e.forecastProvider
-	case "predict":
+	case models.PredictionModePredict:
 		return e.tabPredictProvider
-	case "bqml-boosted":
+	case models.PredictionModeBQMLBoosted:
 		return e.bqmlBoostedProvider
 	default:
 		return nil
 	}
 }
 
-func normalizeMode(mode string) string {
-	switch mode {
-	case "forecast", "predict", "bqml-boosted", "reliability", "disabled":
-		return mode
-	default:
-		return ""
-	}
-}
-
-func throttleForMode(string) int {
-	return processForecastThrottleElapsedS
-}
-
 func shouldForecast(samples []models.Sample, existing []models.ProcessForecast, throttleS int) bool {
 	if throttleS <= 0 {
-		throttleS = processForecastThrottleElapsedS
+		throttleS = models.ThrottleElapsedSeconds
 	}
 	maxElapsed := maxSampleElapsedS(samples)
 	if maxElapsed < throttleS {

@@ -9,6 +9,7 @@ go_library(
     importpath = "github.com/cdsap/build-process-watcher/backend/internal/predictionqueue",
     visibility = ["//:__subpackages__"],
     deps = [
+        "//internal/models",
         "@com_google_cloud_go_cloudtasks//apiv2",
         "@com_google_cloud_go_cloudtasks//apiv2/cloudtaskspb",
         "@org_golang_google_grpc//codes",
@@ -20,4 +21,5 @@ go_test(
     name = "predictionqueue_test",
     srcs = ["scheduler_test.go"],
     embed = [":predictionqueue"],
+    deps = ["//internal/models"],
 )

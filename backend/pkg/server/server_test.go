@@ -8,6 +8,7 @@ import (
 
 	"github.com/cdsap/build-process-watcher/backend/internal/cleanup"
 	"github.com/cdsap/build-process-watcher/backend/internal/handlers"
+	"github.com/cdsap/build-process-watcher/backend/internal/predictionqueue"
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
 
@@ -236,6 +237,110 @@ func TestOptionsFromEnvLeavesFallbackClassifierUnset(t *testing.T) {
 	options := OptionsFromEnv()
 	if options.FallbackClassifier != nil {
 		t.Fatal("OptionsFromEnv should leave FallbackClassifier unset for composition-root wiring")
+	}
+}
+
+func TestOptionsFromEnvLoadsPredictionQueueSettings(t *testing.T) {
+	t.Setenv("PREDICTION_TASKS_QUEUE", " pred-queue ")
+	t.Setenv("PREDICTION_TASKS_LOCATION", " europe-west1 ")
+	t.Setenv("PREDICTION_JOB_URL", " https://example.test/internal/prediction-jobs ")
+	t.Setenv("PREDICTION_JOB_TOKEN", " secret-token ")
+
+	options := OptionsFromEnv()
+
+	if options.PredictionTasksQueue != "pred-queue" {
+		t.Fatalf("PredictionTasksQueue = %q, want pred-queue", options.PredictionTasksQueue)
+	}
+	if options.PredictionTasksLocation != "europe-west1" {
+		t.Fatalf("PredictionTasksLocation = %q, want europe-west1", options.PredictionTasksLocation)
+	}
+	if options.PredictionJobURL != "https://example.test/internal/prediction-jobs" {
+		t.Fatalf("PredictionJobURL = %q", options.PredictionJobURL)
+	}
+	if options.PredictionJobToken != "secret-token" {
+		t.Fatalf("PredictionJobToken = %q, want secret-token", options.PredictionJobToken)
+	}
+}
+
+func TestOptionsFromEnvDefaultsPredictionTasksLocation(t *testing.T) {
+	t.Setenv("PREDICTION_TASKS_LOCATION", "")
+	options := OptionsFromEnv()
+	if options.PredictionTasksLocation != "us-central1" {
+		t.Fatalf("PredictionTasksLocation = %q, want us-central1", options.PredictionTasksLocation)
+	}
+}
+
+func TestOptionsFromEnvTimelineProvidersFallBackToSharedEnabledFlag(t *testing.T) {
+	t.Setenv("PREDICTIVE_PROVIDER_ENABLED", "true")
+	t.Setenv(providerEnv("URL"), "http://127.0.0.1:8081")
+	t.Setenv("PREDICTIVE_FORECAST_PROVIDER_ENABLED", "")
+	t.Setenv("PREDICTIVE_TABPREDICT_PROVIDER_ENABLED", "")
+	t.Setenv("PREDICTIVE_BQML_BOOSTED_PROVIDER_ENABLED", "")
+
+	options := OptionsFromEnv()
+
+	if !predictor.ForecastEnabled(options.ForecastProvider) {
+		t.Fatal("forecast provider should inherit PREDICTIVE_PROVIDER_ENABLED")
+	}
+	if !predictor.ForecastEnabled(options.TabPredictProvider) {
+		t.Fatal("tabpredict provider should inherit PREDICTIVE_PROVIDER_ENABLED")
+	}
+	if !predictor.ForecastEnabled(options.BQMLBoostedProvider) {
+		t.Fatal("bqml-boosted provider should inherit PREDICTIVE_PROVIDER_ENABLED")
+	}
+}
+
+func TestBuildOptionsTableDrivesTimelineProviders(t *testing.T) {
+	options, err := buildOptions(serverConfig{
+		predictionProviderURL:      "http://127.0.0.1:8081",
+		forecastProviderEnabled:    true,
+		tabPredictProviderEnabled:  true,
+		bqmlBoostedProviderEnabled: true,
+	})
+	if err != nil {
+		t.Fatalf("buildOptions: %v", err)
+	}
+	if !predictor.ForecastEnabled(options.ForecastProvider) {
+		t.Fatal("forecast provider should be enabled")
+	}
+	if !predictor.ForecastEnabled(options.TabPredictProvider) {
+		t.Fatal("tabpredict provider should be enabled")
+	}
+	if !predictor.ForecastEnabled(options.BQMLBoostedProvider) {
+		t.Fatal("bqml-boosted provider should be enabled")
+	}
+	if got := len(timelineProviderSpecs(serverConfig{})); got != 3 {
+		t.Fatalf("timelineProviderSpecs len = %d, want 3 (one per timeline mode)", got)
+	}
+}
+
+func TestBuildOptionsLeavesTimelineProvidersNoopWhenDisabled(t *testing.T) {
+	options, err := buildOptions(serverConfig{
+		predictionProviderURL: "http://127.0.0.1:8081",
+	})
+	if err != nil {
+		t.Fatalf("buildOptions: %v", err)
+	}
+	if predictor.ForecastEnabled(options.ForecastProvider) {
+		t.Fatal("forecast should stay noop when disabled")
+	}
+	if predictor.ForecastEnabled(options.TabPredictProvider) {
+		t.Fatal("tabpredict should stay noop when disabled")
+	}
+	if predictor.ForecastEnabled(options.BQMLBoostedProvider) {
+		t.Fatal("bqml-boosted should stay noop when disabled")
+	}
+}
+
+func TestNewPredictionSchedulerDisabledWithoutQueueSettings(t *testing.T) {
+	sched, closer := newPredictionScheduler(context.Background(), Options{
+		ProjectID: "project-1",
+	})
+	if closer != nil {
+		t.Fatal("closer should be nil when queue is disabled")
+	}
+	if _, ok := sched.(predictionqueue.Noop); !ok {
+		t.Fatalf("scheduler type = %T, want predictionqueue.Noop", sched)
 	}
 }
 

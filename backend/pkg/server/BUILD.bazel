@@ -24,6 +24,7 @@ go_test(
     deps = [
         "//internal/cleanup",
         "//internal/handlers",
+        "//internal/predictionqueue",
         "//pkg/predictor",
     ],
 )
