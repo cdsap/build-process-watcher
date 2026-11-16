@@ -81,7 +81,7 @@ func (s *CloudTasks) Schedule(ctx context.Context, runID string, maxElapsedS int
 	if err != nil {
 		return err
 	}
-	taskID := TaskID(runID, maxElapsedS, ThrottleForMode(s.throttleMode))
+	taskID := TaskID(runID, maxElapsedS, ThrottleSeconds())
 	req := &taskspb.CreateTaskRequest{
 		Parent: s.queuePath,
 		Task: &taskspb.Task{

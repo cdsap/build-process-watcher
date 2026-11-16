@@ -2,7 +2,10 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "models",
-    srcs = ["models.go"],
+    srcs = [
+        "models.go",
+        "prediction_mode.go",
+    ],
     importpath = "github.com/cdsap/build-process-watcher/backend/internal/models",
     visibility = ["//:__subpackages__"],
 )

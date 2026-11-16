@@ -50,23 +50,21 @@ func (h *Handlers) Auth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mode := r.URL.Query().Get("prediction_mode")
-	legacy := boolQuery(r, "predictive_reliability")
-	switch mode {
-	case "", "disabled", "reliability", "forecast", "predict", "bqml-boosted":
-	default:
+	mode, ok := models.ParsePredictionMode(r.URL.Query().Get("prediction_mode"))
+	if !ok {
 		http.Error(w, "invalid prediction_mode", http.StatusBadRequest)
 		return
 	}
-	if legacy && mode != "" && mode != "reliability" {
+	legacy := boolQuery(r, "predictive_reliability")
+	if legacy && mode != models.PredictionModeUnset && mode != models.PredictionModeReliability {
 		http.Error(w, "conflicting prediction settings", http.StatusBadRequest)
 		return
 	}
-	if mode == "" && legacy {
-		mode = "reliability"
+	if mode == models.PredictionModeUnset && legacy {
+		mode = models.PredictionModeReliability
 	}
-	if h.storage != nil && mode != "" && mode != "disabled" {
-		if err := h.storage.SetRunPredictionMode(r.Context(), runID, mode); err != nil {
+	if h.storage != nil && mode != models.PredictionModeUnset && mode != models.PredictionModeDisabled {
+		if err := h.storage.SetRunPredictionMode(r.Context(), runID, mode.String()); err != nil {
 			log.Printf("Warning: could not persist prediction mode for run %s: %v", runID, err)
 		}
 	}
@@ -75,7 +73,7 @@ func (h *Handlers) Auth(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Warning: could not persist export_to_bigquery for run %s: %v", runID, err)
 		}
 	}
-	if h.storage != nil && mode == "reliability" {
+	if h.storage != nil && mode == models.PredictionModeReliability {
 		if err := h.storage.SetRunPredictiveReliability(r.Context(), runID, true); err != nil {
 			log.Printf("Warning: could not persist predictive_reliability for run %s: %v", runID, err)
 		}

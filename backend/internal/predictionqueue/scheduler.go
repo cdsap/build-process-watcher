@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+
+	"github.com/cdsap/build-process-watcher/backend/internal/models"
 )
 
 // Job is the payload delivered to POST /internal/prediction-jobs.
@@ -47,7 +49,7 @@ var taskIDSanitizer = regexp.MustCompile(`[^A-Za-z0-9_-]+`)
 // throttle bucket. Same run + bucket → AlreadyExists → one TabFM call.
 func TaskID(runID string, maxElapsedS, throttleS int) string {
 	if throttleS <= 0 {
-		throttleS = 20
+		throttleS = models.ProcessForecastThrottleElapsedS
 	}
 	bucket := 0
 	if maxElapsedS > 0 {
@@ -66,11 +68,9 @@ func TaskID(runID string, maxElapsedS, throttleS int) string {
 	return id
 }
 
-// ThrottleForMode returns the shared process-forecast dedupe bucket size.
-// All timeline modes (forecast / predict / bqml-boosted) share the same cadence.
-func ThrottleForMode(mode string) int {
-	_ = mode
-	return 20
+// ThrottleSeconds returns the shared process-forecast dedupe bucket size.
+func ThrottleSeconds() int {
+	return models.ProcessForecastThrottleElapsedS
 }
 
 // EncodeJob marshals a job body for HTTP task delivery.
