@@ -12,10 +12,15 @@ type forecastRepoStub struct {
 	run       *models.RunDoc
 	appended  []models.ProcessForecast
 	appendErr error
+	lastCtx   context.Context
 }
 
-func (s *forecastRepoStub) GetRun(string) (*models.RunDoc, error) { return s.run, nil }
-func (s *forecastRepoStub) AppendProcessForecasts(_ string, forecasts []models.ProcessForecast) error {
+func (s *forecastRepoStub) GetRun(ctx context.Context, _ string) (*models.RunDoc, error) {
+	s.lastCtx = ctx
+	return s.run, nil
+}
+func (s *forecastRepoStub) AppendProcessForecasts(ctx context.Context, _ string, forecasts []models.ProcessForecast) error {
+	s.lastCtx = ctx
 	s.appended = append(s.appended, forecasts...)
 	return s.appendErr
 }
@@ -59,6 +64,28 @@ func TestForecastEvaluatorAppendsForForecastMode(t *testing.T) {
 	}}
 	evaluator := NewForecastEvaluator(repo, forecastProviderStub{out: want})
 	evaluator.Evaluate(context.Background(), "run-1")
+	if len(repo.appended) != 1 {
+		t.Fatalf("appended = %d, want 1", len(repo.appended))
+	}
+}
+
+func TestForecastEvaluatorPropagatesContextToRepo(t *testing.T) {
+	repo := &forecastRepoStub{run: &models.RunDoc{
+		PredictionMode: "forecast",
+		Samples: []models.Sample{
+			{ElapsedTime: 40, Timestamp: 40000, Name: "GradleDaemon", PID: "1", HeapUsed: 100, RSS: 200},
+		},
+	}}
+	want := []models.ProcessForecast{{
+		ProcessName: "GradleDaemon", PID: "1", Metric: "rss", CreatedAtMs: 40000,
+		Points: []models.ProcessForecastPoint{{TargetAtMs: 50000, ValueMB: 210}},
+	}}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	NewForecastEvaluator(repo, forecastProviderStub{out: want}).Evaluate(ctx, "run-1")
+	if repo.lastCtx == nil || repo.lastCtx.Err() != context.Canceled {
+		t.Fatalf("repo ctx err = %v, want context.Canceled", repo.lastCtx.Err())
+	}
 	if len(repo.appended) != 1 {
 		t.Fatalf("appended = %d, want 1", len(repo.appended))
 	}

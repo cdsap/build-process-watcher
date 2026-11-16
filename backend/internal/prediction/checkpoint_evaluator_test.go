@@ -22,18 +22,21 @@ type fakeRepo struct {
 	getRunN    int
 	getProcN   int
 	storeN     int
+	lastCtx    context.Context
 }
 
-func (f *fakeRepo) GetRun(string) (*models.RunDoc, error) {
+func (f *fakeRepo) GetRun(ctx context.Context, _ string) (*models.RunDoc, error) {
 	f.getRunN++
+	f.lastCtx = ctx
 	if f.runErr != nil {
 		return nil, f.runErr
 	}
 	return f.run, nil
 }
 
-func (f *fakeRepo) GetProcesses(runID string) (*models.ProcessDoc, error) {
+func (f *fakeRepo) GetProcesses(ctx context.Context, runID string) (*models.ProcessDoc, error) {
 	f.getProcN++
+	f.lastCtx = ctx
 	if f.processErr != nil {
 		return nil, f.processErr
 	}
@@ -46,8 +49,9 @@ func (f *fakeRepo) GetProcesses(runID string) (*models.ProcessDoc, error) {
 	return f.process, nil
 }
 
-func (f *fakeRepo) StorePredictionCheckpoint(_ string, checkpoint models.PredictionCheckpoint) error {
+func (f *fakeRepo) StorePredictionCheckpoint(ctx context.Context, _ string, checkpoint models.PredictionCheckpoint) error {
 	f.storeN++
+	f.lastCtx = ctx
 	if f.storeErr != nil {
 		return f.storeErr
 	}
@@ -244,5 +248,22 @@ func TestCheckpointEvaluatorDoesNotUseReliabilityProviderForOtherModes(t *testin
 				t.Fatal("unexpected reliability evaluation")
 			}
 		})
+	}
+}
+
+func TestCheckpointEvaluatorPropagatesContextToRepo(t *testing.T) {
+	repo := &fakeRepo{run: enabledRun([]models.Sample{{ElapsedTime: 90}})}
+	provider := &stubProvider{
+		checkpoint: models.PredictionCheckpoint{ObservationWindowS: 60, Status: "ready"},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	NewCheckpointEvaluator(repo, provider, []int{60}, nil).Evaluate(ctx, "run-1")
+	if repo.lastCtx == nil || repo.lastCtx.Err() != context.Canceled {
+		t.Fatalf("repo ctx err = %v, want context.Canceled", repo.lastCtx.Err())
+	}
+	if repo.storeN != 1 {
+		t.Fatalf("store calls = %d, want 1", repo.storeN)
 	}
 }

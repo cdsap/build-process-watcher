@@ -199,7 +199,7 @@ func Run(ctx context.Context, options Options) error {
 	}
 	defer storageClient.Close()
 
-	exportSched := exportqueue.New(bqExporter, storageClient.GetRunWithContext, storageClient.GetProcessesWithContext)
+	exportSched := exportqueue.New(bqExporter, storageClient.GetRun, storageClient.GetProcesses)
 	provider := providerOrNoop(options.PredictionProvider)
 	if len(options.PredictionCheckpoints) == 0 || !predictor.Enabled(provider) {
 		log.Printf("🔮 Predictive reliability disabled (set private provider and PREDICTIVE_RELIABILITY_CHECKPOINTS to enable)")

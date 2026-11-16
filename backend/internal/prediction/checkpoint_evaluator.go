@@ -11,9 +11,9 @@ import (
 
 // CheckpointRepository is the persistence surface used by checkpoint evaluation.
 type CheckpointRepository interface {
-	GetRun(runID string) (*models.RunDoc, error)
-	GetProcesses(runID string) (*models.ProcessDoc, error)
-	StorePredictionCheckpoint(runID string, checkpoint models.PredictionCheckpoint) error
+	GetRun(ctx context.Context, runID string) (*models.RunDoc, error)
+	GetProcesses(ctx context.Context, runID string) (*models.ProcessDoc, error)
+	StorePredictionCheckpoint(ctx context.Context, runID string, checkpoint models.PredictionCheckpoint) error
 }
 
 // CheckpointEvaluator coordinates predictive checkpoint selection, provider calls,
@@ -57,7 +57,7 @@ func (e *CheckpointEvaluator) Evaluate(ctx context.Context, runID string) {
 		return
 	}
 
-	runDoc, err := e.repo.GetRun(runID)
+	runDoc, err := e.repo.GetRun(ctx, runID)
 	if err != nil {
 		log.Printf("Prediction skipped: could not load run %s: %v", runID, err)
 		return
@@ -65,7 +65,7 @@ func (e *CheckpointEvaluator) Evaluate(ctx context.Context, runID string) {
 	if !runDoc.PredictiveReliability || (runDoc.PredictionMode != "" && runDoc.PredictionMode != "reliability") {
 		return
 	}
-	processDoc, err := e.repo.GetProcesses(runID)
+	processDoc, err := e.repo.GetProcesses(ctx, runID)
 	if err != nil {
 		log.Printf("Prediction continuing without process info for run %s: %v", runID, err)
 		processDoc = &models.ProcessDoc{
@@ -94,7 +94,7 @@ func (e *CheckpointEvaluator) Evaluate(ctx context.Context, runID string) {
 		if checkpoint.CreatedAt.IsZero() {
 			checkpoint.CreatedAt = time.Now()
 		}
-		if err := e.repo.StorePredictionCheckpoint(runID, checkpoint); err != nil {
+		if err := e.repo.StorePredictionCheckpoint(ctx, runID, checkpoint); err != nil {
 			log.Printf("Prediction checkpoint store failed for run %s checkpoint %ds: %v", runID, checkpointWindow, err)
 			continue
 		}

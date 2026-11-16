@@ -49,7 +49,7 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.ProcessInfo != nil {
-		if err := h.storage.StoreProcessInfo(req.RunID, *req.ProcessInfo); err != nil {
+		if err := h.storage.StoreProcessInfo(r.Context(), req.RunID, *req.ProcessInfo); err != nil {
 			log.Printf("Failed to store process info: %v", err)
 		} else {
 			log.Printf("✅ Stored process info for PID: %s", req.ProcessInfo.PID)
@@ -64,7 +64,7 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var startTime time.Time
-	runDoc, err := h.storage.GetRun(req.RunID)
+	runDoc, err := h.storage.GetRun(r.Context(), req.RunID)
 	if err != nil {
 		if storage.IsNotFound(err) {
 			startTime = time.Now()
@@ -103,7 +103,7 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := h.storage.StoreSamples(req.RunID, samples); err != nil {
+	if err := h.storage.StoreSamples(r.Context(), req.RunID, samples); err != nil {
 		log.Printf("Failed to store samples: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
