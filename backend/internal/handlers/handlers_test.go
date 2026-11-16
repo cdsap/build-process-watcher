@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -158,6 +160,45 @@ func TestIngestHandler_RequestWithProcessInfo(t *testing.T) {
 
 	if len(unmarshaled.ProcessInfo.VMFlags) != 2 {
 		t.Errorf("Expected 2 VM flags, got %d", len(unmarshaled.ProcessInfo.VMFlags))
+	}
+}
+
+func TestIngestDoesNotLogAuthorizationHeader(t *testing.T) {
+	var buf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(prev)
+
+	storage := newFakeStorage()
+	h := NewHandlers(storage, nil)
+	token, _, err := auth.GenerateToken("run-ingest-log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := `{"run_id":"run-ingest-log","data":"00:00:01|1|GradleDaemon|10MB|20MB|30MB|0.1s"}`
+	req := httptest.NewRequest(http.MethodPost, "/ingest", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Secret-Probe", "should-never-appear")
+	rr := httptest.NewRecorder()
+	h.Ingest(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	logged := buf.String()
+	for _, forbidden := range []string{
+		"Authorization",
+		"Bearer ",
+		token,
+		"X-Secret-Probe",
+		"should-never-appear",
+		"Headers:",
+		"INGEST HANDLER CALLED",
+		"00:00:01|1|GradleDaemon",
+	} {
+		if strings.Contains(logged, forbidden) {
+			t.Fatalf("ingest logged sensitive marker %q in %q", forbidden, logged)
+		}
 	}
 }
 
