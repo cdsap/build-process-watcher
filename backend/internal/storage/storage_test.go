@@ -195,3 +195,39 @@ func TestIsNotFoundRecognizesWrappedErrRunNotFound(t *testing.T) {
 		t.Fatal("nil must not be not-found")
 	}
 }
+
+func TestEmptyProcessDoc(t *testing.T) {
+	doc := emptyProcessDoc("run-1")
+	if doc.RunID != "run-1" || doc.ProcessInfo == nil || len(doc.ProcessInfo) != 0 {
+		t.Fatalf("empty process doc = %#v", doc)
+	}
+	other := emptyProcessDoc("run-1")
+	doc.ProcessInfo["pid-1"] = models.ProcessInfo{PID: "pid-1"}
+	if _, ok := other.ProcessInfo["pid-1"]; ok {
+		t.Fatal("emptyProcessDoc must not share ProcessInfo maps across calls")
+	}
+}
+
+func TestIsRunStale(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	timeout := 5 * time.Minute
+	tests := []struct {
+		name      string
+		finished  bool
+		updatedAt time.Time
+		want      bool
+	}{
+		{name: "finished never stale", finished: true, updatedAt: now.Add(-time.Hour), want: false},
+		{name: "fresh unfinished", finished: false, updatedAt: now.Add(-time.Minute), want: false},
+		{name: "exactly timeout not stale", finished: false, updatedAt: now.Add(-timeout), want: false},
+		{name: "past timeout stale", finished: false, updatedAt: now.Add(-timeout - time.Second), want: true},
+		{name: "zero updatedAt unfinished is stale", finished: false, updatedAt: time.Time{}, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isRunStale(tt.finished, tt.updatedAt, now, timeout); got != tt.want {
+				t.Fatalf("isRunStale = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
