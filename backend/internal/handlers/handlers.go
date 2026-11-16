@@ -21,8 +21,6 @@ import (
 // PREDICTIVE_TABPREDICT_PROVIDER_TIMEOUT_MS (default 20s, prod often 60s).
 const predictionJobTimeout = 90 * time.Second
 
-const predictionJobTokenHeader = "X-BPW-Prediction-Job-Token"
-
 // Handlers contains all HTTP handlers
 type Handlers struct {
 	storage             Storage

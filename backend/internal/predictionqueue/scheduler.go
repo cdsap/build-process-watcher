@@ -15,6 +15,9 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
 )
 
+// JobTokenHeader is the shared secret header for POST /internal/prediction-jobs.
+const JobTokenHeader = "X-BPW-Prediction-Job-Token"
+
 // Job is the payload delivered to POST /internal/prediction-jobs.
 type Job struct {
 	RunID string `json:"run_id"`

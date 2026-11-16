@@ -13,13 +13,13 @@ import (
 // EvaluatePredictionJob runs checkpoint/forecast evaluation for a Cloud Tasks job.
 // Auth is a shared secret header — not the run JWT — so Tasks can invoke it.
 func (h *Handlers) EvaluatePredictionJob(w http.ResponseWriter, r *http.Request) {
-	if handleCORSPreflight(w, r, corsMethodsPOST, "Content-Type, "+predictionJobTokenHeader) {
+	if handleCORSPreflight(w, r, corsMethodsPOST, "Content-Type, "+predictionqueue.JobTokenHeader) {
 		return
 	}
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	provided := r.Header.Get(predictionJobTokenHeader)
+	provided := r.Header.Get(predictionqueue.JobTokenHeader)
 	if h.predictionJobToken == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(h.predictionJobToken)) != 1 {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return

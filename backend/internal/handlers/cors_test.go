@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/cdsap/build-process-watcher/backend/internal/predictionqueue"
 )
 
 func TestHandleCORSPreflightUsesSharedPolicy(t *testing.T) {
@@ -14,7 +16,7 @@ func TestHandleCORSPreflightUsesSharedPolicy(t *testing.T) {
 	}{
 		{name: "get", methods: corsMethodsGET, headers: corsHeadersJSON},
 		{name: "post-auth", methods: corsMethodsPOST, headers: corsHeadersAuth},
-		{name: "prediction-job", methods: corsMethodsPOST, headers: "Content-Type, " + predictionJobTokenHeader},
+		{name: "prediction-job", methods: corsMethodsPOST, headers: "Content-Type, " + predictionqueue.JobTokenHeader},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

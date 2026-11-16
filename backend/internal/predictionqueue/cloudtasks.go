@@ -22,13 +22,33 @@ type CloudTasksConfig struct {
 	ThrottleMode string // "predict" or "forecast" for dedupe bucket size
 }
 
+type taskCreator interface {
+	CreateTask(ctx context.Context, req *taskspb.CreateTaskRequest) (*taskspb.Task, error)
+	Close() error
+}
+
+type cloudTasksAPIClient struct {
+	inner *cloudtasks.Client
+}
+
+func (c cloudTasksAPIClient) CreateTask(ctx context.Context, req *taskspb.CreateTaskRequest) (*taskspb.Task, error) {
+	return c.inner.CreateTask(ctx, req)
+}
+
+func (c cloudTasksAPIClient) Close() error {
+	return c.inner.Close()
+}
+
 // CloudTasks enqueues prediction jobs onto a Cloud Tasks HTTP queue.
 type CloudTasks struct {
-	client       *cloudtasks.Client
+	client       taskCreator
 	queuePath    string
 	targetURL    string
 	authToken    string
 	throttleMode string
+
+	// test hooks
+	lastHeaders map[string]string
 }
 
 // NewCloudTasks builds a scheduler. Caller must Close when done.
@@ -50,7 +70,7 @@ func NewCloudTasks(ctx context.Context, cfg CloudTasksConfig) (*CloudTasks, erro
 		mode = "predict"
 	}
 	s := &CloudTasks{
-		client:       client,
+		client:       cloudTasksAPIClient{inner: client},
 		queuePath:    fmt.Sprintf("projects/%s/locations/%s/queues/%s", projectID, location, queue),
 		targetURL:    targetURL,
 		authToken:    token,
@@ -82,6 +102,11 @@ func (s *CloudTasks) Schedule(ctx context.Context, runID string, maxElapsedS int
 		return err
 	}
 	taskID := TaskID(runID, maxElapsedS, ThrottleSeconds())
+	headers := map[string]string{
+		"Content-Type": "application/json",
+		JobTokenHeader: s.authToken,
+	}
+	s.lastHeaders = headers
 	req := &taskspb.CreateTaskRequest{
 		Parent: s.queuePath,
 		Task: &taskspb.Task{
@@ -90,21 +115,22 @@ func (s *CloudTasks) Schedule(ctx context.Context, runID string, maxElapsedS int
 				HttpRequest: &taskspb.HttpRequest{
 					HttpMethod: taskspb.HttpMethod_POST,
 					Url:        s.targetURL,
-					Headers: map[string]string{
-						"Content-Type":                 "application/json",
-						"X-BPW-Prediction-Job-Token": s.authToken,
-					},
-					Body: body,
+					Headers:    headers,
+					Body:       body,
 				},
 			},
 		},
 	}
 	_, err = s.client.CreateTask(ctx, req)
-	if err != nil {
-		if status.Code(err) == codes.AlreadyExists {
-			return nil
-		}
-		return err
+	return ignoreAlreadyExists(err)
+}
+
+func ignoreAlreadyExists(err error) error {
+	if err == nil {
+		return nil
 	}
-	return nil
+	if status.Code(err) == codes.AlreadyExists {
+		return nil
+	}
+	return err
 }
