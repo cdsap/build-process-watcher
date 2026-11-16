@@ -34,6 +34,7 @@ go_test(
         "//internal/auth",
         "//internal/cleanup",
         "//internal/handlers",
+        "//internal/handlers/handlertest",
         "//internal/models",
         "//internal/storage",
         "//pkg/predictor",

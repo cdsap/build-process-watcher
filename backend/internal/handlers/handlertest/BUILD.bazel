@@ -1,0 +1,12 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "handlertest",
+    srcs = ["fake_storage.go"],
+    importpath = "github.com/cdsap/build-process-watcher/backend/internal/handlers/handlertest",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/models",
+        "//internal/storage",
+    ],
+)
