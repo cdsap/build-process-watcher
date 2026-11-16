@@ -7,6 +7,83 @@ import (
 	"time"
 )
 
+func TestValidateRunBearer(t *testing.T) {
+	const runID = "run-bearer-auth-1"
+	a := NewForTest("handlers-test-jwt", "handlers-test-admin")
+
+	validToken, _, err := a.GenerateToken(runID)
+	if err != nil {
+		t.Fatalf("GenerateToken failed: %v", err)
+	}
+	otherToken, _, err := a.GenerateToken("other-run")
+	if err != nil {
+		t.Fatalf("GenerateToken for other run failed: %v", err)
+	}
+
+	tests := []struct {
+		name       string
+		header     string
+		wantStatus int
+		wantMsg    string
+		wantOK     bool
+	}{
+		{
+			name:       "missing authorization header",
+			header:     "",
+			wantStatus: http.StatusUnauthorized,
+			wantMsg:    "Authorization header required",
+		},
+		{
+			name:       "invalid authorization header format",
+			header:     "Token " + validToken,
+			wantStatus: http.StatusUnauthorized,
+			wantMsg:    "Invalid authorization header format",
+		},
+		{
+			name:       "invalid token",
+			header:     "Bearer not-a-valid-token",
+			wantStatus: http.StatusUnauthorized,
+			wantMsg:    "Token validation failed",
+		},
+		{
+			name:       "mismatched run id",
+			header:     "Bearer " + otherToken,
+			wantStatus: http.StatusUnauthorized,
+			wantMsg:    "Token validation failed",
+		},
+		{
+			name:   "valid bearer token",
+			header: "Bearer " + validToken,
+			wantOK: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/ingest", nil)
+			if tt.header != "" {
+				req.Header.Set("Authorization", tt.header)
+			}
+			result := a.ValidateRunBearer(req, runID)
+			if result.OK != tt.wantOK {
+				t.Fatalf("ok = %v, want %v (status=%d message=%q)", result.OK, tt.wantOK, result.Status, result.Message)
+			}
+			if tt.wantOK {
+				if result.Status != 0 || result.Message != "" {
+					t.Fatalf("status/message = (%d, %q), want zero values on success", result.Status, result.Message)
+				}
+				return
+			}
+			if result.Status != tt.wantStatus {
+				t.Fatalf("status = %d, want %d", result.Status, tt.wantStatus)
+			}
+			if result.Message != tt.wantMsg {
+				t.Fatalf("message = %q, want %q", result.Message, tt.wantMsg)
+			}
+		})
+	}
+}
+
 func TestAuthenticatorRoundTrip(t *testing.T) {
 	a := NewForTest("test-jwt", "test-admin")
 	token, expires, err := a.GenerateToken("run-1")
