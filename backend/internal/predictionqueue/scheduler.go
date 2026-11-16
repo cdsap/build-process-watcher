@@ -13,6 +13,9 @@ import (
 	"unicode"
 )
 
+// JobTokenHeader authenticates Cloud Tasks requests to the prediction job handler.
+const JobTokenHeader = "X-BPW-Prediction-Job-Token"
+
 // Job is the payload delivered to POST /internal/prediction-jobs.
 type Job struct {
 	RunID string `json:"run_id"`

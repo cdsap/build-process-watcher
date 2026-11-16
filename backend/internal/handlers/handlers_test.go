@@ -28,6 +28,7 @@ type fakeStorage struct {
 	storedSamples         []models.Sample
 	storedProcessInfo     []models.ProcessInfo
 	finishedRuns          []string
+	appendedForecasts     []models.ProcessForecast
 }
 
 type fakeExporter struct {
@@ -88,7 +89,18 @@ func (f *fakeStorage) StorePredictionCheckpoint(string, models.PredictionCheckpo
 	return nil
 }
 
-func (f *fakeStorage) AppendProcessForecasts(string, []models.ProcessForecast) error {
+type fakeForecastProvider struct {
+	called    bool
+	forecasts []models.ProcessForecast
+}
+
+func (f *fakeForecastProvider) Forecast(context.Context, predictor.RunSnapshot) ([]models.ProcessForecast, error) {
+	f.called = true
+	return f.forecasts, nil
+}
+
+func (f *fakeStorage) AppendProcessForecasts(_ string, forecasts []models.ProcessForecast) error {
+	f.appendedForecasts = append(f.appendedForecasts, forecasts...)
 	return nil
 }
 
@@ -400,7 +412,7 @@ func TestEvaluatePredictionJobRequiresToken(t *testing.T) {
 	h.SetPredictionScheduler(predictionqueue.Noop{}, "job-secret")
 
 	okReq := httptest.NewRequest(http.MethodPost, "/internal/prediction-jobs", strings.NewReader(`{"run_id":"run-job"}`))
-	okReq.Header.Set(predictionJobTokenHeader, "job-secret")
+	okReq.Header.Set(predictionqueue.JobTokenHeader, "job-secret")
 	okRec := httptest.NewRecorder()
 	h.EvaluatePredictionJob(okRec, okReq)
 	if okRec.Code != http.StatusOK {
@@ -411,6 +423,53 @@ func TestEvaluatePredictionJobRequiresToken(t *testing.T) {
 	h.EvaluatePredictionJob(badRec, httptest.NewRequest(http.MethodPost, "/internal/prediction-jobs", strings.NewReader(`{"run_id":"run-job"}`)))
 	if badRec.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthorized status = %d", badRec.Code)
+	}
+}
+
+func TestEvaluatePredictionJobRunsForecastEvaluation(t *testing.T) {
+	store := newFakeStorage()
+	store.runs["run-job"] = &models.RunDoc{
+		RunID:          "run-job",
+		PredictionMode: "forecast",
+		Samples:        []models.Sample{{ElapsedTime: 20}},
+	}
+	forecast := &fakeForecastProvider{forecasts: []models.ProcessForecast{{
+		ProcessName: "GradleDaemon",
+		Metric:      "rss",
+		CreatedAtMs: 20_000,
+	}}}
+	h := NewHandlersWithPredictor(
+		store,
+		nil,
+		predictor.NoopProvider{},
+		nil,
+		nil,
+		forecast,
+		predictor.NoopForecastProvider{},
+		predictor.NoopForecastProvider{},
+	)
+	h.SetPredictionScheduler(predictionqueue.Noop{}, "job-secret")
+
+	req := httptest.NewRequest(http.MethodPost, "/internal/prediction-jobs", strings.NewReader(`{"run_id":"run-job"}`))
+	req.Header.Set(predictionqueue.JobTokenHeader, "job-secret")
+	recorder := httptest.NewRecorder()
+	h.EvaluatePredictionJob(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !forecast.called {
+		t.Fatal("forecast provider was not called")
+	}
+	if len(store.appendedForecasts) != 1 || store.appendedForecasts[0].ProcessName != "GradleDaemon" {
+		t.Fatalf("stored forecasts = %#v", store.appendedForecasts)
+	}
+	var response map[string]string
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if response["status"] != "success" || response["run_id"] != "run-job" {
+		t.Fatalf("response = %#v", response)
 	}
 }
 
@@ -470,6 +529,39 @@ func TestGetRunUsesStoragePort(t *testing.T) {
 	}
 	if len(response.Samples) != 1 || response.ProcessInfo["12345"].VMFlags[0] != "-Xmx2g" {
 		t.Fatalf("unexpected response: %#v", response)
+	}
+}
+
+func TestGetRunAutoFinishesStaleRun(t *testing.T) {
+	store := newFakeStorage()
+	store.runs["run-stale"] = &models.RunDoc{
+		RunID:     "run-stale",
+		UpdatedAt: time.Now().Add(-6 * time.Minute),
+	}
+	store.processes["run-stale"] = &models.ProcessDoc{
+		RunID:       "run-stale",
+		ProcessInfo: map[string]models.ProcessInfo{},
+	}
+	exporter := &fakeExporter{}
+	h := NewHandlers(store, exporter)
+	recorder := httptest.NewRecorder()
+	h.GetRun(recorder, httptest.NewRequest(http.MethodGet, "/runs/run-stale", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if len(store.finishedRuns) != 1 || store.finishedRuns[0] != "run-stale" {
+		t.Fatalf("finished runs = %v", store.finishedRuns)
+	}
+	if len(exporter.runIDs) != 1 || exporter.runIDs[0] != "run-stale" {
+		t.Fatalf("exported runs = %v", exporter.runIDs)
+	}
+	var response models.RunResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Finished || response.FinishedAt == nil || response.UpdatedAt.IsZero() {
+		t.Fatalf("response did not include auto-finish state: %#v", response)
 	}
 }
 

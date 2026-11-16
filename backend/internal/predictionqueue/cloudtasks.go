@@ -22,9 +22,26 @@ type CloudTasksConfig struct {
 	ThrottleMode string // "predict" or "forecast" for dedupe bucket size
 }
 
+type taskClient interface {
+	CreateTask(context.Context, *taskspb.CreateTaskRequest) (*taskspb.Task, error)
+	Close() error
+}
+
+type googleTaskClient struct {
+	client *cloudtasks.Client
+}
+
+func (c *googleTaskClient) CreateTask(ctx context.Context, request *taskspb.CreateTaskRequest) (*taskspb.Task, error) {
+	return c.client.CreateTask(ctx, request)
+}
+
+func (c *googleTaskClient) Close() error {
+	return c.client.Close()
+}
+
 // CloudTasks enqueues prediction jobs onto a Cloud Tasks HTTP queue.
 type CloudTasks struct {
-	client       *cloudtasks.Client
+	client       taskClient
 	queuePath    string
 	targetURL    string
 	authToken    string
@@ -50,7 +67,7 @@ func NewCloudTasks(ctx context.Context, cfg CloudTasksConfig) (*CloudTasks, erro
 		mode = "predict"
 	}
 	s := &CloudTasks{
-		client:       client,
+		client:       &googleTaskClient{client: client},
 		queuePath:    fmt.Sprintf("projects/%s/locations/%s/queues/%s", projectID, location, queue),
 		targetURL:    targetURL,
 		authToken:    token,
@@ -91,8 +108,8 @@ func (s *CloudTasks) Schedule(ctx context.Context, runID string, maxElapsedS int
 					HttpMethod: taskspb.HttpMethod_POST,
 					Url:        s.targetURL,
 					Headers: map[string]string{
-						"Content-Type":                 "application/json",
-						"X-BPW-Prediction-Job-Token": s.authToken,
+						"Content-Type": "application/json",
+						JobTokenHeader: s.authToken,
 					},
 					Body: body,
 				},

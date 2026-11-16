@@ -16,7 +16,40 @@ import (
 // Client wraps Firestore operations
 type Client struct {
 	firestore *firestore.Client
+	documents documentStore
 	ctx       context.Context
+}
+
+type documentStore interface {
+	Get(ctx context.Context, collection, document string, dst interface{}) (bool, error)
+	Set(ctx context.Context, collection, document string, data interface{}, merge bool) error
+}
+
+type firestoreDocumentStore struct {
+	client *firestore.Client
+}
+
+func (s *firestoreDocumentStore) Get(ctx context.Context, collection, document string, dst interface{}) (bool, error) {
+	snapshot, err := s.client.Collection(collection).Doc(document).Get(ctx)
+	if err != nil {
+		return false, err
+	}
+	if !snapshot.Exists() {
+		return false, nil
+	}
+	if err := snapshot.DataTo(dst); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *firestoreDocumentStore) Set(ctx context.Context, collection, document string, data interface{}, merge bool) error {
+	var options []firestore.SetOption
+	if merge {
+		options = append(options, firestore.MergeAll)
+	}
+	_, err := s.client.Collection(collection).Doc(document).Set(ctx, data, options...)
+	return err
 }
 
 // NewClient creates a new storage client.
@@ -29,6 +62,7 @@ func NewClient(ctx context.Context, projectID string) (*Client, error) {
 	log.Printf("✅ Connected to Firestore project: %s", projectID)
 	return &Client{
 		firestore: client,
+		documents: &firestoreDocumentStore{client: client},
 		ctx:       ctx,
 	}, nil
 }
@@ -43,12 +77,12 @@ func (c *Client) SetRunExportToBigquery(runID string, enabled bool) error {
 	if !enabled {
 		return nil
 	}
-	_, err := c.firestore.Collection("runs").Doc(runID).Set(c.ctx, map[string]interface{}{
+	err := c.documents.Set(c.ctx, "runs", runID, map[string]interface{}{
 		"run_id":               runID,
 		"export_to_bigquery":   true,
 		"updated_at":           time.Now(),
 		"updated_at_timestamp": ToMillis(time.Now()),
-	}, firestore.MergeAll)
+	}, true)
 	if err != nil {
 		return fmt.Errorf("merge export_to_bigquery for run %s: %w", runID, err)
 	}
@@ -62,12 +96,12 @@ func (c *Client) SetRunPredictiveReliability(runID string, enabled bool) error {
 		return nil
 	}
 	now := time.Now()
-	_, err := c.firestore.Collection("runs").Doc(runID).Set(c.ctx, map[string]interface{}{
+	err := c.documents.Set(c.ctx, "runs", runID, map[string]interface{}{
 		"run_id":                 runID,
 		"predictive_reliability": true,
 		"updated_at":             now,
 		"updated_at_timestamp":   ToMillis(now),
-	}, firestore.MergeAll)
+	}, true)
 	if err != nil {
 		return fmt.Errorf("merge predictive_reliability for run %s: %w", runID, err)
 	}
@@ -78,9 +112,9 @@ func (c *Client) SetRunPredictiveReliability(runID string, enabled bool) error {
 // SetRunPredictionMode records the requested public prediction mode.
 func (c *Client) SetRunPredictionMode(runID, mode string) error {
 	now := time.Now()
-	_, err := c.firestore.Collection("runs").Doc(runID).Set(c.ctx, map[string]interface{}{
+	err := c.documents.Set(c.ctx, "runs", runID, map[string]interface{}{
 		"run_id": runID, "prediction_mode": mode, "updated_at": now, "updated_at_timestamp": ToMillis(now),
-	}, firestore.MergeAll)
+	}, true)
 	if err != nil {
 		return fmt.Errorf("merge prediction mode for run %s: %w", runID, err)
 	}
@@ -94,19 +128,14 @@ func (c *Client) GetRun(runID string) (*models.RunDoc, error) {
 
 // GetRunWithContext loads a run using ctx (use for requests or background timeouts).
 func (c *Client) GetRunWithContext(ctx context.Context, runID string) (*models.RunDoc, error) {
-	doc := c.firestore.Collection("runs").Doc(runID)
-	snapshot, err := doc.Get(ctx)
+	var runDoc models.RunDoc
+	exists, err := c.documents.Get(ctx, "runs", runID, &runDoc)
 	if err != nil {
 		return nil, err
 	}
 
-	if !snapshot.Exists() {
+	if !exists {
 		return nil, fmt.Errorf("run %s not found", runID)
-	}
-
-	var runDoc models.RunDoc
-	if err := snapshot.DataTo(&runDoc); err != nil {
-		return nil, err
 	}
 
 	return &runDoc, nil
@@ -116,21 +145,15 @@ func (c *Client) GetRunWithContext(ctx context.Context, runID string) (*models.R
 func (c *Client) StoreSamples(runID string, samples []models.Sample) error {
 	log.Printf("🔄 Storing %d samples for run ID: %s", len(samples), runID)
 
-	doc := c.firestore.Collection("runs").Doc(runID)
-
 	// Get existing document or create new one
-	snapshot, err := doc.Get(c.ctx)
+	var runDoc models.RunDoc
+	exists, err := c.documents.Get(c.ctx, "runs", runID, &runDoc)
 	if err != nil && !strings.Contains(err.Error(), "not found") {
 		log.Printf("❌ Error getting document: %v", err)
 		return err
 	}
 
-	var runDoc models.RunDoc
-	if snapshot != nil && snapshot.Exists() {
-		if err := snapshot.DataTo(&runDoc); err != nil {
-			log.Printf("❌ Error parsing document data: %v", err)
-			return err
-		}
+	if exists {
 		if runDoc.StartTime.IsZero() {
 			now := time.Now()
 			runDoc.StartTime = now
@@ -161,7 +184,7 @@ func (c *Client) StoreSamples(runID string, samples []models.Sample) error {
 	log.Printf("📊 Document now has %d samples total", len(runDoc.Samples))
 
 	// Save back to Firestore
-	_, err = doc.Set(c.ctx, runDoc)
+	err = c.documents.Set(c.ctx, "runs", runID, runDoc, false)
 	if err != nil {
 		log.Printf("❌ Error saving document to Firestore: %v", err)
 		return err
@@ -172,7 +195,7 @@ func (c *Client) StoreSamples(runID string, samples []models.Sample) error {
 		stampFreshnessStored(runDoc.Samples[len(runDoc.Samples)-len(samples):], storedAt)
 		runDoc.UpdatedAt = storedAt
 		runDoc.UpdatedAtTimestamp = ToMillis(storedAt)
-		if _, err = doc.Set(c.ctx, runDoc); err != nil {
+		if err = c.documents.Set(c.ctx, "runs", runID, runDoc, false); err != nil {
 			return fmt.Errorf("store freshness completion for run %s: %w", runID, err)
 		}
 	}
@@ -209,28 +232,24 @@ func stampFreshnessStored(samples []models.Sample, storedAt time.Time) {
 
 // StorePredictionCheckpoint stores or replaces one prediction checkpoint for a run.
 func (c *Client) StorePredictionCheckpoint(runID string, checkpoint models.PredictionCheckpoint) error {
-	doc := c.firestore.Collection("runs").Doc(runID)
-	snapshot, err := doc.Get(c.ctx)
+	var runDoc models.RunDoc
+	exists, err := c.documents.Get(c.ctx, "runs", runID, &runDoc)
 	if err != nil && !strings.Contains(err.Error(), "not found") {
 		return err
 	}
 
 	var existing []models.PredictionCheckpoint
-	if snapshot != nil && snapshot.Exists() {
-		var runDoc models.RunDoc
-		if err := snapshot.DataTo(&runDoc); err != nil {
-			return err
-		}
+	if exists {
 		existing = runDoc.PredictionCheckpoints
 	}
 
 	now := time.Now()
-	_, err = doc.Set(c.ctx, map[string]interface{}{
+	err = c.documents.Set(c.ctx, "runs", runID, map[string]interface{}{
 		"run_id":                 runID,
 		"prediction_checkpoints": models.MergePredictionCheckpoint(existing, checkpoint),
 		"updated_at":             now,
 		"updated_at_timestamp":   ToMillis(now),
-	}, firestore.MergeAll)
+	}, true)
 	if err != nil {
 		return fmt.Errorf("store prediction checkpoint for run %s: %w", runID, err)
 	}
@@ -242,28 +261,24 @@ func (c *Client) AppendProcessForecasts(runID string, forecasts []models.Process
 	if len(forecasts) == 0 {
 		return nil
 	}
-	doc := c.firestore.Collection("runs").Doc(runID)
-	snapshot, err := doc.Get(c.ctx)
+	var runDoc models.RunDoc
+	exists, err := c.documents.Get(c.ctx, "runs", runID, &runDoc)
 	if err != nil && !strings.Contains(err.Error(), "not found") {
 		return err
 	}
 
 	var existing []models.ProcessForecast
-	if snapshot != nil && snapshot.Exists() {
-		var runDoc models.RunDoc
-		if err := snapshot.DataTo(&runDoc); err != nil {
-			return err
-		}
+	if exists {
 		existing = runDoc.ProcessForecasts
 	}
 
 	now := time.Now()
-	_, err = doc.Set(c.ctx, map[string]interface{}{
-		"run_id":             runID,
-		"process_forecasts":  models.AppendProcessForecasts(existing, forecasts),
-		"updated_at":         now,
+	err = c.documents.Set(c.ctx, "runs", runID, map[string]interface{}{
+		"run_id":               runID,
+		"process_forecasts":    models.AppendProcessForecasts(existing, forecasts),
+		"updated_at":           now,
 		"updated_at_timestamp": ToMillis(now),
-	}, firestore.MergeAll)
+	}, true)
 	if err != nil {
 		return fmt.Errorf("append process forecasts for run %s: %w", runID, err)
 	}
@@ -274,20 +289,14 @@ func (c *Client) AppendProcessForecasts(runID string, forecasts []models.Process
 func (c *Client) StoreProcessInfo(runID string, processInfo models.ProcessInfo) error {
 	log.Printf("🔄 Storing process info for PID: %s (Name: %s) in run ID: %s", processInfo.PID, processInfo.Name, runID)
 
-	doc := c.firestore.Collection("processes").Doc(runID)
-
 	// Get existing document or create new one
-	snapshot, err := doc.Get(c.ctx)
+	var processDoc models.ProcessDoc
+	exists, err := c.documents.Get(c.ctx, "processes", runID, &processDoc)
 	if err != nil && !strings.Contains(err.Error(), "not found") {
 		return fmt.Errorf("failed to get process document: %w", err)
 	}
 
-	var processDoc models.ProcessDoc
-	if snapshot != nil && snapshot.Exists() {
-		if err := snapshot.DataTo(&processDoc); err != nil {
-			log.Printf("❌ Error parsing process document data: %v", err)
-			return fmt.Errorf("failed to parse document data: %w", err)
-		}
+	if exists {
 		log.Printf("📄 Found existing process document for run ID: %s", runID)
 	} else {
 		now := time.Now()
@@ -321,7 +330,7 @@ func (c *Client) StoreProcessInfo(runID string, processInfo models.ProcessInfo) 
 	processDoc.UpdatedAtTimestamp = ToMillis(now)
 
 	// Save back to Firestore
-	_, err = doc.Set(c.ctx, processDoc)
+	err = c.documents.Set(c.ctx, "processes", runID, processDoc, false)
 	if err != nil {
 		log.Printf("❌ Error saving process info to Firestore: %v", err)
 		return err
@@ -338,13 +347,13 @@ func (c *Client) GetProcesses(runID string) (*models.ProcessDoc, error) {
 
 // GetProcessesWithContext loads processes/{runID} using ctx (for background BigQuery export).
 func (c *Client) GetProcessesWithContext(ctx context.Context, runID string) (*models.ProcessDoc, error) {
-	doc := c.firestore.Collection("processes").Doc(runID)
-	snapshot, err := doc.Get(ctx)
+	var processDoc models.ProcessDoc
+	exists, err := c.documents.Get(ctx, "processes", runID, &processDoc)
 	if err != nil {
 		return nil, err
 	}
 
-	if !snapshot.Exists() {
+	if !exists {
 		// Return empty ProcessDoc if not found (not an error)
 		return &models.ProcessDoc{
 			RunID:       runID,
@@ -352,19 +361,13 @@ func (c *Client) GetProcessesWithContext(ctx context.Context, runID string) (*mo
 		}, nil
 	}
 
-	var processDoc models.ProcessDoc
-	if err := snapshot.DataTo(&processDoc); err != nil {
-		return nil, err
-	}
-
 	return &processDoc, nil
 }
 
 // MarkRunAsFinished marks a run as finished. newlyFinished is true when this call transitioned the run to finished (so callers can enqueue async work such as BigQuery export).
 func (c *Client) MarkRunAsFinished(runID string) (newlyFinished bool, err error) {
-	doc := c.firestore.Collection("runs").Doc(runID)
-	snapshot, err := doc.Get(c.ctx)
 	var runDoc models.RunDoc
+	exists, err := c.documents.Get(c.ctx, "runs", runID, &runDoc)
 	now := time.Now()
 	if err != nil {
 		if !strings.Contains(err.Error(), "not found") {
@@ -379,7 +382,7 @@ func (c *Client) MarkRunAsFinished(runID string) (newlyFinished bool, err error)
 		}
 		log.Printf("Run %s did not exist at finish time; creating finished empty run", runID)
 	} else {
-		if !snapshot.Exists() {
+		if !exists {
 			runDoc = models.RunDoc{
 				ID:        runID,
 				RunID:     runID,
@@ -388,8 +391,6 @@ func (c *Client) MarkRunAsFinished(runID string) (newlyFinished bool, err error)
 				Samples:   []models.Sample{},
 			}
 			log.Printf("Run %s snapshot did not exist at finish time; creating finished empty run", runID)
-		} else if err := snapshot.DataTo(&runDoc); err != nil {
-			return false, err
 		}
 	}
 
@@ -419,7 +420,7 @@ func (c *Client) MarkRunAsFinished(runID string) (newlyFinished bool, err error)
 	if runDoc.Samples == nil {
 		fields["samples"] = []models.Sample{}
 	}
-	_, err = doc.Set(c.ctx, fields, firestore.MergeAll)
+	err = c.documents.Set(c.ctx, "runs", runID, fields, true)
 	if err != nil {
 		return false, err
 	}

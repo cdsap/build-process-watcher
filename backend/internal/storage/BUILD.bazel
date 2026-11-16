@@ -17,4 +17,7 @@ go_test(
     name = "storage_test",
     srcs = ["storage_test.go"],
     embed = [":storage"],
+    deps = [
+        "//internal/models",
+    ],
 )

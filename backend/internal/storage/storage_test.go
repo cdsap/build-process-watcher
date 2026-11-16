@@ -1,12 +1,201 @@
 package storage
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
 )
+
+type documentWrite struct {
+	collection string
+	document   string
+	data       interface{}
+	merge      bool
+}
+
+type fakeDocumentStore struct {
+	documents map[string]interface{}
+	writes    []documentWrite
+}
+
+func (f *fakeDocumentStore) Get(_ context.Context, collection, document string, dst interface{}) (bool, error) {
+	value, ok := f.documents[collection+"/"+document]
+	if !ok {
+		return false, errors.New("not found")
+	}
+	source := reflect.ValueOf(value)
+	if source.Kind() == reflect.Ptr {
+		source = source.Elem()
+	}
+	target := reflect.ValueOf(dst)
+	if target.Kind() != reflect.Ptr || !source.Type().AssignableTo(target.Elem().Type()) {
+		return false, errors.New("incompatible destination")
+	}
+	target.Elem().Set(source)
+	return true, nil
+}
+
+func (f *fakeDocumentStore) Set(_ context.Context, collection, document string, data interface{}, merge bool) error {
+	f.writes = append(f.writes, documentWrite{
+		collection: collection,
+		document:   document,
+		data:       data,
+		merge:      merge,
+	})
+	return nil
+}
+
+func newStorageClient(store documentStore) *Client {
+	return &Client{ctx: context.Background(), documents: store}
+}
+
+func TestRunMetadataWrites(t *testing.T) {
+	t.Run("export opt-out does not write", func(t *testing.T) {
+		store := &fakeDocumentStore{}
+		client := newStorageClient(store)
+		if err := client.SetRunExportToBigquery("run-1", false); err != nil {
+			t.Fatal(err)
+		}
+		if len(store.writes) != 0 {
+			t.Fatalf("writes = %d, want 0", len(store.writes))
+		}
+	})
+
+	tests := []struct {
+		name  string
+		write func(*Client) error
+		field string
+		want  interface{}
+	}{
+		{name: "export", write: func(c *Client) error { return c.SetRunExportToBigquery("run-1", true) }, field: "export_to_bigquery", want: true},
+		{name: "predictive reliability", write: func(c *Client) error { return c.SetRunPredictiveReliability("run-1", true) }, field: "predictive_reliability", want: true},
+		{name: "prediction mode", write: func(c *Client) error { return c.SetRunPredictionMode("run-1", "forecast") }, field: "prediction_mode", want: "forecast"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &fakeDocumentStore{}
+			client := newStorageClient(store)
+			if err := tt.write(client); err != nil {
+				t.Fatal(err)
+			}
+			if len(store.writes) != 1 {
+				t.Fatalf("writes = %d, want 1", len(store.writes))
+			}
+			write := store.writes[0]
+			fields, ok := write.data.(map[string]interface{})
+			if !ok {
+				t.Fatalf("write data = %T, want map", write.data)
+			}
+			if write.collection != "runs" || write.document != "run-1" || !write.merge {
+				t.Fatalf("write = %#v", write)
+			}
+			if fields["run_id"] != "run-1" || fields[tt.field] != tt.want {
+				t.Fatalf("fields = %#v", fields)
+			}
+			if _, ok := fields["updated_at_timestamp"].(int64); !ok {
+				t.Fatalf("updated_at_timestamp = %T, want int64", fields["updated_at_timestamp"])
+			}
+		})
+	}
+}
+
+func TestStorePredictionCheckpointMergesExisting(t *testing.T) {
+	store := &fakeDocumentStore{documents: map[string]interface{}{
+		"runs/run-1": models.RunDoc{PredictionCheckpoints: []models.PredictionCheckpoint{
+			{ObservationWindowS: 60, Status: "pending"},
+			{ObservationWindowS: 300, Status: "ready"},
+		}},
+	}}
+	client := newStorageClient(store)
+	if err := client.StorePredictionCheckpoint("run-1", models.PredictionCheckpoint{ObservationWindowS: 60, Status: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+
+	fields := store.writes[0].data.(map[string]interface{})
+	checkpoints := fields["prediction_checkpoints"].([]models.PredictionCheckpoint)
+	if len(checkpoints) != 2 || checkpoints[0].Status != "ready" || checkpoints[1].ObservationWindowS != 300 {
+		t.Fatalf("checkpoints = %#v", checkpoints)
+	}
+}
+
+func TestAppendProcessForecastsPreservesExisting(t *testing.T) {
+	store := &fakeDocumentStore{documents: map[string]interface{}{
+		"runs/run-1": models.RunDoc{ProcessForecasts: []models.ProcessForecast{{ProcessName: "GradleDaemon"}}},
+	}}
+	client := newStorageClient(store)
+	if err := client.AppendProcessForecasts("run-1", []models.ProcessForecast{{ProcessName: "KotlinCompileDaemon"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	fields := store.writes[0].data.(map[string]interface{})
+	forecasts := fields["process_forecasts"].([]models.ProcessForecast)
+	if len(forecasts) != 2 || forecasts[0].ProcessName != "GradleDaemon" || forecasts[1].ProcessName != "KotlinCompileDaemon" {
+		t.Fatalf("forecasts = %#v", forecasts)
+	}
+}
+
+func TestStoreSamplesAppendsToRun(t *testing.T) {
+	store := &fakeDocumentStore{documents: map[string]interface{}{
+		"runs/run-1": models.RunDoc{
+			RunID:     "run-1",
+			StartTime: time.Unix(1, 0),
+			Samples:   []models.Sample{{ElapsedTime: 1}},
+		},
+	}}
+	client := newStorageClient(store)
+	if err := client.StoreSamples("run-1", []models.Sample{{ElapsedTime: 2}}); err != nil {
+		t.Fatal(err)
+	}
+
+	written := store.writes[0].data.(models.RunDoc)
+	if len(written.Samples) != 2 || written.Samples[0].ElapsedTime != 1 || written.Samples[1].ElapsedTime != 2 {
+		t.Fatalf("samples = %#v", written.Samples)
+	}
+	if written.UpdatedAtTimestamp == 0 {
+		t.Fatal("updated timestamp was not set")
+	}
+}
+
+func TestStoreProcessInfoUpdatesExistingDocument(t *testing.T) {
+	store := &fakeDocumentStore{documents: map[string]interface{}{
+		"processes/run-1": models.ProcessDoc{
+			RunID:       "run-1",
+			ProcessInfo: map[string]models.ProcessInfo{"1": {PID: "1", Name: "old"}},
+		},
+	}}
+	client := newStorageClient(store)
+	if err := client.StoreProcessInfo("run-1", models.ProcessInfo{PID: "1", Name: "GradleDaemon"}); err != nil {
+		t.Fatal(err)
+	}
+
+	written := store.writes[0].data.(models.ProcessDoc)
+	if len(written.ProcessInfo) != 1 || written.ProcessInfo["1"].Name != "GradleDaemon" {
+		t.Fatalf("process info = %#v", written.ProcessInfo)
+	}
+}
+
+func TestMarkRunAsFinishedWritesMergeFields(t *testing.T) {
+	store := &fakeDocumentStore{documents: map[string]interface{}{
+		"runs/run-1": models.RunDoc{RunID: "run-1", StartTime: time.Unix(1, 0), CreatedAt: time.Unix(1, 0)},
+	}}
+	client := newStorageClient(store)
+	newlyFinished, err := client.MarkRunAsFinished("run-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !newlyFinished {
+		t.Fatal("newlyFinished = false, want true")
+	}
+	fields := store.writes[0].data.(map[string]interface{})
+	if fields["finished"] != true || fields["run_id"] != "run-1" || !store.writes[0].merge {
+		t.Fatalf("finish write = %#v", store.writes[0])
+	}
+}
 
 func TestParseDataHistoricalAndExtendedRecords(t *testing.T) {
 	start := time.Unix(100, 0)

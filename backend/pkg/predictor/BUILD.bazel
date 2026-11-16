@@ -18,6 +18,7 @@ go_library(
 go_test(
     name = "predictor_test",
     srcs = [
+        "forecast_test.go",
         "predictor_test.go",
         "remote_test.go",
     ],

@@ -24,8 +24,6 @@ import (
 // PREDICTIVE_TABPREDICT_PROVIDER_TIMEOUT_MS (default 20s, prod often 60s).
 const predictionJobTimeout = 90 * time.Second
 
-const predictionJobTokenHeader = "X-BPW-Prediction-Job-Token"
-
 // Handlers contains all HTTP handlers
 type Handlers struct {
 	storage             Storage
@@ -353,7 +351,7 @@ func (h *Handlers) EvaluatePredictionJob(w http.ResponseWriter, r *http.Request)
 	if r.Method == http.MethodOptions {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, "+predictionJobTokenHeader)
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, "+predictionqueue.JobTokenHeader)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -361,7 +359,7 @@ func (h *Handlers) EvaluatePredictionJob(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if h.predictionJobToken == "" || r.Header.Get(predictionJobTokenHeader) != h.predictionJobToken {
+	if h.predictionJobToken == "" || r.Header.Get(predictionqueue.JobTokenHeader) != h.predictionJobToken {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
