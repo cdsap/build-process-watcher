@@ -2,9 +2,11 @@ package server
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/cdsap/build-process-watcher/backend/internal/cleanup"
 	"github.com/cdsap/build-process-watcher/backend/internal/handlers"
@@ -242,7 +244,7 @@ func TestOptionsFromEnvLeavesFallbackClassifierUnset(t *testing.T) {
 func TestNewMuxRegistersPublicRoutes(t *testing.T) {
 	mux := NewMux(handlers.NewHandlers(nil, nil), cleanup.NewService(nil, nil))
 
-	for _, route := range []string{"/healthz", "/auth/run/run-1", "/ingest", "/internal/prediction-jobs", "/runs/run-1", "/finish/run-1", "/cleanup/stale", "/test"} {
+	for _, route := range []string{"/healthz", "/auth/run/run-1", "/ingest", "/internal/prediction-jobs", "/runs/run-1", "/finish/run-1", "/cleanup/stale"} {
 		request := httptest.NewRequest(http.MethodOptions, route, nil)
 		recorder := httptest.NewRecorder()
 
@@ -251,5 +253,49 @@ func TestNewMuxRegistersPublicRoutes(t *testing.T) {
 		if recorder.Code == http.StatusNotFound {
 			t.Fatalf("route %s was not registered", route)
 		}
+	}
+}
+
+func TestAppServeShutsDownOnContextCancel(t *testing.T) {
+	app := &App{
+		Server: &http.Server{
+			Addr:    "127.0.0.1:0",
+			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+		},
+	}
+	ln, err := net.Listen("tcp", app.Server.Addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.Server.Addr = ln.Addr().String()
+	_ = ln.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() { errCh <- app.Serve(ctx) }()
+
+	deadline := time.After(2 * time.Second)
+	for {
+		conn, dialErr := net.DialTimeout("tcp", app.Server.Addr, 50*time.Millisecond)
+		if dialErr == nil {
+			_ = conn.Close()
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("server did not start listening")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("Serve returned %v, want nil", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Serve did not return after cancel")
 	}
 }

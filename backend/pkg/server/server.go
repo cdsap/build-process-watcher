@@ -142,36 +142,55 @@ func buildOptions(config serverConfig) (Options, error) {
 	}, providerErr
 }
 
-// Run initializes backend dependencies and starts the HTTP server.
-func Run(ctx context.Context, options Options) error {
+// Deps injects optional client factories for tests. Nil fields use production constructors.
+type Deps struct {
+	NewStorage             func(ctx context.Context, projectID string) (*storage.Client, error)
+	NewBigQuery            func(ctx context.Context, projectID, dataset, samplesTable, processesTable string) (*bigqueryexport.Exporter, error)
+	NewPredictionScheduler func(ctx context.Context, options Options) (predictionqueue.Scheduler, func() error)
+}
+
+// App is a constructed backend HTTP server with closable dependencies.
+type App struct {
+	Server  *http.Server
+	closers []func() error
+}
+
+// Build wires dependencies and returns an App ready to Serve. It does not listen.
+func Build(ctx context.Context, options Options, deps Deps) (*App, error) {
 	if strings.TrimSpace(options.ProjectID) == "" {
-		return errors.New("GOOGLE_CLOUD_PROJECT environment variable is required")
+		return nil, errors.New("GOOGLE_CLOUD_PROJECT environment variable is required")
 	}
 
 	auth.Initialize()
 
-	bqExporter, err := bigqueryexport.New(ctx, options.ProjectID, options.BigQueryDataset, options.BigQueryTable, options.BigQueryProcessesTable)
+	newBQ := deps.NewBigQuery
+	if newBQ == nil {
+		newBQ = bigqueryexport.New
+	}
+	bqExporter, err := newBQ(ctx, options.ProjectID, options.BigQueryDataset, options.BigQueryTable, options.BigQueryProcessesTable)
 	if err != nil {
 		log.Printf("⚠️ BigQuery client init failed; continuing without export: %v", err)
 		bqExporter = nil
 	}
+
+	var closers []func() error
 	if bqExporter != nil {
-		defer func() {
-			if err := bqExporter.Close(); err != nil {
-				log.Printf("BigQuery client close: %v", err)
-			}
-		}()
+		closers = append(closers, bqExporter.Close)
 		log.Printf("📊 BigQuery export enabled: dataset=%q samples=%q processes=%q",
 			options.BigQueryDataset, bqSamplesTableOrDefault(options.BigQueryTable), bqProcessesTableOrDefault(options.BigQueryProcessesTable))
 	} else {
 		log.Printf("📊 BigQuery export disabled (set BIGQUERY_EXPORT_DATASET to enable)")
 	}
 
-	storageClient, err := storage.NewClient(ctx, options.ProjectID)
-	if err != nil {
-		return err
+	newStorage := deps.NewStorage
+	if newStorage == nil {
+		newStorage = storage.NewClient
 	}
-	defer storageClient.Close()
+	storageClient, err := newStorage(ctx, options.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	closers = append(closers, storageClient.Close)
 
 	exportSched := exportqueue.New(bqExporter, storageClient.GetRun, storageClient.GetProcesses)
 	provider := providerOrNoop(options.PredictionProvider)
@@ -202,13 +221,13 @@ func Run(ctx context.Context, options Options) error {
 	}
 	h := handlers.NewHandlersWithPredictor(storageClient, exportSched, provider, options.PredictionCheckpoints, options.FallbackClassifier, forecastProvider, tabPredictProvider, bqmlBoostedProvider)
 
-	predictionSched, predictionCloser := newPredictionScheduler(ctx, options)
+	newSched := deps.NewPredictionScheduler
+	if newSched == nil {
+		newSched = newPredictionScheduler
+	}
+	predictionSched, predictionCloser := newSched(ctx, options)
 	if predictionCloser != nil {
-		defer func() {
-			if err := predictionCloser(); err != nil {
-				log.Printf("prediction scheduler close: %v", err)
-			}
-		}()
+		closers = append(closers, predictionCloser)
 	}
 	h.SetPredictionScheduler(predictionSched, options.PredictionJobToken)
 
@@ -226,7 +245,67 @@ func Run(ctx context.Context, options Options) error {
 	log.Printf("   - POST /finish/{runId} (JWT required)")
 	log.Printf("   - POST /cleanup/stale (Admin required)")
 
-	return http.ListenAndServe(":"+port, mux)
+	return &App{
+		Server: &http.Server{
+			Addr:         ":" + port,
+			Handler:      mux,
+			ReadTimeout:  30 * time.Second,
+			WriteTimeout: 120 * time.Second,
+			IdleTimeout:  90 * time.Second,
+		},
+		closers: closers,
+	}, nil
+}
+
+// Serve listens until ctx is cancelled, then gracefully shuts down.
+func (a *App) Serve(ctx context.Context) error {
+	if a == nil || a.Server == nil {
+		return errors.New("server app not built")
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- a.Server.ListenAndServe()
+	}()
+
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := a.Server.Shutdown(shutdownCtx); err != nil {
+			log.Printf("server shutdown: %v", err)
+		}
+		a.close()
+		if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
+	case err := <-errCh:
+		a.close()
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	}
+}
+
+func (a *App) close() {
+	for i := len(a.closers) - 1; i >= 0; i-- {
+		if a.closers[i] == nil {
+			continue
+		}
+		if err := a.closers[i](); err != nil {
+			log.Printf("dependency close: %v", err)
+		}
+	}
+}
+
+// Run initializes backend dependencies and starts the HTTP server until ctx ends.
+func Run(ctx context.Context, options Options) error {
+	app, err := Build(ctx, options, Deps{})
+	if err != nil {
+		return err
+	}
+	return app.Serve(ctx)
 }
 
 type timelineProviderSpec struct {
@@ -319,9 +398,6 @@ func NewMux(h *handlers.Handlers, cleanupService *cleanup.Service) *http.ServeMu
 	mux.HandleFunc("/runs/", h.GetRun)
 	mux.HandleFunc("/finish/", h.FinishRun)
 	mux.HandleFunc("/cleanup/stale", cleanupService.HandleManualStaleCleanup)
-	mux.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Test endpoint working"))
-	})
 	return mux
 }
 
