@@ -2,17 +2,20 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vm from 'vm';
 
-function loadView(): any {
+function loadPredictionSandbox(overrides: Record<string, any> = {}): any {
   const sandbox: any = {
     module: { exports: {} },
     exports: {},
-    performance: { now: () => 0 },
+    performance: { now: () => sandbox.__now || 0 },
     setTimeout,
     clearTimeout,
     matchMedia: () => ({ matches: false }),
-    requestAnimationFrame: (cb: Function) => setTimeout(() => cb(0), 0),
+    requestAnimationFrame: (cb: Function) => setTimeout(() => cb(sandbox.__now || 0), 0),
     cancelAnimationFrame: clearTimeout,
     document: { querySelector: () => null },
+    __now: 0,
+    __raf: null as null | Function,
+    ...overrides,
   };
   sandbox.globalThis = sandbox;
   sandbox.window = sandbox;
@@ -28,7 +31,90 @@ function loadView(): any {
     fs.readFileSync(path.join(__dirname, '../frontend/public/prediction-view.js'), 'utf8'),
     sandbox,
   );
-  return sandbox.BpwPredictionView;
+  return sandbox;
+}
+
+function loadView(): any {
+  return loadPredictionSandbox().BpwPredictionView;
+}
+
+function forecastFixture() {
+  return {
+    finished: false,
+    prediction_mode: 'bqml-boosted',
+    samples: [
+      { Timestamp: 1000, Name: 'GradleDaemon', PID: '1', HeapUsed: 10, RSS: 20 },
+      { Timestamp: 5000, Name: 'GradleDaemon', PID: '1', HeapUsed: 14, RSS: 24 },
+      { Timestamp: 11000, Name: 'GradleDaemon', PID: '1', HeapUsed: 16, RSS: 26 },
+    ],
+    process_forecasts: [{
+      process_name: 'GradleDaemon',
+      pid: '1',
+      metric: 'heap',
+      created_at_ms: 1000,
+      method: 'last_value',
+      points: [
+        { target_at_ms: 5000, value_mb: 13 },
+        { target_at_ms: 11000, value_mb: 15 },
+      ],
+    }],
+  };
+}
+
+function mountForecastControls(view: any, data: any) {
+  const html = view.render(data, null).html;
+  const byId = new Map<string, any>();
+  const hosts: any[] = [];
+  const makeEl = (overrides: Record<string, any> = {}) => {
+    const el: any = {
+      value: '',
+      textContent: '',
+      __innerHTML: '',
+      listeners: {} as Record<string, Function>,
+      dataset: {},
+      classList: { toggle: jest.fn() },
+      setAttribute: jest.fn(),
+      addEventListener: jest.fn((eventName: string, handler: Function) => {
+        el.listeners[eventName] = handler;
+      }),
+      querySelector: (selector: string) => {
+        const idMatch = selector.match(/^#(.+)$/);
+        return idMatch ? byId.get(idMatch[1]) || null : null;
+      },
+      querySelectorAll: (selector: string) => (selector === '[data-forecast-chart-host]' ? hosts : []),
+      ...overrides,
+    };
+    Object.defineProperty(el, 'innerHTML', {
+      get: () => el.__innerHTML,
+      set: (value: string) => { el.__innerHTML = String(value); },
+    });
+    return el;
+  };
+
+  const dataMatch = html.match(/id="bpw-forecast-replay-data">([\s\S]*?)<\/script>/);
+  byId.set('bpw-forecast-replay-data', makeEl({ textContent: dataMatch?.[1] || '[]' }));
+  byId.set('forecast-replay-timeline', makeEl({ value: '0' }));
+  byId.set('forecast-replay-meta', makeEl());
+  byId.set('forecast-replay-time-label', makeEl());
+  byId.set('btn-forecast-replay-play', makeEl());
+  byId.set('btn-forecast-replay-pause', makeEl());
+  byId.set('btn-forecast-replay-reset', makeEl());
+  byId.set('forecast-replay-speed', makeEl({ value: '15' }));
+  byId.set('btn-forecast-view-live', makeEl());
+  byId.set('btn-forecast-view-replay', makeEl());
+  byId.set('forecast-live-status', makeEl());
+  hosts.push(makeEl());
+  byId.set('forecast-replay-controls', makeEl({
+    dataset: { forecastViewMode: 'live' },
+    classList: { toggle: jest.fn() },
+  }));
+  const root = makeEl();
+  root.querySelector = (selector: string) => {
+    const idMatch = selector.match(/^#(.+)$/);
+    return idMatch ? byId.get(idMatch[1]) || null : null;
+  };
+  root.querySelectorAll = (selector: string) => (selector === '[data-forecast-chart-host]' ? hosts : []);
+  return { root, byId, hosts, html };
 }
 
 describe('prediction view model', () => {
@@ -364,93 +450,10 @@ describe('per-process memory forecasts', () => {
   });
 
   it('flips Live to Replay when an in-place update marks the run finished', () => {
-    const ctx: any = {
-      module: { exports: {} },
-      exports: {},
-      performance: { now: () => 0 },
-      setTimeout,
-      clearTimeout,
-      matchMedia: () => ({ matches: false }),
-      requestAnimationFrame: (cb: Function) => setTimeout(() => cb(0), 0),
-      cancelAnimationFrame: clearTimeout,
-      document: { querySelector: () => null },
-      __bpwForecastViewMode: 'live',
-    };
-    ctx.globalThis = ctx;
-    ctx.window = ctx;
-    vm.runInNewContext(
-      fs.readFileSync(path.join(__dirname, '../frontend/public/prediction-view.js'), 'utf8'),
-      ctx,
-    );
+    const ctx = loadPredictionSandbox({ __bpwForecastViewMode: 'live' });
     const localView = ctx.BpwPredictionView;
-    const liveData = {
-      finished: false,
-      prediction_mode: 'bqml-boosted',
-      samples: [
-        { Timestamp: 1000, Name: 'GradleDaemon', PID: '1', HeapUsed: 10, RSS: 20 },
-        { Timestamp: 5000, Name: 'GradleDaemon', PID: '1', HeapUsed: 14, RSS: 24 },
-        { Timestamp: 9000, Name: 'GradleDaemon', PID: '1', HeapUsed: 16, RSS: 26 },
-      ],
-      process_forecasts: [{
-        process_name: 'GradleDaemon',
-        pid: '1',
-        metric: 'heap',
-        created_at_ms: 1000,
-        method: 'last_value',
-        points: [
-          { target_at_ms: 5000, value_mb: 13 },
-          { target_at_ms: 9000, value_mb: 15 },
-        ],
-      }],
-    };
-    const html = localView.render(liveData, null).html;
-    const byId = new Map<string, any>();
-    const hosts: any[] = [];
-    const makeEl = (overrides: Record<string, any> = {}) => {
-      const el: any = {
-        value: '',
-        textContent: '',
-        __innerHTML: '',
-        listeners: {} as Record<string, Function>,
-        dataset: {},
-        classList: { toggle: jest.fn() },
-        setAttribute: jest.fn(),
-        addEventListener: jest.fn((eventName: string, handler: Function) => {
-          el.listeners[eventName] = handler;
-        }),
-        querySelector: (selector: string) => {
-          const idMatch = selector.match(/^#(.+)$/);
-          return idMatch ? byId.get(idMatch[1]) || null : null;
-        },
-        querySelectorAll: (selector: string) => (selector === '[data-forecast-chart-host]' ? hosts : []),
-        ...overrides,
-      };
-      Object.defineProperty(el, 'innerHTML', {
-        get: () => el.__innerHTML,
-        set: (value: string) => { el.__innerHTML = String(value); },
-      });
-      return el;
-    };
-    const dataMatch = html.match(/id="bpw-forecast-replay-data">([\s\S]*?)<\/script>/);
-    byId.set('bpw-forecast-replay-data', makeEl({ textContent: dataMatch?.[1] || '[]' }));
-    byId.set('forecast-replay-timeline', makeEl({ value: '0' }));
-    byId.set('forecast-replay-meta', makeEl());
-    byId.set('forecast-replay-time-label', makeEl());
-    byId.set('btn-forecast-replay-play', makeEl());
-    byId.set('btn-forecast-replay-pause', makeEl());
-    byId.set('btn-forecast-replay-reset', makeEl());
-    byId.set('forecast-replay-speed', makeEl({ value: '15' }));
-    byId.set('btn-forecast-view-live', makeEl());
-    byId.set('btn-forecast-view-replay', makeEl());
-    byId.set('forecast-live-status', makeEl());
-    hosts.push(makeEl());
-    byId.set('forecast-replay-controls', makeEl({ dataset: { forecastViewMode: 'live' }, classList: { toggle: jest.fn() } }));
-    const root = makeEl();
-    root.querySelector = (selector: string) => {
-      const idMatch = selector.match(/^#(.+)$/);
-      return idMatch ? byId.get(idMatch[1]) || null : null;
-    };
-    root.querySelectorAll = (selector: string) => (selector === '[data-forecast-chart-host]' ? hosts : []);
+    const liveData = forecastFixture();
+    const { root } = mountForecastControls(localView, liveData);
 
     const controller = localView.bindProcessForecastView(root, { initialMode: 'live', data: liveData });
     expect(controller.getMode()).toBe('live');
@@ -458,6 +461,73 @@ describe('per-process memory forecasts', () => {
     expect(controller.getMode()).toBe('replay');
     expect(ctx.__bpwForecastViewMode).toBe('replay');
     controller.stop();
+  });
+
+  it('drives forecast replay with BpwPlaybackClock play/pause/reset/speed and destroys on stop', () => {
+    const ctx = loadPredictionSandbox();
+    const localView = ctx.BpwPredictionView;
+    const data = forecastFixture();
+    const { root, byId } = mountForecastControls(localView, data);
+    const createSpy = jest.spyOn(ctx.BpwPlaybackClock, 'createPlaybackClock');
+    const controller = localView.bindProcessForecastView(root, {
+      initialMode: 'replay',
+      data,
+      playbackClock: {
+        now: () => ctx.__now,
+        requestAnimationFrame: (cb: Function) => {
+          ctx.__raf = cb;
+          return 1;
+        },
+        cancelAnimationFrame: () => { ctx.__raf = null; },
+      },
+    });
+
+    expect(createSpy).toHaveBeenCalled();
+    const clock = createSpy.mock.results[0].value;
+    const destroySpy = jest.spyOn(clock, 'destroy');
+    const meta = byId.get('forecast-replay-meta');
+    const timeline = byId.get('forecast-replay-timeline');
+    const speedSelect = byId.get('forecast-replay-speed');
+
+    expect(controller.getMode()).toBe('replay');
+    expect(meta.textContent).toContain('Frame 3 / 3');
+
+    byId.get('btn-forecast-replay-play').listeners.click();
+    expect(clock.getState().playing).toBe(true);
+    // At end, play restarts from the beginning.
+    expect(meta.textContent).toContain('Frame 1 / 3');
+
+    ctx.__now = 200; // 0.2s wall at 15x => 3s logical (between sample 0 and 1)
+    ctx.__raf(ctx.__now);
+    expect(clock.getState().playing).toBe(true);
+    expect(meta.textContent).toContain('Frame 1 / 3');
+
+    ctx.__now = 400; // +0.2s => +3s more => 6s logical => sample 1 (5000)
+    ctx.__raf(ctx.__now);
+    expect(meta.textContent).toContain('Frame 2 / 3');
+
+    byId.get('btn-forecast-replay-pause').listeners.click();
+    expect(clock.getState().playing).toBe(false);
+    expect(clock.getState().sampleIndex).toBe(1);
+
+    speedSelect.value = '50';
+    speedSelect.listeners.change();
+    expect(clock.getState().speed).toBe(50);
+
+    byId.get('btn-forecast-replay-reset').listeners.click();
+    expect(controller.getMode()).toBe('replay');
+    expect(clock.getState().playing).toBe(false);
+    expect(clock.getState().cursorMs).toBe(0);
+    expect(meta.textContent).toContain('Frame 1 / 3');
+    expect(timeline.value).toBe('0');
+
+    // Live updates must not leave orphan clocks after stop.
+    expect(controller.update({ ...data, finished: true })).toBe(true);
+    expect(controller.getMode()).toBe('replay');
+    controller.stop();
+    expect(destroySpy).toHaveBeenCalled();
+    expect(clock.getState().playing).toBe(false);
+    createSpy.mockRestore();
   });
 
   it('ignores malformed data and leaves legacy and pending runs usable', () => {
