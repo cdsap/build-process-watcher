@@ -51,17 +51,12 @@ func newPredictionScheduler(ctx context.Context, options Options) (predictionque
 		log.Printf("🔮 Prediction job queue disabled (set PREDICTION_TASKS_QUEUE, PREDICTION_JOB_URL, PREDICTION_JOB_TOKEN to enable Cloud Tasks offload)")
 		return predictionqueue.Noop{}, nil
 	}
-	mode := strings.TrimSpace(options.PredictionThrottleMode)
-	if mode == "" {
-		mode = "predict"
-	}
 	sched, err := predictionqueue.NewCloudTasks(ctx, predictionqueue.CloudTasksConfig{
-		ProjectID:    options.ProjectID,
-		Location:     location,
-		Queue:        queue,
-		TargetURL:    targetURL,
-		AuthToken:    token,
-		ThrottleMode: mode,
+		ProjectID: options.ProjectID,
+		Location:  location,
+		Queue:     queue,
+		TargetURL: targetURL,
+		AuthToken: token,
 	})
 	if err != nil {
 		log.Printf("🔮 Prediction Cloud Tasks scheduler disabled: %v", err)
