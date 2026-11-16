@@ -515,8 +515,14 @@
         requestAnimationFrame(() => requestAnimationFrame(() => {
             const target = document.getElementById('freshness-diagnostics');
             if (!target || !window.BpwFreshnessView) return;
+            const wasOpen = target.querySelector('details.freshness-info')?.open === true;
             const browserFetchRenderMs = performance.now() - browserRequestStarted;
-            const view = BpwFreshnessView.render(data?.samples, Date.now(), browserFetchRenderMs);
+            const view = BpwFreshnessView.render(
+                data?.samples,
+                Date.now(),
+                browserFetchRenderMs,
+                { open: wasOpen },
+            );
             target.hidden = !view;
             target.innerHTML = view?.html || '';
             window.currentFreshnessDiagnostics = view?.summary || null;
@@ -765,6 +771,7 @@
                     <span class="run-stat muted" id="run-header-updated" ${data.updated_at ? '' : 'hidden'}>${data.updated_at ? new Date(data.updated_at).toLocaleString() : ''}</span>
                 </div>
                 <div class="run-header-actions">
+                    <div id="freshness-diagnostics" class="freshness-diagnostics" hidden></div>
                     <button type="button" class="btn secondary bpw-layout-toggle" data-bpw-layout-toggle id="btn-layout-toggle">Experiment layout</button>
                     ${!isFinished ? `
                         <div class="run-header-refresh">
@@ -781,8 +788,6 @@
                     ` : ''}
                 </div>
             </div>
-
-            <div id="freshness-diagnostics" hidden></div>
 
             <div id="run-panel-dashboard" class="run-dashboard-panel">
             <div class="run-kpi-strip">

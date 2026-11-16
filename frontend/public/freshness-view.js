@@ -89,7 +89,7 @@
         return `${Math.round(value)} ms`;
     }
 
-    function render(samples, renderedAtUnixMs, browserFetchRenderMs) {
+    function render(samples, renderedAtUnixMs, browserFetchRenderMs, options = {}) {
         const renderedAt = finiteNumber(renderedAtUnixMs);
         if (renderedAt !== null) {
             (Array.isArray(samples) ? samples : []).forEach(sample => {
@@ -101,13 +101,13 @@
         }
         const summary = summarize(samples, renderedAtUnixMs, browserFetchRenderMs, firstRenderedAtBySample);
         if (!summary) return null;
-        const skew = summary.clockSkewDetected
-            ? '<span class="freshness-status warning">Clock skew detected</span>'
-            : '<span class="freshness-status ok">Clocks plausible</span>';
+        const openAttr = options.open === true ? ' open' : '';
+        const skewClass = summary.clockSkewDetected ? 'warning' : 'ok';
+        const skewLabel = summary.clockSkewDetected ? 'Clock skew' : 'Clocks ok';
         const gaps = `${summary.sequenceGaps} sequence gap${summary.sequenceGaps === 1 ? '' : 's'}`;
         return {
             summary,
-            html: `<section class="freshness-panel" aria-label="Live freshness diagnostics"><div class="freshness-panel-head"><div><span class="bpw-panel-badge">Spike telemetry</span><h2>Live freshness</h2></div><div>${skew}<span class="freshness-count">${summary.sampleCount} samples · ${gaps}</span></div></div><div class="freshness-metrics"><div><span>End-to-end p50</span><strong>${formatDuration(summary.endToEnd.p50)}</strong></div><div><span>End-to-end p95</span><strong>${formatDuration(summary.endToEnd.p95)}</strong></div><div><span>Runner → backend p95</span><strong>${formatDuration(summary.collectionToReceipt.p95)}</strong></div><div><span>Backend store p95</span><strong>${formatDuration(summary.backendStorage.p95)}</strong></div><div><span>Store → first display p95</span><strong>${formatDuration(summary.storageToRender.p95)}</strong></div><div><span>Dashboard fetch + render</span><strong>${formatDuration(summary.browserFetchRenderMs)}</strong></div></div>${summary.clockSkewDetected ? '<p class="freshness-note">Cross-host wall clocks are not synchronized; backend storage and browser fetch/render durations remain monotonic measurements.</p>' : ''}</section>`,
+            html: `<details class="freshness-info"${openAttr}><summary class="freshness-info-summary" aria-label="Freshness diagnostics"><span class="freshness-info-label">Freshness</span><span class="freshness-status ${skewClass}">${skewLabel}</span></summary><div class="freshness-info-panel" aria-label="Live freshness diagnostics"><div class="freshness-info-meta"><span class="bpw-panel-badge">Spike telemetry</span><span class="freshness-count">${summary.sampleCount} samples · ${gaps}</span></div><div class="freshness-metrics"><div><span>End-to-end p50</span><strong>${formatDuration(summary.endToEnd.p50)}</strong></div><div><span>End-to-end p95</span><strong>${formatDuration(summary.endToEnd.p95)}</strong></div><div><span>Runner → backend p95</span><strong>${formatDuration(summary.collectionToReceipt.p95)}</strong></div><div><span>Backend store p95</span><strong>${formatDuration(summary.backendStorage.p95)}</strong></div><div><span>Store → first display p95</span><strong>${formatDuration(summary.storageToRender.p95)}</strong></div><div><span>Dashboard fetch + render</span><strong>${formatDuration(summary.browserFetchRenderMs)}</strong></div></div>${summary.clockSkewDetected ? '<p class="freshness-note">Cross-host wall clocks are not synchronized; backend storage and browser fetch/render durations remain monotonic measurements.</p>' : ''}</div></details>`,
         };
     }
 

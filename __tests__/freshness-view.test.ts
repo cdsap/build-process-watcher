@@ -63,12 +63,17 @@ describe('freshness diagnostics view model', () => {
     expect(view.summarize([{ PID: 'legacy' }], 1500, 20)).toBeNull();
   });
 
-  it('renders an operational diagnostics component only for instrumented samples', () => {
+  it('renders collapsed header info only for instrumented samples', () => {
     const first = view.render(samples, 2500, 75);
     const html = first.html;
-    expect(html).toContain('Live freshness');
+    expect(html).toContain('<details class="freshness-info">');
+    expect(html).not.toContain(' open>');
+    expect(html).toContain('Freshness');
+    expect(html).toContain('Clocks ok');
+    expect(html).toContain('Spike telemetry');
     expect(html).toContain('End-to-end p95');
     expect(html).toContain('1 sequence gap');
+    expect(view.render(samples, 5000, 80, { open: true }).html).toContain('<details class="freshness-info" open>');
     expect(view.render(samples, 5000, 80).summary.endToEnd).toEqual(first.summary.endToEnd);
     expect(view.render([], 2500, 75)).toBeNull();
   });
