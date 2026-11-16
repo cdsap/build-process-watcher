@@ -15,45 +15,35 @@ type ForecastRepository interface {
 	AppendProcessForecasts(ctx context.Context, runID string, forecasts []models.ProcessForecast) error
 }
 
+// TimelineProviders maps prediction modes to forecast providers.
+type TimelineProviders struct {
+	Forecast    predictor.ForecastProvider
+	TabPredict  predictor.ForecastProvider
+	BQMLBoosted predictor.ForecastProvider
+}
+
 // ForecastEvaluator coordinates process-forecast provider calls after ingest.
 // prediction_mode=forecast → TimesFM (/forecast)
 // prediction_mode=predict → TabFM (/tabpredict)
 // prediction_mode=bqml-boosted → trained BQML boosted trees (/bqml-boosted)
 // All write the same public process_forecasts contract.
 type ForecastEvaluator struct {
-	repo                ForecastRepository
-	forecastProvider    predictor.ForecastProvider
-	tabPredictProvider  predictor.ForecastProvider
-	bqmlBoostedProvider predictor.ForecastProvider
+	repo      ForecastRepository
+	providers TimelineProviders
 }
 
-// NewForecastEvaluator constructs a forecast evaluator.
-func NewForecastEvaluator(repo ForecastRepository, forecastProvider predictor.ForecastProvider) *ForecastEvaluator {
-	return NewForecastEvaluatorWithProviders(repo, forecastProvider, predictor.NoopForecastProvider{}, predictor.NoopForecastProvider{})
-}
-
-// NewForecastEvaluatorWithTabPredict constructs an evaluator for forecast and predict modes.
-func NewForecastEvaluatorWithTabPredict(repo ForecastRepository, forecastProvider, tabPredictProvider predictor.ForecastProvider) *ForecastEvaluator {
-	return NewForecastEvaluatorWithProviders(repo, forecastProvider, tabPredictProvider, predictor.NoopForecastProvider{})
-}
-
-// NewForecastEvaluatorWithProviders constructs an evaluator for all timeline modes.
-func NewForecastEvaluatorWithProviders(repo ForecastRepository, forecastProvider, tabPredictProvider, bqmlBoostedProvider predictor.ForecastProvider) *ForecastEvaluator {
-	if forecastProvider == nil {
-		forecastProvider = predictor.NoopForecastProvider{}
+// NewForecastEvaluator constructs an evaluator for the configured timeline modes.
+func NewForecastEvaluator(repo ForecastRepository, providers TimelineProviders) *ForecastEvaluator {
+	if providers.Forecast == nil {
+		providers.Forecast = predictor.NoopForecastProvider{}
 	}
-	if tabPredictProvider == nil {
-		tabPredictProvider = predictor.NoopForecastProvider{}
+	if providers.TabPredict == nil {
+		providers.TabPredict = predictor.NoopForecastProvider{}
 	}
-	if bqmlBoostedProvider == nil {
-		bqmlBoostedProvider = predictor.NoopForecastProvider{}
+	if providers.BQMLBoosted == nil {
+		providers.BQMLBoosted = predictor.NoopForecastProvider{}
 	}
-	return &ForecastEvaluator{
-		repo:                repo,
-		forecastProvider:    forecastProvider,
-		tabPredictProvider:  tabPredictProvider,
-		bqmlBoostedProvider: bqmlBoostedProvider,
-	}
+	return &ForecastEvaluator{repo: repo, providers: providers}
 }
 
 // Evaluate requests process forecasts for forecast, predict, or bqml-boosted modes.
@@ -97,11 +87,11 @@ func (e *ForecastEvaluator) Evaluate(ctx context.Context, runID string) {
 func (e *ForecastEvaluator) providerForMode(mode models.PredictionMode) predictor.ForecastProvider {
 	switch mode {
 	case models.PredictionModeForecast:
-		return e.forecastProvider
+		return e.providers.Forecast
 	case models.PredictionModePredict:
-		return e.tabPredictProvider
+		return e.providers.TabPredict
 	case models.PredictionModeBQMLBoosted:
-		return e.bqmlBoostedProvider
+		return e.providers.BQMLBoosted
 	default:
 		return nil
 	}

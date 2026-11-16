@@ -4,22 +4,20 @@ import (
 	"context"
 	"net/http"
 	"time"
-
-	"github.com/cdsap/build-process-watcher/backend/internal/models"
 )
 
 const defaultForecastTimeout = 20 * time.Second
 
 // ForecastProvider returns public-safe process memory forecasts.
 type ForecastProvider interface {
-	Forecast(ctx context.Context, snapshot RunSnapshot) ([]models.ProcessForecast, error)
+	Forecast(ctx context.Context, snapshot RunSnapshot) ([]ProcessForecast, error)
 }
 
 // NoopForecastProvider never produces forecasts.
 type NoopForecastProvider struct{}
 
 // Forecast returns no issuances.
-func (NoopForecastProvider) Forecast(context.Context, RunSnapshot) ([]models.ProcessForecast, error) {
+func (NoopForecastProvider) Forecast(context.Context, RunSnapshot) ([]ProcessForecast, error) {
 	return nil, nil
 }
 
@@ -84,11 +82,11 @@ type remoteForecastRequest struct {
 }
 
 type remoteForecastResponse struct {
-	Forecasts []models.ProcessForecast `json:"forecasts"`
+	Forecasts []ProcessForecast `json:"forecasts"`
 }
 
 // Forecast requests process forecasts from the private provider.
-func (p *RemoteForecastProvider) Forecast(ctx context.Context, snapshot RunSnapshot) ([]models.ProcessForecast, error) {
+func (p *RemoteForecastProvider) Forecast(ctx context.Context, snapshot RunSnapshot) ([]ProcessForecast, error) {
 	payload := remoteForecastRequest{
 		RunID:   snapshot.RunID,
 		Samples: toRemoteSamples(snapshot.Samples),
