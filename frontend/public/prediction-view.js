@@ -252,6 +252,18 @@
         return TIMELINE_MODES.has(String(mode || ''));
     }
 
+    // Finished runs always open Replay. A sticky Live preference from the live
+    // session must not keep Predictions locked on Live after /finish.
+    function preferredForecastViewMode(data, explicitMode) {
+        if (explicitMode === 'live' || explicitMode === 'replay') return explicitMode;
+        if (data?.finished === true) return 'replay';
+        if (typeof window !== 'undefined') {
+            const sticky = window.__bpwForecastViewMode;
+            if (sticky === 'live' || sticky === 'replay') return sticky;
+        }
+        return 'live';
+    }
+
     function forecastFreshness(data) {
         const samples = Array.isArray(data?.samples) ? data.samples : [];
         const forecasts = Array.isArray(data?.process_forecasts) ? data.process_forecasts : [];
@@ -549,10 +561,13 @@
         const available = collectForecastGroups(data, { allowEmptyPredictions: timelineMode });
         if (!available.length) {
             if (!timelineMode) return '';
-            return `<section class="prediction-panel process-forecasts" data-forecast-panel data-prediction-mode="${escapeHtml(String(data.prediction_mode || ''))}"><h2>Process memory forecasts</h2><p id="forecast-live-status" class="forecast-live-status">${escapeHtml(formatForecastStatus(data, data?.finished === true ? 'replay' : 'live'))}</p><p>No eligible Gradle/Kotlin process samples yet.</p></section>`;
+            const emptyMode = preferredForecastViewMode(data);
+            return `<section class="prediction-panel process-forecasts" data-forecast-panel data-prediction-mode="${escapeHtml(String(data.prediction_mode || ''))}"><h2>Process memory forecasts</h2><p id="forecast-live-status" class="forecast-live-status">${escapeHtml(formatForecastStatus(data, emptyMode))}</p><p>No eligible Gradle/Kotlin process samples yet.</p></section>`;
         }
-        const defaultMode = (typeof window !== 'undefined' && window.__bpwForecastViewMode)
-            || (data?.finished === true ? 'replay' : 'live');
+        const defaultMode = preferredForecastViewMode(data);
+        if (typeof window !== 'undefined' && data?.finished === true) {
+            window.__bpwForecastViewMode = 'replay';
+        }
         const lagWarn = TIMELINE_LAG_WARN_S[String(data?.prediction_mode || '')] || 40;
         const freshness = forecastFreshness(data);
         const delayed = freshness.forecastCount > 0 && freshness.lagS !== null && freshness.lagS >= lagWarn;
@@ -622,10 +637,10 @@
         let playTimer = null;
         let currentFrame = 0;
         let speedMultiplier = Number(speedSelect?.value) || 15;
-        let mode = options.initialMode
-            || (typeof window !== 'undefined' && window.__bpwForecastViewMode)
-            || (options.finished === true ? 'replay' : 'live');
-        let latestData = options.data || null;
+        let latestData = options.data || (
+            options.finished === true ? { finished: true } : { finished: false }
+        );
+        let mode = preferredForecastViewMode(latestData, options.initialMode);
 
         function rebuildTimestamps() {
             timestamps = [...new Set(groups.flatMap((group) => (group.actual || []).map((point) => point.time)))]
@@ -735,7 +750,12 @@
 
         function update(data) {
             if (!data) return false;
+            const wasLiveUnfinished = mode === 'live' && latestData?.finished !== true;
             latestData = data;
+            if (data.finished === true && wasLiveUnfinished) {
+                // Run just finished while Predictions was following Live: flip to Replay once.
+                setMode('replay');
+            }
             const timelineMode = isTimelinePredictionMode(data.prediction_mode);
             const nextGroups = collectForecastGroups(data, { allowEmptyPredictions: timelineMode });
             if (!nextGroups.length) return false;
@@ -796,8 +816,8 @@
         };
     }
 
-    function bindProcessForecastReplay(root) {
-        const controller = bindProcessForecastView(root, {});
+    function bindProcessForecastReplay(root, options = {}) {
+        const controller = bindProcessForecastView(root, options);
         return () => controller.stop();
     }
 
@@ -847,6 +867,7 @@
         peakAggregateRss,
         actualNear,
         isTimelinePredictionMode,
+        preferredForecastViewMode,
         forecastFreshness,
         formatForecastStatus,
         bindProcessForecastView,
