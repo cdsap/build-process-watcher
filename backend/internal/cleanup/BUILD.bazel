@@ -1,4 +1,4 @@
-load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "cleanup",
@@ -6,9 +6,15 @@ go_library(
     importpath = "github.com/cdsap/build-process-watcher/backend/internal/cleanup",
     visibility = ["//:__subpackages__"],
     deps = [
-        "//internal/auth",
         "//internal/exportqueue",
         "//internal/runlifecycle",
         "//internal/storage",
     ],
+)
+
+go_test(
+    name = "cleanup_test",
+    srcs = ["cleanup_test.go"],
+    embed = [":cleanup"],
+    deps = ["//internal/runlifecycle"],
 )
