@@ -24,6 +24,7 @@ type Deps struct {
 	NewStorage             func(ctx context.Context, projectID string) (*storage.Client, error)
 	NewBigQuery            func(ctx context.Context, projectID, dataset, samplesTable, processesTable string) (*bigqueryexport.Exporter, error)
 	NewPredictionScheduler func(ctx context.Context, options Options) (predictionqueue.Scheduler, func() error)
+	NewAuthenticator       func() (*auth.Authenticator, error)
 }
 
 // App is a constructed backend HTTP server with closable dependencies.
@@ -38,7 +39,11 @@ func Build(ctx context.Context, options Options, deps Deps) (*App, error) {
 		return nil, errors.New("GOOGLE_CLOUD_PROJECT environment variable is required")
 	}
 
-	authenticator, err := auth.NewFromEnv()
+	newAuth := deps.NewAuthenticator
+	if newAuth == nil {
+		newAuth = auth.NewFromEnv
+	}
+	authenticator, err := newAuth()
 	if err != nil {
 		return nil, err
 	}

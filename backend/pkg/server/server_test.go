@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/internal/auth"
 	"github.com/cdsap/build-process-watcher/backend/internal/cleanup"
 	"github.com/cdsap/build-process-watcher/backend/internal/handlers"
+	"github.com/cdsap/build-process-watcher/backend/internal/storage"
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
 )
 
@@ -300,5 +302,35 @@ func TestAppServeShutsDownOnContextCancel(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("Serve did not return after cancel")
+	}
+}
+
+func TestBuildUsesInjectedAuthenticatorFactory(t *testing.T) {
+	called := false
+	_, err := Build(context.Background(), Options{ProjectID: "proj"}, Deps{
+		NewAuthenticator: func() (*auth.Authenticator, error) {
+			called = true
+			return auth.NewForTest("jwt", "admin"), nil
+		},
+		NewStorage: func(context.Context, string) (*storage.Client, error) {
+			return nil, errors.New("stop after auth")
+		},
+	})
+	if !called {
+		t.Fatal("NewAuthenticator was not called")
+	}
+	if err == nil || err.Error() != "stop after auth" {
+		t.Fatalf("err=%v, want stop after auth", err)
+	}
+}
+
+func TestBuildPropagatesAuthenticatorFactoryError(t *testing.T) {
+	_, err := Build(context.Background(), Options{ProjectID: "proj"}, Deps{
+		NewAuthenticator: func() (*auth.Authenticator, error) {
+			return nil, errors.New("auth boom")
+		},
+	})
+	if err == nil || err.Error() != "auth boom" {
+		t.Fatalf("err=%v, want auth boom", err)
 	}
 }
