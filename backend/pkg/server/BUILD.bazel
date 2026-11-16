@@ -2,7 +2,12 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "server",
-    srcs = ["server.go"],
+    srcs = [
+        "app.go",
+        "mux.go",
+        "options.go",
+        "providers.go",
+    ],
     importpath = "github.com/cdsap/build-process-watcher/backend/pkg/server",
     visibility = ["//visibility:public"],
     deps = [
