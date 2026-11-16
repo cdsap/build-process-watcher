@@ -356,10 +356,14 @@ func TestRunResponse_WithPredictionCheckpoints(t *testing.T) {
 	}
 }
 
-func TestNewHandlersWithPredictorWiresCheckpointEvaluator(t *testing.T) {
-	h := NewHandlersWithPredictor(nil, nil, predictor.NoopProvider{}, []int{60}, func(error) (string, string) {
-		return "no_data", "prediction data unavailable"
-	}, predictor.NoopForecastProvider{}, predictor.NoopForecastProvider{}, predictor.NoopForecastProvider{})
+func TestNewHandlersConfigWiresCheckpointEvaluator(t *testing.T) {
+	h := New(Config{
+		ReliabilityProvider: predictor.NoopProvider{},
+		Checkpoints:         []int{60},
+		FallbackClassifier: func(error) (string, string) {
+			return "no_data", "prediction data unavailable"
+		},
+	})
 	if h.checkpointEvaluator == nil {
 		t.Fatal("expected checkpoint evaluator to be constructed")
 	}
@@ -368,7 +372,7 @@ func TestNewHandlersWithPredictorWiresCheckpointEvaluator(t *testing.T) {
 		t.Fatalf("classifier = (%q, %q), want injected mapping", state, message)
 	}
 
-	h = NewHandlersWithPredictor(nil, nil, nil, nil, nil, nil, nil, nil)
+	h = New(Config{})
 	err := fmt.Errorf("private stack: customer id 9: boom")
 	state, message = h.checkpointEvaluator.FallbackClassifier()(err)
 	if state != "provider_error" || message != "prediction provider error" {

@@ -58,28 +58,47 @@ type Exporter interface {
 	Run(runID string)
 }
 
-// NewHandlers creates a new handlers instance. export may be nil (no BigQuery jobs).
-func NewHandlers(storageClient Storage, export Exporter) *Handlers {
-	return NewHandlersWithPredictor(storageClient, export, predictor.NoopProvider{}, nil, nil, predictor.NoopForecastProvider{}, predictor.NoopForecastProvider{}, predictor.NoopForecastProvider{})
+// Config wires HTTP handlers without a long positional constructor.
+type Config struct {
+	Storage             Storage
+	Export              Exporter
+	ReliabilityProvider predictor.Provider
+	Checkpoints         []int
+	FallbackClassifier  predictor.FallbackClassifier
+	TimelineProviders   prediction.TimelineProviders
+	Authenticator       *auth.Authenticator
+	PredictionScheduler predictionqueue.Scheduler
+	PredictionJobToken  string
 }
 
-// NewHandlersWithPredictor creates handlers with optional reliability and timeline
-// providers (forecast / tabpredict / bqml-boosted) plus an optional fallback classifier.
-func NewHandlersWithPredictor(storageClient Storage, export Exporter, predictionProvider predictor.Provider, checkpoints []int, fallbackClassifier predictor.FallbackClassifier, forecastProvider, tabPredictProvider, bqmlBoostedProvider predictor.ForecastProvider) *Handlers {
+// New constructs handlers from Config.
+func New(cfg Config) *Handlers {
 	var checkpointRepo prediction.CheckpointRepository
 	var forecastRepo prediction.ForecastRepository
-	if storageClient != nil {
-		checkpointRepo = storageClient
-		forecastRepo = storageClient
+	if cfg.Storage != nil {
+		checkpointRepo = cfg.Storage
+		forecastRepo = cfg.Storage
 	}
-	return &Handlers{
-		storage:             storageClient,
-		export:              export,
-		lifecycle:           runlifecycle.New(storageClient, export),
-		checkpointEvaluator: prediction.NewCheckpointEvaluator(checkpointRepo, predictionProvider, checkpoints, fallbackClassifier),
-		forecastEvaluator:   prediction.NewForecastEvaluatorWithProviders(forecastRepo, forecastProvider, tabPredictProvider, bqmlBoostedProvider),
+	reliability := cfg.ReliabilityProvider
+	if reliability == nil {
+		reliability = predictor.NoopProvider{}
+	}
+	h := &Handlers{
+		storage:             cfg.Storage,
+		export:              cfg.Export,
+		authn:               cfg.Authenticator,
+		lifecycle:           runlifecycle.New(cfg.Storage, cfg.Export),
+		checkpointEvaluator: prediction.NewCheckpointEvaluator(checkpointRepo, reliability, cfg.Checkpoints, cfg.FallbackClassifier),
+		forecastEvaluator:   prediction.NewForecastEvaluator(forecastRepo, cfg.TimelineProviders),
 		predictionScheduler: predictionqueue.Noop{},
 	}
+	h.SetPredictionScheduler(cfg.PredictionScheduler, cfg.PredictionJobToken)
+	return h
+}
+
+// NewHandlers creates a handlers instance with noop predictors. export may be nil.
+func NewHandlers(storageClient Storage, export Exporter) *Handlers {
+	return New(Config{Storage: storageClient, Export: export})
 }
 
 // SetAuthenticator installs the JWT/admin authenticator used by auth and ingest.

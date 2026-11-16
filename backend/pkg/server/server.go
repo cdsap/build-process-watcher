@@ -15,6 +15,7 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/internal/cleanup"
 	"github.com/cdsap/build-process-watcher/backend/internal/exportqueue"
 	"github.com/cdsap/build-process-watcher/backend/internal/handlers"
+	"github.com/cdsap/build-process-watcher/backend/internal/prediction"
 	"github.com/cdsap/build-process-watcher/backend/internal/predictionqueue"
 	"github.com/cdsap/build-process-watcher/backend/internal/storage"
 	"github.com/cdsap/build-process-watcher/backend/pkg/predictor"
@@ -222,9 +223,6 @@ func Build(ctx context.Context, options Options, deps Deps) (*App, error) {
 	if predictor.ForecastEnabled(bqmlBoostedProvider) {
 		log.Printf("🔮 Process bqml-boosted provider enabled")
 	}
-	h := handlers.NewHandlersWithPredictor(storageClient, exportSched, provider, options.PredictionCheckpoints, options.FallbackClassifier, forecastProvider, tabPredictProvider, bqmlBoostedProvider)
-	h.SetAuthenticator(authenticator)
-
 	newSched := deps.NewPredictionScheduler
 	if newSched == nil {
 		newSched = newPredictionScheduler
@@ -233,7 +231,21 @@ func Build(ctx context.Context, options Options, deps Deps) (*App, error) {
 	if predictionCloser != nil {
 		closers = append(closers, predictionCloser)
 	}
-	h.SetPredictionScheduler(predictionSched, options.PredictionJobToken)
+	h := handlers.New(handlers.Config{
+		Storage:             storageClient,
+		Export:              exportSched,
+		ReliabilityProvider: provider,
+		Checkpoints:         options.PredictionCheckpoints,
+		FallbackClassifier:  options.FallbackClassifier,
+		TimelineProviders: prediction.TimelineProviders{
+			Forecast:    forecastProvider,
+			TabPredict:  tabPredictProvider,
+			BQMLBoosted: bqmlBoostedProvider,
+		},
+		Authenticator:       authenticator,
+		PredictionScheduler: predictionSched,
+		PredictionJobToken:  options.PredictionJobToken,
+	})
 
 	cleanupService := cleanup.NewService(storageClient, exportSched, authenticator)
 	mux := NewMux(h, cleanupService)
