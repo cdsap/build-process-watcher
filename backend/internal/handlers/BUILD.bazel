@@ -4,6 +4,7 @@ go_library(
     name = "handlers",
     srcs = [
         "auth_handler.go",
+        "auth_options.go",
         "cors.go",
         "handlers.go",
         "ingest.go",
@@ -28,6 +29,7 @@ go_library(
 go_test(
     name = "handlers_test",
     srcs = [
+        "auth_options_test.go",
         "cors_test.go",
         "handlers_test.go",
     ],
