@@ -1,0 +1,16 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "ingest",
+    srcs = ["parse.go"],
+    importpath = "github.com/cdsap/build-process-watcher/backend/internal/ingest",
+    visibility = ["//:__subpackages__"],
+    deps = ["//internal/models"],
+)
+
+go_test(
+    name = "ingest_test",
+    srcs = ["parse_test.go"],
+    embed = [":ingest"],
+    deps = ["//internal/models"],
+)

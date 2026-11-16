@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/cdsap/build-process-watcher/backend/internal/ingest"
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
 	"github.com/cdsap/build-process-watcher/backend/internal/predictionqueue"
 	"github.com/cdsap/build-process-watcher/backend/internal/storage"
@@ -83,7 +84,7 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Using existing StartTime: %v", startTime)
 	}
 
-	samples, err := storage.ParseData(req.Data, startTime)
+	samples, err := ingest.ParseData(req.Data, startTime)
 	if err != nil {
 		log.Printf("Failed to parse data: %v", err)
 		http.Error(w, "Invalid data format", http.StatusBadRequest)
