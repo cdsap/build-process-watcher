@@ -697,6 +697,34 @@ func TestFinishRunUsesExportPort(t *testing.T) {
 	}
 }
 
+func TestAuthUsesFakeRunAuthenticator(t *testing.T) {
+	store := newFakeStorage()
+	fakeAuth := &handlertest.FakeAuthenticator{Token: "mux-fake-token"}
+	h := New(Config{Storage: store, Authenticator: fakeAuth})
+
+	rec := httptest.NewRecorder()
+	h.Auth(rec, httptest.NewRequest(http.MethodGet, "/auth/run/run-fake", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp models.TokenResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Token != "mux-fake-token" {
+		t.Fatalf("token = %q, want mux-fake-token", resp.Token)
+	}
+
+	ingestRec := httptest.NewRecorder()
+	ingestReq := httptest.NewRequest(http.MethodPost, "/ingest", strings.NewReader(`{"run_id":"run-fake","process_info":{"pid":"1","name":"GradleDaemon"}}`))
+	ingestReq.Header.Set("Authorization", "Bearer mux-fake-token")
+	ingestReq.Header.Set("Content-Type", "application/json")
+	h.Ingest(ingestRec, ingestReq)
+	if ingestRec.Code != http.StatusOK {
+		t.Fatalf("ingest status = %d body=%s", ingestRec.Code, ingestRec.Body.String())
+	}
+}
+
 func TestValidateRunBearerTokenRequiresAuthenticator(t *testing.T) {
 	h := NewHandlers(nil, nil) // no authenticator injected
 	req := httptest.NewRequest(http.MethodPost, "/ingest", nil)
