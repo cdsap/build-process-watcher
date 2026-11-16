@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -30,34 +29,12 @@ func (h *Handlers) Auth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mode, ok := models.ParsePredictionMode(r.URL.Query().Get("prediction_mode"))
-	if !ok {
-		http.Error(w, "invalid prediction_mode", http.StatusBadRequest)
+	opts, err := parseAuthRunOptions(r.URL.Query())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	legacy := boolQuery(r, "predictive_reliability")
-	if legacy && mode != models.PredictionModeUnset && mode != models.PredictionModeReliability {
-		http.Error(w, "conflicting prediction settings", http.StatusBadRequest)
-		return
-	}
-	if mode == models.PredictionModeUnset && legacy {
-		mode = models.PredictionModeReliability
-	}
-	if h.storage != nil && mode != models.PredictionModeUnset && mode != models.PredictionModeDisabled {
-		if err := h.storage.SetRunPredictionMode(r.Context(), runID, mode.String()); err != nil {
-			log.Printf("Warning: could not persist prediction mode for run %s: %v", runID, err)
-		}
-	}
-	if h.storage != nil && r.URL.Query().Get("export_to_bigquery") == "true" {
-		if err := h.storage.SetRunExportToBigquery(r.Context(), runID, true); err != nil {
-			log.Printf("Warning: could not persist export_to_bigquery for run %s: %v", runID, err)
-		}
-	}
-	if h.storage != nil && mode == models.PredictionModeReliability {
-		if err := h.storage.SetRunPredictiveReliability(r.Context(), runID, true); err != nil {
-			log.Printf("Warning: could not persist predictive_reliability for run %s: %v", runID, err)
-		}
-	}
+	h.applyAuthRunOptions(r.Context(), runID, opts)
 
 	log.Printf("🔐 Auth request for run_id: %s", runID)
 
@@ -82,9 +59,4 @@ func (h *Handlers) Auth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 
 	log.Printf("✅ Generated token for run_id: %s, expires at: %s", runID, expiresAt.Format(time.RFC3339))
-}
-
-func boolQuery(r *http.Request, key string) bool {
-	enabled, err := strconv.ParseBool(strings.TrimSpace(r.URL.Query().Get(key)))
-	return err == nil && enabled
 }
