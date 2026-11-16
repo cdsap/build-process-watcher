@@ -21,6 +21,8 @@ type FakeStorage struct {
 	StoredProcessInfo     []models.ProcessInfo
 	AppendedForecasts     []models.ProcessForecast
 	FinishedRuns          []string
+	GetRunCalls           int
+	GetProcessesCalls     int
 	LastCtx               context.Context
 }
 
@@ -37,6 +39,7 @@ func NewFakeStorage() *FakeStorage {
 
 func (f *FakeStorage) GetRun(ctx context.Context, runID string) (*models.RunDoc, error) {
 	f.LastCtx = ctx
+	f.GetRunCalls++
 	if f.GetRunErr != nil {
 		return nil, f.GetRunErr
 	}
@@ -49,6 +52,7 @@ func (f *FakeStorage) GetRun(ctx context.Context, runID string) (*models.RunDoc,
 
 func (f *FakeStorage) GetProcesses(ctx context.Context, runID string) (*models.ProcessDoc, error) {
 	f.LastCtx = ctx
+	f.GetProcessesCalls++
 	processes, ok := f.Processes[runID]
 	if !ok {
 		return nil, fmt.Errorf("processes for run %s not found", runID)

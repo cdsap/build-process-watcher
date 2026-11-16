@@ -267,3 +267,32 @@ func TestCheckpointEvaluatorPropagatesContextToRepo(t *testing.T) {
 		t.Fatalf("store calls = %d, want 1", repo.storeN)
 	}
 }
+
+func TestCheckpointEvaluatorEvaluateLoadedSkipsGetRun(t *testing.T) {
+	repo := &fakeRepo{
+		run: enabledRun([]models.Sample{{ElapsedTime: 90}}),
+		process: &models.ProcessDoc{
+			RunID: "run-1",
+			ProcessInfo: map[string]models.ProcessInfo{
+				"1": {PID: "1", Name: "GradleDaemon"},
+			},
+		},
+	}
+	provider := &stubProvider{
+		checkpoint: models.PredictionCheckpoint{ObservationWindowS: 60, Status: "ready"},
+	}
+	evaluator := NewCheckpointEvaluator(repo, provider, []int{60}, nil)
+	evaluator.EvaluateLoaded(context.Background(), "run-1", repo.run, repo.process)
+	if repo.getRunN != 0 {
+		t.Fatalf("preloaded EvaluateLoaded GetRun calls = %d, want 0", repo.getRunN)
+	}
+	if repo.getProcN != 0 {
+		t.Fatalf("preloaded EvaluateLoaded GetProcesses calls = %d, want 0", repo.getProcN)
+	}
+	if provider.calls != 1 || repo.storeN != 1 {
+		t.Fatalf("provider=%d store=%d, want 1/1", provider.calls, repo.storeN)
+	}
+	if provider.lastSnap.ProcessInfo["1"].Name != "GradleDaemon" {
+		t.Fatalf("process info not passed through: %#v", provider.lastSnap.ProcessInfo)
+	}
+}

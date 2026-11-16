@@ -46,15 +46,24 @@ func NewForecastEvaluator(repo ForecastRepository, providers TimelineProviders) 
 	return &ForecastEvaluator{repo: repo, providers: providers}
 }
 
-// Evaluate requests process forecasts for forecast, predict, or bqml-boosted modes.
+// Evaluate loads the run then requests process forecasts for configured timeline modes.
 func (e *ForecastEvaluator) Evaluate(ctx context.Context, runID string) {
+	e.EvaluateLoaded(ctx, runID, nil)
+}
+
+// EvaluateLoaded evaluates against an optional preloaded run document.
+// A nil runDoc is loaded from the repository (same behavior as Evaluate).
+func (e *ForecastEvaluator) EvaluateLoaded(ctx context.Context, runID string, runDoc *models.RunDoc) {
 	if e == nil || e.repo == nil {
 		return
 	}
-	runDoc, err := e.repo.GetRun(ctx, runID)
-	if err != nil {
-		log.Printf("Forecast skipped: could not load run %s: %v", runID, err)
-		return
+	if runDoc == nil {
+		var err error
+		runDoc, err = e.repo.GetRun(ctx, runID)
+		if err != nil {
+			log.Printf("Forecast skipped: could not load run %s: %v", runID, err)
+			return
+		}
 	}
 	// Do not skip when Finished: prediction jobs are enqueued from /ingest and may
 	// run after /finish. Throttle + AppendProcessForecasts idempotency prevent storms.

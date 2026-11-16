@@ -33,6 +33,16 @@ func (f *fakeForecastProvider) Forecast(context.Context, predictor.RunSnapshot) 
 	return f.forecasts, nil
 }
 
+type stubReliabilityProvider struct {
+	checkpoint models.PredictionCheckpoint
+	calls      int
+}
+
+func (s *stubReliabilityProvider) Predict(_ context.Context, _ predictor.RunSnapshot, _ int) (models.PredictionCheckpoint, error) {
+	s.calls++
+	return s.checkpoint, nil
+}
+
 type fakeExporter struct {
 	runIDs []string
 }
@@ -491,6 +501,53 @@ func TestEvaluatePredictionJobRunsForecastEvaluation(t *testing.T) {
 	}
 	if response["status"] != "success" || response["run_id"] != "run-job" {
 		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestEvaluatePredictionJobLoadsRunOnce(t *testing.T) {
+	store := newFakeStorage()
+	store.Runs["run-job"] = &models.RunDoc{
+		RunID:          "run-job",
+		PredictionMode: "forecast",
+		Samples:        []models.Sample{{ElapsedTime: 40, Timestamp: 40000}},
+	}
+	// Enable reliability evaluator too so both paths would previously each GetRun.
+	reliability := &stubReliabilityProvider{
+		checkpoint: models.PredictionCheckpoint{ObservationWindowS: 60, Status: "ready"},
+	}
+	forecast := &fakeForecastProvider{forecasts: []models.ProcessForecast{{
+		ProcessName: "GradleDaemon",
+		Metric:      "rss",
+		CreatedAtMs: 40_000,
+	}}}
+	h := New(Config{
+		Storage:             store,
+		ReliabilityProvider: reliability,
+		Checkpoints:         []int{60},
+		TimelineProviders: prediction.TimelineProviders{
+			Forecast: forecast,
+		},
+		Authenticator:       testAuthn,
+		PredictionScheduler: predictionqueue.Noop{},
+		PredictionJobToken:  "job-secret",
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/internal/prediction-jobs", strings.NewReader(`{"run_id":"run-job"}`))
+	req.Header.Set(predictionqueue.JobTokenHeader, "job-secret")
+	recorder := httptest.NewRecorder()
+	h.EvaluatePredictionJob(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if store.GetRunCalls != 1 {
+		t.Fatalf("GetRun calls = %d, want 1 for prediction job success path", store.GetRunCalls)
+	}
+	if !forecast.called {
+		t.Fatal("forecast provider was not called")
+	}
+	if reliability.calls != 0 {
+		t.Fatalf("reliability provider calls = %d, want 0 for forecast mode", reliability.calls)
 	}
 }
 
