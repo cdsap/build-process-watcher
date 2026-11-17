@@ -67,6 +67,8 @@ func (h *Handlers) GetRun(w http.ResponseWriter, r *http.Request) {
 	var response models.RunResponse
 	response.Samples = runDoc.Samples
 	response.ProcessInfo = processDoc.ProcessInfo
+	response.PredictionMode = runDoc.PredictionMode
+	response.PredictionThrottleS = runDoc.PredictionThrottleS
 	response.PredictionCheckpoints = runDoc.PredictionCheckpoints
 	response.ProcessForecasts = runDoc.ProcessForecasts
 	response.Finished = runDoc.Finished

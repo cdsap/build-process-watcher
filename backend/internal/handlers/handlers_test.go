@@ -577,9 +577,11 @@ func TestIngestAttachesFreshnessReceiptMetadata(t *testing.T) {
 func TestGetRunUsesStoragePort(t *testing.T) {
 	store := newFakeStorage()
 	store.Runs["run-retrieve"] = &models.RunDoc{
-		RunID:    "run-retrieve",
-		Samples:  []models.Sample{{PID: "12345", Name: "GradleDaemon"}},
-		Finished: true,
+		RunID:               "run-retrieve",
+		Samples:             []models.Sample{{PID: "12345", Name: "GradleDaemon"}},
+		PredictionMode:      "predict",
+		PredictionThrottleS: 10,
+		Finished:            true,
 	}
 	store.Processes["run-retrieve"] = &models.ProcessDoc{
 		RunID: "run-retrieve",
@@ -600,6 +602,9 @@ func TestGetRunUsesStoragePort(t *testing.T) {
 	}
 	if len(response.Samples) != 1 || response.ProcessInfo["12345"].VMFlags[0] != "-Xmx2g" {
 		t.Fatalf("unexpected response: %#v", response)
+	}
+	if response.PredictionMode != "predict" || response.PredictionThrottleS != 10 {
+		t.Fatalf("prediction fields = mode=%q throttle=%d, want predict/10", response.PredictionMode, response.PredictionThrottleS)
 	}
 }
 
