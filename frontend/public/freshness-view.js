@@ -107,9 +107,65 @@
         const gaps = `${summary.sequenceGaps} sequence gap${summary.sequenceGaps === 1 ? '' : 's'}`;
         return {
             summary,
-            html: `<details class="freshness-info"${openAttr}><summary class="freshness-info-summary" aria-label="Freshness diagnostics"><span class="freshness-info-label">Freshness</span><span class="freshness-status ${skewClass}">${skewLabel}</span></summary><div class="freshness-info-panel" aria-label="Live freshness diagnostics"><div class="freshness-info-meta"><span class="bpw-panel-badge">Spike telemetry</span><span class="freshness-count">${summary.sampleCount} samples · ${gaps}</span></div><div class="freshness-metrics"><div><span>End-to-end p50</span><strong>${formatDuration(summary.endToEnd.p50)}</strong></div><div><span>End-to-end p95</span><strong>${formatDuration(summary.endToEnd.p95)}</strong></div><div><span>Runner → backend p95</span><strong>${formatDuration(summary.collectionToReceipt.p95)}</strong></div><div><span>Backend store p95</span><strong>${formatDuration(summary.backendStorage.p95)}</strong></div><div><span>Store → first display p95</span><strong>${formatDuration(summary.storageToRender.p95)}</strong></div><div><span>Dashboard fetch + render</span><strong>${formatDuration(summary.browserFetchRenderMs)}</strong></div></div>${summary.clockSkewDetected ? '<p class="freshness-note">Cross-host wall clocks are not synchronized; backend storage and browser fetch/render durations remain monotonic measurements.</p>' : ''}</div></details>`,
+            html: `<details class="freshness-info"${openAttr}><summary class="freshness-info-summary" aria-label="Freshness diagnostics"><span class="freshness-info-label">Freshness</span><span class="freshness-status ${skewClass}">${skewLabel}</span></summary><div class="freshness-info-panel" aria-label="Live freshness diagnostics"><div class="freshness-info-meta"><span class="bpw-panel-badge">Spike telemetry</span><span class="freshness-count">${summary.sampleCount} samples · ${gaps}</span></div><div class="freshness-metrics"><div><span>End-to-end p50</span><strong data-freshness-metric="endToEnd.p50">${formatDuration(summary.endToEnd.p50)}</strong></div><div><span>End-to-end p95</span><strong data-freshness-metric="endToEnd.p95">${formatDuration(summary.endToEnd.p95)}</strong></div><div><span>Runner → backend p95</span><strong data-freshness-metric="collectionToReceipt.p95">${formatDuration(summary.collectionToReceipt.p95)}</strong></div><div><span>Backend store p95</span><strong data-freshness-metric="backendStorage.p95">${formatDuration(summary.backendStorage.p95)}</strong></div><div><span>Store → first display p95</span><strong data-freshness-metric="storageToRender.p95">${formatDuration(summary.storageToRender.p95)}</strong></div><div><span>Dashboard fetch + render</span><strong data-freshness-metric="browserFetchRenderMs">${formatDuration(summary.browserFetchRenderMs)}</strong></div></div>${summary.clockSkewDetected ? '<p class="freshness-note" data-freshness-note>Cross-host wall clocks are not synchronized; backend storage and browser fetch/render durations remain monotonic measurements.</p>' : ''}</div></details>`,
         };
     }
 
-    window.BpwFreshnessView = { summarize, render };
+    // Patch an existing Freshness <details> in place so live refreshes do not
+    // destroy open state or steal clicks from "Clocks ok".
+    function update(target, samples, renderedAtUnixMs, browserFetchRenderMs) {
+        if (!target) return null;
+        const existing = target.querySelector('details.freshness-info');
+        const wasOpen = existing?.open === true;
+        const view = render(samples, renderedAtUnixMs, browserFetchRenderMs, { open: wasOpen });
+        if (!view) {
+            target.hidden = true;
+            target.innerHTML = '';
+            return null;
+        }
+        target.hidden = false;
+        if (!existing) {
+            target.innerHTML = view.html;
+            return view;
+        }
+        const status = existing.querySelector('.freshness-status');
+        if (status) {
+            status.classList.toggle('warning', view.summary.clockSkewDetected);
+            status.classList.toggle('ok', !view.summary.clockSkewDetected);
+            status.textContent = view.summary.clockSkewDetected ? 'Clock skew' : 'Clocks ok';
+        }
+        const count = existing.querySelector('.freshness-count');
+        if (count) {
+            const gaps = `${view.summary.sequenceGaps} sequence gap${view.summary.sequenceGaps === 1 ? '' : 's'}`;
+            count.textContent = `${view.summary.sampleCount} samples · ${gaps}`;
+        }
+        const metricValues = {
+            'endToEnd.p50': view.summary.endToEnd.p50,
+            'endToEnd.p95': view.summary.endToEnd.p95,
+            'collectionToReceipt.p95': view.summary.collectionToReceipt.p95,
+            'backendStorage.p95': view.summary.backendStorage.p95,
+            'storageToRender.p95': view.summary.storageToRender.p95,
+            browserFetchRenderMs: view.summary.browserFetchRenderMs,
+        };
+        Object.entries(metricValues).forEach(([key, value]) => {
+            const node = existing.querySelector(`[data-freshness-metric="${key}"]`);
+            if (node) node.textContent = formatDuration(value);
+        });
+        let note = existing.querySelector('[data-freshness-note]');
+        if (view.summary.clockSkewDetected && !note) {
+            const panel = existing.querySelector('.freshness-info-panel');
+            if (panel) {
+                panel.insertAdjacentHTML(
+                    'beforeend',
+                    '<p class="freshness-note" data-freshness-note>Cross-host wall clocks are not synchronized; backend storage and browser fetch/render durations remain monotonic measurements.</p>',
+                );
+            }
+        } else if (!view.summary.clockSkewDetected && note) {
+            note.remove();
+        }
+        existing.open = wasOpen;
+        return view;
+    }
+
+    window.BpwFreshnessView = { summarize, render, update };
 })();

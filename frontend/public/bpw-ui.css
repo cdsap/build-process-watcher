@@ -83,7 +83,8 @@ h1 {
     min-height: 170px;
     margin-bottom: 1rem !important;
     padding: 1.35rem !important;
-    overflow: hidden;
+    /* Keep visible so the Freshness dropdown is not clipped on click. */
+    overflow: visible;
     color: #fff;
     border: 0 !important;
     border-radius: 8px !important;
@@ -96,12 +97,15 @@ h1 {
     content: "";
     position: absolute;
     inset: 0;
+    border-radius: inherit;
     background:
         linear-gradient(90deg, rgba(255, 255, 255, 0.12) 1px, transparent 1px),
         linear-gradient(180deg, rgba(255, 255, 255, 0.10) 1px, transparent 1px);
     background-size: 36px 36px;
     opacity: 0.36;
     pointer-events: none;
+    /* Clip the grid pattern without clipping the Freshness popover. */
+    overflow: hidden;
 }
 
 .run-header-main,
@@ -200,11 +204,12 @@ input[type="file"] {
 
 .freshness-diagnostics {
     position: relative;
-    z-index: 2;
+    z-index: 30;
 }
 
 .freshness-info {
     position: relative;
+    z-index: 30;
 }
 
 .freshness-info-summary {
@@ -1562,26 +1567,31 @@ footer {
 }
 .process-forecast { margin-top: 1.5rem; }
 .process-forecast-charts {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    margin-top: 0.75rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 34rem), 1fr));
+    gap: 1.25rem;
+    margin-top: 1rem;
 }
 .process-forecast-charts .process-forecast {
     margin-top: 0;
+    padding: 0.85rem 1rem 1rem;
+    border: 1px solid var(--bpw-line, #d7dde5);
+    border-radius: 12px;
+    background: var(--bpw-surface, #fff);
+}
+.process-forecast-charts .process-forecast h3 {
+    margin: 0 0 0.35rem;
+    font-size: 1rem;
+}
+body.bpw-view-predictions #prediction-panel-content .prediction-panel {
+    max-width: none;
 }
 .process-forecast-tables {
-    margin-top: 1.5rem;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
+    display: none;
 }
-.process-forecast-tables .process-forecast {
-    margin-top: 0;
-}
-.process-forecast svg { display: block; width: 100%; max-width: 920px; height: auto; background: var(--bpw-surface, #fff); }
+.process-forecast svg { display: block; width: 100%; max-width: none; height: auto; background: var(--bpw-surface, #fff); }
 .process-forecast polyline { fill: none; stroke-width: 2.5; vector-effect: non-scaling-stroke; }
-.process-forecast .forecast-chart { margin: 0.35rem 0 0.5rem; }
+.process-forecast .forecast-chart { margin: 0.5rem 0 0; min-height: 16rem; }
 .process-forecast .chart-frame {
     fill: #fbfcfe;
     stroke: #d7dde5;

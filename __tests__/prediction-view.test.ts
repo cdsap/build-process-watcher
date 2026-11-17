@@ -123,15 +123,14 @@ describe('per-process memory forecasts', () => {
     expect(html).toContain('KotlinCompileDaemon · PID 2 · RSS');
     expect(html).not.toContain('KotlinCompileDaemon · PID 2 · Heap');
     expect(html).not.toContain('Other · PID');
-    expect(html).toContain('14.0 MB</td><td>15.0 MB');
-    expect(html).toContain('16.0 MB</td><td>15.0 MB');
-    expect(html).toContain('18.0 MB</td><td>Pending');
     expect(html).toContain('class="actual-trace"');
     expect(html).toContain('class="forecast-trace forecast-trace-latest"');
     expect(html).toContain('class="forecast-band"');
     expect(html).toContain('Elapsed time (seconds)');
     expect(html).toContain('Memory (MB)');
-    expect(html.indexOf('Predicted</th>')).toBeLessThan(html.indexOf('Actual at target</th>'));
+    expect(html).toContain('viewBox="0 0 960 280"');
+    expect(html).not.toContain('process-forecast-tables');
+    expect(html).not.toContain('Predicted</th>');
   });
 
   it('overlays predictions on the actual timeline and matches nearby sample times', () => {
@@ -165,13 +164,10 @@ describe('per-process memory forecasts', () => {
     expect(html).toContain('class="forecast-point forecast-issuance"');
     expect(html).toContain('Issuance at 0s');
     expect(html).toContain('class="process-forecast-charts"');
-    expect(html).toContain('class="process-forecast-tables"');
+    expect(html).not.toContain('process-forecast-tables');
+    expect(html).not.toContain('forecast-table-scroll');
     expect(html).not.toContain('class="chart-legend"');
-    // Charts stay contiguous; value tables are grouped below.
-    expect(html.indexOf('process-forecast-charts')).toBeLessThan(html.indexOf('process-forecast-tables'));
-    expect(html.indexOf('data-forecast-chart-host')).toBeLessThan(html.indexOf('forecast-table-scroll'));
-    expect(html).toContain('15.0 MB</td><td>16.0 MB');
-    expect(html).toContain('20.0 MB</td><td>Pending');
+    expect(html).toContain('data-forecast-chart-host');
     expect(view.actualNear(
       [{ time: 1000, value: 10 }, { time: 4500, value: 12 }],
       5000,
