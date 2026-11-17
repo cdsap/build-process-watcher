@@ -21,8 +21,8 @@ describe('run dashboard responsive layout', () => {
     expect(source).toContain('process_forecasts');
     expect(source).toContain('BpwPredictionView.render');
     expect(source).toContain('predictionTabHtml');
-    expect(source).toContain('predictionPreviewHtml');
-    expect(source).toContain('data-open-predictions');
+    expect(source).not.toContain('predictionPreviewHtml');
+    expect(source).not.toContain('data-open-predictions');
 
     expect(source).toContain('predictionEnabled');
   });

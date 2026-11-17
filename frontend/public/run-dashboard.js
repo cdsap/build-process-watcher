@@ -138,12 +138,6 @@
         requestAnimationFrame(() => resizeRunDashboardCharts());
     }
 
-    function bindPredictionNavigation() {
-        document.querySelectorAll('[data-open-predictions]').forEach((el) => {
-            el.addEventListener('click', openPredictionsView);
-        });
-    }
-
     function focusPredictionsFromChart() {
         openPredictionsView();
         requestAnimationFrame(() => {
@@ -645,13 +639,6 @@
         const predictionView = BpwPredictionView.render({ ...data, predictionEnabled }, predictionSelectedWindow);
         predictionSelectedWindow = predictionView.selectedWindow;
         const predictionTabHtml = predictionView.html;
-        const forecastCount = Array.isArray(data.process_forecasts) ? data.process_forecasts.length : 0;
-        const predictionPreviewHtml = (hasProcessForecasts || predictionEnabled) ? `
-            <section class="prediction-preview" aria-label="Prediction preview">
-                <div class="prediction-preview-main"><span class="bpw-panel-badge">Predictions</span><strong>${escapeHtml(String(predictionMode || 'timeline'))}</strong><span>${forecastCount} process forecast${forecastCount === 1 ? '' : 's'}</span></div>
-                <button type="button" class="btn secondary" data-open-predictions>Open Predictions</button>
-            </section>
-        ` : '';
 
         // Render process info section
         let processInfoHtml = '';
@@ -810,8 +797,6 @@
                 </div>
             </div>
 
-            ${predictionPreviewHtml}
-
             <!-- Compare runs hidden until ready -->
 
             ${window.BpwChartPanels.render({
@@ -908,7 +893,6 @@
             }
         }
 
-        bindPredictionNavigation();
         bindPredictionPanel(data);
         bindForecastReplayControls();
 

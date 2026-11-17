@@ -518,38 +518,6 @@ input[type="file"] {
     display: none !important;
 }
 
-.prediction-preview {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    margin: 0 0 1.2rem;
-    padding: 0.85rem 1rem;
-    border: 1px solid rgba(22, 26, 29, 0.09);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.92);
-    box-shadow: var(--bpw-shadow);
-    min-height: 3.6rem;
-}
-
-.prediction-preview-main {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0.45rem 0.75rem;
-    min-width: 0;
-}
-
-.prediction-preview-main strong {
-    color: var(--bpw-ink);
-    font-size: 0.95rem;
-}
-
-.prediction-preview-main span:last-child {
-    color: var(--bpw-muted);
-    font-size: 0.82rem;
-}
-
 .prediction-panel-meta {
     color: var(--bpw-muted);
     font-size: 0.8rem;
@@ -1431,11 +1399,6 @@ footer {
     .run-kpi-strip,
     .status-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .prediction-preview {
-        flex-direction: column;
-        align-items: stretch;
     }
 
     .prediction-metrics {
