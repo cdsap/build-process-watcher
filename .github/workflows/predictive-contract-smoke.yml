@@ -28,6 +28,11 @@ on:
         required: false
         default: predict
         type: string
+      prediction_throttle_s:
+        description: Process-forecast cadence in elapsed seconds (default 20)
+        required: false
+        default: '20'
+        type: string
   workflow_call:
     inputs:
       backend_url:
@@ -54,6 +59,11 @@ on:
         description: Timeline prediction mode (forecast, predict, or bqml-boosted)
         required: false
         default: predict
+        type: string
+      prediction_throttle_s:
+        description: Process-forecast cadence in elapsed seconds (default 20)
+        required: false
+        default: '20'
         type: string
     outputs:
       bpw_run_id:
@@ -95,6 +105,7 @@ jobs:
           BACKEND_URL: ${{ inputs.backend_url }}
         with:
           prediction_mode: ${{ inputs.prediction_mode }}
+          prediction_throttle_s: ${{ inputs.prediction_throttle_s }}
           interval: ${{ inputs.interval }}
           debug: 'true'
           run_id: ${{ steps.run-id.outputs.bpw_run_id }}
