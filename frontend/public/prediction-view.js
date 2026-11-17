@@ -420,17 +420,17 @@
         const valuePad = Math.max((maxValue - minValue) * 0.08, maxValue * 0.04, 1);
         const yMin = Math.max(0, minValue - valuePad);
         const yMax = maxValue + valuePad;
-        const plot = { left: 54, right: 586, top: 18, bottom: 148 };
+        const plot = { left: 64, right: 900, top: 24, bottom: 236 };
         const xAt = time => plot.left + (plot.right - plot.left) * (time - minTime) / (maxTime - minTime || 1);
         const yAt = value => plot.bottom - (plot.bottom - plot.top) * (value - yMin) / (yMax - yMin || 1);
         const xy = point => `${xAt(point.time)},${yAt(point.value)}`;
         const elapsedS = time => (time - minTime) / 1000;
-        const xTicks = niceTicks(minTime, maxTime, 5);
-        const yTicks = niceTicks(yMin, yMax, 5);
+        const xTicks = niceTicks(minTime, maxTime, 6);
+        const yTicks = niceTicks(yMin, yMax, 6);
         const grid = yTicks.map((value) => `<line class="chart-grid" x1="${plot.left}" x2="${plot.right}" y1="${yAt(value)}" y2="${yAt(value)}"/>`).join('')
             + xTicks.map((time) => `<line class="chart-grid" x1="${xAt(time)}" x2="${xAt(time)}" y1="${plot.top}" y2="${plot.bottom}"/>`).join('');
-        const xLabels = xTicks.map((time) => `<text class="chart-tick" x="${xAt(time)}" y="${plot.bottom + 16}" text-anchor="middle">${Math.round(elapsedS(time))}s</text>`).join('');
-        const yLabels = yTicks.map((value) => `<text class="chart-tick" x="${plot.left - 8}" y="${yAt(value) + 3}" text-anchor="end">${Math.round(value)}</text>`).join('');
+        const xLabels = xTicks.map((time) => `<text class="chart-tick" x="${xAt(time)}" y="${plot.bottom + 20}" text-anchor="middle">${Math.round(elapsedS(time))}s</text>`).join('');
+        const yLabels = yTicks.map((value) => `<text class="chart-tick" x="${plot.left - 10}" y="${yAt(value) + 4}" text-anchor="end">${Math.round(value)}</text>`).join('');
 
         const cutoff = finiteNumber(untilMs);
         const visibleActual = cutoff === null ? group.actual : group.actual.filter((point) => point.time <= cutoff);
@@ -472,9 +472,10 @@
             const value = origin?.value ?? prediction.points?.[0]?.value;
             if (!Number.isFinite(value)) return '';
             const title = `Issuance at ${Math.round(elapsedS(prediction.created))}s`;
-            return `<circle class="forecast-point forecast-issuance" cx="${xAt(prediction.created)}" cy="${yAt(value)}" r="4"><title>${escapeHtml(title)}</title></circle>`;
+            return `<circle class="forecast-point forecast-issuance" cx="${xAt(prediction.created)}" cy="${yAt(value)}" r="5"><title>${escapeHtml(title)}</title></circle>`;
         }).join('');
-        return `<svg class="forecast-chart" viewBox="0 0 640 180" role="img" aria-label="Actual memory trajectory with prediction track"><rect class="chart-frame" x="${plot.left}" y="${plot.top}" width="${plot.right - plot.left}" height="${plot.bottom - plot.top}"/>${grid}${band}${actualLine}${predictionLine}${forwardTrace}${issuanceMarkers}<line class="forecast-now" x1="${nowX}" x2="${nowX}" y1="${plot.top}" y2="${plot.bottom}"/>${xLabels}${yLabels}<text class="chart-axis-label" x="${(plot.left + plot.right) / 2}" y="174" text-anchor="middle">Elapsed time (seconds)</text><text class="chart-axis-label" x="16" y="${(plot.top + plot.bottom) / 2}" text-anchor="middle" transform="rotate(-90 16 ${(plot.top + plot.bottom) / 2})">Memory (MB)</text></svg>`;
+        const midY = (plot.top + plot.bottom) / 2;
+        return `<svg class="forecast-chart" viewBox="0 0 960 280" role="img" aria-label="Actual memory trajectory with prediction track"><rect class="chart-frame" x="${plot.left}" y="${plot.top}" width="${plot.right - plot.left}" height="${plot.bottom - plot.top}"/>${grid}${band}${actualLine}${predictionLine}${forwardTrace}${issuanceMarkers}<line class="forecast-now" x1="${nowX}" x2="${nowX}" y1="${plot.top}" y2="${plot.bottom}"/>${xLabels}${yLabels}<text class="chart-axis-label" x="${(plot.left + plot.right) / 2}" y="268" text-anchor="middle">Elapsed time (seconds)</text><text class="chart-axis-label" x="18" y="${midY}" text-anchor="middle" transform="rotate(-90 18 ${midY})">Memory (MB)</text></svg>`;
     }
 
     // Optional process_forecasts: {process_name, pid, metric, created_at_ms,
@@ -542,7 +543,7 @@
         </div>`;
         const sharedLegend = `<ul class="forecast-chart-legend" aria-label="Chart legend"><li><span class="legend-swatch legend-actual"></span>Actual</li><li><span class="legend-swatch legend-prediction"></span>Prediction</li><li><span class="legend-swatch legend-issuance"></span>Issuance</li><li><span class="legend-swatch legend-band"></span>Prediction range</li><li><span class="legend-swatch legend-now"></span>Latest sample</li></ul>`;
         const statusClass = `forecast-live-status${delayed ? ' is-delayed' : ''}${waiting ? ' is-waiting' : ''}`;
-        return `<section class="prediction-panel process-forecasts" data-forecast-panel data-prediction-mode="${escapeHtml(String(data?.prediction_mode || ''))}"><h2>Process memory forecasts</h2><p id="forecast-live-status" class="${statusClass}">${escapeHtml(formatForecastStatus(data, defaultMode))}</p><p class="forecast-panel-help">Live follows the latest sample and keeps the last forecast while new ones catch up. Each orange point marks when a forecast was issued. Replay scrubs actual and prediction tracks together.</p>${replayControls}${sharedLegend}<div class="process-forecast-charts" aria-label="Forecast charts">${renderForecastChartsHtml(available)}</div><div class="process-forecast-tables" aria-label="Forecast value tables">${renderForecastTablesHtml(available)}</div><script type="application/json" id="bpw-forecast-replay-data">${JSON.stringify(available).replace(/</g, '\\u003c')}</script></section>`;
+        return `<section class="prediction-panel process-forecasts" data-forecast-panel data-prediction-mode="${escapeHtml(String(data?.prediction_mode || ''))}"><h2>Process memory forecasts</h2><p id="forecast-live-status" class="${statusClass}">${escapeHtml(formatForecastStatus(data, defaultMode))}</p><p class="forecast-panel-help">Live follows the latest sample and keeps the last forecast while new ones catch up. Each orange point marks when a forecast was issued. Replay scrubs actual and prediction tracks together.</p>${replayControls}${sharedLegend}<div class="process-forecast-charts" aria-label="Forecast charts">${renderForecastChartsHtml(available)}</div><script type="application/json" id="bpw-forecast-replay-data">${JSON.stringify(available).replace(/</g, '\\u003c')}</script></section>`;
     }
 
     function bindProcessForecastView(root, options = {}) {
@@ -551,7 +552,6 @@
         const dataNode = root.querySelector('#bpw-forecast-replay-data');
         const statusNode = root.querySelector('#forecast-live-status');
         const chartsNode = root.querySelector('.process-forecast-charts');
-        const tablesNode = root.querySelector('.process-forecast-tables');
         const liveBtn = root.querySelector('#btn-forecast-view-live');
         const replayBtn = root.querySelector('#btn-forecast-view-replay');
         if (!controls || !dataNode) return { stop() {}, update() { return false; }, getMode() { return 'live'; } };
@@ -744,7 +744,6 @@
             groups = nextGroups;
             if (dataNode) dataNode.textContent = JSON.stringify(groups);
             if (chartsNode) chartsNode.innerHTML = renderForecastChartsHtml(groups);
-            if (tablesNode) tablesNode.innerHTML = renderForecastTablesHtml(groups);
             rebuildTimestamps();
             refreshStatus();
             if (!timestamps.length) return true;

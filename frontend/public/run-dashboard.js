@@ -511,16 +511,21 @@
         requestAnimationFrame(() => requestAnimationFrame(() => {
             const target = document.getElementById('freshness-diagnostics');
             if (!target || !window.BpwFreshnessView) return;
-            const wasOpen = target.querySelector('details.freshness-info')?.open === true;
             const browserFetchRenderMs = performance.now() - browserRequestStarted;
-            const view = BpwFreshnessView.render(
-                data?.samples,
-                Date.now(),
-                browserFetchRenderMs,
-                { open: wasOpen },
-            );
-            target.hidden = !view;
-            target.innerHTML = view?.html || '';
+            const view = typeof BpwFreshnessView.update === 'function'
+                ? BpwFreshnessView.update(target, data?.samples, Date.now(), browserFetchRenderMs)
+                : (() => {
+                    const wasOpen = target.querySelector('details.freshness-info')?.open === true;
+                    const rendered = BpwFreshnessView.render(
+                        data?.samples,
+                        Date.now(),
+                        browserFetchRenderMs,
+                        { open: wasOpen },
+                    );
+                    target.hidden = !rendered;
+                    target.innerHTML = rendered?.html || '';
+                    return rendered;
+                })();
             window.currentFreshnessDiagnostics = view?.summary || null;
         }));
     }
