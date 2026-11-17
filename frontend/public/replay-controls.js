@@ -39,10 +39,14 @@
         const speedOptions = speeds.map((speed) => (
             `<option value="${speed}"${speed === defaultSpeed ? ' selected' : ''}>${speed}x</option>`
         )).join('');
+        const playPressed = Object.prototype.hasOwnProperty.call(opts, 'playAriaPressed')
+            ? ` aria-pressed="${opts.playAriaPressed ? 'true' : 'false'}"`
+            : '';
+        const extraTimeline = opts.extraTimelineHtml ? String(opts.extraTimelineHtml) : '';
 
         return `<div class="${classNames.join(' ')}" id="${idPrefix}-controls">
             <div class="buttons">
-                <button class="btn" type="button" id="btn-${idPrefix}-play">Play</button>
+                <button class="btn" type="button" id="btn-${idPrefix}-play"${playPressed}>Play</button>
                 <button class="btn secondary" type="button" id="btn-${idPrefix}-pause">Pause</button>
                 <button class="btn secondary" type="button" id="btn-${idPrefix}-reset">Reset</button>
             </div>
@@ -56,6 +60,7 @@
                         ${speedOptions}
                     </select>
                 </div>
+                ${extraTimeline}
             </div>
         </div>`;
     }

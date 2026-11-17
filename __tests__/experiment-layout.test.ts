@@ -18,9 +18,9 @@ function makeElement(value = ''): any {
 function loadExperimentLayout() {
   const elements = new Map<string, any>([
     ['bpw-unified-replay', makeElement()],
-    ['bpw-unified-play', makeElement()],
-    ['bpw-unified-pause', makeElement()],
-    ['bpw-unified-reset', makeElement()],
+    ['btn-bpw-unified-play', makeElement()],
+    ['btn-bpw-unified-pause', makeElement()],
+    ['btn-bpw-unified-reset', makeElement()],
     ['bpw-unified-timeline', makeElement('0')],
     ['bpw-unified-speed', makeElement('15')],
     ['bpw-unified-meta', makeElement()],
@@ -92,8 +92,8 @@ describe('experiment unified replay', () => {
     expect(panel.renderFrame).toHaveBeenCalledTimes(rendersBeforeRefresh + 1);
     expect(panel.renderFrame).toHaveBeenLastCalledWith(2);
 
-    elements.get('bpw-unified-reset').dispatch('click');
-    elements.get('bpw-unified-play').dispatch('click');
+    elements.get('btn-bpw-unified-reset').dispatch('click');
+    elements.get('btn-bpw-unified-play').dispatch('click');
     sandbox.__now = 100;
     sandbox.__raf(sandbox.__now);
     await Promise.resolve();
@@ -101,13 +101,13 @@ describe('experiment unified replay', () => {
     expect(panel.renderFrame).toHaveBeenLastCalledWith(1);
     expect(sandbox.setTimeout).not.toHaveBeenCalled();
 
-    elements.get('bpw-unified-pause').dispatch('click');
+    elements.get('btn-bpw-unified-pause').dispatch('click');
     expect(sandbox.cancelAnimationFrame).toHaveBeenCalled();
 
     elements.get('bpw-unified-speed').value = '5';
     elements.get('bpw-unified-speed').dispatch('change');
-    elements.get('bpw-unified-reset').dispatch('click');
-    elements.get('bpw-unified-play').dispatch('click');
+    elements.get('btn-bpw-unified-reset').dispatch('click');
+    elements.get('btn-bpw-unified-play').dispatch('click');
     sandbox.__now = 300;
     sandbox.__raf(sandbox.__now);
     await Promise.resolve();

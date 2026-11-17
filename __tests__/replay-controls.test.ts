@@ -47,6 +47,17 @@ describe('shared replay controls', () => {
     expect(html).toContain('<option value="15" selected>15x</option>');
   });
 
+  it('accepts extra timeline chrome and play aria-pressed', () => {
+    const sandbox = loadReplayStack();
+    const html = sandbox.BpwReplayControls.renderReplayControls({
+      idPrefix: 'rss-replay',
+      playAriaPressed: false,
+      extraTimelineHtml: '<div class="meta" id="rss-replay-viewport-wrap">Viewport</div>',
+    });
+    expect(html).toContain('aria-pressed="false"');
+    expect(html).toContain('id="rss-replay-viewport-wrap"');
+  });
+
   it('binds playhead scrubbing through BpwPlaybackClock', () => {
     const sandbox = loadReplayStack();
     const byId = new Map<string, any>();

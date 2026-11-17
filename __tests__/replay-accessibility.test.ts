@@ -3,12 +3,18 @@ import path from 'path';
 import vm from 'vm';
 
 function loadChartPanels(): any {
-  const window: any = {};
+  const sandbox: any = {};
+  sandbox.window = sandbox;
+  sandbox.globalThis = sandbox;
+  vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, '../frontend/public/replay-controls.js'), 'utf8'),
+    sandbox,
+  );
   vm.runInNewContext(
     fs.readFileSync(path.join(__dirname, '../frontend/public/chart-panels.js'), 'utf8'),
-    { window },
+    sandbox,
   );
-  return window.BpwChartPanels;
+  return sandbox.BpwChartPanels;
 }
 
 const chartPanels = loadChartPanels();
@@ -43,6 +49,63 @@ describe('completed-run replay controls', () => {
     expect(runPanelHtml).toContain(
       `<select id="${panel}-replay-speed" aria-label="${name} replay speed">`
     );
+  });
+
+  test.each(['rss', 'gc', 'jit', 'classes'])(
+    'gives %s the same Play / Pause / Reset chrome and speed ladder',
+    panel => {
+      expect(runPanelHtml).toContain(`id="btn-${panel}-replay-play"`);
+      expect(runPanelHtml).toContain(`id="btn-${panel}-replay-pause"`);
+      expect(runPanelHtml).toContain(`id="btn-${panel}-replay-reset"`);
+
+      const speedBlock = runPanelHtml.match(
+        new RegExp(`<select id="${panel}-replay-speed"[^>]*>([\\s\\S]*?)<\\/select>`)
+      )?.[1];
+      expect(speedBlock).toBeDefined();
+      expect(speedBlock?.replace(/\s+/g, '')).toContain(
+        [
+          '<option value="5">5x</option>',
+          '<option value="10">10x</option>',
+          '<option value="15" selected>15x</option>',
+          '<option value="20">20x</option>',
+          '<option value="25">25x</option>',
+          '<option value="30">30x</option>',
+          '<option value="35">35x</option>',
+          '<option value="40">40x</option>',
+          '<option value="45">45x</option>',
+          '<option value="50">50x</option>',
+        ].join('').replace(/\s+/g, '')
+      );
+    }
+  );
+
+  it('places downloads then replay above every metric chart container', () => {
+    const groups = [
+      ['rss', 'btn-download-png', 'btn-download-svg'],
+      ['gc', 'btn-download-gc-png', 'btn-download-gc-svg'],
+      ['jit', 'btn-download-jit-png', 'btn-download-jit-svg'],
+      ['classes', 'btn-download-classes-png', 'btn-download-classes-svg'],
+    ];
+
+    groups.forEach(([panel, pngButton, svgButton]) => {
+      const pngIndex = runPanelHtml.indexOf(`id="${pngButton}"`);
+      const svgIndex = runPanelHtml.indexOf(`id="${svgButton}"`);
+      const replayIndex = runPanelHtml.indexOf(`id="${panel}-replay-controls"`);
+      const chartIndex = runPanelHtml.indexOf(
+        panel === 'rss'
+          ? 'id="chart"'
+          : panel === 'gc'
+            ? 'id="gc-chart"'
+            : panel === 'jit'
+              ? 'id="jit-time-chart"'
+              : 'id="classes-loaded-chart"'
+      );
+
+      expect(pngIndex).toBeGreaterThan(-1);
+      expect(svgIndex).toBeGreaterThan(pngIndex);
+      expect(replayIndex).toBeGreaterThan(svgIndex);
+      expect(chartIndex).toBeGreaterThan(replayIndex);
+    });
   });
 });
 

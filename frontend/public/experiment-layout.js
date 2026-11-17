@@ -660,9 +660,9 @@
         const container = document.getElementById('bpw-unified-replay');
         if (!container) return;
 
-        const playBtn = document.getElementById('bpw-unified-play');
-        const pauseBtn = document.getElementById('bpw-unified-pause');
-        const resetBtn = document.getElementById('bpw-unified-reset');
+        const playBtn = document.getElementById('btn-bpw-unified-play');
+        const pauseBtn = document.getElementById('btn-bpw-unified-pause');
+        const resetBtn = document.getElementById('btn-bpw-unified-reset');
         const timeline = document.getElementById('bpw-unified-timeline');
         const speedSelect = document.getElementById('bpw-unified-speed');
 
