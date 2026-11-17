@@ -149,6 +149,8 @@ func MergePredictionCheckpoint(existing []PredictionCheckpoint, checkpoint Predi
 type RunResponse struct {
 	Samples               []Sample               `json:"samples"`
 	ProcessInfo           map[string]ProcessInfo `json:"process_info,omitempty"`
+	PredictionMode        string                 `json:"prediction_mode,omitempty"`
+	PredictionThrottleS   int                    `json:"prediction_throttle_s,omitempty"`
 	PredictionCheckpoints []PredictionCheckpoint `json:"prediction_checkpoints,omitempty"`
 	ProcessForecasts      []ProcessForecast      `json:"process_forecasts,omitempty"`
 	Finished              bool                   `json:"finished"`
