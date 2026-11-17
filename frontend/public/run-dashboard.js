@@ -1360,7 +1360,8 @@
             };
 
             if (playBtn) {
-                playBtn.addEventListener('click', togglePlay);
+                // With a dedicated Pause button, Play only starts; otherwise Play toggles.
+                playBtn.addEventListener('click', pauseBtn ? play : togglePlay);
             }
             if (pauseBtn) {
                 pauseBtn.addEventListener('click', pause);

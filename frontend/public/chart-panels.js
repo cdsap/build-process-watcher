@@ -36,10 +36,12 @@
             </div>`;
     }
 
+    const REPLAY_SPEEDS = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50];
+
     function renderPanelReplay(panel, label, options) {
-        const pauseButton = options.pause === false ? '' :
-            `<button class="btn secondary" id="btn-${panel}-replay-pause">Pause</button>`;
-        const viewport = options.viewport ? `
+        const opts = options || {};
+        // Keep Memory's follow-window control; other panels share the same chrome.
+        const viewport = opts.viewport ? `
             <div class="meta">
                 Viewport:
                 <select id="${panel}-replay-viewport" aria-label="${label} replay viewport">
@@ -47,16 +49,13 @@
                     <option value="follow">Follow playback</option>
                 </select>
             </div>` : '';
-        const ariaPressed = options.pause === false ? ' aria-pressed="false"' : '';
-        const speeds = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50]
-            .filter(speed => speed <= (options.maxSpeed || 50));
 
         return `
             <div class="replay-controls" id="${panel}-replay-controls">
                 <div class="buttons">
-                    <button class="btn" id="btn-${panel}-replay-play"${ariaPressed}>Play</button>
-                    ${pauseButton}
-                    <button class="btn secondary" id="btn-${panel}-replay-reset">Reset</button>
+                    <button class="btn" type="button" id="btn-${panel}-replay-play" aria-pressed="false">Play</button>
+                    <button class="btn secondary" type="button" id="btn-${panel}-replay-pause">Pause</button>
+                    <button class="btn secondary" type="button" id="btn-${panel}-replay-reset">Reset</button>
                 </div>
                 <div class="meta" id="${panel}-replay-meta">Frame 0 / 0</div>
                 <div class="timeline">
@@ -65,7 +64,7 @@
                     <div class="meta">
                         Speed:
                         <select id="${panel}-replay-speed" aria-label="${label} replay speed">
-                            ${speeds.map(speed =>
+                            ${REPLAY_SPEEDS.map(speed =>
                                 `<option value="${speed}"${speed === 15 ? ' selected' : ''}>${speed}x</option>`
                             ).join('')}
                         </select>
@@ -76,9 +75,12 @@
     }
 
     function runPanelContent(options) {
+        // Same chrome order for every metric panel: downloads → replay → chart.
         const memoryReplay = options.showMemoryReplay
-            ? `${renderPanelReplay('rss', 'Memory', { pause: false, viewport: true })}
-                <div class="chart-filters" id="main-chart-filters">
+            ? renderPanelReplay('rss', 'Memory', { viewport: true })
+            : '';
+        const memoryFilters = options.showMemoryReplay
+            ? `<div class="chart-filters" id="main-chart-filters">
                     <label><input type="checkbox" id="filter-total-rss" checked> Total RSS</label>
                     <label><input type="checkbox" id="filter-rss" checked> RSS</label>
                     <label><input type="checkbox" id="filter-heap" checked> Heap</label>
@@ -89,32 +91,41 @@
             : '';
 
         return {
-            memory: { insideContainer: `
+            memory: {
+                beforeContainer: `
                 <div class="downloads-toolbar">
                     <button class="btn" id="btn-download-png">Download PNG</button>
                     <button class="btn" id="btn-download-svg">Download SVG</button>
                     <button class="btn secondary" id="btn-download-json">Download JSON</button>
                     <button class="btn secondary" id="btn-download-csv">Download CSV</button>
                 </div>
-                ${memoryReplay}` },
-            gc: { insideContainer: `
+                ${memoryReplay}`,
+                insideContainer: memoryFilters,
+            },
+            gc: {
+                beforeContainer: `
                 <div class="downloads-toolbar">
                     <button class="btn" id="btn-download-gc-png">Download GC PNG</button>
                     <button class="btn" id="btn-download-gc-svg">Download GC SVG</button>
                 </div>
-                ${metricReplay('gc', 'GC')}` },
-            'jit-time': { beforeContainer: `
+                ${metricReplay('gc', 'GC')}`,
+            },
+            'jit-time': {
+                beforeContainer: `
                 <div class="downloads-toolbar">
                     <button class="btn" id="btn-download-jit-png">Download JIT PNG</button>
                     <button class="btn" id="btn-download-jit-svg">Download JIT SVG</button>
                 </div>
-                ${options.showMetricReplay ? renderPanelReplay('jit', 'JIT', { maxSpeed: 30 }) : ''}` },
-            'classes-loaded': { beforeContainer: `
+                ${metricReplay('jit', 'JIT')}`,
+            },
+            'classes-loaded': {
+                beforeContainer: `
                 <div class="downloads-toolbar">
                     <button class="btn" id="btn-download-classes-png">Download Classes PNG</button>
                     <button class="btn" id="btn-download-classes-svg">Download Classes SVG</button>
                 </div>
-                ${options.showMetricReplay ? renderPanelReplay('classes', 'Class loading', { maxSpeed: 30 }) : ''}` },
+                ${metricReplay('classes', 'Class loading')}`,
+            },
         };
     }
 
