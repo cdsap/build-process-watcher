@@ -3,12 +3,18 @@ import path from 'path';
 import vm from 'vm';
 
 function loadChartPanels(): any {
-  const window: any = {};
+  const sandbox: any = {};
+  sandbox.window = sandbox;
+  sandbox.globalThis = sandbox;
+  vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, '../frontend/public/replay-controls.js'), 'utf8'),
+    sandbox,
+  );
   vm.runInNewContext(
     fs.readFileSync(path.join(__dirname, '../frontend/public/chart-panels.js'), 'utf8'),
-    { window },
+    sandbox,
   );
-  return window.BpwChartPanels;
+  return sandbox.BpwChartPanels;
 }
 
 const chartPanels = loadChartPanels();

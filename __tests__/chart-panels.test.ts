@@ -3,12 +3,18 @@ import * as path from 'path';
 import * as vm from 'vm';
 
 function loadChartPanels(): any {
-  const window: any = {};
+  const sandbox: any = {};
+  sandbox.window = sandbox;
+  sandbox.globalThis = sandbox;
+  vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, '../frontend/public/replay-controls.js'), 'utf8'),
+    sandbox,
+  );
   vm.runInNewContext(
     fs.readFileSync(path.join(__dirname, '../frontend/public/chart-panels.js'), 'utf8'),
-    { window },
+    sandbox,
   );
-  return window.BpwChartPanels;
+  return sandbox.BpwChartPanels;
 }
 
 describe('shared chart panel template', () => {
@@ -74,5 +80,28 @@ describe('shared chart panel template', () => {
     expect(demoPage.indexOf('/chart-panels.js')).toBeGreaterThan(-1);
     expect(runPage.indexOf('/chart-panels.js')).toBeLessThan(runPage.indexOf('/run-dashboard.js'));
     expect(demoPage.indexOf('/chart-panels.js')).toBeLessThan(demoPage.indexOf('/run-dashboard.js'));
+  });
+
+  it('builds replay chrome through BpwReplayControls instead of duplicated markup', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../frontend/public/chart-panels.js'), 'utf8');
+    const html = loadChartPanels().render({
+      includeUnifiedReplay: true,
+      includeRunControls: true,
+      showMemoryReplay: true,
+      showMetricReplay: true,
+      showGC: true,
+      showJIT: true,
+      showClasses: true,
+    });
+
+    expect(source).toContain('renderReplayControls');
+    expect(source).not.toMatch(/<button class="btn"[^>]*id="btn-\$\{panel\}-replay-play"/);
+    expect(source).not.toMatch(/id="bpw-unified-play"/);
+    expect(html).toContain('id="btn-rss-replay-play"');
+    expect(html).toContain('id="btn-gc-replay-play"');
+    expect(html).toContain('id="btn-jit-replay-play"');
+    expect(html).toContain('id="btn-classes-replay-play"');
+    expect(html).toContain('id="btn-bpw-unified-play"');
+    expect(html).toContain('id="bpw-unified-controls"');
   });
 });
