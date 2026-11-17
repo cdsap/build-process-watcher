@@ -1655,8 +1655,20 @@ footer {
         transparent 0.2rem 0.35rem
     );
 }
+.forecast-chart-legend .legend-issuance {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 999px;
+    background: #ea580c;
+    box-shadow: 0 0 0 2px #fff, 0 0 0 3px rgba(234, 88, 12, 0.45);
+}
 .forecast-table-scroll { overflow-x: auto; }
 .forecast-table-scroll:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
 .forecast-table-scroll table { border-collapse: collapse; min-width: 620px; width: 100%; text-align: left; }
 .forecast-table-scroll th, .forecast-table-scroll td { padding: 0.5rem; border-bottom: 1px solid #ddd; }
-.process-forecast .forecast-point { fill: #ea580c; }
+.process-forecast .forecast-point,
+.process-forecast .forecast-issuance {
+    fill: #ea580c;
+    stroke: #fff;
+    stroke-width: 1.5;
+}

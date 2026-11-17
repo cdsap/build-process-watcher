@@ -154,12 +154,16 @@ describe('per-process memory forecasts', () => {
     ];
     const html = view.render({ samples: nearSamples, process_forecasts: nearForecasts }, null).html;
     expect(html).toContain('Live follows the latest sample');
+    expect(html).toContain('Each orange point marks when a forecast was issued');
     expect(html).toContain('id="forecast-replay-controls"');
     expect(html).toContain('id="btn-forecast-view-live"');
     expect(html).toContain('id="btn-forecast-view-replay"');
     expect(html).toContain('id="forecast-live-status"');
     expect(html).toContain('class="forecast-chart"');
     expect(html).toContain('class="forecast-chart-legend"');
+    expect(html).toContain('legend-issuance');
+    expect(html).toContain('class="forecast-point forecast-issuance"');
+    expect(html).toContain('Issuance at 0s');
     expect(html).toContain('class="process-forecast-charts"');
     expect(html).toContain('class="process-forecast-tables"');
     expect(html).not.toContain('class="chart-legend"');
@@ -173,6 +177,35 @@ describe('per-process memory forecasts', () => {
       5000,
       10000,
     )).toEqual({ time: 4500, value: 12, delta: 500 });
+  });
+
+  it('draws one issuance marker per process_forecast created_at', () => {
+    const samples = [
+      { Timestamp: 0, Name: 'GradleDaemon', PID: '1', HeapUsed: 10, RSS: 20 },
+      { Timestamp: 10000, Name: 'GradleDaemon', PID: '1', HeapUsed: 12, RSS: 22 },
+      { Timestamp: 20000, Name: 'GradleDaemon', PID: '1', HeapUsed: 14, RSS: 24 },
+    ];
+    const forecasts = [
+      {
+        process_name: 'GradleDaemon',
+        pid: '1',
+        metric: 'heap',
+        created_at_ms: 0,
+        points: [{ target_at_ms: 10000, value_mb: 11 }],
+      },
+      {
+        process_name: 'GradleDaemon',
+        pid: '1',
+        metric: 'heap',
+        created_at_ms: 10000,
+        points: [{ target_at_ms: 20000, value_mb: 13 }],
+      },
+    ];
+    const html = view.render({ samples, process_forecasts: forecasts, prediction_mode: 'predict' }, null).html;
+    const markers = html.match(/class="forecast-point forecast-issuance"/g) || [];
+    expect(markers).toHaveLength(2);
+    expect(html).toContain('Issuance at 0s');
+    expect(html).toContain('Issuance at 10s');
   });
 
   it('binds prediction replay controls and scrubs chart frames', () => {
