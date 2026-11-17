@@ -79,17 +79,18 @@ describe('freshness diagnostics view model', () => {
   });
 
   it('updates an open Freshness panel without remounting the details element', () => {
-    document.body.innerHTML = '<div id="freshness-diagnostics"></div>';
-    const target = document.getElementById('freshness-diagnostics') as HTMLElement;
+    const { JSDOM } = require('jsdom');
+    const dom = new JSDOM('<!doctype html><div id="freshness-diagnostics"></div>');
+    const target = dom.window.document.getElementById('freshness-diagnostics');
     const first = view.update(target, samples, 2500, 75);
     expect(first).not.toBeNull();
-    const details = target.querySelector('details.freshness-info') as HTMLDetailsElement;
+    const details = target.querySelector('details.freshness-info');
     expect(details).not.toBeNull();
     details.open = true;
     const second = view.update(target, samples, 5000, 80);
     expect(second).not.toBeNull();
     expect(target.querySelector('details.freshness-info')).toBe(details);
     expect(details.open).toBe(true);
-    expect(details.querySelector('[data-freshness-metric="browserFetchRenderMs"]')?.textContent).toContain('80');
+    expect(details.querySelector('[data-freshness-metric="browserFetchRenderMs"]').textContent).toContain('80');
   });
 });
