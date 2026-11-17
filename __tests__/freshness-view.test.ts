@@ -79,18 +79,45 @@ describe('freshness diagnostics view model', () => {
   });
 
   it('updates an open Freshness panel without remounting the details element', () => {
-    const { JSDOM } = require('jsdom');
-    const dom = new JSDOM('<!doctype html><div id="freshness-diagnostics"></div>');
-    const target = dom.window.document.getElementById('freshness-diagnostics');
+    const metrics = new Map<string, { textContent: string }>();
+    const details: any = {
+      open: false,
+      querySelector(selector: string) {
+        if (selector === '.freshness-status') {
+          return { classList: { toggle() {} }, textContent: 'Clocks ok' };
+        }
+        if (selector === '.freshness-count') return { textContent: '' };
+        if (selector === '.freshness-info-panel') return { insertAdjacentHTML() {} };
+        if (selector === '[data-freshness-note]') return null;
+        const metric = selector.match(/data-freshness-metric="([^"]+)"/);
+        if (!metric) return null;
+        if (!metrics.has(metric[1])) metrics.set(metric[1], { textContent: '' });
+        return metrics.get(metric[1]);
+      },
+    };
+    const target: any = {
+      hidden: true,
+      _mounted: false,
+      querySelector(selector: string) {
+        if (selector === 'details.freshness-info') return this._mounted ? details : null;
+        return null;
+      },
+      set innerHTML(_html: string) {
+        this._mounted = true;
+        // Seed metric nodes the same way a real first render would.
+        ['endToEnd.p50', 'endToEnd.p95', 'collectionToReceipt.p95', 'backendStorage.p95', 'storageToRender.p95', 'browserFetchRenderMs']
+          .forEach((key) => metrics.set(key, { textContent: '' }));
+      },
+    };
+
     const first = view.update(target, samples, 2500, 75);
     expect(first).not.toBeNull();
-    const details = target.querySelector('details.freshness-info');
-    expect(details).not.toBeNull();
+    expect(target._mounted).toBe(true);
     details.open = true;
     const second = view.update(target, samples, 5000, 80);
     expect(second).not.toBeNull();
     expect(target.querySelector('details.freshness-info')).toBe(details);
     expect(details.open).toBe(true);
-    expect(details.querySelector('[data-freshness-metric="browserFetchRenderMs"]').textContent).toContain('80');
+    expect(metrics.get('browserFetchRenderMs')?.textContent).toContain('80');
   });
 });
