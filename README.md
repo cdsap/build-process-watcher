@@ -42,6 +42,17 @@ Dashboard URL shown in job output. GC (garbage collection) monitoring is always 
 
 This is not required for normal local or remote monitoring. Use it only when you want to collect run metrics in your own BigQuery dataset for longer-term analysis.
 
+### Timeline Prediction (Experimental)
+
+```yaml
+- uses: cdsap/build-process-watcher@v0.7.0
+  with:
+    prediction_mode: 'predict'
+    prediction_throttle_s: '20'
+```
+
+`prediction_mode` enables Remote Mode and requests a timeline forecast path. `prediction_throttle_s` is optional (default `20`) and sets how often forecasts are issued in elapsed seconds.
+
 ---
 
 ## 📋 Inputs

@@ -116,6 +116,7 @@ describe('predictive reliability public boundary', () => {
 
     const action = readRepoFile('action.yaml');
     expect(action).toContain('prediction_mode:');
+    expect(action).toContain('prediction_throttle_s:');
     expect(action).not.toContain('predictive_reliability:');
     expect(action).toContain('bqml-boosted');
   });
@@ -123,6 +124,7 @@ describe('predictive reliability public boundary', () => {
   it('aligns predictive contract smoke with timeline process_forecasts', () => {
     const smokeWorkflow = readRepoFile('.github/workflows/predictive-contract-smoke.yml');
     expect(smokeWorkflow).toContain('prediction_mode:');
+    expect(smokeWorkflow).toContain('prediction_throttle_s:');
     expect(smokeWorkflow).toContain('process_forecasts');
     expect(smokeWorkflow).not.toContain('expected_checkpoints');
     expect(smokeWorkflow).not.toContain('prediction_checkpoints');
