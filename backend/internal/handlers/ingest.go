@@ -96,8 +96,9 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mode := models.NormalizePredictionMode(appendResult.PredictionMode)
+	throttleS := models.NormalizeThrottleElapsedS(appendResult.PredictionThrottleS)
 	if h.predictionScheduler != nil && models.ShouldEnqueuePrediction(mode, appendResult.PredictiveReliability) {
-		if err := h.predictionScheduler.Schedule(r.Context(), req.RunID, maxElapsed); err != nil {
+		if err := h.predictionScheduler.Schedule(r.Context(), req.RunID, maxElapsed, throttleS); err != nil {
 			predictionqueue.LogScheduleError(req.RunID, err)
 		}
 	} else if h.predictionScheduler != nil {

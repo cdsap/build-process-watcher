@@ -519,6 +519,32 @@ func TestParsePredictionMode(t *testing.T) {
 		t.Fatal("timeline should enqueue; legacy reliability flag alone should not")
 	}
 	if ProcessForecastThrottleElapsedS != 20 {
-		t.Fatalf("throttle = %d, want 20", ProcessForecastThrottleElapsedS)
+		t.Fatalf("default throttle = %d, want 20", ProcessForecastThrottleElapsedS)
+	}
+	if got := NormalizeThrottleElapsedS(0); got != 20 {
+		t.Fatalf("NormalizeThrottleElapsedS(0) = %d, want 20", got)
+	}
+	if got := NormalizeThrottleElapsedS(20); got != 20 {
+		t.Fatalf("NormalizeThrottleElapsedS(20) = %d, want 20", got)
+	}
+	for _, tc := range []struct {
+		raw  string
+		want int
+		ok   bool
+	}{
+		{"", 0, true},
+		{"10", 10, true},
+		{"1", 1, true},
+		{"3600", 3600, true},
+		{"0", 0, false},
+		{"-1", 0, false},
+		{"3601", 0, false},
+		{"abc", 0, false},
+		{"10.5", 0, false},
+	} {
+		got, ok := ParseThrottleElapsedS(tc.raw)
+		if got != tc.want || ok != tc.ok {
+			t.Fatalf("ParseThrottleElapsedS(%q)=(%d,%v), want (%d,%v)", tc.raw, got, ok, tc.want, tc.ok)
+		}
 	}
 }

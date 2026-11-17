@@ -129,7 +129,34 @@ func TestForecastEvaluatorAppendsForBQMLBoostedMode(t *testing.T) {
 	}
 }
 
-func TestProcessForecastModesShare20sThrottle(t *testing.T) {
+func TestForecastEvaluatorUsesPerRunThrottle(t *testing.T) {
+	// With throttle=20, elapsed 15s is still before the first window.
+	repo := &forecastRepoStub{run: &models.RunDoc{
+		PredictionMode:      "forecast",
+		PredictionThrottleS: 20,
+		Samples: []models.Sample{
+			{ElapsedTime: 15, Timestamp: 15000, Name: "GradleDaemon", PID: "1", HeapUsed: 100, RSS: 200},
+		},
+	}}
+	evaluator := NewForecastEvaluator(repo, TimelineProviders{Forecast: forecastProviderStub{out: []models.ProcessForecast{{
+		ProcessName: "GradleDaemon", PID: "1", Metric: "heap", CreatedAtMs: 15000,
+		Points: []models.ProcessForecastPoint{{TargetAtMs: 25000, ValueMB: 110}},
+	}}}})
+	evaluator.Evaluate(context.Background(), "run-1")
+	if len(repo.appended) != 0 {
+		t.Fatalf("appended = %d, want 0 at 15s with prediction_throttle_s=20", len(repo.appended))
+	}
+
+	repo.run.Samples = append(repo.run.Samples, models.Sample{
+		ElapsedTime: 25, Timestamp: 25000, Name: "GradleDaemon", PID: "1", HeapUsed: 110, RSS: 210,
+	})
+	evaluator.Evaluate(context.Background(), "run-1")
+	if len(repo.appended) != 1 {
+		t.Fatalf("appended = %d, want 1 at 25s with prediction_throttle_s=20", len(repo.appended))
+	}
+}
+
+func TestProcessForecastModesShareDefaultThrottle(t *testing.T) {
 	for _, mode := range []string{"predict", "forecast", "bqml-boosted"} {
 		repo := &forecastRepoStub{run: &models.RunDoc{
 			PredictionMode: mode,
@@ -153,7 +180,7 @@ func TestProcessForecastModesShare20sThrottle(t *testing.T) {
 		evaluator := NewForecastEvaluator(repo, providers)
 		evaluator.Evaluate(context.Background(), "run-1")
 		if len(repo.appended) != 1 {
-			t.Fatalf("%s appended = %d, want 1 at 25s with shared 20s throttle", mode, len(repo.appended))
+			t.Fatalf("%s appended = %d, want 1 at 25s with shared 20s default throttle", mode, len(repo.appended))
 		}
 	}
 }
@@ -198,55 +225,86 @@ func TestForecastEvaluatorIgnoresForecastProviderInPredictMode(t *testing.T) {
 
 func TestShouldForecastAllowsSecondIssuanceAfterThrottleWindow(t *testing.T) {
 	samples := []models.Sample{
+		{ElapsedTime: 15, Timestamp: 1_700_000_015_000},
 		{ElapsedTime: 25, Timestamp: 1_700_000_025_000},
-		{ElapsedTime: 45, Timestamp: 1_700_000_045_000},
 	}
 	existing := []models.ProcessForecast{{
-		ProcessName: "GradleDaemon", Metric: "heap", CreatedAtMs: 1_700_000_025_000,
+		ProcessName: "GradleDaemon", Metric: "heap", CreatedAtMs: 1_700_000_015_000,
 	}}
-	if !shouldForecast(samples[:1], nil, 20) {
-		t.Fatal("first issuance at 25s should be allowed")
+	if !shouldForecast(samples[:1], nil, 10) {
+		t.Fatal("first issuance at 15s should be allowed")
 	}
-	if shouldForecast(samples[:1], existing, 20) {
-		t.Fatal("second issuance in same 20s bucket must be suppressed")
+	if shouldForecast(samples[:1], existing, 10) {
+		t.Fatal("second issuance in same 10s bucket must be suppressed")
 	}
-	if !shouldForecast(samples, existing, 20) {
-		t.Fatal("second issuance at 45s (next 20s bucket) must be allowed")
+	if !shouldForecast(samples, existing, 10) {
+		t.Fatal("second issuance at 25s (next 10s bucket) must be allowed")
+	}
+}
+
+func TestShouldForecast10sBuckets(t *testing.T) {
+	// Elapsed buckets with a 10s throttle: [10,20)=1, [20,30)=2, [30,40)=3.
+	samples := []models.Sample{
+		{ElapsedTime: 12, Timestamp: 12000},
+		{ElapsedTime: 19, Timestamp: 19000},
+		{ElapsedTime: 20, Timestamp: 20000},
+		{ElapsedTime: 29, Timestamp: 29000},
+		{ElapsedTime: 30, Timestamp: 30000},
+	}
+	if shouldForecast([]models.Sample{{ElapsedTime: 9, Timestamp: 9000}}, nil, 10) {
+		t.Fatal("9s is before the first 10s throttle window")
+	}
+	if !shouldForecast(samples[:1], nil, 10) {
+		t.Fatal("12s should open bucket 1")
+	}
+	existing := []models.ProcessForecast{{CreatedAtMs: 12000}}
+	if shouldForecast(samples[:2], existing, 10) {
+		t.Fatal("19s stays in bucket 1 and must suppress")
+	}
+	if !shouldForecast(samples[:3], existing, 10) {
+		t.Fatal("20s opens bucket 2")
+	}
+	existing = []models.ProcessForecast{{CreatedAtMs: 20000}}
+	if shouldForecast(samples[:4], existing, 10) {
+		t.Fatal("29s stays in bucket 2 and must suppress")
+	}
+	if !shouldForecast(samples, existing, 10) {
+		t.Fatal("30s opens bucket 3")
 	}
 }
 
 func TestShouldForecastMapsCreatedAtMsWithoutExactTimestampMatch(t *testing.T) {
 	samples := []models.Sample{
+		{ElapsedTime: 15, Timestamp: 1_700_000_015_000},
+		{ElapsedTime: 16, Timestamp: 1_700_000_016_000},
 		{ElapsedTime: 25, Timestamp: 1_700_000_025_000},
-		{ElapsedTime: 26, Timestamp: 1_700_000_026_000},
-		{ElapsedTime: 45, Timestamp: 1_700_000_045_000},
 	}
-	// Provider stamped slightly after the 25s sample; exact match fails.
+	// Provider stamped slightly after the 15s sample; exact match fails.
 	existing := []models.ProcessForecast{{
-		ProcessName: "GradleDaemon", Metric: "heap", CreatedAtMs: 1_700_000_025_500,
+		ProcessName: "GradleDaemon", Metric: "heap", CreatedAtMs: 1_700_000_015_500,
 	}}
-	if shouldForecast(samples[:2], existing, 20) {
-		t.Fatal("near-match at ~25s must stay in bucket 1 and suppress")
+	if shouldForecast(samples[:2], existing, 10) {
+		t.Fatal("near-match at ~15s must stay in bucket 1 and suppress")
 	}
-	if !shouldForecast(samples, existing, 20) {
-		t.Fatal("elapsed 45s must open bucket 2 even without exact CreatedAtMs match")
+	if !shouldForecast(samples, existing, 10) {
+		t.Fatal("elapsed 25s must open bucket 2 even without exact CreatedAtMs match")
 	}
 }
 
 func TestShouldForecastNeverTreatsEpochMillisAsElapsedSeconds(t *testing.T) {
 	samples := []models.Sample{
+		{ElapsedTime: 15, Timestamp: 1_700_000_015_000},
 		{ElapsedTime: 25, Timestamp: 1_700_000_025_000},
-		{ElapsedTime: 45, Timestamp: 1_700_000_045_000},
 	}
 	// Pathological wall-clock stamp far from the sample clock. Nearest-sample
 	// mapping must still recover elapsed seconds; millis/1000 would be ~1.7e9.
 	existing := []models.ProcessForecast{{
-		ProcessName: "GradleDaemon", Metric: "heap", CreatedAtMs: 1_700_000_025_000 + 3,
+		ProcessName: "GradleDaemon", Metric: "heap", CreatedAtMs: 1_700_000_015_000 + 3,
 	}}
-	if issuanceElapsedS(samples, existing[0].CreatedAtMs) != 25 {
-		t.Fatalf("issuanceElapsedS = %d, want 25", issuanceElapsedS(samples, existing[0].CreatedAtMs))
+	if issuanceElapsedS(samples, existing[0].CreatedAtMs) != 15 {
+		t.Fatalf("issuanceElapsedS = %d, want 15", issuanceElapsedS(samples, existing[0].CreatedAtMs))
 	}
-	if !shouldForecast(samples, existing, 20) {
+	if !shouldForecast(samples, existing, 10) {
 		t.Fatal("second bucket must not be permanently suppressed by epoch-ms/1000")
 	}
 }

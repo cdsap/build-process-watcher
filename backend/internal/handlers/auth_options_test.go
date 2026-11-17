@@ -17,8 +17,10 @@ func TestParseAuthRunOptions(t *testing.T) {
 		{name: "empty", query: "", want: authRunOptions{}},
 		{name: "disabled", query: "prediction_mode=disabled", want: authRunOptions{Mode: models.PredictionModeDisabled}},
 		{name: "forecast", query: "prediction_mode=forecast", want: authRunOptions{Mode: models.PredictionModeForecast}},
+		{name: "throttle", query: "prediction_mode=predict&prediction_throttle_s=20", want: authRunOptions{Mode: models.PredictionModePredict, ThrottleS: 20}},
 		{name: "export", query: "export_to_bigquery=true", want: authRunOptions{ExportToBigQuery: true}},
 		{name: "invalid mode", query: "prediction_mode=invalid", wantErr: "invalid prediction_mode"},
+		{name: "invalid throttle", query: "prediction_throttle_s=0", wantErr: "invalid prediction_throttle_s"},
 		{name: "reliability removed", query: "prediction_mode=reliability", wantErr: "invalid prediction_mode"},
 		{name: "legacy reliability rejected", query: "predictive_reliability=true", wantErr: "predictive_reliability is no longer supported; use prediction_mode=forecast|predict|bqml-boosted"},
 	}

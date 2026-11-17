@@ -17,6 +17,7 @@ var reservedRunWriteKeys = map[string]struct{}{
 	"export_to_bigquery":     {},
 	"predictive_reliability": {},
 	"prediction_mode":        {},
+	"prediction_throttle_s":  {},
 }
 
 // sampleStoreFields builds a MergeAll payload that only updates samples and

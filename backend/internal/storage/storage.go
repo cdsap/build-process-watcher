@@ -84,6 +84,19 @@ func (c *Client) SetRunPredictionMode(ctx context.Context, runID, mode string) e
 	return nil
 }
 
+// SetRunPredictionThrottleS records the per-run process-forecast cadence in seconds.
+func (c *Client) SetRunPredictionThrottleS(ctx context.Context, runID string, throttleS int) error {
+	throttleS = models.NormalizeThrottleElapsedS(throttleS)
+	now := time.Now()
+	_, err := c.firestore.Collection("runs").Doc(runID).Set(ctx, map[string]interface{}{
+		"run_id": runID, "prediction_throttle_s": throttleS, "updated_at": now, "updated_at_timestamp": ToMillis(now),
+	}, firestore.MergeAll)
+	if err != nil {
+		return fmt.Errorf("merge prediction throttle for run %s: %w", runID, err)
+	}
+	return nil
+}
+
 // GetRun retrieves a run document by ID using ctx for cancellation/deadlines.
 func (c *Client) GetRun(ctx context.Context, runID string) (*models.RunDoc, error) {
 	doc := c.firestore.Collection("runs").Doc(runID)
@@ -115,6 +128,7 @@ type SampleBuildFunc func(startTime time.Time) ([]models.Sample, error)
 type SampleAppendResult struct {
 	Count                 int
 	PredictionMode        string
+	PredictionThrottleS   int
 	PredictiveReliability bool
 }
 
@@ -147,6 +161,7 @@ func (c *Client) AppendSamples(ctx context.Context, runID string, build SampleBu
 		if existing != nil {
 			log.Printf("📄 Found existing document with %d samples", len(existing.Samples))
 			result.PredictionMode = existing.PredictionMode
+			result.PredictionThrottleS = existing.PredictionThrottleS
 			result.PredictiveReliability = existing.PredictiveReliability
 		} else {
 			log.Printf("📄 Creating new document for run ID: %s", runID)

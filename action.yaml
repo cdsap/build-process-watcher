@@ -33,6 +33,10 @@ inputs:
   prediction_mode:
     description: 'Prediction request: disabled, forecast, predict, or bqml-boosted (default disabled)'
     required: false
+  prediction_throttle_s:
+    description: 'Process-forecast cadence in elapsed seconds for timeline modes (default 20; range 1–3600)'
+    required: false
+    default: '20'
   freshness_diagnostics:
     description: 'Opt in to live collection-to-dashboard timing diagnostics; enables remote monitoring and adds per-sample timing metadata'
     required: false
@@ -51,6 +55,8 @@ outputs:
     description: 'Whether optional BigQuery metrics export was requested for this run (backend must be configured with BIGQUERY_EXPORT_DATASET)'
   prediction_mode:
     description: 'Selected prediction mode; a request does not imply provider availability'
+  prediction_throttle_s:
+    description: 'Selected process-forecast cadence in elapsed seconds'
   freshness_diagnostics:
     description: 'Whether live collection-to-dashboard timing diagnostics were enabled'
 

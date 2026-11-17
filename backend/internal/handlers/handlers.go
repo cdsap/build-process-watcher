@@ -46,6 +46,7 @@ type Storage interface {
 	SetRunExportToBigquery(ctx context.Context, runID string, enabled bool) error
 	SetRunPredictiveReliability(ctx context.Context, runID string, enabled bool) error
 	SetRunPredictionMode(ctx context.Context, runID, mode string) error
+	SetRunPredictionThrottleS(ctx context.Context, runID string, throttleS int) error
 	MarkRunAsFinished(ctx context.Context, runID string) (bool, error)
 }
 
