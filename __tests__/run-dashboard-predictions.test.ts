@@ -18,7 +18,9 @@ describe('run dashboard prediction evolution integration', () => {
   it.each(pages)('loads the shared prediction view without legacy dashboard tabs: %s', (page) => {
     const source = readDashboardPage(page);
     expect(source).toContain('<script src="/prediction-view.js"></script>');
-    expect(source).toContain('data-open-predictions');
+    expect(source).not.toContain('prediction-preview');
+    expect(source).not.toContain('data-open-predictions');
+    expect(source).not.toContain('Open Predictions');
     expect(source).not.toContain('data-run-tab');
     expect(source).not.toContain('run-dashboard-tabs-legacy');
     expect(source).not.toContain('activeRunDashboardTab');
