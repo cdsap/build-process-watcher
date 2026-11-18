@@ -245,18 +245,23 @@ describe('per-process memory forecasts', () => {
       ],
     }, null).html;
     expect(html).toContain('data-forecast-latency');
-    expect(html).toContain('p50');
-    expect(html).toContain('fallback 50%');
+    expect(html).toContain('forecast-latency-table');
+    expect(html).toContain('End-to-end');
+    expect(html).toContain('Provider');
+    expect(html).toContain('Inference');
+    expect(html).toContain('50%');
     expect(html).toContain('1.2s');
+    expect(html.indexOf('process-forecast-charts')).toBeLessThan(html.indexOf('data-forecast-latency'));
     const summary = view.forecastLatencySummary({
       process_forecasts: [
-        { latency_ms: 100, method: 'ai_forecast' },
-        { latency_ms: 300, method: 'ai_forecast', inference_latency_ms: 200 },
+        { latency_ms: 100, method: 'ai_forecast', provider_latency_ms: 80 },
+        { latency_ms: 300, method: 'ai_forecast', inference_latency_ms: 200, provider_latency_ms: 250 },
       ],
     });
     expect(summary.p50).toBe(100);
     expect(summary.p95).toBe(300);
     expect(summary.inferenceP50).toBe(200);
+    expect(summary.providerP50).toBe(80);
   });
 
   it('draws per-issuance horizon polylines for forecast mode', () => {

@@ -261,7 +261,11 @@
             p50: percentileSorted(latency, 50),
             p95: percentileSorted(latency, 95),
             providerP50: percentileSorted(provider, 50),
+            providerP95: percentileSorted(provider, 95),
             inferenceP50: percentileSorted(inference, 50),
+            inferenceP95: percentileSorted(inference, 95),
+            providerTimedCount: provider.length,
+            inferenceTimedCount: inference.length,
             fallbackCount,
             fallbackPct: forecasts.length ? Math.round((fallbackCount / forecasts.length) * 100) : 0,
             latest,
@@ -274,6 +278,10 @@
         return `${Math.round(value)}ms`;
     }
 
+    function formatLatencyCell(value) {
+        return formatLatencyMs(value) || '—';
+    }
+
     function formatForecastLatencySummary(summary) {
         if (!summary || !summary.timedCount) return '';
         const parts = [];
@@ -284,7 +292,7 @@
         const inference = formatLatencyMs(summary.inferenceP50);
         if (inference) parts.push(`inference ${inference}`);
         const provider = formatLatencyMs(summary.providerP50);
-        if (provider && !inference) parts.push(`provider ${provider}`);
+        if (provider) parts.push(`provider ${provider}`);
         parts.push(`fallback ${summary.fallbackPct}%`);
         return parts.join(' · ');
     }
@@ -320,9 +328,25 @@
     }
 
     function renderForecastLatencyHtml(data) {
-        const summary = formatForecastLatencySummary(forecastLatencySummary(data));
-        if (!summary) return '';
-        return `<p class="forecast-latency-summary" data-forecast-latency>${escapeHtml(summary)}</p>`;
+        const summary = forecastLatencySummary(data);
+        if (!summary || !summary.timedCount) return '';
+        const row = (label, p50, p95) => (
+            `<tr><th scope="row">${escapeHtml(label)}</th>`
+            + `<td>${escapeHtml(formatLatencyCell(p50))}</td>`
+            + `<td>${escapeHtml(formatLatencyCell(p95))}</td></tr>`
+        );
+        return `<div class="forecast-latency-table-wrap" data-forecast-latency>`
+            + `<table class="forecast-latency-table" aria-label="Forecast latency">`
+            + `<caption>Forecast latency</caption>`
+            + `<thead><tr><th scope="col">Metric</th><th scope="col">p50</th><th scope="col">p95</th></tr></thead>`
+            + `<tbody>`
+            + row('End-to-end', summary.p50, summary.p95)
+            + row('Provider', summary.providerP50, summary.providerP95)
+            + row('Inference', summary.inferenceP50, summary.inferenceP95)
+            + `<tr><th scope="row">Fallback</th>`
+            + `<td colspan="2">${escapeHtml(`${summary.fallbackPct}%`)}`
+            + ` <span class="forecast-latency-fallback-count">(${summary.fallbackCount}/${summary.count})</span></td></tr>`
+            + `</tbody></table></div>`;
     }
 
     function actualNear(actuals, targetMs, maxDeltaMs) {
@@ -701,7 +725,7 @@
         const predictionMode = String(data?.prediction_mode || '');
         const sharedLegend = forecastPanelLegend(predictionMode);
         const statusClass = `forecast-live-status${delayed ? ' is-delayed' : ''}${waiting ? ' is-waiting' : ''}`;
-        return `<section class="prediction-panel process-forecasts" data-forecast-panel data-prediction-mode="${escapeHtml(predictionMode)}"><h2>Process memory forecasts</h2><p id="forecast-live-status" class="${statusClass}">${escapeHtml(formatForecastStatus(data, defaultMode))}</p>${renderForecastLatencyHtml(data)}<p class="forecast-panel-help">${forecastPanelHelp(predictionMode)}</p>${replayControls}${sharedLegend}<div class="process-forecast-charts" aria-label="Forecast charts">${renderForecastChartsHtml(available, { predictionMode })}</div><script type="application/json" id="bpw-forecast-replay-data">${JSON.stringify(available).replace(/</g, '\\u003c')}</script></section>`;
+        return `<section class="prediction-panel process-forecasts" data-forecast-panel data-prediction-mode="${escapeHtml(predictionMode)}"><h2>Process memory forecasts</h2><p id="forecast-live-status" class="${statusClass}">${escapeHtml(formatForecastStatus(data, defaultMode))}</p><p class="forecast-panel-help">${forecastPanelHelp(predictionMode)}</p>${replayControls}${sharedLegend}<div class="process-forecast-charts" aria-label="Forecast charts">${renderForecastChartsHtml(available, { predictionMode })}</div>${renderForecastLatencyHtml(data)}<script type="application/json" id="bpw-forecast-replay-data">${JSON.stringify(available).replace(/</g, '\\u003c')}</script></section>`;
     }
 
     function bindProcessForecastView(root, options = {}) {
@@ -817,7 +841,7 @@
             let latencyNode = root.querySelector('[data-forecast-latency]');
             if (latencyHtml) {
                 if (latencyNode) latencyNode.outerHTML = latencyHtml;
-                else if (statusNode.insertAdjacentHTML) statusNode.insertAdjacentHTML('afterend', latencyHtml);
+                else if (chartsNode && chartsNode.insertAdjacentHTML) chartsNode.insertAdjacentHTML('afterend', latencyHtml);
             } else if (latencyNode && typeof latencyNode.remove === 'function') {
                 latencyNode.remove();
             }
