@@ -189,7 +189,27 @@ func TestRemoteForecastProvidersUseModePath(t *testing.T) {
 			if len(forecasts) != 1 || forecasts[0].ProcessName != "GradleDaemon" || len(forecasts[0].Points) != 1 {
 				t.Fatalf("forecasts=%#v", forecasts)
 			}
+			if forecasts[0].LatencyMs <= 0 {
+				t.Fatalf("latency_ms = %d, want > 0", forecasts[0].LatencyMs)
+			}
 		})
+	}
+}
+
+func TestStampForecastLatencyMarksFallback(t *testing.T) {
+	forecasts := []ProcessForecast{
+		{Method: "ai_forecast", ProviderLatencyMs: 50, InferenceLatencyMs: 40},
+		{Method: "last_value"},
+	}
+	stampForecastLatency(forecasts, 120)
+	if forecasts[0].LatencyMs != 120 || forecasts[0].Fallback {
+		t.Fatalf("primary = %+v", forecasts[0])
+	}
+	if forecasts[0].ProviderLatencyMs != 50 || forecasts[0].InferenceLatencyMs != 40 {
+		t.Fatalf("provider fields overwritten: %+v", forecasts[0])
+	}
+	if forecasts[1].LatencyMs != 120 || !forecasts[1].Fallback {
+		t.Fatalf("fallback = %+v", forecasts[1])
 	}
 }
 

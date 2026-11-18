@@ -79,13 +79,17 @@ type RunDoc struct {
 
 // ProcessForecast is one public-safe process/metric forecast issuance.
 type ProcessForecast struct {
-	ProcessName  string                 `json:"process_name" firestore:"process_name"`
-	PID          string                 `json:"pid" firestore:"pid"`
-	Metric       string                 `json:"metric" firestore:"metric"`
-	CreatedAtMs  int64                  `json:"created_at_ms" firestore:"created_at_ms"`
-	Points       []ProcessForecastPoint `json:"points" firestore:"points"`
-	ModelVersion string                 `json:"model_version,omitempty" firestore:"model_version,omitempty"`
-	Method       string                 `json:"method,omitempty" firestore:"method,omitempty"`
+	ProcessName        string                 `json:"process_name" firestore:"process_name"`
+	PID                string                 `json:"pid" firestore:"pid"`
+	Metric             string                 `json:"metric" firestore:"metric"`
+	CreatedAtMs        int64                  `json:"created_at_ms" firestore:"created_at_ms"`
+	Points             []ProcessForecastPoint `json:"points" firestore:"points"`
+	ModelVersion       string                 `json:"model_version,omitempty" firestore:"model_version,omitempty"`
+	Method             string                 `json:"method,omitempty" firestore:"method,omitempty"`
+	LatencyMs          int64                  `json:"latency_ms,omitempty" firestore:"latency_ms,omitempty"`
+	ProviderLatencyMs  int64                  `json:"provider_latency_ms,omitempty" firestore:"provider_latency_ms,omitempty"`
+	InferenceLatencyMs int64                  `json:"inference_latency_ms,omitempty" firestore:"inference_latency_ms,omitempty"`
+	Fallback           bool                   `json:"fallback,omitempty" firestore:"fallback,omitempty"`
 }
 
 // ProcessForecastPoint is one forecast target on the sample clock.

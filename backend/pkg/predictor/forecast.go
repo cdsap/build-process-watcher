@@ -97,8 +97,28 @@ func (p *RemoteForecastProvider) Forecast(ctx context.Context, snapshot RunSnaps
 		Samples: toRemoteSamples(snapshot.Samples),
 	}
 	var response remoteForecastResponse
+	started := time.Now()
 	if err := p.client.postJSON(ctx, payload, &response); err != nil {
 		return nil, err
 	}
+	latencyMs := time.Since(started).Milliseconds()
+	if latencyMs <= 0 {
+		latencyMs = 1
+	}
+	stampForecastLatency(response.Forecasts, latencyMs)
 	return response.Forecasts, nil
+}
+
+// stampForecastLatency writes end-to-end public→private latency onto issuances.
+// Provider/inference timings from the private response are preserved when present.
+func stampForecastLatency(forecasts []ProcessForecast, latencyMs int64) {
+	if latencyMs <= 0 || len(forecasts) == 0 {
+		return
+	}
+	for i := range forecasts {
+		forecasts[i].LatencyMs = latencyMs
+		if forecasts[i].Method == "last_value" {
+			forecasts[i].Fallback = true
+		}
+	}
 }

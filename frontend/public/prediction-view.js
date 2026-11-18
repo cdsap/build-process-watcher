@@ -225,6 +225,70 @@
         };
     }
 
+    function percentileSorted(sorted, p) {
+        if (!sorted.length) return null;
+        if (sorted.length === 1) return sorted[0];
+        const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1));
+        return sorted[idx];
+    }
+
+    function forecastLatencySummary(data) {
+        const forecasts = Array.isArray(data?.process_forecasts) ? data.process_forecasts : [];
+        const pick = (key) => forecasts
+            .map((forecast) => finiteNumber(forecast?.[key]))
+            .filter((value) => value !== null && value >= 0)
+            .sort((a, b) => a - b);
+        const latency = pick('latency_ms');
+        const provider = pick('provider_latency_ms');
+        const inference = pick('inference_latency_ms');
+        const fallbackCount = forecasts.filter((forecast) => (
+            forecast?.fallback === true || String(forecast?.method || '') === 'last_value'
+        )).length;
+        let latest = null;
+        let latestCreated = null;
+        forecasts.forEach((forecast) => {
+            const created = finiteNumber(forecast?.created_at_ms);
+            const value = finiteNumber(forecast?.latency_ms);
+            if (value === null || value < 0) return;
+            if (latestCreated === null || (created !== null && created >= latestCreated) || (created === null && latest === null)) {
+                latest = value;
+                if (created !== null) latestCreated = created;
+            }
+        });
+        return {
+            count: forecasts.length,
+            timedCount: latency.length,
+            p50: percentileSorted(latency, 50),
+            p95: percentileSorted(latency, 95),
+            providerP50: percentileSorted(provider, 50),
+            inferenceP50: percentileSorted(inference, 50),
+            fallbackCount,
+            fallbackPct: forecasts.length ? Math.round((fallbackCount / forecasts.length) * 100) : 0,
+            latest,
+        };
+    }
+
+    function formatLatencyMs(value) {
+        if (value === null || value === undefined || !Number.isFinite(value)) return null;
+        if (value >= 1000) return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}s`;
+        return `${Math.round(value)}ms`;
+    }
+
+    function formatForecastLatencySummary(summary) {
+        if (!summary || !summary.timedCount) return '';
+        const parts = [];
+        const p50 = formatLatencyMs(summary.p50);
+        const p95 = formatLatencyMs(summary.p95);
+        if (p50) parts.push(`p50 ${p50}`);
+        if (p95) parts.push(`p95 ${p95}`);
+        const inference = formatLatencyMs(summary.inferenceP50);
+        if (inference) parts.push(`inference ${inference}`);
+        const provider = formatLatencyMs(summary.providerP50);
+        if (provider && !inference) parts.push(`provider ${provider}`);
+        parts.push(`fallback ${summary.fallbackPct}%`);
+        return parts.join(' · ');
+    }
+
     function formatForecastStatus(data, viewMode) {
         const mode = String(data?.prediction_mode || '');
         const freshness = forecastFreshness(data);
@@ -239,6 +303,9 @@
         else if (methodEntries.length > 1) {
             parts.push(methodEntries.map(([name, count]) => `${name}×${count}`).join(' '));
         }
+        const latency = forecastLatencySummary(data);
+        const latestLatency = formatLatencyMs(latency.latest);
+        if (latestLatency) parts.push(latestLatency);
         const warnS = TIMELINE_LAG_WARN_S[mode] || 40;
         if (freshness.lagS === null) {
             parts.push('forecast clock unavailable');
@@ -250,6 +317,12 @@
             parts.push(`lag ${freshness.lagS}s`);
         }
         return parts.join(' · ');
+    }
+
+    function renderForecastLatencyHtml(data) {
+        const summary = formatForecastLatencySummary(forecastLatencySummary(data));
+        if (!summary) return '';
+        return `<p class="forecast-latency-summary" data-forecast-latency>${escapeHtml(summary)}</p>`;
     }
 
     function actualNear(actuals, targetMs, maxDeltaMs) {
@@ -628,7 +701,7 @@
         const predictionMode = String(data?.prediction_mode || '');
         const sharedLegend = forecastPanelLegend(predictionMode);
         const statusClass = `forecast-live-status${delayed ? ' is-delayed' : ''}${waiting ? ' is-waiting' : ''}`;
-        return `<section class="prediction-panel process-forecasts" data-forecast-panel data-prediction-mode="${escapeHtml(predictionMode)}"><h2>Process memory forecasts</h2><p id="forecast-live-status" class="${statusClass}">${escapeHtml(formatForecastStatus(data, defaultMode))}</p><p class="forecast-panel-help">${forecastPanelHelp(predictionMode)}</p>${replayControls}${sharedLegend}<div class="process-forecast-charts" aria-label="Forecast charts">${renderForecastChartsHtml(available, { predictionMode })}</div><script type="application/json" id="bpw-forecast-replay-data">${JSON.stringify(available).replace(/</g, '\\u003c')}</script></section>`;
+        return `<section class="prediction-panel process-forecasts" data-forecast-panel data-prediction-mode="${escapeHtml(predictionMode)}"><h2>Process memory forecasts</h2><p id="forecast-live-status" class="${statusClass}">${escapeHtml(formatForecastStatus(data, defaultMode))}</p>${renderForecastLatencyHtml(data)}<p class="forecast-panel-help">${forecastPanelHelp(predictionMode)}</p>${replayControls}${sharedLegend}<div class="process-forecast-charts" aria-label="Forecast charts">${renderForecastChartsHtml(available, { predictionMode })}</div><script type="application/json" id="bpw-forecast-replay-data">${JSON.stringify(available).replace(/</g, '\\u003c')}</script></section>`;
     }
 
     function bindProcessForecastView(root, options = {}) {
@@ -740,6 +813,14 @@
             statusNode.textContent = formatForecastStatus(latestData, mode);
             statusNode.classList.toggle('is-delayed', freshness.forecastCount > 0 && freshness.lagS !== null && freshness.lagS >= warnS);
             statusNode.classList.toggle('is-waiting', freshness.forecastCount === 0);
+            const latencyHtml = renderForecastLatencyHtml(latestData);
+            let latencyNode = root.querySelector('[data-forecast-latency]');
+            if (latencyHtml) {
+                if (latencyNode) latencyNode.outerHTML = latencyHtml;
+                else if (statusNode.insertAdjacentHTML) statusNode.insertAdjacentHTML('afterend', latencyHtml);
+            } else if (latencyNode && typeof latencyNode.remove === 'function') {
+                latencyNode.remove();
+            }
         }
 
         function applyModeChrome() {
@@ -923,6 +1004,8 @@
         usesIssuancePolylines,
         preferredForecastViewMode,
         forecastFreshness,
+        forecastLatencySummary,
+        formatForecastLatencySummary,
         formatForecastStatus,
         bindProcessForecastView,
         bindProcessForecastReplay,

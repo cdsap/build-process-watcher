@@ -204,6 +204,61 @@ describe('per-process memory forecasts', () => {
     expect(html).toContain('Issuance at 10s');
   });
 
+  it('summarizes issuance latency telemetry in the Predictions panel', () => {
+    const html = view.render({
+      prediction_mode: 'forecast',
+      samples: [
+        { Timestamp: 0, Name: 'GradleDaemon', PID: '1', HeapUsed: 100, RSS: 200 },
+        { Timestamp: 20000, Name: 'GradleDaemon', PID: '1', HeapUsed: 110, RSS: 210 },
+      ],
+      process_forecasts: [
+        {
+          process_name: 'GradleDaemon',
+          pid: '1',
+          metric: 'heap',
+          created_at_ms: 0,
+          method: 'ai_forecast',
+          latency_ms: 800,
+          provider_latency_ms: 700,
+          inference_latency_ms: 600,
+          points: [
+            { target_at_ms: 10000, value_mb: 105 },
+            { target_at_ms: 30000, value_mb: 115 },
+            { target_at_ms: 60000, value_mb: 125 },
+          ],
+        },
+        {
+          process_name: 'GradleDaemon',
+          pid: '1',
+          metric: 'heap',
+          created_at_ms: 20000,
+          method: 'last_value',
+          fallback: true,
+          latency_ms: 1200,
+          provider_latency_ms: 50,
+          points: [
+            { target_at_ms: 30000, value_mb: 110 },
+            { target_at_ms: 50000, value_mb: 110 },
+            { target_at_ms: 80000, value_mb: 110 },
+          ],
+        },
+      ],
+    }, null).html;
+    expect(html).toContain('data-forecast-latency');
+    expect(html).toContain('p50');
+    expect(html).toContain('fallback 50%');
+    expect(html).toContain('1.2s');
+    const summary = view.forecastLatencySummary({
+      process_forecasts: [
+        { latency_ms: 100, method: 'ai_forecast' },
+        { latency_ms: 300, method: 'ai_forecast', inference_latency_ms: 200 },
+      ],
+    });
+    expect(summary.p50).toBe(100);
+    expect(summary.p95).toBe(300);
+    expect(summary.inferenceP50).toBe(200);
+  });
+
   it('draws per-issuance horizon polylines for forecast mode', () => {
     expect(view.usesIssuancePolylines('forecast')).toBe(true);
     expect(view.usesIssuancePolylines('predict')).toBe(false);
