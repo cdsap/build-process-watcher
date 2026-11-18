@@ -1585,6 +1585,12 @@ body.bpw-view-predictions #prediction-panel-content .prediction-panel {
 }
 .process-forecast .actual-trace { stroke: #2563eb; stroke-width: 2.75; }
 .process-forecast .forecast-now { stroke: #94a3b8; stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
+.forecast-latency-summary {
+    margin: 0.15rem 0 0.65rem;
+    font-size: 0.85rem;
+    color: #4b5563;
+    font-variant-numeric: tabular-nums;
+}
 .forecast-chart-legend {
     display: flex;
     flex-wrap: wrap;
