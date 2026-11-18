@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/cdsap/build-process-watcher/backend/internal/ingest"
 	"github.com/cdsap/build-process-watcher/backend/internal/models"
 	"github.com/cdsap/build-process-watcher/backend/internal/predictionqueue"
+	"github.com/cdsap/build-process-watcher/backend/internal/telemetry"
 )
 
 // Ingest receives and stores monitoring data
@@ -66,7 +66,7 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 
 	var maxElapsed int
 	appendResult, err := h.storage.AppendSamples(r.Context(), req.RunID, func(startTime time.Time) ([]models.Sample, error) {
-		samples, err := ingest.ParseData(req.Data, startTime)
+		samples, err := telemetry.ParseData(req.Data, startTime)
 		if err != nil {
 			return nil, err
 		}

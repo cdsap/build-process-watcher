@@ -1,0 +1,16 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "telemetry",
+    srcs = ["parser.go"],
+    importpath = "github.com/cdsap/build-process-watcher/backend/internal/telemetry",
+    visibility = ["//:__subpackages__"],
+    deps = ["//internal/models"],
+)
+
+go_test(
+    name = "telemetry_test",
+    srcs = ["parser_test.go"],
+    embed = [":telemetry"],
+    deps = ["//internal/models"],
+)
