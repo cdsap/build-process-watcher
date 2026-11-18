@@ -1635,6 +1635,13 @@ body.bpw-view-predictions #prediction-panel-content .prediction-panel {
     background: #ea580c;
     box-shadow: 0 0 0 2px #fff, 0 0 0 3px rgba(234, 88, 12, 0.45);
 }
+.forecast-chart-legend .legend-horizon {
+    width: 0.4rem;
+    height: 0.4rem;
+    border-radius: 999px;
+    background: #fb923c;
+    box-shadow: 0 0 0 1.5px #fff;
+}
 .forecast-table-scroll { overflow-x: auto; }
 .forecast-table-scroll:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
 .forecast-table-scroll table { border-collapse: collapse; min-width: 620px; width: 100%; text-align: left; }
@@ -1644,4 +1651,16 @@ body.bpw-view-predictions #prediction-panel-content .prediction-panel {
     fill: #ea580c;
     stroke: #fff;
     stroke-width: 1.5;
+}
+.process-forecast .forecast-horizon {
+    fill: #fb923c;
+    stroke: #fff;
+    stroke-width: 1.25;
+}
+.process-forecast .forecast-horizon-prior {
+    fill: rgba(251, 146, 60, 0.45);
+    stroke: rgba(255, 255, 255, 0.85);
+}
+.process-forecast .forecast-trace-issuance {
+    fill: none;
 }
