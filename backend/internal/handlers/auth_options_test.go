@@ -22,7 +22,7 @@ func TestParseAuthRunOptions(t *testing.T) {
 		{name: "invalid mode", query: "prediction_mode=invalid", wantErr: "invalid prediction_mode"},
 		{name: "invalid throttle", query: "prediction_throttle_s=0", wantErr: "invalid prediction_throttle_s"},
 		{name: "reliability removed", query: "prediction_mode=reliability", wantErr: "invalid prediction_mode"},
-		{name: "legacy reliability rejected", query: "predictive_reliability=true", wantErr: "predictive_reliability is no longer supported; use prediction_mode=forecast|predict|bqml-boosted"},
+		{name: "legacy reliability rejected", query: "predictive_reliability=true", wantErr: "predictive_reliability is no longer supported; use prediction_mode=forecast|predict|bqml-boosted|tabpfn"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

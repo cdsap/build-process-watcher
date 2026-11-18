@@ -21,6 +21,7 @@ func TestOptionsFromEnvDefaultsTimelineProvidersToNoop(t *testing.T) {
 	t.Setenv("PREDICTIVE_FORECAST_PROVIDER_ENABLED", "")
 	t.Setenv("PREDICTIVE_TABPREDICT_PROVIDER_ENABLED", "")
 	t.Setenv("PREDICTIVE_BQML_BOOSTED_PROVIDER_ENABLED", "")
+	t.Setenv("PREDICTIVE_TABPFN_PROVIDER_ENABLED", "")
 
 	options := OptionsFromEnv()
 	if options.ProjectID != "test-project" || options.Port != "9090" {
@@ -28,7 +29,8 @@ func TestOptionsFromEnvDefaultsTimelineProvidersToNoop(t *testing.T) {
 	}
 	if predictor.ForecastEnabled(options.ForecastProvider) ||
 		predictor.ForecastEnabled(options.TabPredictProvider) ||
-		predictor.ForecastEnabled(options.BQMLBoostedProvider) {
+		predictor.ForecastEnabled(options.BQMLBoostedProvider) ||
+		predictor.ForecastEnabled(options.TabPFNProvider) {
 		t.Fatal("timeline providers should default to noop when disabled")
 	}
 }
@@ -39,12 +41,15 @@ func TestOptionsFromEnvEnablesForecastWhenRequested(t *testing.T) {
 	t.Setenv("PREDICTIVE_FORECAST_PROVIDER_ENABLED", "true")
 	t.Setenv("PREDICTIVE_TABPREDICT_PROVIDER_ENABLED", "false")
 	t.Setenv("PREDICTIVE_BQML_BOOSTED_PROVIDER_ENABLED", "false")
+	t.Setenv("PREDICTIVE_TABPFN_PROVIDER_ENABLED", "false")
 
 	options := OptionsFromEnv()
 	if !predictor.ForecastEnabled(options.ForecastProvider) {
 		t.Fatal("forecast provider should be enabled")
 	}
-	if predictor.ForecastEnabled(options.TabPredictProvider) || predictor.ForecastEnabled(options.BQMLBoostedProvider) {
+	if predictor.ForecastEnabled(options.TabPredictProvider) ||
+		predictor.ForecastEnabled(options.BQMLBoostedProvider) ||
+		predictor.ForecastEnabled(options.TabPFNProvider) {
 		t.Fatal("other timeline providers should stay noop")
 	}
 }

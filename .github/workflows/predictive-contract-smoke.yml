@@ -24,7 +24,7 @@ on:
         default: '2'
         type: string
       prediction_mode:
-        description: Timeline prediction mode (forecast, predict, or bqml-boosted)
+        description: Timeline prediction mode (forecast, predict, bqml-boosted, or tabpfn)
         required: false
         default: predict
         type: string
@@ -56,7 +56,7 @@ on:
         default: '2'
         type: string
       prediction_mode:
-        description: Timeline prediction mode (forecast, predict, or bqml-boosted)
+        description: Timeline prediction mode (forecast, predict, bqml-boosted, or tabpfn)
         required: false
         default: predict
         type: string

@@ -166,7 +166,7 @@ describe('resolveMonitoringFeatureFlags', () => {
 
 describe('prediction mode selection', () => {
   const base = { remoteMonitoringRequested: false, exportToBigqueryRequested: false, runId: 'run-1' };
-  it.each(['disabled', 'forecast', 'predict', 'bqml-boosted'] as const)('resolves %s', (predictionMode) => {
+  it.each(['disabled', 'forecast', 'predict', 'bqml-boosted', 'tabpfn'] as const)('resolves %s', (predictionMode) => {
     const flags = resolveMonitoringFeatureFlags({ ...base, predictionMode });
     expect(flags.predictionMode).toBe(predictionMode);
     expect(flags.enableBackend).toBe(predictionMode !== 'disabled');

@@ -163,6 +163,7 @@ func TestRemoteForecastProvidersUseModePath(t *testing.T) {
 		{name: "forecast", wantPath: "/forecast", new: NewRemoteForecastProvider},
 		{name: "tab predict", wantPath: "/tabpredict", new: NewRemoteTabPredictProvider},
 		{name: "BQML boosted", wantPath: "/bqml-boosted", new: NewRemoteBQMLBoostedProvider},
+		{name: "TabPFN", wantPath: "/tabpfn", new: NewRemoteTabPFNProvider},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

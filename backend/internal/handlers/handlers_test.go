@@ -716,6 +716,7 @@ func TestAuthPredictionModes(t *testing.T) {
 		{"prediction_mode=forecast", "forecast", http.StatusOK},
 		{"prediction_mode=predict", "predict", http.StatusOK},
 		{"prediction_mode=bqml-boosted", "bqml-boosted", http.StatusOK},
+		{"prediction_mode=tabpfn", "tabpfn", http.StatusOK},
 		{"prediction_mode=reliability", "", http.StatusBadRequest},
 		{"predictive_reliability=true", "", http.StatusBadRequest},
 		{"prediction_mode=invalid", "", http.StatusBadRequest},

@@ -16,7 +16,7 @@ type timelineProviderSpec struct {
 	construct func(predictor.RemoteForecastConfig) (*predictor.RemoteForecastProvider, error)
 }
 
-func buildTimelineProviders(base predictor.RemoteForecastConfig, specs []timelineProviderSpec) (forecast, tab, bqml predictor.ForecastProvider, firstErr error) {
+func buildTimelineProviders(base predictor.RemoteForecastConfig, specs []timelineProviderSpec) (forecast, tab, bqml, tabpfn predictor.ForecastProvider, firstErr error) {
 	out := make([]predictor.ForecastProvider, len(specs))
 	for i := range out {
 		out[i] = predictor.NoopForecastProvider{}
@@ -36,10 +36,10 @@ func buildTimelineProviders(base predictor.RemoteForecastConfig, specs []timelin
 		}
 		out[i] = remote
 	}
-	for len(out) < 3 {
+	for len(out) < 4 {
 		out = append(out, predictor.NoopForecastProvider{})
 	}
-	return out[0], out[1], out[2], firstErr
+	return out[0], out[1], out[2], out[3], firstErr
 }
 
 func newPredictionScheduler(ctx context.Context, options Options) (predictionqueue.Scheduler, func() error) {

@@ -100,6 +100,13 @@ func Build(ctx context.Context, options Options, deps Deps) (*App, error) {
 	if predictor.ForecastEnabled(bqmlBoostedProvider) {
 		log.Printf("🔮 Process bqml-boosted provider enabled")
 	}
+	tabpfnProvider := options.TabPFNProvider
+	if tabpfnProvider == nil {
+		tabpfnProvider = predictor.NoopForecastProvider{}
+	}
+	if predictor.ForecastEnabled(tabpfnProvider) {
+		log.Printf("🔮 Process tabpfn provider enabled")
+	}
 	newSched := deps.NewPredictionScheduler
 	if newSched == nil {
 		newSched = newPredictionScheduler
@@ -115,6 +122,7 @@ func Build(ctx context.Context, options Options, deps Deps) (*App, error) {
 			Forecast:    forecastProvider,
 			TabPredict:  tabPredictProvider,
 			BQMLBoosted: bqmlBoostedProvider,
+			TabPFN:      tabpfnProvider,
 		},
 		Authenticator:       authenticator,
 		PredictionScheduler: predictionSched,

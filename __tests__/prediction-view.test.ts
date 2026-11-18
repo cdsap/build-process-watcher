@@ -371,6 +371,28 @@ describe('per-process memory forecasts', () => {
     expect(sandboxView).toBeTruthy();
   });
 
+  it('treats tabpfn as a timeline prediction mode', () => {
+    expect(view.isTimelinePredictionMode('tabpfn')).toBe(true);
+    const html = view.render({
+      prediction_mode: 'tabpfn',
+      samples: [
+        { Timestamp: 1000, Name: 'GradleDaemon', PID: '1', HeapUsed: 10, RSS: 20 },
+        { Timestamp: 5000, Name: 'GradleDaemon', PID: '1', HeapUsed: 14, RSS: 24 },
+      ],
+      process_forecasts: [{
+        process_name: 'GradleDaemon',
+        pid: '1',
+        metric: 'heap',
+        created_at_ms: 1000,
+        method: 'tabpfn',
+        model_version: 'tabpfn-timeline-v1',
+        points: [{ target_at_ms: 5000, value_mb: 13 }],
+      }],
+    }, null).html;
+    expect(html).toContain('data-prediction-mode="tabpfn"');
+    expect(html).toContain('tabpfn');
+  });
+
   it('flips Live to Replay when an in-place update marks the run finished', () => {
     const ctx: any = {
       module: { exports: {} },

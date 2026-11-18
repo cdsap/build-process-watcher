@@ -21,6 +21,7 @@ type Options struct {
 	ForecastProvider       predictor.ForecastProvider
 	TabPredictProvider     predictor.ForecastProvider
 	BQMLBoostedProvider    predictor.ForecastProvider
+	TabPFNProvider         predictor.ForecastProvider
 	// Prediction job queue (Cloud Tasks). Empty values disable the scheduler.
 	PredictionTasksQueue    string
 	PredictionTasksLocation string
@@ -42,6 +43,8 @@ type serverConfig struct {
 	tabPredictProviderTimeout  time.Duration
 	bqmlBoostedProviderEnabled bool
 	bqmlBoostedProviderTimeout time.Duration
+	tabpfnProviderEnabled      bool
+	tabpfnProviderTimeout      time.Duration
 }
 
 // OptionsFromEnv reads public backend configuration from environment variables.
@@ -60,6 +63,8 @@ func OptionsFromEnv() Options {
 		tabPredictProviderTimeout:  parseForecastProviderTimeout(firstNonEmpty(os.Getenv("PREDICTIVE_TABPREDICT_PROVIDER_TIMEOUT_MS"), os.Getenv("PREDICTIVE_FORECAST_PROVIDER_TIMEOUT_MS"))),
 		bqmlBoostedProviderEnabled: predictionProviderEnabled(firstNonEmpty(os.Getenv("PREDICTIVE_BQML_BOOSTED_PROVIDER_ENABLED"), os.Getenv("PREDICTIVE_PROVIDER_ENABLED"))),
 		bqmlBoostedProviderTimeout: parseForecastProviderTimeout(firstNonEmpty(os.Getenv("PREDICTIVE_BQML_BOOSTED_PROVIDER_TIMEOUT_MS"), os.Getenv("PREDICTIVE_FORECAST_PROVIDER_TIMEOUT_MS"))),
+		tabpfnProviderEnabled:      predictionProviderEnabled(firstNonEmpty(os.Getenv("PREDICTIVE_TABPFN_PROVIDER_ENABLED"), os.Getenv("PREDICTIVE_PROVIDER_ENABLED"))),
+		tabpfnProviderTimeout:      parseForecastProviderTimeout(firstNonEmpty(os.Getenv("PREDICTIVE_TABPFN_PROVIDER_TIMEOUT_MS"), os.Getenv("PREDICTIVE_FORECAST_PROVIDER_TIMEOUT_MS"))),
 	})
 	if err != nil {
 		log.Printf("🔮 Remote predictive provider disabled: %v", err)
@@ -76,10 +81,11 @@ func buildOptions(config serverConfig) (Options, error) {
 		URL:          config.predictionProviderURL,
 		AuthAudience: config.predictionProviderAuth,
 	}
-	forecastProvider, tabPredictProvider, bqmlBoostedProvider, timelineErr := buildTimelineProviders(baseRemote, []timelineProviderSpec{
+	forecastProvider, tabPredictProvider, bqmlBoostedProvider, tabpfnProvider, timelineErr := buildTimelineProviders(baseRemote, []timelineProviderSpec{
 		{enabled: config.forecastProviderEnabled, timeout: config.forecastProviderTimeout, construct: predictor.NewRemoteForecastProvider},
 		{enabled: config.tabPredictProviderEnabled, timeout: config.tabPredictProviderTimeout, construct: predictor.NewRemoteTabPredictProvider},
 		{enabled: config.bqmlBoostedProviderEnabled, timeout: config.bqmlBoostedProviderTimeout, construct: predictor.NewRemoteBQMLBoostedProvider},
+		{enabled: config.tabpfnProviderEnabled, timeout: config.tabpfnProviderTimeout, construct: predictor.NewRemoteTabPFNProvider},
 	})
 
 	return Options{
@@ -91,6 +97,7 @@ func buildOptions(config serverConfig) (Options, error) {
 		ForecastProvider:       forecastProvider,
 		TabPredictProvider:     tabPredictProvider,
 		BQMLBoostedProvider:    bqmlBoostedProvider,
+		TabPFNProvider:         tabpfnProvider,
 	}, timelineErr
 }
 

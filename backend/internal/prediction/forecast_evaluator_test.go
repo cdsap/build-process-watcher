@@ -129,6 +129,24 @@ func TestForecastEvaluatorAppendsForBQMLBoostedMode(t *testing.T) {
 	}
 }
 
+func TestForecastEvaluatorAppendsForTabPFNMode(t *testing.T) {
+	repo := &forecastRepoStub{run: &models.RunDoc{
+		PredictionMode: "tabpfn",
+		Samples: []models.Sample{
+			{ElapsedTime: 40, Timestamp: 40000, Name: "GradleDaemon", PID: "1", HeapUsed: 100, RSS: 200},
+		},
+	}}
+	want := []models.ProcessForecast{{
+		ProcessName: "GradleDaemon", PID: "1", Metric: "heap", CreatedAtMs: 40000,
+		Points: []models.ProcessForecastPoint{{TargetAtMs: 50000, ValueMB: 108}},
+	}}
+	evaluator := NewForecastEvaluator(repo, TimelineProviders{TabPFN: forecastProviderStub{out: want}})
+	evaluator.Evaluate(context.Background(), "run-1")
+	if len(repo.appended) != 1 {
+		t.Fatalf("appended = %d, want 1 for tabpfn mode", len(repo.appended))
+	}
+}
+
 func TestForecastEvaluatorUsesPerRunThrottle(t *testing.T) {
 	// With throttle=20, elapsed 15s is still before the first window.
 	repo := &forecastRepoStub{run: &models.RunDoc{
@@ -157,7 +175,7 @@ func TestForecastEvaluatorUsesPerRunThrottle(t *testing.T) {
 }
 
 func TestProcessForecastModesShareDefaultThrottle(t *testing.T) {
-	for _, mode := range []string{"predict", "forecast", "bqml-boosted"} {
+	for _, mode := range []string{"predict", "forecast", "bqml-boosted", "tabpfn"} {
 		repo := &forecastRepoStub{run: &models.RunDoc{
 			PredictionMode: mode,
 			Samples: []models.Sample{
@@ -174,6 +192,8 @@ func TestProcessForecastModesShareDefaultThrottle(t *testing.T) {
 			providers.TabPredict = forecastProviderStub{out: want}
 		case "bqml-boosted":
 			providers.BQMLBoosted = forecastProviderStub{out: want}
+		case "tabpfn":
+			providers.TabPFN = forecastProviderStub{out: want}
 		default:
 			providers.Forecast = forecastProviderStub{out: want}
 		}

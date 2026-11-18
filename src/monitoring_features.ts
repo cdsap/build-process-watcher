@@ -3,16 +3,16 @@ export const DEFAULT_BACKEND_URL =
 export const DEFAULT_FRONTEND_BASE_URL = 'https://process-watcher.web.app';
 export { DEFAULT_LOG_FILE_NAME } from './action_config';
 
-export type PredictionMode = 'disabled' | 'forecast' | 'predict' | 'bqml-boosted';
+export type PredictionMode = 'disabled' | 'forecast' | 'predict' | 'bqml-boosted' | 'tabpfn';
 
-const VALID_MODES: PredictionMode[] = ['disabled', 'forecast', 'predict', 'bqml-boosted'];
+const VALID_MODES: PredictionMode[] = ['disabled', 'forecast', 'predict', 'bqml-boosted', 'tabpfn'];
 export const DEFAULT_PREDICTION_THROTTLE_S = 20;
 const MAX_PREDICTION_THROTTLE_S = 3600;
 
 export function resolvePredictionMode(mode: string): PredictionMode {
   if (!mode) return 'disabled';
   if (!VALID_MODES.includes(mode as PredictionMode)) {
-    throw new Error('Invalid prediction_mode; expected disabled, forecast, predict, or bqml-boosted');
+    throw new Error('Invalid prediction_mode; expected disabled, forecast, predict, bqml-boosted, or tabpfn');
   }
   return mode as PredictionMode;
 }
