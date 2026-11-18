@@ -134,7 +134,7 @@ type SampleAppendResult struct {
 
 // AppendSamples reads the run once inside a transaction, builds samples with the
 // resolved start_time, then MergeAll-appends them. Callers that previously did
-// GetRun + ParseData + StoreSamples should use this to avoid the double full read.
+// a separate GetRun before StoreSamples should use this to avoid the double full read.
 func (c *Client) AppendSamples(ctx context.Context, runID string, build SampleBuildFunc) (*SampleAppendResult, error) {
 	if build == nil {
 		return nil, fmt.Errorf("sample build func is required")

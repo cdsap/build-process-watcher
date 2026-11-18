@@ -16,12 +16,12 @@ go_library(
     deps = [
         "//internal/auth",
         "//internal/httpx",
-        "//internal/ingest",
         "//internal/models",
         "//internal/prediction",
         "//internal/predictionqueue",
         "//internal/runlifecycle",
         "//internal/storage",
+        "//internal/telemetry",
         "//pkg/predictor",
     ],
 )
