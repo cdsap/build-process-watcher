@@ -26072,14 +26072,14 @@ exports.DEFAULT_BACKEND_URL = 'https://build-process-watcher-backend-68561542231
 exports.DEFAULT_FRONTEND_BASE_URL = 'https://process-watcher.web.app';
 var action_config_1 = __nccwpck_require__(4838);
 Object.defineProperty(exports, "DEFAULT_LOG_FILE_NAME", ({ enumerable: true, get: function () { return action_config_1.DEFAULT_LOG_FILE_NAME; } }));
-const VALID_MODES = ['disabled', 'forecast', 'predict', 'bqml-boosted'];
+const VALID_MODES = ['disabled', 'forecast', 'predict', 'bqml-boosted', 'tabpfn'];
 exports.DEFAULT_PREDICTION_THROTTLE_S = 20;
 const MAX_PREDICTION_THROTTLE_S = 3600;
 function resolvePredictionMode(mode) {
     if (!mode)
         return 'disabled';
     if (!VALID_MODES.includes(mode)) {
-        throw new Error('Invalid prediction_mode; expected disabled, forecast, predict, or bqml-boosted');
+        throw new Error('Invalid prediction_mode; expected disabled, forecast, predict, bqml-boosted, or tabpfn');
     }
     return mode;
 }
