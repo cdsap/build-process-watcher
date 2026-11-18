@@ -204,6 +204,60 @@ describe('per-process memory forecasts', () => {
     expect(html).toContain('Issuance at 10s');
   });
 
+  it('draws per-issuance horizon polylines for forecast mode', () => {
+    expect(view.usesIssuancePolylines('forecast')).toBe(true);
+    expect(view.usesIssuancePolylines('predict')).toBe(false);
+    const samples = [
+      { Timestamp: 0, Name: 'GradleDaemon', PID: '1', HeapUsed: 100, RSS: 200 },
+      { Timestamp: 20000, Name: 'GradleDaemon', PID: '1', HeapUsed: 110, RSS: 210 },
+      { Timestamp: 40000, Name: 'GradleDaemon', PID: '1', HeapUsed: 120, RSS: 220 },
+      { Timestamp: 60000, Name: 'GradleDaemon', PID: '1', HeapUsed: 130, RSS: 230 },
+    ];
+    const forecasts = [
+      {
+        process_name: 'GradleDaemon',
+        pid: '1',
+        metric: 'heap',
+        created_at_ms: 20000,
+        method: 'timesfm',
+        points: [
+          { target_at_ms: 30000, value_mb: 112 },
+          { target_at_ms: 50000, value_mb: 118 },
+          { target_at_ms: 80000, value_mb: 125 },
+        ],
+      },
+      {
+        process_name: 'GradleDaemon',
+        pid: '1',
+        metric: 'heap',
+        created_at_ms: 40000,
+        method: 'timesfm',
+        points: [
+          { target_at_ms: 50000, value_mb: 122 },
+          { target_at_ms: 70000, value_mb: 128 },
+          { target_at_ms: 100000, value_mb: 135 },
+        ],
+      },
+    ];
+    const html = view.render({
+      samples,
+      process_forecasts: forecasts,
+      prediction_mode: 'forecast',
+    }, null).html;
+    expect(html).toContain('data-prediction-mode="forecast"');
+    expect(html).toContain('forecast-trace-issuance');
+    expect(html).toContain('forecast-trace-prior');
+    expect(html).toContain('forecast-trace-latest');
+    expect(html).toContain('forecast-horizon');
+    expect(html).toContain('legend-horizon');
+    expect(html).toContain('predicted series');
+    expect(html).not.toContain('forecast-band');
+    const issuanceMarkers = html.match(/class="forecast-point forecast-issuance"/g) || [];
+    expect(issuanceMarkers).toHaveLength(2);
+    const horizonMarkers = html.match(/class="forecast-point forecast-horizon/g) || [];
+    expect(horizonMarkers.length).toBeGreaterThanOrEqual(6);
+  });
+
   it('binds prediction replay controls and scrubs chart frames', () => {
     const html = view.render({
       samples: [

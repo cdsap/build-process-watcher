@@ -405,16 +405,72 @@
             });
     }
 
-    function renderForecastChartSvg(group, untilMs) {
+    // Forecast mode draws each issuance as its own short horizon polyline
+    // (origin → +10/+30/+60) instead of stitching issuances into one track.
+    function usesIssuancePolylines(mode) {
+        return String(mode || '') === 'forecast';
+    }
+
+    function visibleIssuancePaths(group, untilMs) {
+        const cutoff = finiteNumber(untilMs);
+        return (group.predictions || [])
+            .filter((prediction) => cutoff === null || prediction.created <= cutoff)
+            .map((prediction) => ({
+                created: prediction.created,
+                path: predictionPath(prediction, group.actual),
+            }))
+            .filter((item) => item.path.length >= 2);
+    }
+
+    function renderIssuancePolylineTraces(paths, xAt, yAt, elapsedS) {
+        if (!paths.length) return { traces: '', horizonMarkers: '', issuanceMarkers: '' };
+        const traces = paths.map((item, index) => {
+            const latest = index === paths.length - 1;
+            const cls = latest
+                ? 'forecast-trace forecast-trace-latest forecast-trace-issuance'
+                : 'forecast-trace forecast-trace-prior forecast-trace-issuance';
+            const points = item.path.map((point) => `${xAt(point.time)},${yAt(point.value)}`).join(' ');
+            return `<polyline class="${cls}" points="${points}"/>`;
+        }).join('');
+        const horizonMarkers = paths.flatMap((item, index) => {
+            const latest = index === paths.length - 1;
+            return item.path.slice(1).map((point) => {
+                const horizonS = Math.round((point.time - item.created) / 1000);
+                const title = `+${horizonS}s from issuance at ${Math.round(elapsedS(item.created))}s`;
+                const cls = latest
+                    ? 'forecast-point forecast-horizon'
+                    : 'forecast-point forecast-horizon forecast-horizon-prior';
+                return `<circle class="${cls}" cx="${xAt(point.time)}" cy="${yAt(point.value)}" r="3.5"><title>${escapeHtml(title)}</title></circle>`;
+            });
+        }).join('');
+        const issuanceMarkers = paths.map((item) => {
+            const origin = item.path[0];
+            if (!origin || !Number.isFinite(origin.value)) return '';
+            const title = `Issuance at ${Math.round(elapsedS(item.created))}s`;
+            return `<circle class="forecast-point forecast-issuance" cx="${xAt(item.created)}" cy="${yAt(origin.value)}" r="5"><title>${escapeHtml(title)}</title></circle>`;
+        }).join('');
+        return { traces, horizonMarkers, issuanceMarkers };
+    }
+
+    function renderForecastChartSvg(group, untilMs, options = {}) {
         if (!group?.actual?.length) return '';
-        const fullTrack = buildTrackingSeries(group.predictions || [], group.actual);
+        const mode = String(options.predictionMode || '');
+        const issuanceMode = usesIssuancePolylines(mode);
+        const cutoff = finiteNumber(untilMs);
+        const issuancePaths = issuanceMode ? visibleIssuancePaths(group, untilMs) : [];
+        const fullTrack = issuanceMode
+            ? { observed: [], forward: [] }
+            : buildTrackingSeries(group.predictions || [], group.actual);
         const trackPoints = fullTrack.observed.concat(fullTrack.forward);
+        const issuanceValues = issuancePaths.flatMap((item) => item.path.map((point) => point.value));
         const allValues = group.actual.map((point) => point.value)
-            .concat(trackPoints.flatMap((point) => [point.min, point.max, point.mid]));
+            .concat(trackPoints.flatMap((point) => [point.min, point.max, point.mid]))
+            .concat(issuanceValues);
         const minTime = group.actual[0].time;
         const maxTime = Math.max(
             group.actual[group.actual.length - 1].time,
             trackPoints[trackPoints.length - 1]?.time ?? group.actual[group.actual.length - 1].time,
+            ...issuancePaths.flatMap((item) => item.path.map((point) => point.time)),
         );
         const minValue = Math.min(...allValues);
         const maxValue = Math.max(...allValues, 1);
@@ -433,30 +489,8 @@
         const xLabels = xTicks.map((time) => `<text class="chart-tick" x="${xAt(time)}" y="${plot.bottom + 20}" text-anchor="middle">${Math.round(elapsedS(time))}s</text>`).join('');
         const yLabels = yTicks.map((value) => `<text class="chart-tick" x="${plot.left - 10}" y="${yAt(value) + 4}" text-anchor="end">${Math.round(value)}</text>`).join('');
 
-        const cutoff = finiteNumber(untilMs);
         const visibleActual = cutoff === null ? group.actual : group.actual.filter((point) => point.time <= cutoff);
-        const visibleObserved = cutoff === null ? fullTrack.observed : fullTrack.observed.filter((point) => point.time <= cutoff);
         const lastActualTime = group.actual[group.actual.length - 1].time;
-        const showForward = cutoff === null || cutoff >= lastActualTime;
-        const visibleForward = !showForward
-            ? []
-            : (cutoff === null ? fullTrack.forward : fullTrack.forward.filter((point) => point.time <= cutoff));
-        const observedSegments = splitByGaps(visibleObserved, TRACK_GAP_BREAK_MS);
-        const band = observedSegments.map((segment) => areaPath(segment, xAt, yAt, 'min', 'max'))
-            .filter(Boolean)
-            .map((path) => `<path class="forecast-band" d="${path}"/>`)
-            .join('');
-        const predictionLine = observedSegments.map((segment) => {
-            const points = polylinePath(segment, xAt, yAt, 'mid');
-            return points ? `<polyline class="forecast-trace forecast-trace-latest" points="${points}"/>` : '';
-        }).join('');
-        const forwardPoints = visibleObserved.length && visibleForward.length
-            ? [visibleObserved[visibleObserved.length - 1]].concat(visibleForward)
-            : visibleForward;
-        const forwardLine = polylinePath(forwardPoints, xAt, yAt, 'mid');
-        const forwardTrace = forwardLine
-            ? `<polyline class="forecast-trace forecast-trace-forward" points="${forwardLine}"/>`
-            : '';
         const cursorTime = cutoff === null
             ? lastActualTime
             : Math.min(Math.max(cutoff, minTime), maxTime);
@@ -464,19 +498,53 @@
         const actualLine = visibleActual.length
             ? `<polyline class="actual-trace" points="${visibleActual.map(xy).join(' ')}"/>`
             : '';
-        // One marker per issuance at created_at so live runs show when each
-        // forecast arrived (the stitched prediction line alone hides that).
-        const issuanceMarkers = (group.predictions || []).map((prediction) => {
-            if (cutoff !== null && prediction.created > cutoff) return '';
-            if (prediction.created < minTime || prediction.created > maxTime) return '';
-            const origin = actualNear(group.actual, prediction.created, ACTUAL_MATCH_WINDOW_MS);
-            const value = origin?.value ?? prediction.points?.[0]?.value;
-            if (!Number.isFinite(value)) return '';
-            const title = `Issuance at ${Math.round(elapsedS(prediction.created))}s`;
-            return `<circle class="forecast-point forecast-issuance" cx="${xAt(prediction.created)}" cy="${yAt(value)}" r="5"><title>${escapeHtml(title)}</title></circle>`;
-        }).join('');
+
+        let predictionLayer = '';
+        let issuanceMarkers = '';
+        if (issuanceMode) {
+            const drawn = renderIssuancePolylineTraces(issuancePaths, xAt, yAt, elapsedS);
+            predictionLayer = `${drawn.traces}${drawn.horizonMarkers}`;
+            issuanceMarkers = drawn.issuanceMarkers;
+        } else {
+            const visibleObserved = cutoff === null ? fullTrack.observed : fullTrack.observed.filter((point) => point.time <= cutoff);
+            const showForward = cutoff === null || cutoff >= lastActualTime;
+            const visibleForward = !showForward
+                ? []
+                : (cutoff === null ? fullTrack.forward : fullTrack.forward.filter((point) => point.time <= cutoff));
+            const observedSegments = splitByGaps(visibleObserved, TRACK_GAP_BREAK_MS);
+            const band = observedSegments.map((segment) => areaPath(segment, xAt, yAt, 'min', 'max'))
+                .filter(Boolean)
+                .map((path) => `<path class="forecast-band" d="${path}"/>`)
+                .join('');
+            const predictionLine = observedSegments.map((segment) => {
+                const points = polylinePath(segment, xAt, yAt, 'mid');
+                return points ? `<polyline class="forecast-trace forecast-trace-latest" points="${points}"/>` : '';
+            }).join('');
+            const forwardPoints = visibleObserved.length && visibleForward.length
+                ? [visibleObserved[visibleObserved.length - 1]].concat(visibleForward)
+                : visibleForward;
+            const forwardLine = polylinePath(forwardPoints, xAt, yAt, 'mid');
+            const forwardTrace = forwardLine
+                ? `<polyline class="forecast-trace forecast-trace-forward" points="${forwardLine}"/>`
+                : '';
+            predictionLayer = `${band}${predictionLine}${forwardTrace}`;
+            // One marker per issuance at created_at so live runs show when each
+            // forecast arrived (the stitched prediction line alone hides that).
+            issuanceMarkers = (group.predictions || []).map((prediction) => {
+                if (cutoff !== null && prediction.created > cutoff) return '';
+                if (prediction.created < minTime || prediction.created > maxTime) return '';
+                const origin = actualNear(group.actual, prediction.created, ACTUAL_MATCH_WINDOW_MS);
+                const value = origin?.value ?? prediction.points?.[0]?.value;
+                if (!Number.isFinite(value)) return '';
+                const title = `Issuance at ${Math.round(elapsedS(prediction.created))}s`;
+                return `<circle class="forecast-point forecast-issuance" cx="${xAt(prediction.created)}" cy="${yAt(value)}" r="5"><title>${escapeHtml(title)}</title></circle>`;
+            }).join('');
+        }
         const midY = (plot.top + plot.bottom) / 2;
-        return `<svg class="forecast-chart" viewBox="0 0 960 280" role="img" aria-label="Actual memory trajectory with prediction track"><rect class="chart-frame" x="${plot.left}" y="${plot.top}" width="${plot.right - plot.left}" height="${plot.bottom - plot.top}"/>${grid}${band}${actualLine}${predictionLine}${forwardTrace}${issuanceMarkers}<line class="forecast-now" x1="${nowX}" x2="${nowX}" y1="${plot.top}" y2="${plot.bottom}"/>${xLabels}${yLabels}<text class="chart-axis-label" x="${(plot.left + plot.right) / 2}" y="268" text-anchor="middle">Elapsed time (seconds)</text><text class="chart-axis-label" x="18" y="${midY}" text-anchor="middle" transform="rotate(-90 18 ${midY})">Memory (MB)</text></svg>`;
+        const aria = issuanceMode
+            ? 'Actual memory trajectory with per-issuance forecast horizons'
+            : 'Actual memory trajectory with prediction track';
+        return `<svg class="forecast-chart" viewBox="0 0 960 280" role="img" aria-label="${aria}"><rect class="chart-frame" x="${plot.left}" y="${plot.top}" width="${plot.right - plot.left}" height="${plot.bottom - plot.top}"/>${grid}${actualLine}${predictionLayer}${issuanceMarkers}<line class="forecast-now" x1="${nowX}" x2="${nowX}" y1="${plot.top}" y2="${plot.bottom}"/>${xLabels}${yLabels}<text class="chart-axis-label" x="${(plot.left + plot.right) / 2}" y="268" text-anchor="middle">Elapsed time (seconds)</text><text class="chart-axis-label" x="18" y="${midY}" text-anchor="middle" transform="rotate(-90 18 ${midY})">Memory (MB)</text></svg>`;
     }
 
     // Optional process_forecasts: {process_name, pid, metric, created_at_ms,
@@ -493,10 +561,25 @@
         }).join('');
     }
 
-    function renderForecastChartsHtml(groups) {
+    function renderForecastChartsHtml(groups, options = {}) {
+        const predictionMode = String(options.predictionMode || '');
         return groups.map((group, index) => (
-            `<article class="process-forecast process-forecast-chart" data-forecast-group-index="${index}"><h3>${escapeHtml(group.name)} · PID ${escapeHtml(group.pid)} · ${group.metric === 'heap' ? 'Heap' : 'RSS'}</h3><div class="forecast-chart-host" data-forecast-chart-host>${renderForecastChartSvg(group, null)}</div></article>`
+            `<article class="process-forecast process-forecast-chart" data-forecast-group-index="${index}"><h3>${escapeHtml(group.name)} · PID ${escapeHtml(group.pid)} · ${group.metric === 'heap' ? 'Heap' : 'RSS'}</h3><div class="forecast-chart-host" data-forecast-chart-host>${renderForecastChartSvg(group, null, { predictionMode })}</div></article>`
         )).join('');
+    }
+
+    function forecastPanelHelp(mode) {
+        if (usesIssuancePolylines(mode)) {
+            return 'Each orange marker is a forecast issuance. Dashed lines show that issuance\'s predicted series (+10/+30/+60). Older issuances stay dim; the latest is emphasized. Replay scrubs actual samples and reveals issuances as they arrive.';
+        }
+        return 'Live follows the latest sample and keeps the last forecast while new ones catch up. Each orange point marks when a forecast was issued. Replay scrubs actual and prediction tracks together.';
+    }
+
+    function forecastPanelLegend(mode) {
+        if (usesIssuancePolylines(mode)) {
+            return `<ul class="forecast-chart-legend" aria-label="Chart legend"><li><span class="legend-swatch legend-actual"></span>Actual</li><li><span class="legend-swatch legend-prediction"></span>Issuance forecast</li><li><span class="legend-swatch legend-issuance"></span>Issuance</li><li><span class="legend-swatch legend-horizon"></span>Horizon point</li><li><span class="legend-swatch legend-now"></span>Latest sample</li></ul>`;
+        }
+        return `<ul class="forecast-chart-legend" aria-label="Chart legend"><li><span class="legend-swatch legend-actual"></span>Actual</li><li><span class="legend-swatch legend-prediction"></span>Prediction</li><li><span class="legend-swatch legend-issuance"></span>Issuance</li><li><span class="legend-swatch legend-band"></span>Prediction range</li><li><span class="legend-swatch legend-now"></span>Latest sample</li></ul>`;
     }
 
     function renderProcessTimelines(data) {
@@ -542,9 +625,10 @@
                 </div>
             </div>
         </div>`;
-        const sharedLegend = `<ul class="forecast-chart-legend" aria-label="Chart legend"><li><span class="legend-swatch legend-actual"></span>Actual</li><li><span class="legend-swatch legend-prediction"></span>Prediction</li><li><span class="legend-swatch legend-issuance"></span>Issuance</li><li><span class="legend-swatch legend-band"></span>Prediction range</li><li><span class="legend-swatch legend-now"></span>Latest sample</li></ul>`;
+        const predictionMode = String(data?.prediction_mode || '');
+        const sharedLegend = forecastPanelLegend(predictionMode);
         const statusClass = `forecast-live-status${delayed ? ' is-delayed' : ''}${waiting ? ' is-waiting' : ''}`;
-        return `<section class="prediction-panel process-forecasts" data-forecast-panel data-prediction-mode="${escapeHtml(String(data?.prediction_mode || ''))}"><h2>Process memory forecasts</h2><p id="forecast-live-status" class="${statusClass}">${escapeHtml(formatForecastStatus(data, defaultMode))}</p><p class="forecast-panel-help">Live follows the latest sample and keeps the last forecast while new ones catch up. Each orange point marks when a forecast was issued. Replay scrubs actual and prediction tracks together.</p>${replayControls}${sharedLegend}<div class="process-forecast-charts" aria-label="Forecast charts">${renderForecastChartsHtml(available)}</div><script type="application/json" id="bpw-forecast-replay-data">${JSON.stringify(available).replace(/</g, '\\u003c')}</script></section>`;
+        return `<section class="prediction-panel process-forecasts" data-forecast-panel data-prediction-mode="${escapeHtml(predictionMode)}"><h2>Process memory forecasts</h2><p id="forecast-live-status" class="${statusClass}">${escapeHtml(formatForecastStatus(data, defaultMode))}</p><p class="forecast-panel-help">${forecastPanelHelp(predictionMode)}</p>${replayControls}${sharedLegend}<div class="process-forecast-charts" aria-label="Forecast charts">${renderForecastChartsHtml(available, { predictionMode })}</div><script type="application/json" id="bpw-forecast-replay-data">${JSON.stringify(available).replace(/</g, '\\u003c')}</script></section>`;
     }
 
     function bindProcessForecastView(root, options = {}) {
@@ -564,6 +648,9 @@
             groups = [];
         }
         if (!Array.isArray(groups)) groups = [];
+        let predictionMode = String(
+            (typeof root.getAttribute === 'function' && root.getAttribute('data-prediction-mode')) || '',
+        );
 
         let timestamps = [];
         let hosts = [];
@@ -687,7 +774,7 @@
             hosts.forEach((host, index) => {
                 const group = groups[index];
                 if (!group) return;
-                host.innerHTML = renderForecastChartSvg(group, timestamp);
+                host.innerHTML = renderForecastChartSvg(group, timestamp, { predictionMode });
             });
             if (!opts.fromClock && clock) {
                 clock.seekTo(cursorMsForFrame(currentFrame));
@@ -743,8 +830,16 @@
             const nextGroups = collectForecastGroups(data, { allowEmptyPredictions: timelineMode });
             if (!nextGroups.length) return false;
             groups = nextGroups;
+            predictionMode = String(data.prediction_mode || '');
+            if (typeof root.setAttribute === 'function') {
+                root.setAttribute('data-prediction-mode', predictionMode);
+            }
             if (dataNode) dataNode.textContent = JSON.stringify(groups);
-            if (chartsNode) chartsNode.innerHTML = renderForecastChartsHtml(groups);
+            if (chartsNode) chartsNode.innerHTML = renderForecastChartsHtml(groups, { predictionMode });
+            const helpNode = root.querySelector('.forecast-panel-help');
+            if (helpNode) helpNode.textContent = forecastPanelHelp(predictionMode);
+            const legendNode = root.querySelector('.forecast-chart-legend');
+            if (legendNode) legendNode.outerHTML = forecastPanelLegend(predictionMode);
             rebuildTimestamps();
             refreshStatus();
             if (!timestamps.length) return true;
@@ -825,6 +920,7 @@
         peakAggregateRss,
         actualNear,
         isTimelinePredictionMode,
+        usesIssuancePolylines,
         preferredForecastViewMode,
         forecastFreshness,
         formatForecastStatus,
