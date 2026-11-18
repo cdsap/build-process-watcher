@@ -66,7 +66,7 @@ This is not required for normal local or remote monitoring. Use it only when you
 | `debug` | Enable debug logging | `false` | No |
 | `disable_summary_output` | Disable GitHub Actions summary output | `false` | No |
 | `export_to_bigquery` | Optional metrics export to BigQuery when Remote Mode finishes | `false` | No |
-| `prediction_mode` | Request `disabled`, `forecast`, `predict`, or `bqml-boosted` | `disabled` | No |
+| `prediction_mode` | Request `disabled`, `forecast`, `predict`, `bqml-boosted`, or `tabpfn` | `disabled` | No |
 | `prediction_throttle_s` | Process-forecast cadence in elapsed seconds for timeline modes | `20` | No |
 | `freshness_diagnostics` | Add opt-in collection-to-dashboard timing telemetry; implies Remote Mode | `false` | No |
 
@@ -75,13 +75,13 @@ This is not required for normal local or remote monitoring. Use it only when you
 **BigQuery export is optional:** It is only for collecting metrics in BigQuery. Set `export_to_bigquery: 'true'` together with `remote_monitoring: 'true'` when you want that export. The backend service must be configured with `BIGQUERY_EXPORT_DATASET`; optional table overrides are `BIGQUERY_EXPORT_TABLE` and `BIGQUERY_EXPORT_PROCESSES_TABLE`.
 
 
-**Prediction mode selection:** Set `prediction_mode` to `forecast`, `predict`, or `bqml-boosted` to request a timeline forecast mode. Values are lowercase; an empty input defaults to `disabled`. Invalid modes fail configuration. The `prediction_mode` output reports the selected request, not provider readiness.
+**Prediction mode selection:** Set `prediction_mode` to `forecast`, `predict`, `bqml-boosted`, or `tabpfn` to request a timeline forecast mode. Values are lowercase; an empty input defaults to `disabled`. Invalid modes fail configuration. The `prediction_mode` output reports the selected request, not provider readiness.
 
 **Prediction throttle:** Set `prediction_throttle_s` to control how often timeline modes issue forecasts (elapsed-seconds buckets shared by Cloud Tasks dedupe). Default is `20`. Valid range is `1`–`3600`.
 
 **Freshness diagnostics are experimental and opt-in:** Set `freshness_diagnostics: 'true'` for a bounded live timing spike. Instrumented samples include collection, backend receipt, and backend storage timing; the run dashboard adds fetch/render timing, p50/p95 latency, sequence gaps, and a cross-host clock-skew warning. The option enables Remote Mode but does not enable prediction or BigQuery export.
 
-Timeline modes (`forecast`, `predict`, `bqml-boosted`) enable Remote Mode. They do not imply BigQuery export. Set `export_to_bigquery: 'true'` separately when export is needed.
+Timeline modes (`forecast`, `predict`, `bqml-boosted`, `tabpfn`) enable Remote Mode. They do not imply BigQuery export. Set `export_to_bigquery: 'true'` separately when export is needed.
 
 When run data contains public-safe `process_forecasts`, the dashboard renders timeline forecast overlays. The public contract intentionally omits non-public implementation details, training data, and service endpoints.
 

@@ -216,7 +216,7 @@ get_auth_token() {
         auth_params+=("export_to_bigquery=true")
     fi
     case "${PREDICTION_MODE:-disabled}" in
-        forecast|predict|bqml-boosted) auth_params+=("prediction_mode=$PREDICTION_MODE") ;;
+        forecast|predict|bqml-boosted|tabpfn) auth_params+=("prediction_mode=$PREDICTION_MODE") ;;
     esac
     if [ -n "${PREDICTION_THROTTLE_S:-}" ]; then
         auth_params+=("prediction_throttle_s=$PREDICTION_THROTTLE_S")

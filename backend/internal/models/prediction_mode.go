@@ -6,7 +6,7 @@ import (
 )
 
 // ProcessForecastThrottleElapsedS is the default cadence for timeline modes
-// (forecast / predict / bqml-boosted) across evaluators and Cloud Tasks dedupe.
+// (forecast / predict / bqml-boosted / tabpfn) across evaluators and Cloud Tasks dedupe.
 // Per-run overrides use prediction_throttle_s.
 const ProcessForecastThrottleElapsedS = 20
 
@@ -22,6 +22,7 @@ const (
 	PredictionModeForecast    PredictionMode = "forecast"
 	PredictionModePredict     PredictionMode = "predict"
 	PredictionModeBQMLBoosted PredictionMode = "bqml-boosted"
+	PredictionModeTabPFN      PredictionMode = "tabpfn"
 )
 
 // ParseThrottleElapsedS validates a prediction_throttle_s query/input value.
@@ -54,7 +55,7 @@ func ParsePredictionMode(raw string) (PredictionMode, bool) {
 	mode := PredictionMode(strings.TrimSpace(raw))
 	switch mode {
 	case PredictionModeUnset, PredictionModeDisabled,
-		PredictionModeForecast, PredictionModePredict, PredictionModeBQMLBoosted:
+		PredictionModeForecast, PredictionModePredict, PredictionModeBQMLBoosted, PredictionModeTabPFN:
 		return mode, true
 	default:
 		return "", false
@@ -73,7 +74,7 @@ func NormalizePredictionMode(raw string) PredictionMode {
 // IsTimeline reports whether the mode writes process_forecasts issuances.
 func (m PredictionMode) IsTimeline() bool {
 	switch m {
-	case PredictionModeForecast, PredictionModePredict, PredictionModeBQMLBoosted:
+	case PredictionModeForecast, PredictionModePredict, PredictionModeBQMLBoosted, PredictionModeTabPFN:
 		return true
 	default:
 		return false

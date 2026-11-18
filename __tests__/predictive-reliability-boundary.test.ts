@@ -119,6 +119,7 @@ describe('predictive reliability public boundary', () => {
     expect(action).toContain('prediction_throttle_s:');
     expect(action).not.toContain('predictive_reliability:');
     expect(action).toContain('bqml-boosted');
+    expect(action).toContain('tabpfn');
   });
 
   it('aligns predictive contract smoke with timeline process_forecasts', () => {

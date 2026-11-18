@@ -32,9 +32,11 @@ not imply that any provider currently emits this contract.
 
 ## Live path (v1)
 
-When `prediction_mode=forecast`, the public backend may call the private
-provider `POST /forecast` and append returned issuances to `process_forecasts`.
-Reliability checkpoints are not written for forecast mode. The private v1
-implementation uses BigQuery `AI.FORECAST` (TimesFM) with a last-value fallback
-for thin series or provider failures. Horizons are +10/+30/+60 seconds on the
-sample clock for `GradleDaemon` and `KotlinCompileDaemon` heap/RSS.
+When `prediction_mode` is a timeline mode (`forecast`, `predict`, `bqml-boosted`,
+`tabpfn`), the public backend may call the matching private provider path
+(`POST /forecast`, `/tabpredict`, `/bqml-boosted`, or `/tabpfn`) and append
+returned issuances to `process_forecasts`. Reliability checkpoints are not
+written for these modes. Private implementations vary (TimesFM, TabFM, BQML
+boosted trees, TabPFN) and may fall back to last-value for thin series or
+provider failures. Horizons are +10/+30/+60 seconds on the sample clock for
+`GradleDaemon` and `KotlinCompileDaemon` heap/RSS.

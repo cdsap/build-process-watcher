@@ -501,6 +501,7 @@ func TestParsePredictionMode(t *testing.T) {
 		{"", PredictionModeUnset, true},
 		{"predict", PredictionModePredict, true},
 		{"bqml-boosted", PredictionModeBQMLBoosted, true},
+		{"tabpfn", PredictionModeTabPFN, true},
 		{"nope", "", false},
 	}
 	for _, tc := range cases {
@@ -509,7 +510,7 @@ func TestParsePredictionMode(t *testing.T) {
 			t.Fatalf("ParsePredictionMode(%q)=(%q,%v), want (%q,%v)", tc.raw, got, ok, tc.want, tc.ok)
 		}
 	}
-	if !PredictionModePredict.IsTimeline() || PredictionModeDisabled.IsTimeline() {
+	if !PredictionModePredict.IsTimeline() || !PredictionModeTabPFN.IsTimeline() || PredictionModeDisabled.IsTimeline() {
 		t.Fatal("timeline classification mismatch")
 	}
 	if ShouldEnqueuePrediction(PredictionModeUnset, false) || ShouldEnqueuePrediction(PredictionModeDisabled, false) {

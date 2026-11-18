@@ -170,11 +170,12 @@
     // Match an observed sample near a forecast target. Sparse monitor samples almost
     // never land on exact target millis, so allow a ±10s window on the sample clock.
     const ACTUAL_MATCH_WINDOW_MS = 10000;
-    const TIMELINE_MODES = new Set(['forecast', 'predict', 'bqml-boosted']);
+    const TIMELINE_MODES = new Set(['forecast', 'predict', 'bqml-boosted', 'tabpfn']);
     // TabFM (predict) is often 30–60s behind samples; warn sooner for TimesFM.
     const TIMELINE_LAG_WARN_S = {
         predict: 40,
         'bqml-boosted': 40,
+        tabpfn: 45,
         forecast: 30,
     };
 

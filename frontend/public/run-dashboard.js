@@ -173,6 +173,7 @@
         const predictionEnabled = predictionMode === 'predict'
             || predictionMode === 'forecast'
             || predictionMode === 'bqml-boosted'
+            || predictionMode === 'tabpfn'
             || hasProcessForecasts;
         if (window.BpwExperimentLayout?.setPredictionsEnabled) {
             BpwExperimentLayout.setPredictionsEnabled(predictionEnabled);
@@ -298,7 +299,7 @@
 
     function wantsProcessForecastPolling(data) {
         const mode = data?.prediction_mode;
-        return mode === 'predict' || mode === 'forecast' || mode === 'bqml-boosted'
+        return mode === 'predict' || mode === 'forecast' || mode === 'bqml-boosted' || mode === 'tabpfn'
             || (Array.isArray(data?.process_forecasts) && data.process_forecasts.length > 0);
     }
 
@@ -632,6 +633,7 @@
         const predictionEnabled = predictionMode === 'predict'
             || predictionMode === 'forecast'
             || predictionMode === 'bqml-boosted'
+            || predictionMode === 'tabpfn'
             || hasProcessForecasts;
         if (window.BpwExperimentLayout?.setPredictionsEnabled) {
             BpwExperimentLayout.setPredictionsEnabled(predictionEnabled);

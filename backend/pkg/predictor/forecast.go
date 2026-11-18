@@ -36,11 +36,11 @@ type RemoteForecastConfig struct {
 	Timeout      time.Duration
 	AuthAudience string
 	HTTPClient   *http.Client
-	// Path defaults to /forecast. Use /tabpredict or /bqml-boosted for other timeline modes.
+	// Path defaults to /forecast. Use /tabpredict, /bqml-boosted, or /tabpfn for other timeline modes.
 	Path string
 }
 
-// RemoteForecastProvider calls a private timeline endpoint (/forecast, /tabpredict, /bqml-boosted).
+// RemoteForecastProvider calls a private timeline endpoint (/forecast, /tabpredict, /bqml-boosted, /tabpfn).
 type RemoteForecastProvider struct {
 	client *remoteClient
 }
@@ -58,6 +58,11 @@ func NewRemoteTabPredictProvider(config RemoteForecastConfig) (*RemoteForecastPr
 // NewRemoteBQMLBoostedProvider creates a client for the private BQML boosted endpoint.
 func NewRemoteBQMLBoostedProvider(config RemoteForecastConfig) (*RemoteForecastProvider, error) {
 	return newRemoteTimelineProvider(config, "/bqml-boosted")
+}
+
+// NewRemoteTabPFNProvider creates a client for the private TabPFN GPU endpoint.
+func NewRemoteTabPFNProvider(config RemoteForecastConfig) (*RemoteForecastProvider, error) {
+	return newRemoteTimelineProvider(config, "/tabpfn")
 }
 
 func newRemoteTimelineProvider(config RemoteForecastConfig, defaultPath string) (*RemoteForecastProvider, error) {

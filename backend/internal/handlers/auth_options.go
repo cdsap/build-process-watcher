@@ -21,7 +21,7 @@ type authRunOptions struct {
 
 func parseAuthRunOptions(query url.Values) (authRunOptions, error) {
 	if strings.TrimSpace(query.Get("predictive_reliability")) != "" {
-		return authRunOptions{}, fmt.Errorf("predictive_reliability is no longer supported; use prediction_mode=forecast|predict|bqml-boosted")
+		return authRunOptions{}, fmt.Errorf("predictive_reliability is no longer supported; use prediction_mode=forecast|predict|bqml-boosted|tabpfn")
 	}
 	mode, ok := models.ParsePredictionMode(query.Get("prediction_mode"))
 	if !ok {

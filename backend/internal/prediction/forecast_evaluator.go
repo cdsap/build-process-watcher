@@ -20,12 +20,14 @@ type TimelineProviders struct {
 	Forecast    predictor.ForecastProvider
 	TabPredict  predictor.ForecastProvider
 	BQMLBoosted predictor.ForecastProvider
+	TabPFN      predictor.ForecastProvider
 }
 
 // ForecastEvaluator coordinates process-forecast provider calls after ingest.
 // prediction_mode=forecast → TimesFM (/forecast)
 // prediction_mode=predict → TabFM (/tabpredict)
 // prediction_mode=bqml-boosted → trained BQML boosted trees (/bqml-boosted)
+// prediction_mode=tabpfn → TabPFN GPU (/tabpfn)
 // All write the same public process_forecasts contract.
 type ForecastEvaluator struct {
 	repo      ForecastRepository
@@ -42,6 +44,9 @@ func NewForecastEvaluator(repo ForecastRepository, providers TimelineProviders) 
 	}
 	if providers.BQMLBoosted == nil {
 		providers.BQMLBoosted = predictor.NoopForecastProvider{}
+	}
+	if providers.TabPFN == nil {
+		providers.TabPFN = predictor.NoopForecastProvider{}
 	}
 	return &ForecastEvaluator{repo: repo, providers: providers}
 }
@@ -103,6 +108,8 @@ func (e *ForecastEvaluator) providerForMode(mode models.PredictionMode) predicto
 		return e.providers.TabPredict
 	case models.PredictionModeBQMLBoosted:
 		return e.providers.BQMLBoosted
+	case models.PredictionModeTabPFN:
+		return e.providers.TabPFN
 	default:
 		return nil
 	}

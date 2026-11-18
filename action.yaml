@@ -31,7 +31,7 @@ inputs:
     required: false
     default: 'false'
   prediction_mode:
-    description: 'Prediction request: disabled, forecast, predict, or bqml-boosted (default disabled)'
+    description: 'Prediction request: disabled, forecast, predict, bqml-boosted, or tabpfn (default disabled)'
     required: false
   prediction_throttle_s:
     description: 'Process-forecast cadence in elapsed seconds for timeline modes (default 20; range 1–3600)'
