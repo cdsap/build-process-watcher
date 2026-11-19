@@ -151,9 +151,14 @@ describe('per-process memory forecasts', () => {
         ],
       },
     ];
-    const html = view.render({ samples: nearSamples, process_forecasts: nearForecasts }, null).html;
-    expect(html).toContain('Live follows the latest sample');
-    expect(html).toContain('Each orange point marks when a forecast was issued');
+    const html = view.render({
+      samples: nearSamples,
+      process_forecasts: nearForecasts,
+      prediction_mode: 'predict',
+    }, null).html;
+    expect(html).toContain('Latest issuance');
+    expect(html).toContain('Previous issuances');
+    expect(html).toContain('original +10/+30/+60 forecast');
     expect(html).toContain('id="forecast-replay-controls"');
     expect(html).toContain('id="btn-forecast-view-live"');
     expect(html).toContain('id="btn-forecast-view-replay"');
@@ -162,7 +167,7 @@ describe('per-process memory forecasts', () => {
     expect(html).toContain('class="forecast-chart-legend"');
     expect(html).toContain('legend-issuance');
     expect(html).toContain('class="forecast-point forecast-issuance"');
-    expect(html).toContain('Issuance at 0s');
+    expect(html).toContain('Issued at 0s');
     expect(html).toContain('class="process-forecast-charts"');
     expect(html).not.toContain('process-forecast-tables');
     expect(html).not.toContain('forecast-table-scroll');
@@ -198,10 +203,12 @@ describe('per-process memory forecasts', () => {
       },
     ];
     const html = view.render({ samples, process_forecasts: forecasts, prediction_mode: 'predict' }, null).html;
-    const markers = html.match(/class="forecast-point forecast-issuance"/g) || [];
+    const markers = html.match(/class="forecast-point forecast-issuance[^"]*"/g) || [];
     expect(markers).toHaveLength(2);
-    expect(html).toContain('Issuance at 0s');
-    expect(html).toContain('Issuance at 10s');
+    expect(html).toContain('Issued at 0s');
+    expect(html).toContain('Issued at 10s');
+    expect(html).toContain('Latest issuance');
+    expect(html).toContain('Earlier issuance');
   });
 
   it('summarizes issuance latency telemetry in the Predictions panel', () => {
@@ -301,19 +308,22 @@ describe('per-process memory forecasts', () => {
     const midPredict = view.renderForecastChartSvg(group, 40000, { predictionMode: 'predict' });
     expect(midPredict).toContain('forecast-trace-issuance');
     expect(midPredict).toContain('forecast-point forecast-issuance');
-    expect(midPredict).toContain('+10s from issuance');
-    expect(midPredict).toContain('+30s from issuance');
-    expect(midPredict).toContain('+60s from issuance');
+    expect(midPredict).toContain('Issued at');
+    expect(midPredict).toContain('Predicted');
+    expect(midPredict).toContain('Latest issuance');
     expect(midPredict).not.toContain('forecast-trace-forward');
+    expect(midPredict).not.toContain('forecast-band');
 
     const midForecast = view.renderForecastChartSvg(group, 40000, { predictionMode: 'forecast' });
     expect(midForecast).toContain('forecast-trace-issuance');
-    expect(midForecast).toContain('+10s from issuance');
+    expect(midForecast).toContain('Issued at');
   });
 
   it('draws per-issuance horizon polylines for forecast mode', () => {
     expect(view.usesIssuancePolylines('forecast')).toBe(true);
-    expect(view.usesIssuancePolylines('predict')).toBe(false);
+    expect(view.usesIssuancePolylines('predict')).toBe(true);
+    expect(view.usesIssuancePolylines('tabpfn')).toBe(true);
+    expect(view.usesIssuancePolylines('bqml-boosted')).toBe(true);
     const samples = [
       { Timestamp: 0, Name: 'GradleDaemon', PID: '1', HeapUsed: 100, RSS: 200 },
       { Timestamp: 20000, Name: 'GradleDaemon', PID: '1', HeapUsed: 110, RSS: 210 },
@@ -357,10 +367,11 @@ describe('per-process memory forecasts', () => {
     expect(html).toContain('forecast-trace-latest');
     expect(html).toContain('forecast-horizon');
     expect(html).toContain('legend-horizon');
-    expect(html).toContain('predicted series');
+    expect(html).toContain('original +10/+30/+60 forecast');
     expect(html).not.toContain('forecast-band');
-    const issuanceMarkers = html.match(/class="forecast-point forecast-issuance"/g) || [];
+    const issuanceMarkers = html.match(/class="forecast-point forecast-issuance[^"]*"/g) || [];
     expect(issuanceMarkers).toHaveLength(2);
+    expect(html).toContain('forecast-issuance-prior');
     const horizonMarkers = html.match(/class="forecast-point forecast-horizon/g) || [];
     expect(horizonMarkers.length).toBeGreaterThanOrEqual(6);
   });
