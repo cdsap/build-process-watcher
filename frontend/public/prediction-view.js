@@ -508,106 +508,22 @@
         return String(mode || '') === 'forecast';
     }
 
-    // During scrubbing (untilMs set), only draw forecast geometry to the right of
-    // the now cursor so past predictions are not overlaid on already-revealed actuals.
-    function clipPathToFuture(path, cursorTime, options = {}) {
-        if (!Array.isArray(path) || !path.length) {
-            return { path: [], horizonPoints: [] };
-        }
-        const cursor = finiteNumber(cursorTime);
-        if (cursor === null) {
-            return { path: path.slice(), horizonPoints: path.slice(1) };
-        }
-        const horizonPoints = path.filter((point, index) => index > 0 && point.time > cursor);
-        if (!horizonPoints.length) {
-            return { path: [], horizonPoints: [] };
-        }
-        const anchorValue = finiteNumber(options.anchorValue);
-        const valueAtCursor = interpolatePath(path, cursor);
-        const start = {
-            time: cursor,
-            value: anchorValue !== null
-                ? anchorValue
-                : (valueAtCursor === null ? horizonPoints[0].value : valueAtCursor),
-        };
-        return { path: [start].concat(horizonPoints), horizonPoints };
-    }
-
-    function actualAtOrBefore(actuals, cursorTime) {
-        const cursor = finiteNumber(cursorTime);
-        if (cursor === null || !Array.isArray(actuals) || !actuals.length) return null;
-        const near = actualNear(actuals.filter((point) => point.time <= cursor), cursor, ACTUAL_MATCH_WINDOW_MS);
-        if (near) return near;
-        for (let i = actuals.length - 1; i >= 0; i -= 1) {
-            if (actuals[i].time <= cursor) return actuals[i];
-        }
-        return null;
-    }
-
-    // Active issuance(s) at the cursor → forward ray only (never the full stitched history).
-    function buildFutureOnlyTrack(predictions, actuals, cursorTime) {
-        const cursor = finiteNumber(cursorTime);
-        if (cursor === null || !Array.isArray(predictions) || !predictions.length) return [];
-        const active = predictions.filter((prediction) => prediction.created <= cursor);
-        if (!active.length) return [];
-        const actualNow = actualAtOrBefore(actuals, cursor);
-        if (!actualNow || !Number.isFinite(actualNow.value)) return [];
-
-        const clipped = active
-            .map((prediction) => clipPathToFuture(
-                predictionPath(prediction, actuals),
-                cursor,
-                { anchorValue: actualNow.value },
-            ))
-            .filter((item) => item.horizonPoints.length > 0);
-        if (!clipped.length) return [];
-
-        const times = Array.from(new Set(clipped.flatMap((item) => item.horizonPoints.map((point) => point.time))))
-            .sort((a, b) => a - b);
-        const latestPath = predictionPath(active[active.length - 1], actuals);
-        const points = [{
-            time: cursor,
-            mid: actualNow.value,
-            min: actualNow.value,
-            max: actualNow.value,
-        }];
-        times.forEach((time) => {
-            const values = active
-                .map((prediction) => {
-                    const end = Math.max(...prediction.points.map((point) => point.time), prediction.created);
-                    if (time < prediction.created || time > end) return null;
-                    return interpolatePath(predictionPath(prediction, actuals), time);
-                })
-                .filter((value) => value !== null);
-            if (!values.length) return;
-            const mid = interpolatePath(latestPath, time);
-            points.push({
-                time,
-                mid: mid === null ? values[values.length - 1] : mid,
-                min: Math.min(...values),
-                max: Math.max(...values),
-            });
-        });
-        return points;
-    }
-
+    // During scrubbing, reveal issuances as they arrive but keep each forecast's
+    // original issuance origin and horizon values (do not re-anchor to the cursor).
     function visibleIssuancePaths(group, untilMs) {
         const cutoff = finiteNumber(untilMs);
-        const anchor = cutoff === null ? null : actualAtOrBefore(group.actual, cutoff);
         return (group.predictions || [])
             .filter((prediction) => cutoff === null || prediction.created <= cutoff)
             .map((prediction) => {
                 const fullPath = predictionPath(prediction, group.actual);
-                const clipped = clipPathToFuture(fullPath, cutoff, {
-                    anchorValue: anchor ? anchor.value : null,
-                });
                 return {
                     created: prediction.created,
                     fullPath,
-                    path: clipped.path,
-                    horizonPoints: clipped.horizonPoints,
+                    path: fullPath,
+                    horizonPoints: fullPath.slice(1),
                 };
-            });
+            })
+            .filter((item) => item.path.length >= 2);
     }
 
     function renderIssuancePolylineTraces(paths, xAt, yAt, elapsedS) {
@@ -724,25 +640,12 @@
                 return `<circle class="forecast-point forecast-issuance" cx="${xAt(prediction.created)}" cy="${yAt(value)}" r="5"><title>${escapeHtml(title)}</title></circle>`;
             }).join('');
         } else {
-            // Future-only: ray from the latest active issuance(s), anchored at actual now.
-            // Do not reuse the full stitched track (that redraws history as "future" at t≈0).
-            const forwardPoints = buildFutureOnlyTrack(group.predictions || [], group.actual, cutoff);
-            const bandPath = areaPath(forwardPoints, xAt, yAt, 'min', 'max');
-            const band = bandPath ? `<path class="forecast-band" d="${bandPath}"/>` : '';
-            const forwardLine = polylinePath(forwardPoints, xAt, yAt, 'mid');
-            const forwardTrace = forwardLine
-                ? `<polyline class="forecast-trace forecast-trace-forward" points="${forwardLine}"/>`
-                : '';
-            predictionLayer = `${band}${forwardTrace}`;
-            issuanceMarkers = (group.predictions || []).map((prediction) => {
-                if (prediction.created > cutoff) return '';
-                if (prediction.created < minTime || prediction.created > maxTime) return '';
-                const origin = actualNear(group.actual, prediction.created, ACTUAL_MATCH_WINDOW_MS);
-                const value = origin?.value ?? prediction.points?.[0]?.value;
-                if (!Number.isFinite(value)) return '';
-                const title = `Issuance at ${Math.round(elapsedS(prediction.created))}s`;
-                return `<circle class="forecast-point forecast-issuance" cx="${xAt(prediction.created)}" cy="${yAt(value)}" r="5"><title>${escapeHtml(title)}</title></circle>`;
-            }).join('');
+            // Issuance-anchored: same visual language as forecast mode. Each revealed
+            // issuance keeps its original path from created_at through its horizons.
+            const anchored = visibleIssuancePaths(group, untilMs);
+            const drawn = renderIssuancePolylineTraces(anchored, xAt, yAt, elapsedS);
+            predictionLayer = `${drawn.traces}${drawn.horizonMarkers}`;
+            issuanceMarkers = drawn.issuanceMarkers;
         }
         const midY = (plot.top + plot.bottom) / 2;
         const aria = issuanceMode
@@ -774,9 +677,9 @@
 
     function forecastPanelHelp(mode) {
         if (usesIssuancePolylines(mode)) {
-            return 'Each orange marker is a forecast issuance. Dashed lines show that issuance\'s predicted series (+10/+30/+60) ahead of the now cursor. Older issuances stay dim; the latest is emphasized. Replay reveals actuals and issuances without overlaying past forecasts on known outcomes.';
+            return 'Each orange marker is a forecast issuance. Dashed lines show that issuance\'s original predicted series (+10/+30/+60) from the issuance time. Older issuances stay dim; the latest is emphasized. Replay reveals actuals and issuances as they arrive.';
         }
-        return 'Live follows the latest sample and keeps the last forecast while new ones catch up. Each orange point marks when a forecast was issued. Replay shows only forecast rays ahead of the now cursor so past predictions are not redrawn over revealed actuals.';
+        return 'Live follows the latest sample and keeps the last forecast while new ones catch up. Each orange point marks when a forecast was issued. Replay reveals each issuance with its original forecast path from that moment, not re-anchored to the scrubber.';
     }
 
     function forecastPanelLegend(mode) {
@@ -1133,8 +1036,7 @@
         actualNear,
         isTimelinePredictionMode,
         usesIssuancePolylines,
-        clipPathToFuture,
-        buildFutureOnlyTrack,
+        visibleIssuancePaths,
         renderForecastChartSvg,
         preferredForecastViewMode,
         forecastFreshness,

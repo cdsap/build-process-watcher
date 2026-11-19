@@ -264,18 +264,7 @@ describe('per-process memory forecasts', () => {
     expect(summary.providerP50).toBe(80);
   });
 
-  it('clips forecast overlays to the future of the replay cursor', () => {
-    const path = [
-      { time: 20000, value: 110 },
-      { time: 30000, value: 112 },
-      { time: 50000, value: 118 },
-      { time: 80000, value: 125 },
-    ];
-    const clipped = view.clipPathToFuture(path, 40000, { anchorValue: 120 });
-    expect(clipped.horizonPoints.map((point: any) => point.time)).toEqual([50000, 80000]);
-    expect(clipped.path[0]).toEqual({ time: 40000, value: 120 });
-    expect(clipped.path.length).toBe(3);
-
+  it('keeps replay forecasts anchored to their issuance time', () => {
     const group = {
       name: 'GradleDaemon',
       pid: '1',
@@ -285,6 +274,7 @@ describe('per-process memory forecasts', () => {
         { time: 20000, value: 110 },
         { time: 40000, value: 120 },
         { time: 60000, value: 130 },
+        { time: 80000, value: 140 },
       ],
       predictions: [{
         created: 20000,
@@ -295,28 +285,30 @@ describe('per-process memory forecasts', () => {
         ],
       }],
     };
-    const midReplay = view.renderForecastChartSvg(group, 40000, { predictionMode: 'forecast' });
-    expect(midReplay).toContain('forecast-point forecast-issuance');
-    expect(midReplay).toContain('forecast-trace-issuance');
-    // +10s horizon (30s) is already in the past at cursor 40s — not drawn.
-    expect(midReplay).not.toContain('+10s from issuance');
-    expect(midReplay).toContain('+30s from issuance');
-    expect(midReplay).toContain('+60s from issuance');
 
-    const predictMid = view.renderForecastChartSvg(group, 40000, { predictionMode: 'predict' });
-    expect(predictMid).toContain('forecast-point forecast-issuance');
-    expect(predictMid).not.toContain('forecast-trace-latest');
-    expect(predictMid).toContain('forecast-trace-forward');
-    // Ray starts at the actual now value, not a discontinuous prediction mid.
-    const futureOnly = view.buildFutureOnlyTrack(group.predictions, group.actual, 40000);
-    expect(futureOnly[0]).toEqual({ time: 40000, mid: 120, min: 120, max: 120 });
-    expect(futureOnly.every((point: any) => point.time >= 40000)).toBe(true);
-
-    // Before any issuance exists, draw no prediction geometry.
+    // Before the first issuance, no forecast geometry.
     const early = view.renderForecastChartSvg(group, 0, { predictionMode: 'predict' });
-    expect(early).not.toContain('forecast-trace-forward');
-    expect(early).not.toContain('forecast-band');
+    expect(early).not.toContain('forecast-trace-issuance');
     expect(early).not.toContain('forecast-point forecast-issuance');
+
+    // After issuance, path stays rooted at created_at (20s), not re-anchored to cursor (40s).
+    const paths = view.visibleIssuancePaths(group, 40000);
+    expect(paths).toHaveLength(1);
+    expect(paths[0].created).toBe(20000);
+    expect(paths[0].path[0].time).toBe(20000);
+    expect(paths[0].horizonPoints.map((point: any) => point.time)).toEqual([30000, 50000, 80000]);
+
+    const midPredict = view.renderForecastChartSvg(group, 40000, { predictionMode: 'predict' });
+    expect(midPredict).toContain('forecast-trace-issuance');
+    expect(midPredict).toContain('forecast-point forecast-issuance');
+    expect(midPredict).toContain('+10s from issuance');
+    expect(midPredict).toContain('+30s from issuance');
+    expect(midPredict).toContain('+60s from issuance');
+    expect(midPredict).not.toContain('forecast-trace-forward');
+
+    const midForecast = view.renderForecastChartSvg(group, 40000, { predictionMode: 'forecast' });
+    expect(midForecast).toContain('forecast-trace-issuance');
+    expect(midForecast).toContain('+10s from issuance');
   });
 
   it('draws per-issuance horizon polylines for forecast mode', () => {
