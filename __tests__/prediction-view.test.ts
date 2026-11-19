@@ -264,6 +264,51 @@ describe('per-process memory forecasts', () => {
     expect(summary.providerP50).toBe(80);
   });
 
+  it('clips forecast overlays to the future of the replay cursor', () => {
+    const path = [
+      { time: 20000, value: 110 },
+      { time: 30000, value: 112 },
+      { time: 50000, value: 118 },
+      { time: 80000, value: 125 },
+    ];
+    const clipped = view.clipPathToFuture(path, 40000);
+    expect(clipped.horizonPoints.map((point: any) => point.time)).toEqual([50000, 80000]);
+    expect(clipped.path[0].time).toBe(40000);
+    expect(clipped.path.length).toBe(3);
+
+    const group = {
+      name: 'GradleDaemon',
+      pid: '1',
+      metric: 'heap',
+      actual: [
+        { time: 0, value: 100 },
+        { time: 20000, value: 110 },
+        { time: 40000, value: 120 },
+        { time: 60000, value: 130 },
+      ],
+      predictions: [{
+        created: 20000,
+        points: [
+          { time: 30000, value: 112 },
+          { time: 50000, value: 118 },
+          { time: 80000, value: 125 },
+        ],
+      }],
+    };
+    const midReplay = view.renderForecastChartSvg(group, 40000, { predictionMode: 'forecast' });
+    expect(midReplay).toContain('forecast-point forecast-issuance');
+    expect(midReplay).toContain('forecast-trace-issuance');
+    // +10s horizon (30s) is already in the past at cursor 40s — not drawn.
+    expect(midReplay).not.toContain('+10s from issuance');
+    expect(midReplay).toContain('+30s from issuance');
+    expect(midReplay).toContain('+60s from issuance');
+
+    const predictMid = view.renderForecastChartSvg(group, 40000, { predictionMode: 'predict' });
+    expect(predictMid).toContain('forecast-point forecast-issuance');
+    expect(predictMid).not.toContain('forecast-trace-latest');
+    expect(predictMid).toContain('forecast-trace-forward');
+  });
+
   it('draws per-issuance horizon polylines for forecast mode', () => {
     expect(view.usesIssuancePolylines('forecast')).toBe(true);
     expect(view.usesIssuancePolylines('predict')).toBe(false);

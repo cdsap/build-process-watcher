@@ -508,30 +508,59 @@
         return String(mode || '') === 'forecast';
     }
 
+    // During scrubbing (untilMs set), only draw forecast geometry to the right of
+    // the now cursor so past predictions are not overlaid on already-revealed actuals.
+    function clipPathToFuture(path, cursorTime) {
+        if (!Array.isArray(path) || !path.length) {
+            return { path: [], horizonPoints: [] };
+        }
+        const cursor = finiteNumber(cursorTime);
+        if (cursor === null) {
+            return { path: path.slice(), horizonPoints: path.slice(1) };
+        }
+        const horizonPoints = path.filter((point, index) => index > 0 && point.time > cursor);
+        if (!horizonPoints.length) {
+            return { path: [], horizonPoints: [] };
+        }
+        const valueAtCursor = interpolatePath(path, cursor);
+        const start = {
+            time: cursor,
+            value: valueAtCursor === null ? horizonPoints[0].value : valueAtCursor,
+        };
+        return { path: [start].concat(horizonPoints), horizonPoints };
+    }
+
     function visibleIssuancePaths(group, untilMs) {
         const cutoff = finiteNumber(untilMs);
         return (group.predictions || [])
             .filter((prediction) => cutoff === null || prediction.created <= cutoff)
-            .map((prediction) => ({
-                created: prediction.created,
-                path: predictionPath(prediction, group.actual),
-            }))
-            .filter((item) => item.path.length >= 2);
+            .map((prediction) => {
+                const fullPath = predictionPath(prediction, group.actual);
+                const clipped = clipPathToFuture(fullPath, cutoff);
+                return {
+                    created: prediction.created,
+                    fullPath,
+                    path: clipped.path,
+                    horizonPoints: clipped.horizonPoints,
+                };
+            });
     }
 
     function renderIssuancePolylineTraces(paths, xAt, yAt, elapsedS) {
         if (!paths.length) return { traces: '', horizonMarkers: '', issuanceMarkers: '' };
-        const traces = paths.map((item, index) => {
-            const latest = index === paths.length - 1;
+        const drawable = paths.filter((item) => item.path.length >= 2);
+        const traces = drawable.map((item, index) => {
+            const latest = index === drawable.length - 1;
             const cls = latest
                 ? 'forecast-trace forecast-trace-latest forecast-trace-issuance'
                 : 'forecast-trace forecast-trace-prior forecast-trace-issuance';
             const points = item.path.map((point) => `${xAt(point.time)},${yAt(point.value)}`).join(' ');
             return `<polyline class="${cls}" points="${points}"/>`;
         }).join('');
-        const horizonMarkers = paths.flatMap((item, index) => {
-            const latest = index === paths.length - 1;
-            return item.path.slice(1).map((point) => {
+        const horizonMarkers = drawable.flatMap((item, index) => {
+            const latest = index === drawable.length - 1;
+            const horizons = item.horizonPoints || item.path.slice(1);
+            return horizons.map((point) => {
                 const horizonS = Math.round((point.time - item.created) / 1000);
                 const title = `+${horizonS}s from issuance at ${Math.round(elapsedS(item.created))}s`;
                 const cls = latest
@@ -541,7 +570,7 @@
             });
         }).join('');
         const issuanceMarkers = paths.map((item) => {
-            const origin = item.path[0];
+            const origin = (item.fullPath || item.path)[0];
             if (!origin || !Number.isFinite(origin.value)) return '';
             const title = `Issuance at ${Math.round(elapsedS(item.created))}s`;
             return `<circle class="forecast-point forecast-issuance" cx="${xAt(item.created)}" cy="${yAt(origin.value)}" r="5"><title>${escapeHtml(title)}</title></circle>`;
@@ -559,15 +588,18 @@
             ? { observed: [], forward: [] }
             : buildTrackingSeries(group.predictions || [], group.actual);
         const trackPoints = fullTrack.observed.concat(fullTrack.forward);
-        const issuanceValues = issuancePaths.flatMap((item) => item.path.map((point) => point.value));
+        // Axis domain uses full unclipped geometry so scrubbing does not rescale the chart.
+        const issuanceDomainValues = issuancePaths.flatMap((item) => (
+            (item.fullPath || item.path).map((point) => point.value)
+        ));
         const allValues = group.actual.map((point) => point.value)
             .concat(trackPoints.flatMap((point) => [point.min, point.max, point.mid]))
-            .concat(issuanceValues);
+            .concat(issuanceDomainValues);
         const minTime = group.actual[0].time;
         const maxTime = Math.max(
             group.actual[group.actual.length - 1].time,
             trackPoints[trackPoints.length - 1]?.time ?? group.actual[group.actual.length - 1].time,
-            ...issuancePaths.flatMap((item) => item.path.map((point) => point.time)),
+            ...issuancePaths.flatMap((item) => (item.fullPath || item.path).map((point) => point.time)),
         );
         const minValue = Math.min(...allValues);
         const maxValue = Math.max(...allValues, 1);
@@ -587,9 +619,8 @@
         const yLabels = yTicks.map((value) => `<text class="chart-tick" x="${plot.left - 10}" y="${yAt(value) + 4}" text-anchor="end">${Math.round(value)}</text>`).join('');
 
         const visibleActual = cutoff === null ? group.actual : group.actual.filter((point) => point.time <= cutoff);
-        const lastActualTime = group.actual[group.actual.length - 1].time;
         const cursorTime = cutoff === null
-            ? lastActualTime
+            ? group.actual[group.actual.length - 1].time
             : Math.min(Math.max(cutoff, minTime), maxTime);
         const nowX = xAt(cursorTime);
         const actualLine = visibleActual.length
@@ -602,13 +633,8 @@
             const drawn = renderIssuancePolylineTraces(issuancePaths, xAt, yAt, elapsedS);
             predictionLayer = `${drawn.traces}${drawn.horizonMarkers}`;
             issuanceMarkers = drawn.issuanceMarkers;
-        } else {
-            const visibleObserved = cutoff === null ? fullTrack.observed : fullTrack.observed.filter((point) => point.time <= cutoff);
-            const showForward = cutoff === null || cutoff >= lastActualTime;
-            const visibleForward = !showForward
-                ? []
-                : (cutoff === null ? fullTrack.forward : fullTrack.forward.filter((point) => point.time <= cutoff));
-            const observedSegments = splitByGaps(visibleObserved, TRACK_GAP_BREAK_MS);
+        } else if (cutoff === null) {
+            const observedSegments = splitByGaps(fullTrack.observed, TRACK_GAP_BREAK_MS);
             const band = observedSegments.map((segment) => areaPath(segment, xAt, yAt, 'min', 'max'))
                 .filter(Boolean)
                 .map((path) => `<path class="forecast-band" d="${path}"/>`)
@@ -617,18 +643,39 @@
                 const points = polylinePath(segment, xAt, yAt, 'mid');
                 return points ? `<polyline class="forecast-trace forecast-trace-latest" points="${points}"/>` : '';
             }).join('');
-            const forwardPoints = visibleObserved.length && visibleForward.length
-                ? [visibleObserved[visibleObserved.length - 1]].concat(visibleForward)
-                : visibleForward;
+            const forwardPoints = fullTrack.observed.length && fullTrack.forward.length
+                ? [fullTrack.observed[fullTrack.observed.length - 1]].concat(fullTrack.forward)
+                : fullTrack.forward;
             const forwardLine = polylinePath(forwardPoints, xAt, yAt, 'mid');
             const forwardTrace = forwardLine
                 ? `<polyline class="forecast-trace forecast-trace-forward" points="${forwardLine}"/>`
                 : '';
             predictionLayer = `${band}${predictionLine}${forwardTrace}`;
-            // One marker per issuance at created_at so live runs show when each
-            // forecast arrived (the stitched prediction line alone hides that).
             issuanceMarkers = (group.predictions || []).map((prediction) => {
-                if (cutoff !== null && prediction.created > cutoff) return '';
+                if (prediction.created < minTime || prediction.created > maxTime) return '';
+                const origin = actualNear(group.actual, prediction.created, ACTUAL_MATCH_WINDOW_MS);
+                const value = origin?.value ?? prediction.points?.[0]?.value;
+                if (!Number.isFinite(value)) return '';
+                const title = `Issuance at ${Math.round(elapsedS(prediction.created))}s`;
+                return `<circle class="forecast-point forecast-issuance" cx="${xAt(prediction.created)}" cy="${yAt(value)}" r="5"><title>${escapeHtml(title)}</title></circle>`;
+            }).join('');
+        } else {
+            // Future-only: no past prediction track over revealed actuals; ray from now onward.
+            const futureTrack = trackPoints.filter((point) => point.time > cutoff);
+            const beforeTrack = trackPoints.filter((point) => point.time <= cutoff);
+            const anchor = beforeTrack.length ? beforeTrack[beforeTrack.length - 1] : null;
+            const forwardPoints = anchor && futureTrack.length
+                ? [{ time: cutoff, mid: anchor.mid, min: anchor.min, max: anchor.max }].concat(futureTrack)
+                : futureTrack;
+            const bandPath = areaPath(forwardPoints, xAt, yAt, 'min', 'max');
+            const band = bandPath ? `<path class="forecast-band" d="${bandPath}"/>` : '';
+            const forwardLine = polylinePath(forwardPoints, xAt, yAt, 'mid');
+            const forwardTrace = forwardLine
+                ? `<polyline class="forecast-trace forecast-trace-forward" points="${forwardLine}"/>`
+                : '';
+            predictionLayer = `${band}${forwardTrace}`;
+            issuanceMarkers = (group.predictions || []).map((prediction) => {
+                if (prediction.created > cutoff) return '';
                 if (prediction.created < minTime || prediction.created > maxTime) return '';
                 const origin = actualNear(group.actual, prediction.created, ACTUAL_MATCH_WINDOW_MS);
                 const value = origin?.value ?? prediction.points?.[0]?.value;
@@ -667,9 +714,9 @@
 
     function forecastPanelHelp(mode) {
         if (usesIssuancePolylines(mode)) {
-            return 'Each orange marker is a forecast issuance. Dashed lines show that issuance\'s predicted series (+10/+30/+60). Older issuances stay dim; the latest is emphasized. Replay scrubs actual samples and reveals issuances as they arrive.';
+            return 'Each orange marker is a forecast issuance. Dashed lines show that issuance\'s predicted series (+10/+30/+60) ahead of the now cursor. Older issuances stay dim; the latest is emphasized. Replay reveals actuals and issuances without overlaying past forecasts on known outcomes.';
         }
-        return 'Live follows the latest sample and keeps the last forecast while new ones catch up. Each orange point marks when a forecast was issued. Replay scrubs actual and prediction tracks together.';
+        return 'Live follows the latest sample and keeps the last forecast while new ones catch up. Each orange point marks when a forecast was issued. Replay shows only forecast rays ahead of the now cursor so past predictions are not redrawn over revealed actuals.';
     }
 
     function forecastPanelLegend(mode) {
@@ -1026,6 +1073,8 @@
         actualNear,
         isTimelinePredictionMode,
         usesIssuancePolylines,
+        clipPathToFuture,
+        renderForecastChartSvg,
         preferredForecastViewMode,
         forecastFreshness,
         forecastLatencySummary,
