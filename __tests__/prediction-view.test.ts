@@ -271,9 +271,9 @@ describe('per-process memory forecasts', () => {
       { time: 50000, value: 118 },
       { time: 80000, value: 125 },
     ];
-    const clipped = view.clipPathToFuture(path, 40000);
+    const clipped = view.clipPathToFuture(path, 40000, { anchorValue: 120 });
     expect(clipped.horizonPoints.map((point: any) => point.time)).toEqual([50000, 80000]);
-    expect(clipped.path[0].time).toBe(40000);
+    expect(clipped.path[0]).toEqual({ time: 40000, value: 120 });
     expect(clipped.path.length).toBe(3);
 
     const group = {
@@ -307,6 +307,16 @@ describe('per-process memory forecasts', () => {
     expect(predictMid).toContain('forecast-point forecast-issuance');
     expect(predictMid).not.toContain('forecast-trace-latest');
     expect(predictMid).toContain('forecast-trace-forward');
+    // Ray starts at the actual now value, not a discontinuous prediction mid.
+    const futureOnly = view.buildFutureOnlyTrack(group.predictions, group.actual, 40000);
+    expect(futureOnly[0]).toEqual({ time: 40000, mid: 120, min: 120, max: 120 });
+    expect(futureOnly.every((point: any) => point.time >= 40000)).toBe(true);
+
+    // Before any issuance exists, draw no prediction geometry.
+    const early = view.renderForecastChartSvg(group, 0, { predictionMode: 'predict' });
+    expect(early).not.toContain('forecast-trace-forward');
+    expect(early).not.toContain('forecast-band');
+    expect(early).not.toContain('forecast-point forecast-issuance');
   });
 
   it('draws per-issuance horizon polylines for forecast mode', () => {
