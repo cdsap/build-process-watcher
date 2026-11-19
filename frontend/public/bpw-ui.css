@@ -1575,8 +1575,17 @@ body.bpw-view-predictions #prediction-panel-content .prediction-panel {
 .process-forecast .actual-band { fill: rgba(37, 99, 235, 0.12); stroke: none; }
 .process-forecast .forecast-band { fill: rgba(234, 88, 12, 0.16); stroke: none; }
 .process-forecast .forecast-trace { stroke: #ea580c; stroke-dasharray: 6 4; }
-.process-forecast .forecast-trace-prior { stroke: rgba(234, 88, 12, 0.35); stroke-width: 1.75; }
+.process-forecast .forecast-trace-prior {
+    stroke: #9ca3af;
+    stroke-width: 1.5;
+    opacity: 0.55;
+}
 .process-forecast .forecast-trace-latest { stroke: #ea580c; stroke-width: 2.75; }
+.process-forecast .forecast-issuance-prior {
+    fill: #9ca3af;
+    stroke: #fff;
+    opacity: 0.7;
+}
 .process-forecast .forecast-trace-forward {
     stroke: #ea580c;
     stroke-width: 2.25;
@@ -1654,6 +1663,15 @@ body.bpw-view-predictions #prediction-panel-content .prediction-panel {
     );
     height: 0.22rem;
 }
+.forecast-chart-legend .legend-prediction-prior {
+    background: repeating-linear-gradient(
+        90deg,
+        #9ca3af 0 0.35rem,
+        transparent 0.35rem 0.55rem
+    );
+    height: 0.22rem;
+    opacity: 0.8;
+}
 .forecast-chart-legend .legend-band {
     width: 1.1rem;
     height: 0.7rem;
@@ -1697,8 +1715,9 @@ body.bpw-view-predictions #prediction-panel-content .prediction-panel {
     stroke-width: 1.25;
 }
 .process-forecast .forecast-horizon-prior {
-    fill: rgba(251, 146, 60, 0.45);
+    fill: #9ca3af;
     stroke: rgba(255, 255, 255, 0.85);
+    opacity: 0.65;
 }
 .process-forecast .forecast-trace-issuance {
     fill: none;
