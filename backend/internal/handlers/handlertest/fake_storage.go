@@ -9,7 +9,7 @@ import (
 	"github.com/cdsap/build-process-watcher/backend/internal/storage"
 )
 
-// FakeStorage is a shared in-memory handlers.Storage double for package tests.
+// FakeStorage is a shared in-memory handlers.RunStore double for package tests.
 type FakeStorage struct {
 	Runs                  map[string]*models.RunDoc
 	Processes             map[string]*models.ProcessDoc

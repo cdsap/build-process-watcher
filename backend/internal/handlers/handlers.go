@@ -23,7 +23,7 @@ const predictionJobTimeout = 90 * time.Second
 
 // Handlers contains all HTTP handlers
 type Handlers struct {
-	storage           Storage
+	storage           RunStore
 	export            Exporter
 	authn             RunAuthenticator
 	lifecycle         *runlifecycle.Service
@@ -34,17 +34,15 @@ type Handlers struct {
 	predictionJobToken string
 }
 
-// Storage is the persistence port used by the HTTP handlers.
-// The production implementation is storage.Client.
-type Storage interface {
+// RunStore is the persistence port used by the HTTP handlers.
+// The production implementation is *storage.Client.
+type RunStore interface {
 	GetRun(ctx context.Context, runID string) (*models.RunDoc, error)
 	GetProcesses(ctx context.Context, runID string) (*models.ProcessDoc, error)
 	AppendSamples(ctx context.Context, runID string, build storage.SampleBuildFunc) (*storage.SampleAppendResult, error)
 	StoreProcessInfo(ctx context.Context, runID string, processInfo models.ProcessInfo) error
-	StorePredictionCheckpoint(ctx context.Context, runID string, checkpoint models.PredictionCheckpoint) error
 	AppendProcessForecasts(ctx context.Context, runID string, forecasts []models.ProcessForecast) error
 	SetRunExportToBigquery(ctx context.Context, runID string, enabled bool) error
-	SetRunPredictiveReliability(ctx context.Context, runID string, enabled bool) error
 	SetRunPredictionMode(ctx context.Context, runID, mode string) error
 	SetRunPredictionThrottleS(ctx context.Context, runID string, throttleS int) error
 	MarkRunAsFinished(ctx context.Context, runID string) (bool, error)
@@ -65,7 +63,7 @@ type RunAuthenticator interface {
 
 // Config wires HTTP handlers without a long positional constructor.
 type Config struct {
-	Storage             Storage
+	Storage             RunStore
 	Export              Exporter
 	TimelineProviders   prediction.TimelineProviders
 	Authenticator       RunAuthenticator
@@ -92,8 +90,8 @@ func New(cfg Config) *Handlers {
 }
 
 // NewHandlers creates a handlers instance with noop predictors. export may be nil.
-func NewHandlers(storageClient Storage, export Exporter) *Handlers {
-	return New(Config{Storage: storageClient, Export: export})
+func NewHandlers(store RunStore, export Exporter) *Handlers {
+	return New(Config{Storage: store, Export: export})
 }
 
 // SetAuthenticator installs the JWT run authenticator used by auth and ingest.
