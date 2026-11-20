@@ -1503,6 +1503,16 @@ footer {
     display: inline-flex;
     gap: 0.4rem;
 }
+.forecast-history-mode {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.85rem;
+    color: #4b5563;
+}
+.forecast-history-mode select {
+    min-width: 8.5rem;
+}
 .forecast-live-status {
     margin: 0.35rem 0 0.5rem;
     font-size: 0.9rem;
@@ -1656,10 +1666,11 @@ body.bpw-view-predictions #prediction-panel-content .prediction-panel {
 .forecast-chart-legend .legend-prediction-prior {
     background: repeating-linear-gradient(
         90deg,
-        #6b7280 0 0.35rem,
+        #64748b 0 0.35rem,
         transparent 0.35rem 0.55rem
     );
     height: 0.22rem;
+    opacity: 0.45;
 }
 .forecast-chart-legend .legend-band {
     width: 1.1rem;
@@ -1708,17 +1719,17 @@ body.bpw-view-predictions #prediction-panel-content .prediction-panel {
 }
 /* Prior rules must follow base issuance/horizon colors or orange wins the cascade. */
 .process-forecast .forecast-trace-prior {
-    stroke: #6b7280;
-    stroke-width: 2;
-    opacity: 0.9;
+    stroke: #64748b;
+    stroke-width: 1.5;
+    opacity: 0.25;
 }
 .process-forecast .forecast-issuance-prior {
-    fill: #6b7280;
+    fill: #64748b;
     stroke: #fff;
-    opacity: 0.95;
+    opacity: 0.5;
 }
 .process-forecast .forecast-horizon-prior {
-    fill: #6b7280;
+    fill: #64748b;
     stroke: rgba(255, 255, 255, 0.9);
-    opacity: 0.9;
+    opacity: 0.25;
 }
