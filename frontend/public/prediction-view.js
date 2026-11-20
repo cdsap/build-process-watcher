@@ -297,6 +297,114 @@
         return parts.join(' · ');
     }
 
+    // Known timeline backends. Table names follow the private provider defaults
+    // (PREDICTIVE_BQ_DATASET / context table / boosted train table).
+    const TIMELINE_INFERENCE_CATALOG = {
+        forecast: {
+            engine: 'TimesFM AI.FORECAST',
+            route: 'POST /forecast',
+            inferenceSource: 'AI.FORECAST in-query series',
+            inferenceTable: null,
+            defaultModel: 'bq-ai-forecast-timesfm-v1',
+        },
+        predict: {
+            engine: 'TabFM AI.PREDICT',
+            route: 'POST /tabpredict',
+            inferenceSource: 'BigQuery context table',
+            inferenceTable: 'predictive_reliability.tabfm_context',
+            defaultModel: 'bq-ai-predict-tabfm-v1',
+        },
+        'bqml-boosted': {
+            engine: 'BQML boosted trees',
+            route: 'POST /bqml-boosted',
+            inferenceSource: 'BigQuery ML model + train table',
+            inferenceTable: 'predictive_reliability.bqml_boosted_train',
+            modelId: 'bpw_process_boosted_v1',
+            defaultModel: 'bpw_process_boosted_v1',
+        },
+        tabpfn: {
+            engine: 'TabPFN GPU',
+            route: 'POST /tabpfn',
+            inferenceSource: 'TabPFN VM (no BigQuery table)',
+            inferenceTable: null,
+            defaultModel: 'tabpfn-timeline-v1',
+        },
+    };
+
+    function forecastModelSummary(data) {
+        const mode = String(data?.prediction_mode || '');
+        const catalog = TIMELINE_INFERENCE_CATALOG[mode] || null;
+        const forecasts = Array.isArray(data?.process_forecasts) ? data.process_forecasts : [];
+        const modelCounts = {};
+        const methodCounts = {};
+        forecasts.forEach((forecast) => {
+            const model = String(forecast?.model_version || '').trim();
+            if (model) modelCounts[model] = (modelCounts[model] || 0) + 1;
+            const method = String(forecast?.method || '').trim();
+            if (method) methodCounts[method] = (methodCounts[method] || 0) + 1;
+        });
+        const models = Object.entries(modelCounts)
+            .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+            .map(([name, count]) => ({ name, count }));
+        const methods = Object.entries(methodCounts)
+            .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+            .map(([name, count]) => ({ name, count }));
+        const primaryModel = models[0]?.name
+            || catalog?.defaultModel
+            || catalog?.modelId
+            || null;
+        return {
+            mode,
+            engine: catalog?.engine || null,
+            route: catalog?.route || null,
+            modelId: catalog?.modelId || null,
+            inferenceSource: catalog?.inferenceSource || null,
+            inferenceTable: catalog?.inferenceTable || null,
+            primaryModel,
+            models,
+            methods,
+            forecastCount: forecasts.length,
+        };
+    }
+
+    function formatModelCountList(entries) {
+        if (!entries?.length) return '';
+        return entries.map((entry) => (
+            entries.length === 1 && entry.count === 1
+                ? entry.name
+                : `${entry.name}×${entry.count}`
+        )).join(' · ');
+    }
+
+    function renderForecastModelHtml(data) {
+        if (!isTimelinePredictionMode(data?.prediction_mode)) return '';
+        const summary = forecastModelSummary(data);
+        if (!summary.mode) return '';
+        const rows = [];
+        rows.push(['Mode', summary.mode]);
+        if (summary.engine) rows.push(['Engine', summary.engine]);
+        if (summary.route) rows.push(['Provider', summary.route]);
+        if (summary.modelId) rows.push(['Model id', summary.modelId]);
+        const modelList = formatModelCountList(summary.models);
+        if (modelList) rows.push(['Model version', modelList]);
+        else if (summary.primaryModel) rows.push(['Model version', summary.primaryModel]);
+        const methodList = formatModelCountList(summary.methods);
+        if (methodList) rows.push(['Method', methodList]);
+        if (summary.inferenceTable) {
+            rows.push(['Inference table', summary.inferenceTable]);
+        } else if (summary.inferenceSource) {
+            rows.push(['Inference', summary.inferenceSource]);
+        }
+        if (!rows.length) return '';
+        const body = rows.map(([label, value]) => (
+            `<tr><th scope="row">${escapeHtml(label)}</th><td><code>${escapeHtml(value)}</code></td></tr>`
+        )).join('');
+        return `<div class="forecast-model-table-wrap" data-forecast-model>`
+            + `<table class="forecast-model-table" aria-label="Forecast model">`
+            + `<caption>Forecast model</caption>`
+            + `<tbody>${body}</tbody></table></div>`;
+    }
+
     function formatForecastStatus(data, viewMode) {
         const mode = String(data?.prediction_mode || '');
         const freshness = forecastFreshness(data);
@@ -980,7 +1088,7 @@
         if (!available.length) {
             if (!timelineMode) return '';
             const emptyMode = preferredForecastViewMode(data);
-            return `<section class="prediction-panel process-forecasts" data-forecast-panel data-prediction-mode="${escapeHtml(String(data.prediction_mode || ''))}"><h2>Process memory forecasts</h2><p id="forecast-live-status" class="forecast-live-status">${escapeHtml(formatForecastStatus(data, emptyMode))}</p><p>No eligible Gradle/Kotlin process samples yet.</p></section>`;
+            return `<section class="prediction-panel process-forecasts" data-forecast-panel data-prediction-mode="${escapeHtml(String(data.prediction_mode || ''))}"><h2>Process memory forecasts</h2><p id="forecast-live-status" class="forecast-live-status">${escapeHtml(formatForecastStatus(data, emptyMode))}</p><p>No eligible Gradle/Kotlin process samples yet.</p>${renderForecastModelHtml(data)}</section>`;
         }
         const defaultMode = preferredForecastViewMode(data);
         if (typeof window !== 'undefined' && data?.finished === true) {
@@ -1022,7 +1130,7 @@
         const predictionMode = String(data?.prediction_mode || '');
         const sharedLegend = forecastPanelLegend(predictionMode);
         const statusClass = `forecast-live-status${delayed ? ' is-delayed' : ''}${waiting ? ' is-waiting' : ''}`;
-        return `<section class="prediction-panel process-forecasts" data-forecast-panel data-prediction-mode="${escapeHtml(predictionMode)}"><h2>Process memory forecasts</h2><p id="forecast-live-status" class="${statusClass}">${escapeHtml(formatForecastStatus(data, defaultMode))}</p><p class="forecast-panel-help">${forecastPanelHelp(predictionMode)}</p>${replayControls}${sharedLegend}<div class="process-forecast-charts" aria-label="Forecast charts">${renderForecastChartsHtml(available, { predictionMode, historyMode: defaultHistoryMode })}</div>${renderForecastAccuracyHtml(available)}${renderForecastLatencyHtml(data)}<script type="application/json" id="bpw-forecast-replay-data">${JSON.stringify(available).replace(/</g, '\\u003c')}</script></section>`;
+        return `<section class="prediction-panel process-forecasts" data-forecast-panel data-prediction-mode="${escapeHtml(predictionMode)}"><h2>Process memory forecasts</h2><p id="forecast-live-status" class="${statusClass}">${escapeHtml(formatForecastStatus(data, defaultMode))}</p><p class="forecast-panel-help">${forecastPanelHelp(predictionMode)}</p>${replayControls}${sharedLegend}<div class="process-forecast-charts" aria-label="Forecast charts">${renderForecastChartsHtml(available, { predictionMode, historyMode: defaultHistoryMode })}</div>${renderForecastModelHtml(data)}${renderForecastAccuracyHtml(available)}${renderForecastLatencyHtml(data)}<script type="application/json" id="bpw-forecast-replay-data">${JSON.stringify(available).replace(/</g, '\\u003c')}</script></section>`;
     }
 
     function bindProcessForecastView(root, options = {}) {
@@ -1150,10 +1258,20 @@
             statusNode.textContent = formatForecastStatus(latestData, mode);
             statusNode.classList.toggle('is-delayed', freshness.forecastCount > 0 && freshness.lagS !== null && freshness.lagS >= warnS);
             statusNode.classList.toggle('is-waiting', freshness.forecastCount === 0);
+            const modelHtml = renderForecastModelHtml(latestData);
+            let modelNode = root.querySelector('[data-forecast-model]');
+            if (modelHtml) {
+                if (modelNode) modelNode.outerHTML = modelHtml;
+                else if (chartsNode && chartsNode.insertAdjacentHTML) chartsNode.insertAdjacentHTML('afterend', modelHtml);
+            } else if (modelNode && typeof modelNode.remove === 'function') {
+                modelNode.remove();
+            }
             const accuracyHtml = renderForecastAccuracyHtml(groups);
             let accuracyNode = root.querySelector('[data-forecast-accuracy]');
+            const modelAnchor = root.querySelector('[data-forecast-model]');
             if (accuracyHtml) {
                 if (accuracyNode) accuracyNode.outerHTML = accuracyHtml;
+                else if (modelAnchor && modelAnchor.insertAdjacentHTML) modelAnchor.insertAdjacentHTML('afterend', accuracyHtml);
                 else if (chartsNode && chartsNode.insertAdjacentHTML) chartsNode.insertAdjacentHTML('afterend', accuracyHtml);
             } else if (accuracyNode && typeof accuracyNode.remove === 'function') {
                 accuracyNode.remove();
@@ -1161,9 +1279,10 @@
             const latencyHtml = renderForecastLatencyHtml(latestData);
             let latencyNode = root.querySelector('[data-forecast-latency]');
             const accuracyAnchor = root.querySelector('[data-forecast-accuracy]');
+            const latencyAnchor = accuracyAnchor || root.querySelector('[data-forecast-model]');
             if (latencyHtml) {
                 if (latencyNode) latencyNode.outerHTML = latencyHtml;
-                else if (accuracyAnchor && accuracyAnchor.insertAdjacentHTML) accuracyAnchor.insertAdjacentHTML('afterend', latencyHtml);
+                else if (latencyAnchor && latencyAnchor.insertAdjacentHTML) latencyAnchor.insertAdjacentHTML('afterend', latencyHtml);
                 else if (chartsNode && chartsNode.insertAdjacentHTML) chartsNode.insertAdjacentHTML('afterend', latencyHtml);
             } else if (latencyNode && typeof latencyNode.remove === 'function') {
                 latencyNode.remove();
@@ -1420,8 +1539,10 @@
         preferredForecastViewMode,
         forecastFreshness,
         forecastLatencySummary,
+        forecastModelSummary,
         formatForecastLatencySummary,
         formatForecastStatus,
+        renderForecastModelHtml,
         bindProcessForecastView,
         bindProcessForecastReplay,
     };

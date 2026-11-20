@@ -1594,10 +1594,12 @@ body.bpw-view-predictions #prediction-panel-content .prediction-panel {
 }
 .process-forecast .actual-trace { stroke: #2563eb; stroke-width: 2.75; }
 .process-forecast .forecast-now { stroke: #94a3b8; stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
+.forecast-model-table-wrap,
 .forecast-latency-table-wrap {
     margin: 1rem 0 0.25rem;
     overflow-x: auto;
 }
+.forecast-model-table,
 .forecast-latency-table {
     width: max-content;
     min-width: 18rem;
@@ -1607,6 +1609,7 @@ body.bpw-view-predictions #prediction-panel-content .prediction-panel {
     font-variant-numeric: tabular-nums;
     color: #1f2937;
 }
+.forecast-model-table caption,
 .forecast-latency-table caption {
     caption-side: top;
     text-align: left;
@@ -1614,6 +1617,8 @@ body.bpw-view-predictions #prediction-panel-content .prediction-panel {
     margin: 0 0 0.4rem;
     color: #111827;
 }
+.forecast-model-table th,
+.forecast-model-table td,
 .forecast-latency-table th,
 .forecast-latency-table td {
     padding: 0.35rem 0.75rem 0.35rem 0;
@@ -1625,9 +1630,16 @@ body.bpw-view-predictions #prediction-panel-content .prediction-panel {
     color: #6b7280;
     font-weight: 500;
 }
+.forecast-model-table tbody th,
 .forecast-latency-table tbody th {
     font-weight: 500;
     padding-right: 1.25rem;
+    color: #6b7280;
+}
+.forecast-model-table code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.84em;
+    color: #111827;
 }
 .forecast-latency-fallback-count {
     color: #6b7280;
