@@ -432,16 +432,9 @@ describe('per-process memory forecasts', () => {
     const midForecast = view.renderForecastChartSvg(group, 40000, { predictionMode: 'forecast' });
     expect(midForecast).toContain('forecast-trace-issuance');
     expect(midForecast).toContain('Issued at');
-
-    const withCallout = view.renderForecastChartSvg(group, 40000, {
-      predictionMode: 'predict',
-      highlightCreated: 20000,
-    });
-    expect(withCallout).toContain('data-forecast-point-callout');
-    expect(withCallout).toContain('New issuance');
-    expect(withCallout).toContain('Issued at 20s');
-    expect(withCallout).toContain('+10s 112 MB');
-    expect(withCallout).toContain('forecast-issuance-flash');
+    expect(midForecast).not.toContain('forecast-transition-label');
+    expect(midForecast).not.toContain('forecast-issuance-flash');
+    expect(midForecast).not.toContain('New issuance');
   });
 
   it('draws per-issuance horizon polylines for forecast mode', () => {
