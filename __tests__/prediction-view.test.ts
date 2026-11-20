@@ -212,6 +212,76 @@ describe('per-process memory forecasts', () => {
     expect(html).toContain('Earlier issuance');
   });
 
+  it('marks expired forecasts and reports horizon accuracy', () => {
+    const group = {
+      name: 'GradleDaemon',
+      pid: '1',
+      metric: 'heap',
+      actual: [
+        { time: 0, value: 100 },
+        { time: 20000, value: 110 },
+        { time: 50000, value: 150 },
+        { time: 80000, value: 160 },
+        { time: 100000, value: 170 },
+      ],
+      predictions: [{
+        created: 20000,
+        points: [
+          { time: 30000, value: 120 },
+          { time: 50000, value: 140 },
+          { time: 80000, value: 155 },
+        ],
+      }],
+    };
+    expect(view.isIssuanceExpired(group.predictions[0], 70000)).toBe(false);
+    expect(view.isIssuanceExpired(group.predictions[0], 90000)).toBe(true);
+
+    const active = view.activeForecastSummary(group, 40000);
+    expect(active.status).toBe('active');
+    expect(active.issuedS).toBe(20);
+
+    const expired = view.activeForecastSummary(group, 90000);
+    expect(expired.status).toBe('expired');
+
+    const activeSvg = view.renderForecastChartSvg(group, 40000, { predictionMode: 'predict' });
+    expect(activeSvg).toContain('forecast-trace-latest');
+    expect(activeSvg).not.toContain('forecast-trace-expired');
+    expect(activeSvg).toContain('Error');
+
+    const expiredSvg = view.renderForecastChartSvg(group, 90000, { predictionMode: 'predict' });
+    expect(expiredSvg).toContain('forecast-trace-expired');
+
+    const accuracy = view.forecastAccuracyByHorizon([group]);
+    expect(accuracy.find((row: any) => row.horizonS === 30)?.n).toBe(1);
+    expect(accuracy.find((row: any) => row.horizonS === 30)?.mae).toBeCloseTo(10);
+
+    const html = view.render({
+      samples: [
+        { Timestamp: 0, Name: 'GradleDaemon', PID: '1', HeapUsed: 100, RSS: 200 },
+        { Timestamp: 20000, Name: 'GradleDaemon', PID: '1', HeapUsed: 110, RSS: 210 },
+        { Timestamp: 50000, Name: 'GradleDaemon', PID: '1', HeapUsed: 150, RSS: 250 },
+        { Timestamp: 80000, Name: 'GradleDaemon', PID: '1', HeapUsed: 160, RSS: 260 },
+      ],
+      process_forecasts: [{
+        process_name: 'GradleDaemon',
+        pid: '1',
+        metric: 'heap',
+        created_at_ms: 20000,
+        points: [
+          { target_at_ms: 30000, value_mb: 120 },
+          { target_at_ms: 50000, value_mb: 140 },
+          { target_at_ms: 80000, value_mb: 155 },
+        ],
+      }],
+      prediction_mode: 'predict',
+    }, null).html;
+    expect(html).toContain('data-forecast-active-meta');
+    expect(html).toContain('data-forecast-accuracy');
+    expect(html).toContain('Prediction accuracy');
+    expect(html).toContain('Active forecast');
+    expect(html).toContain('marked expired');
+  });
+
   it('summarizes issuance latency telemetry in the Predictions panel', () => {
     const html = view.render({
       prediction_mode: 'forecast',

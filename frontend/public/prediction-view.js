@@ -594,56 +594,213 @@
             .filter((item) => (item.fullPath || item.path).length >= 1);
     }
 
-    function renderIssuancePolylineTraces(paths, xAt, yAt, elapsedS, actuals, markerPaths) {
+    function issuanceHorizonEndMs(item) {
+        const points = item?.horizonPoints || item?.path || item?.points || [];
+        let end = finiteNumber(item?.created);
+        points.forEach((point) => {
+            const time = finiteNumber(point?.time);
+            if (time === null) return;
+            if (end === null || time > end) end = time;
+        });
+        return end;
+    }
+
+    function isIssuanceExpired(item, cursorMs) {
+        const cursor = finiteNumber(cursorMs);
+        const end = issuanceHorizonEndMs(item);
+        if (cursor === null || end === null) return false;
+        return cursor > end;
+    }
+
+    function formatSignedMb(value) {
+        if (!Number.isFinite(value)) return null;
+        const rounded = Math.round(value);
+        if (rounded > 0) return `+${rounded} MB`;
+        return `${rounded} MB`;
+    }
+
+    function formatErrorPct(predicted, actual) {
+        if (!Number.isFinite(predicted) || !Number.isFinite(actual) || actual === 0) return null;
+        const pct = ((predicted - actual) / Math.abs(actual)) * 100;
+        const rounded = Math.abs(pct) >= 10 ? pct.toFixed(0) : pct.toFixed(1);
+        return `${pct > 0 ? '+' : ''}${rounded}%`;
+    }
+
+    function horizonTooltip(item, point, elapsedS, actuals) {
+        const horizonS = Math.round((point.time - item.created) / 1000);
+        const actual = actualNear(actuals || [], point.time, ACTUAL_MATCH_WINDOW_MS);
+        const parts = [
+            `Issued at ${Math.round(elapsedS(item.created))}s`,
+            `Horizon +${horizonS}s → ${Math.round(elapsedS(point.time))}s`,
+            `Predicted ${Math.round(point.value)} MB`,
+        ];
+        if (actual) {
+            const errorMb = point.value - actual.value;
+            const errorPct = formatErrorPct(point.value, actual.value);
+            parts.push(`Actual ${Math.round(actual.value)} MB`);
+            parts.push(`Error ${formatSignedMb(errorMb)}${errorPct ? ` (${errorPct})` : ''}`);
+        } else {
+            parts.push('Actual pending');
+        }
+        return parts.join(' · ');
+    }
+
+    function activeForecastSummary(group, untilMs) {
+        const cutoff = finiteNumber(untilMs);
+        const available = (group?.predictions || [])
+            .filter((prediction) => cutoff === null || prediction.created <= cutoff);
+        if (!available.length) {
+            return { status: 'waiting', issuedS: null, horizonS: null, endS: null, predicted60: null };
+        }
+        const latest = available[available.length - 1];
+        const minTime = group.actual?.[0]?.time ?? latest.created;
+        const elapsedS = (time) => (time - minTime) / 1000;
+        const endMs = issuanceHorizonEndMs(latest);
+        const cursor = cutoff === null
+            ? group.actual?.[group.actual.length - 1]?.time ?? endMs
+            : cutoff;
+        const expired = isIssuanceExpired(latest, cursor);
+        const lastPoint = latest.points?.[latest.points.length - 1] || null;
+        return {
+            status: expired ? 'expired' : 'active',
+            created: latest.created,
+            issuedS: Math.round(elapsedS(latest.created)),
+            horizonS: endMs !== null ? Math.round((endMs - latest.created) / 1000) : null,
+            endS: endMs !== null ? Math.round(elapsedS(endMs)) : null,
+            predicted60: lastPoint && Number.isFinite(lastPoint.value) ? Math.round(lastPoint.value) : null,
+        };
+    }
+
+    function renderActiveForecastMetaHtml(summary, options = {}) {
+        if (!summary || summary.status === 'waiting') {
+            return `<div class="forecast-active-meta is-waiting" data-forecast-active-meta><span class="forecast-active-pill">Waiting for forecast</span></div>`;
+        }
+        const statusLabel = summary.status === 'expired' ? 'Expired forecast' : 'Active forecast';
+        const statusClass = summary.status === 'expired' ? 'is-expired' : 'is-active';
+        const callout = options.showTransition
+            ? `<span class="forecast-transition-callout" data-forecast-transition>New prediction · ${summary.issuedS}s</span>`
+            : '';
+        const bits = [
+            `<span class="forecast-active-pill">${escapeHtml(statusLabel)}</span>`,
+            `<span>Issued at <strong>${summary.issuedS}s</strong></span>`,
+        ];
+        if (summary.horizonS != null) bits.push(`<span>Horizon <strong>${summary.horizonS}s</strong></span>`);
+        if (summary.endS != null) {
+            bits.push(summary.status === 'expired'
+                ? `<span>Ended at <strong>${summary.endS}s</strong></span>`
+                : `<span>Ends at <strong>${summary.endS}s</strong></span>`);
+        }
+        if (summary.predicted60 != null) bits.push(`<span>+${summary.horizonS ?? 60}s <strong>${summary.predicted60} MB</strong></span>`);
+        return `<div class="forecast-active-meta ${statusClass}" data-forecast-active-meta>${callout}${bits.join('')}</div>`;
+    }
+
+    function forecastAccuracyByHorizon(groups) {
+        const buckets = new Map([
+            [10, []],
+            [30, []],
+            [60, []],
+        ]);
+        (groups || []).forEach((group) => {
+            (group.predictions || []).forEach((prediction) => {
+                (prediction.points || []).forEach((point) => {
+                    const horizonS = Math.round((point.time - prediction.created) / 1000);
+                    if (!buckets.has(horizonS)) return;
+                    const actual = actualNear(group.actual || [], point.time, ACTUAL_MATCH_WINDOW_MS);
+                    if (!actual || !Number.isFinite(point.value) || !Number.isFinite(actual.value)) return;
+                    buckets.get(horizonS).push(point.value - actual.value);
+                });
+            });
+        });
+        return [10, 30, 60].map((horizonS) => {
+            const errors = buckets.get(horizonS) || [];
+            if (!errors.length) {
+                return { horizonS, n: 0, mae: null, bias: null };
+            }
+            const abs = errors.map((value) => Math.abs(value));
+            const mae = abs.reduce((sum, value) => sum + value, 0) / abs.length;
+            const bias = errors.reduce((sum, value) => sum + value, 0) / errors.length;
+            return { horizonS, n: errors.length, mae, bias };
+        });
+    }
+
+    function renderForecastAccuracyHtml(groups) {
+        const rows = forecastAccuracyByHorizon(groups).filter((row) => row.n > 0);
+        if (!rows.length) return '';
+        const body = rows.map((row) => (
+            `<tr>`
+            + `<th scope="row">+${row.horizonS}s</th>`
+            + `<td>${escapeHtml(formatValue(row.mae, 'MB'))}</td>`
+            + `<td>${escapeHtml(formatSignedMb(row.bias) || '—')}</td>`
+            + `<td>${row.n}</td>`
+            + `</tr>`
+        )).join('');
+        return `<div class="forecast-accuracy-table-wrap" data-forecast-accuracy>`
+            + `<table class="forecast-accuracy-table" aria-label="Forecast accuracy">`
+            + `<caption>Prediction accuracy</caption>`
+            + `<thead><tr><th scope="col">Horizon</th><th scope="col">MAE</th><th scope="col">Bias</th><th scope="col">n</th></tr></thead>`
+            + `<tbody>${body}</tbody></table></div>`;
+    }
+
+    function renderIssuancePolylineTraces(paths, xAt, yAt, elapsedS, actuals, markerPaths, options = {}) {
         const drawable = (paths || []).filter((item) => item.path.length >= 2);
         const markers = (markerPaths || paths || []).filter((item) => (item.fullPath || item.path).length >= 1);
+        const cursorMs = finiteNumber(options.cursorMs);
+        const highlightCreated = finiteNumber(options.highlightCreated);
         if (!drawable.length && !markers.length) {
-            return { traces: '', horizonMarkers: '', issuanceMarkers: '' };
+            return { traces: '', horizonMarkers: '', issuanceMarkers: '', transitionLabel: '' };
         }
         const traces = drawable.map((item, index) => {
             const latest = index === drawable.length - 1;
-            const cls = latest
-                ? 'forecast-trace forecast-trace-latest forecast-trace-issuance'
-                : 'forecast-trace forecast-trace-prior forecast-trace-issuance';
+            const expired = latest && isIssuanceExpired(item, cursorMs);
+            let cls = 'forecast-trace forecast-trace-issuance';
+            if (!latest) cls += ' forecast-trace-prior';
+            else if (expired) cls += ' forecast-trace-latest forecast-trace-expired';
+            else cls += ' forecast-trace-latest';
             const points = item.path.map((point) => `${xAt(point.time)},${yAt(point.value)}`).join(' ');
             return `<polyline class="${cls}" points="${points}"/>`;
         }).join('');
         const horizonMarkers = drawable.flatMap((item, index) => {
             const latest = index === drawable.length - 1;
+            const expired = latest && isIssuanceExpired(item, cursorMs);
             const horizons = item.horizonPoints || item.path.slice(1);
             return horizons.map((point) => {
-                const horizonS = Math.round((point.time - item.created) / 1000);
-                const actual = actualNear(actuals || [], point.time, ACTUAL_MATCH_WINDOW_MS);
-                const title = [
-                    `Issued at ${Math.round(elapsedS(item.created))}s`,
-                    `+${horizonS}s → ${Math.round(elapsedS(point.time))}s`,
-                    `Predicted ${Math.round(point.value)} MB`,
-                    actual ? `Actual ${Math.round(actual.value)} MB` : 'Actual pending',
-                ].join(' · ');
-                const cls = latest
-                    ? 'forecast-point forecast-horizon'
-                    : 'forecast-point forecast-horizon forecast-horizon-prior';
+                const title = horizonTooltip(item, point, elapsedS, actuals);
+                let cls = 'forecast-point forecast-horizon';
+                if (!latest) cls += ' forecast-horizon-prior';
+                else if (expired) cls += ' forecast-horizon-expired';
                 return `<circle class="${cls}" cx="${xAt(point.time)}" cy="${yAt(point.value)}" r="3.5"><title>${escapeHtml(title)}</title></circle>`;
             });
         }).join('');
+        let transitionLabel = '';
         const issuanceMarkers = markers.map((item, index) => {
             const latest = index === markers.length - 1;
             const origin = (item.fullPath || item.path)[0];
             if (!origin || !Number.isFinite(origin.value)) return '';
+            const expired = latest && isIssuanceExpired(item, cursorMs);
+            const highlight = highlightCreated !== null && item.created === highlightCreated;
             const horizonSummary = (item.horizonPoints || [])
                 .map((point) => `+${Math.round((point.time - item.created) / 1000)}s ${Math.round(point.value)} MB`)
                 .join(', ');
             const title = [
                 `Issued at ${Math.round(elapsedS(item.created))}s`,
-                latest ? 'Latest issuance' : 'Earlier issuance',
+                latest ? (expired ? 'Expired issuance' : 'Latest issuance') : 'Earlier issuance',
                 horizonSummary || 'No horizons',
             ].join(' · ');
-            const cls = latest
-                ? 'forecast-point forecast-issuance'
-                : 'forecast-point forecast-issuance forecast-issuance-prior';
-            return `<circle class="${cls}" cx="${xAt(item.created)}" cy="${yAt(origin.value)}" r="5"><title>${escapeHtml(title)}</title></circle>`;
+            let cls = 'forecast-point forecast-issuance';
+            if (!latest) cls += ' forecast-issuance-prior';
+            else if (expired) cls += ' forecast-issuance-expired';
+            if (highlight) cls += ' forecast-issuance-flash';
+            if (highlight && latest) {
+                const labelX = Math.min(xAt(item.created) + 8, 880);
+                const labelY = Math.max(yAt(origin.value) - 14, 18);
+                transitionLabel = `<g class="forecast-transition-label" aria-hidden="true">`
+                    + `<rect x="${labelX}" y="${labelY - 12}" width="128" height="18" rx="3"/>`
+                    + `<text x="${labelX + 6}" y="${labelY + 1}">New prediction · ${Math.round(elapsedS(item.created))}s</text>`
+                    + `</g>`;
+            }
+            return `<circle class="${cls}" cx="${xAt(item.created)}" cy="${yAt(origin.value)}" r="${highlight ? 7 : 5}"><title>${escapeHtml(title)}</title></circle>`;
         }).join('');
-        return { traces, horizonMarkers, issuanceMarkers };
+        return { traces, horizonMarkers, issuanceMarkers, transitionLabel };
     }
 
     function renderForecastChartSvg(group, untilMs, options = {}) {
@@ -701,6 +858,7 @@
 
         let predictionLayer = '';
         let issuanceMarkers = '';
+        let transitionLabel = '';
         if (issuanceMode) {
             const drawn = renderIssuancePolylineTraces(
                 issuancePaths,
@@ -709,9 +867,14 @@
                 elapsedS,
                 group.actual,
                 markerPaths,
+                {
+                    cursorMs: cursorTime,
+                    highlightCreated: options.highlightCreated,
+                },
             );
             predictionLayer = `${drawn.traces}${drawn.horizonMarkers}`;
             issuanceMarkers = drawn.issuanceMarkers;
+            transitionLabel = drawn.transitionLabel || '';
         } else {
             // Legacy non-timeline payloads: keep stitched track rendering.
             const visibleObserved = cutoff === null
@@ -750,7 +913,7 @@
         const aria = issuanceMode
             ? 'Actual memory trajectory with per-issuance forecast horizons'
             : 'Actual memory trajectory with prediction track';
-        return `<svg class="forecast-chart" viewBox="0 0 960 280" role="img" aria-label="${aria}"><rect class="chart-frame" x="${plot.left}" y="${plot.top}" width="${plot.right - plot.left}" height="${plot.bottom - plot.top}"/>${grid}${actualLine}${predictionLayer}${issuanceMarkers}<line class="forecast-now" x1="${nowX}" x2="${nowX}" y1="${plot.top}" y2="${plot.bottom}"/>${xLabels}${yLabels}<text class="chart-axis-label" x="${(plot.left + plot.right) / 2}" y="268" text-anchor="middle">Elapsed time (seconds)</text><text class="chart-axis-label" x="18" y="${midY}" text-anchor="middle" transform="rotate(-90 18 ${midY})">Memory (MB)</text></svg>`;
+        return `<svg class="forecast-chart" viewBox="0 0 960 280" role="img" aria-label="${aria}"><rect class="chart-frame" x="${plot.left}" y="${plot.top}" width="${plot.right - plot.left}" height="${plot.bottom - plot.top}"/>${grid}${actualLine}${predictionLayer}${issuanceMarkers}${transitionLabel}<line class="forecast-now" x1="${nowX}" x2="${nowX}" y1="${plot.top}" y2="${plot.bottom}"/>${xLabels}${yLabels}<text class="chart-axis-label" x="${(plot.left + plot.right) / 2}" y="268" text-anchor="middle">Elapsed time (seconds)</text><text class="chart-axis-label" x="18" y="${midY}" text-anchor="middle" transform="rotate(-90 18 ${midY})">Memory (MB)</text></svg>`;
     }
 
     // Optional process_forecasts: {process_name, pid, metric, created_at_ms,
@@ -770,14 +933,21 @@
     function renderForecastChartsHtml(groups, options = {}) {
         const predictionMode = String(options.predictionMode || '');
         const historyMode = normalizeIssuanceHistoryMode(options.historyMode);
-        return groups.map((group, index) => (
-            `<article class="process-forecast process-forecast-chart" data-forecast-group-index="${index}"><h3>${escapeHtml(group.name)} · PID ${escapeHtml(group.pid)} · ${group.metric === 'heap' ? 'Heap' : 'RSS'}</h3><div class="forecast-chart-host" data-forecast-chart-host>${renderForecastChartSvg(group, null, { predictionMode, historyMode })}</div></article>`
-        )).join('');
+        const untilMs = Object.prototype.hasOwnProperty.call(options, 'untilMs') ? options.untilMs : null;
+        return groups.map((group, index) => {
+            const summary = usesIssuancePolylines(predictionMode)
+                ? activeForecastSummary(group, untilMs)
+                : null;
+            const meta = summary
+                ? renderActiveForecastMetaHtml(summary)
+                : '';
+            return `<article class="process-forecast process-forecast-chart" data-forecast-group-index="${index}"><h3>${escapeHtml(group.name)} · PID ${escapeHtml(group.pid)} · ${group.metric === 'heap' ? 'Heap' : 'RSS'}</h3>${meta}<div class="forecast-chart-host" data-forecast-chart-host>${renderForecastChartSvg(group, untilMs, { predictionMode, historyMode })}</div></article>`;
+        }).join('');
     }
 
     function forecastPanelHelp(mode) {
         if (usesIssuancePolylines(mode)) {
-            return 'Each orange marker is a forecast issuance. By default only the latest issuance\'s original +10/+30/+60 forecast is drawn; switch to Last 3 or All issuances to compare earlier forecasts. Markers still show every revealed issuance. Replay never reveals an issuance before it was available, and forecast values do not move with the scrubber.';
+            return 'Each orange marker is a forecast issuance. By default only the latest issuance\'s original +10/+30/+60 forecast is drawn; switch to Last 3 or All issuances to compare earlier forecasts. Markers still show every revealed issuance. Once the replay cursor passes a forecast\'s final +60s target it is marked expired. Replay never reveals an issuance before it was available, and forecast values do not move with the scrubber.';
         }
         return 'Live follows the latest sample and keeps the last forecast while new ones catch up. Each orange point marks when a forecast was issued.';
     }
@@ -799,7 +969,7 @@
 
     function forecastPanelLegend(mode) {
         if (usesIssuancePolylines(mode)) {
-            return `<ul class="forecast-chart-legend" aria-label="Chart legend"><li><span class="legend-swatch legend-actual"></span>Actual</li><li><span class="legend-swatch legend-prediction"></span>Latest issuance</li><li><span class="legend-swatch legend-prediction-prior"></span>Previous issuances</li><li><span class="legend-swatch legend-issuance"></span>Issuance</li><li><span class="legend-swatch legend-horizon"></span>Horizon point</li><li><span class="legend-swatch legend-now"></span>Replay position</li></ul>`;
+            return `<ul class="forecast-chart-legend" aria-label="Chart legend"><li><span class="legend-swatch legend-actual"></span>Actual</li><li><span class="legend-swatch legend-prediction"></span>Active forecast</li><li><span class="legend-swatch legend-prediction-prior"></span>Previous issuances</li><li><span class="legend-swatch legend-prediction-expired"></span>Expired forecast</li><li><span class="legend-swatch legend-issuance"></span>Issuance</li><li><span class="legend-swatch legend-horizon"></span>Horizon point</li><li><span class="legend-swatch legend-now"></span>Replay position</li></ul>`;
         }
         return `<ul class="forecast-chart-legend" aria-label="Chart legend"><li><span class="legend-swatch legend-actual"></span>Actual</li><li><span class="legend-swatch legend-prediction"></span>Prediction</li><li><span class="legend-swatch legend-issuance"></span>Issuance</li><li><span class="legend-swatch legend-band"></span>Prediction range</li><li><span class="legend-swatch legend-now"></span>Latest sample</li></ul>`;
     }
@@ -852,7 +1022,7 @@
         const predictionMode = String(data?.prediction_mode || '');
         const sharedLegend = forecastPanelLegend(predictionMode);
         const statusClass = `forecast-live-status${delayed ? ' is-delayed' : ''}${waiting ? ' is-waiting' : ''}`;
-        return `<section class="prediction-panel process-forecasts" data-forecast-panel data-prediction-mode="${escapeHtml(predictionMode)}"><h2>Process memory forecasts</h2><p id="forecast-live-status" class="${statusClass}">${escapeHtml(formatForecastStatus(data, defaultMode))}</p><p class="forecast-panel-help">${forecastPanelHelp(predictionMode)}</p>${replayControls}${sharedLegend}<div class="process-forecast-charts" aria-label="Forecast charts">${renderForecastChartsHtml(available, { predictionMode, historyMode: defaultHistoryMode })}</div>${renderForecastLatencyHtml(data)}<script type="application/json" id="bpw-forecast-replay-data">${JSON.stringify(available).replace(/</g, '\\u003c')}</script></section>`;
+        return `<section class="prediction-panel process-forecasts" data-forecast-panel data-prediction-mode="${escapeHtml(predictionMode)}"><h2>Process memory forecasts</h2><p id="forecast-live-status" class="${statusClass}">${escapeHtml(formatForecastStatus(data, defaultMode))}</p><p class="forecast-panel-help">${forecastPanelHelp(predictionMode)}</p>${replayControls}${sharedLegend}<div class="process-forecast-charts" aria-label="Forecast charts">${renderForecastChartsHtml(available, { predictionMode, historyMode: defaultHistoryMode })}</div>${renderForecastAccuracyHtml(available)}${renderForecastLatencyHtml(data)}<script type="application/json" id="bpw-forecast-replay-data">${JSON.stringify(available).replace(/</g, '\\u003c')}</script></section>`;
     }
 
     function bindProcessForecastView(root, options = {}) {
@@ -908,6 +1078,8 @@
         let historyMode = preferredIssuanceHistoryMode(
             options.historyMode || controls.dataset.forecastHistoryMode || historySelect?.value,
         );
+        let announcedIssuanceByGroup = {};
+        let issuanceBaselineReady = false;
         const clockApi = (typeof globalThis !== 'undefined' && globalThis.BpwPlaybackClock)
             || (typeof window !== 'undefined' && window.BpwPlaybackClock)
             || null;
@@ -978,10 +1150,20 @@
             statusNode.textContent = formatForecastStatus(latestData, mode);
             statusNode.classList.toggle('is-delayed', freshness.forecastCount > 0 && freshness.lagS !== null && freshness.lagS >= warnS);
             statusNode.classList.toggle('is-waiting', freshness.forecastCount === 0);
+            const accuracyHtml = renderForecastAccuracyHtml(groups);
+            let accuracyNode = root.querySelector('[data-forecast-accuracy]');
+            if (accuracyHtml) {
+                if (accuracyNode) accuracyNode.outerHTML = accuracyHtml;
+                else if (chartsNode && chartsNode.insertAdjacentHTML) chartsNode.insertAdjacentHTML('afterend', accuracyHtml);
+            } else if (accuracyNode && typeof accuracyNode.remove === 'function') {
+                accuracyNode.remove();
+            }
             const latencyHtml = renderForecastLatencyHtml(latestData);
             let latencyNode = root.querySelector('[data-forecast-latency]');
+            const accuracyAnchor = root.querySelector('[data-forecast-accuracy]');
             if (latencyHtml) {
                 if (latencyNode) latencyNode.outerHTML = latencyHtml;
+                else if (accuracyAnchor && accuracyAnchor.insertAdjacentHTML) accuracyAnchor.insertAdjacentHTML('afterend', latencyHtml);
                 else if (chartsNode && chartsNode.insertAdjacentHTML) chartsNode.insertAdjacentHTML('afterend', latencyHtml);
             } else if (latencyNode && typeof latencyNode.remove === 'function') {
                 latencyNode.remove();
@@ -1027,8 +1209,35 @@
             hosts.forEach((host, index) => {
                 const group = groups[index];
                 if (!group) return;
-                host.innerHTML = renderForecastChartSvg(group, timestamp, { predictionMode, historyMode });
+                const revealed = usesIssuancePolylines(predictionMode)
+                    ? revealedIssuanceMarkers(group, timestamp)
+                    : [];
+                const latestCreated = revealed.length ? revealed[revealed.length - 1].created : null;
+                const previousCreated = announcedIssuanceByGroup[index];
+                const isNewIssuance = issuanceBaselineReady
+                    && latestCreated != null
+                    && latestCreated !== previousCreated;
+                announcedIssuanceByGroup[index] = latestCreated;
+                const highlightCreated = isNewIssuance ? latestCreated : null;
+                const summary = usesIssuancePolylines(predictionMode)
+                    ? activeForecastSummary(group, timestamp)
+                    : null;
+                const article = typeof host.closest === 'function'
+                    ? host.closest('[data-forecast-group-index]')
+                    : host.parentElement;
+                const metaNode = article?.querySelector?.('[data-forecast-active-meta]');
+                if (metaNode && summary) {
+                    metaNode.outerHTML = renderActiveForecastMetaHtml(summary, {
+                        showTransition: Boolean(highlightCreated),
+                    });
+                }
+                host.innerHTML = renderForecastChartSvg(group, timestamp, {
+                    predictionMode,
+                    historyMode,
+                    highlightCreated,
+                });
             });
+            issuanceBaselineReady = true;
             if (!opts.fromClock && clock) {
                 clock.seekTo(cursorMsForFrame(currentFrame));
             }
@@ -1104,6 +1313,8 @@
             if (helpNode) helpNode.textContent = forecastPanelHelp(predictionMode);
             const legendNode = root.querySelector('.forecast-chart-legend');
             if (legendNode) legendNode.outerHTML = forecastPanelLegend(predictionMode);
+            announcedIssuanceByGroup = {};
+            issuanceBaselineReady = false;
             rebuildTimestamps();
             refreshStatus();
             if (!timestamps.length) return true;
@@ -1202,6 +1413,9 @@
         preferredIssuanceHistoryMode,
         visibleIssuancePaths,
         revealedIssuanceMarkers,
+        activeForecastSummary,
+        forecastAccuracyByHorizon,
+        isIssuanceExpired,
         renderForecastChartSvg,
         preferredForecastViewMode,
         forecastFreshness,
