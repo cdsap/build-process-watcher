@@ -1684,6 +1684,15 @@ body.bpw-view-predictions #prediction-panel-content .prediction-panel {
     height: 0.22rem;
     opacity: 0.45;
 }
+.forecast-chart-legend .legend-prediction-expired {
+    background: repeating-linear-gradient(
+        90deg,
+        #c2410c 0 0.25rem,
+        transparent 0.25rem 0.45rem
+    );
+    height: 0.22rem;
+    opacity: 0.7;
+}
 .forecast-chart-legend .legend-band {
     width: 1.1rem;
     height: 0.7rem;
@@ -1744,4 +1753,116 @@ body.bpw-view-predictions #prediction-panel-content .prediction-panel {
     fill: #64748b;
     stroke: rgba(255, 255, 255, 0.9);
     opacity: 0.55;
+}
+.process-forecast .forecast-trace-expired {
+    stroke: #c2410c;
+    stroke-dasharray: 3 5;
+    opacity: 0.55;
+}
+.process-forecast .forecast-issuance-expired,
+.process-forecast .forecast-horizon-expired {
+    fill: #c2410c;
+    opacity: 0.7;
+}
+.process-forecast .forecast-issuance-flash {
+    fill: #ea580c;
+    stroke: #fff7ed;
+    stroke-width: 2.5;
+    animation: bpw-issuance-flash 1.4s ease-out 1;
+}
+@keyframes bpw-issuance-flash {
+    0% { r: 9; opacity: 1; }
+    100% { r: 5; opacity: 1; }
+}
+.process-forecast .forecast-transition-label rect {
+    fill: #9a3412;
+    opacity: 0.92;
+}
+.process-forecast .forecast-transition-label text {
+    fill: #fff7ed;
+    font-size: 11px;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.forecast-active-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.85rem;
+    align-items: center;
+    margin: 0.35rem 0 0.15rem;
+    font-size: 0.82rem;
+    color: #4b5563;
+}
+.forecast-active-meta strong {
+    color: #111827;
+    font-weight: 600;
+}
+.forecast-active-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: #ffedd5;
+    color: #9a3412;
+}
+.forecast-active-meta.is-expired .forecast-active-pill {
+    background: #e5e7eb;
+    color: #374151;
+}
+.forecast-active-meta.is-waiting .forecast-active-pill {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+.forecast-transition-callout {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: #9a3412;
+    color: #fff7ed;
+    animation: bpw-transition-fade 1.6s ease-out 1;
+}
+@keyframes bpw-transition-fade {
+    0% { opacity: 1; transform: translateY(0); }
+    70% { opacity: 1; }
+    100% { opacity: 0.35; }
+}
+.forecast-accuracy-table-wrap {
+    margin: 1rem 0 0.25rem;
+    overflow-x: auto;
+}
+.forecast-accuracy-table {
+    width: max-content;
+    min-width: 16rem;
+    max-width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+    color: #1f2937;
+}
+.forecast-accuracy-table caption {
+    caption-side: top;
+    text-align: left;
+    font-weight: 600;
+    margin: 0 0 0.4rem;
+    color: #111827;
+}
+.forecast-accuracy-table th,
+.forecast-accuracy-table td {
+    padding: 0.35rem 0.75rem 0.35rem 0;
+    border-bottom: 1px solid #e5e7eb;
+    text-align: left;
+    white-space: nowrap;
+}
+.forecast-accuracy-table thead th {
+    color: #6b7280;
+    font-weight: 500;
+}
+.forecast-accuracy-table tbody th {
+    font-weight: 500;
+    padding-right: 1.25rem;
+    color: #6b7280;
 }
