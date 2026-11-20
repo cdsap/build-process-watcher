@@ -236,13 +236,6 @@ describe('per-process memory forecasts', () => {
     expect(view.isIssuanceExpired(group.predictions[0], 70000)).toBe(false);
     expect(view.isIssuanceExpired(group.predictions[0], 90000)).toBe(true);
 
-    const active = view.activeForecastSummary(group, 40000);
-    expect(active.status).toBe('active');
-    expect(active.issuedS).toBe(20);
-
-    const expired = view.activeForecastSummary(group, 90000);
-    expect(expired.status).toBe('expired');
-
     const activeSvg = view.renderForecastChartSvg(group, 40000, { predictionMode: 'predict' });
     expect(activeSvg).toContain('forecast-trace-latest');
     expect(activeSvg).not.toContain('forecast-trace-expired');
@@ -275,10 +268,10 @@ describe('per-process memory forecasts', () => {
       }],
       prediction_mode: 'predict',
     }, null).html;
-    expect(html).toContain('data-forecast-active-meta');
+    expect(html).not.toContain('data-forecast-active-meta');
+    expect(html).not.toContain('forecast-active-pill');
     expect(html).toContain('data-forecast-accuracy');
     expect(html).toContain('Prediction accuracy');
-    expect(html).toContain('Active forecast');
     expect(html).toContain('marked expired');
   });
 

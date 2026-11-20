@@ -1851,53 +1851,6 @@ body.bpw-view-predictions #prediction-panel-content .prediction-panel {
     font-size: 11px;
     font-family: ui-sans-serif, system-ui, sans-serif;
 }
-.forecast-active-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem 0.85rem;
-    align-items: center;
-    margin: 0.35rem 0 0.15rem;
-    font-size: 0.82rem;
-    color: #4b5563;
-}
-.forecast-active-meta strong {
-    color: #111827;
-    font-weight: 600;
-}
-.forecast-active-pill {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.1rem 0.45rem;
-    border-radius: 999px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    background: #ffedd5;
-    color: #9a3412;
-}
-.forecast-active-meta.is-expired .forecast-active-pill {
-    background: #e5e7eb;
-    color: #374151;
-}
-.forecast-active-meta.is-waiting .forecast-active-pill {
-    background: #f3f4f6;
-    color: #6b7280;
-}
-.forecast-transition-callout {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.1rem 0.45rem;
-    border-radius: 999px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    background: #9a3412;
-    color: #fff7ed;
-    animation: bpw-transition-fade 1.6s ease-out 1;
-}
-@keyframes bpw-transition-fade {
-    0% { opacity: 1; transform: translateY(0); }
-    70% { opacity: 1; }
-    100% { opacity: 0.35; }
-}
 .forecast-accuracy-table-wrap {
     margin: 1rem 0 0.25rem;
     overflow-x: auto;
