@@ -837,9 +837,10 @@
             if (!origin || !Number.isFinite(origin.value)) return '';
             const expired = latest && isIssuanceExpired(item, cursorMs);
             const highlight = highlightCreated !== null && item.created === highlightCreated;
-            const horizonSummary = (item.horizonPoints || [])
-                .map((point) => `+${Math.round((point.time - item.created) / 1000)}s ${Math.round(point.value)} MB`)
-                .join(', ');
+            const horizonBits = (item.horizonPoints || []).map((point) => (
+                `+${Math.round((point.time - item.created) / 1000)}s ${Math.round(point.value)} MB`
+            ));
+            const horizonSummary = horizonBits.join(', ');
             const title = [
                 `Issued at ${Math.round(elapsedS(item.created))}s`,
                 latest ? (expired ? 'Expired issuance' : 'Latest issuance') : 'Earlier issuance',
@@ -849,12 +850,29 @@
             if (!latest) cls += ' forecast-issuance-prior';
             else if (expired) cls += ' forecast-issuance-expired';
             if (highlight) cls += ' forecast-issuance-flash';
-            if (highlight && latest) {
-                const labelX = Math.min(xAt(item.created) + 8, 880);
-                const labelY = Math.max(yAt(origin.value) - 14, 18);
-                transitionLabel = `<g class="forecast-transition-label" aria-hidden="true">`
-                    + `<rect x="${labelX}" y="${labelY - 12}" width="128" height="18" rx="3"/>`
-                    + `<text x="${labelX + 6}" y="${labelY + 1}">New prediction · ${Math.round(elapsedS(item.created))}s</text>`
+            if (highlight) {
+                const issuedLine = `Issued at ${Math.round(elapsedS(item.created))}s`;
+                const horizonLine = horizonBits.length ? horizonBits.join(' · ') : 'No horizons yet';
+                const lines = ['New issuance', issuedLine, horizonLine];
+                const charW = 6.2;
+                const padX = 10;
+                const lineH = 14;
+                const width = Math.min(
+                    280,
+                    Math.max(...lines.map((line) => Math.ceil(line.length * charW))) + padX * 2,
+                );
+                const height = padX + lines.length * lineH;
+                const rawX = xAt(item.created) + 10;
+                const labelX = Math.max(64, Math.min(rawX, 900 - width));
+                const rawY = yAt(origin.value) - height - 8;
+                const labelY = Math.max(16, Math.min(rawY, 236 - height));
+                const textNodes = lines.map((line, lineIndex) => (
+                    `<text class="${lineIndex === 0 ? 'forecast-transition-title' : 'forecast-transition-detail'}" `
+                    + `x="${labelX + padX}" y="${labelY + padX + lineH * (lineIndex + 0.72)}">${escapeHtml(line)}</text>`
+                )).join('');
+                transitionLabel = `<g class="forecast-transition-label" data-forecast-point-callout aria-hidden="true">`
+                    + `<rect x="${labelX}" y="${labelY}" width="${width}" height="${height}" rx="4"/>`
+                    + textNodes
                     + `</g>`;
             }
             return `<circle class="${cls}" cx="${xAt(item.created)}" cy="${yAt(origin.value)}" r="${highlight ? 7 : 5}"><title>${escapeHtml(title)}</title></circle>`;
@@ -1144,7 +1162,9 @@
             options.historyMode || controls.dataset.forecastHistoryMode,
         );
         let announcedIssuanceByGroup = {};
+        let issuanceCalloutHoldByGroup = {};
         let issuanceBaselineReady = false;
+        const ISSUANCE_CALLOUT_HOLD_MS = 5000;
         const clockApi = (typeof globalThis !== 'undefined' && globalThis.BpwPlaybackClock)
             || (typeof window !== 'undefined' && window.BpwPlaybackClock)
             || null;
@@ -1300,7 +1320,19 @@
                     && latestCreated != null
                     && latestCreated !== previousCreated;
                 announcedIssuanceByGroup[index] = latestCreated;
-                const highlightCreated = isNewIssuance ? latestCreated : null;
+                if (isNewIssuance) {
+                    issuanceCalloutHoldByGroup[index] = {
+                        created: latestCreated,
+                        untilMs: timestamp + ISSUANCE_CALLOUT_HOLD_MS,
+                    };
+                }
+                const hold = issuanceCalloutHoldByGroup[index];
+                let highlightCreated = null;
+                if (hold && hold.created === latestCreated && timestamp <= hold.untilMs) {
+                    highlightCreated = hold.created;
+                } else if (hold) {
+                    delete issuanceCalloutHoldByGroup[index];
+                }
                 host.innerHTML = renderForecastChartSvg(group, timestamp, {
                     predictionMode,
                     historyMode,
@@ -1384,6 +1416,7 @@
             const legendNode = root.querySelector('.forecast-chart-legend');
             if (legendNode) legendNode.outerHTML = forecastPanelLegend(predictionMode);
             announcedIssuanceByGroup = {};
+            issuanceCalloutHoldByGroup = {};
             issuanceBaselineReady = false;
             rebuildTimestamps();
             refreshStatus();

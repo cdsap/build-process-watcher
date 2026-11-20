@@ -1843,13 +1843,21 @@ body.bpw-view-predictions #prediction-panel-content .prediction-panel {
     100% { r: 5; opacity: 1; }
 }
 .process-forecast .forecast-transition-label rect {
-    fill: #9a3412;
-    opacity: 0.92;
+    fill: rgba(67, 20, 7, 0.92);
+    stroke: rgba(255, 247, 237, 0.35);
+    stroke-width: 1;
 }
 .process-forecast .forecast-transition-label text {
     fill: #fff7ed;
-    font-size: 11px;
     font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.process-forecast .forecast-transition-label .forecast-transition-title {
+    font-size: 11px;
+    font-weight: 700;
+}
+.process-forecast .forecast-transition-label .forecast-transition-detail {
+    font-size: 10px;
+    fill: #ffedd5;
 }
 .forecast-accuracy-table-wrap {
     margin: 1rem 0 0.25rem;
