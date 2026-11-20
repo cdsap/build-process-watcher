@@ -43,13 +43,15 @@ func (f *fakeExporter) Run(runID string) {
 
 type fakeStorage = handlertest.FakeStorage
 
+var _ RunStore = (*fakeStorage)(nil)
+
 func newFakeStorage() *fakeStorage {
 	return handlertest.NewFakeStorage()
 }
 
 var testAuthn = auth.NewForTest("handlers-test-jwt", "handlers-test-admin")
 
-func newTestHandlers(store Storage, export Exporter) *Handlers {
+func newTestHandlers(store RunStore, export Exporter) *Handlers {
 	h := NewHandlers(store, export)
 	h.SetAuthenticator(testAuthn)
 	return h
@@ -283,7 +285,7 @@ func TestAuthUsesStoragePortForRunOptions(t *testing.T) {
 	}
 }
 
-func TestIngestUsesStoragePortWithoutFirestore(t *testing.T) {
+func TestIngestUsesRunStoreWithoutFirestore(t *testing.T) {
 	store := newFakeStorage()
 	h := newTestHandlers(store, nil)
 	const runID = "run-ingest"
