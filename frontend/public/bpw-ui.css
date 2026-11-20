@@ -1832,25 +1832,6 @@ body.bpw-view-predictions #prediction-panel-content .prediction-panel {
     fill: #c2410c;
     opacity: 0.7;
 }
-.process-forecast .forecast-issuance-flash {
-    fill: #ea580c;
-    stroke: #fff7ed;
-    stroke-width: 2.5;
-    animation: bpw-issuance-flash 1.4s ease-out 1;
-}
-@keyframes bpw-issuance-flash {
-    0% { r: 9; opacity: 1; }
-    100% { r: 5; opacity: 1; }
-}
-.process-forecast .forecast-transition-label rect {
-    fill: #9a3412;
-    opacity: 0.92;
-}
-.process-forecast .forecast-transition-label text {
-    fill: #fff7ed;
-    font-size: 11px;
-    font-family: ui-sans-serif, system-ui, sans-serif;
-}
 .forecast-accuracy-table-wrap {
     margin: 1rem 0 0.25rem;
     overflow-x: auto;

@@ -804,9 +804,8 @@
         const drawable = (paths || []).filter((item) => item.path.length >= 2);
         const markers = (markerPaths || paths || []).filter((item) => (item.fullPath || item.path).length >= 1);
         const cursorMs = finiteNumber(options.cursorMs);
-        const highlightCreated = finiteNumber(options.highlightCreated);
         if (!drawable.length && !markers.length) {
-            return { traces: '', horizonMarkers: '', issuanceMarkers: '', transitionLabel: '' };
+            return { traces: '', horizonMarkers: '', issuanceMarkers: '' };
         }
         const traces = drawable.map((item, index) => {
             const latest = index === drawable.length - 1;
@@ -830,13 +829,11 @@
                 return `<circle class="${cls}" cx="${xAt(point.time)}" cy="${yAt(point.value)}" r="3.5"><title>${escapeHtml(title)}</title></circle>`;
             });
         }).join('');
-        let transitionLabel = '';
         const issuanceMarkers = markers.map((item, index) => {
             const latest = index === markers.length - 1;
             const origin = (item.fullPath || item.path)[0];
             if (!origin || !Number.isFinite(origin.value)) return '';
             const expired = latest && isIssuanceExpired(item, cursorMs);
-            const highlight = highlightCreated !== null && item.created === highlightCreated;
             const horizonSummary = (item.horizonPoints || [])
                 .map((point) => `+${Math.round((point.time - item.created) / 1000)}s ${Math.round(point.value)} MB`)
                 .join(', ');
@@ -848,18 +845,9 @@
             let cls = 'forecast-point forecast-issuance';
             if (!latest) cls += ' forecast-issuance-prior';
             else if (expired) cls += ' forecast-issuance-expired';
-            if (highlight) cls += ' forecast-issuance-flash';
-            if (highlight && latest) {
-                const labelX = Math.min(xAt(item.created) + 8, 880);
-                const labelY = Math.max(yAt(origin.value) - 14, 18);
-                transitionLabel = `<g class="forecast-transition-label" aria-hidden="true">`
-                    + `<rect x="${labelX}" y="${labelY - 12}" width="128" height="18" rx="3"/>`
-                    + `<text x="${labelX + 6}" y="${labelY + 1}">New prediction · ${Math.round(elapsedS(item.created))}s</text>`
-                    + `</g>`;
-            }
-            return `<circle class="${cls}" cx="${xAt(item.created)}" cy="${yAt(origin.value)}" r="${highlight ? 7 : 5}"><title>${escapeHtml(title)}</title></circle>`;
+            return `<circle class="${cls}" cx="${xAt(item.created)}" cy="${yAt(origin.value)}" r="5"><title>${escapeHtml(title)}</title></circle>`;
         }).join('');
-        return { traces, horizonMarkers, issuanceMarkers, transitionLabel };
+        return { traces, horizonMarkers, issuanceMarkers };
     }
 
     function renderForecastChartSvg(group, untilMs, options = {}) {
@@ -917,7 +905,6 @@
 
         let predictionLayer = '';
         let issuanceMarkers = '';
-        let transitionLabel = '';
         if (issuanceMode) {
             const drawn = renderIssuancePolylineTraces(
                 issuancePaths,
@@ -926,14 +913,10 @@
                 elapsedS,
                 group.actual,
                 markerPaths,
-                {
-                    cursorMs: cursorTime,
-                    highlightCreated: options.highlightCreated,
-                },
+                { cursorMs: cursorTime },
             );
             predictionLayer = `${drawn.traces}${drawn.horizonMarkers}`;
             issuanceMarkers = drawn.issuanceMarkers;
-            transitionLabel = drawn.transitionLabel || '';
         } else {
             // Legacy non-timeline payloads: keep stitched track rendering.
             const visibleObserved = cutoff === null
@@ -972,7 +955,7 @@
         const aria = issuanceMode
             ? 'Actual memory trajectory with per-issuance forecast horizons'
             : 'Actual memory trajectory with prediction track';
-        return `<svg class="forecast-chart" viewBox="0 0 960 280" role="img" aria-label="${aria}"><rect class="chart-frame" x="${plot.left}" y="${plot.top}" width="${plot.right - plot.left}" height="${plot.bottom - plot.top}"/>${grid}${actualLine}${predictionLayer}${issuanceMarkers}${transitionLabel}<line class="forecast-now" x1="${nowX}" x2="${nowX}" y1="${plot.top}" y2="${plot.bottom}"/>${xLabels}${yLabels}<text class="chart-axis-label" x="${(plot.left + plot.right) / 2}" y="268" text-anchor="middle">Elapsed time (seconds)</text><text class="chart-axis-label" x="18" y="${midY}" text-anchor="middle" transform="rotate(-90 18 ${midY})">Memory (MB)</text></svg>`;
+        return `<svg class="forecast-chart" viewBox="0 0 960 280" role="img" aria-label="${aria}"><rect class="chart-frame" x="${plot.left}" y="${plot.top}" width="${plot.right - plot.left}" height="${plot.bottom - plot.top}"/>${grid}${actualLine}${predictionLayer}${issuanceMarkers}<line class="forecast-now" x1="${nowX}" x2="${nowX}" y1="${plot.top}" y2="${plot.bottom}"/>${xLabels}${yLabels}<text class="chart-axis-label" x="${(plot.left + plot.right) / 2}" y="268" text-anchor="middle">Elapsed time (seconds)</text><text class="chart-axis-label" x="18" y="${midY}" text-anchor="middle" transform="rotate(-90 18 ${midY})">Memory (MB)</text></svg>`;
     }
 
     // Optional process_forecasts: {process_name, pid, metric, created_at_ms,
@@ -1143,8 +1126,6 @@
         let historyMode = preferredIssuanceHistoryMode(
             options.historyMode || controls.dataset.forecastHistoryMode,
         );
-        let announcedIssuanceByGroup = {};
-        let issuanceBaselineReady = false;
         const clockApi = (typeof globalThis !== 'undefined' && globalThis.BpwPlaybackClock)
             || (typeof window !== 'undefined' && window.BpwPlaybackClock)
             || null;
@@ -1291,23 +1272,11 @@
             hosts.forEach((host, index) => {
                 const group = groups[index];
                 if (!group) return;
-                const revealed = usesIssuancePolylines(predictionMode)
-                    ? revealedIssuanceMarkers(group, timestamp)
-                    : [];
-                const latestCreated = revealed.length ? revealed[revealed.length - 1].created : null;
-                const previousCreated = announcedIssuanceByGroup[index];
-                const isNewIssuance = issuanceBaselineReady
-                    && latestCreated != null
-                    && latestCreated !== previousCreated;
-                announcedIssuanceByGroup[index] = latestCreated;
-                const highlightCreated = isNewIssuance ? latestCreated : null;
                 host.innerHTML = renderForecastChartSvg(group, timestamp, {
                     predictionMode,
                     historyMode,
-                    highlightCreated,
                 });
             });
-            issuanceBaselineReady = true;
             if (!opts.fromClock && clock) {
                 clock.seekTo(cursorMsForFrame(currentFrame));
             }
@@ -1383,8 +1352,6 @@
             if (helpNode) helpNode.textContent = forecastPanelHelp(predictionMode);
             const legendNode = root.querySelector('.forecast-chart-legend');
             if (legendNode) legendNode.outerHTML = forecastPanelLegend(predictionMode);
-            announcedIssuanceByGroup = {};
-            issuanceBaselineReady = false;
             rebuildTimestamps();
             refreshStatus();
             if (!timestamps.length) return true;

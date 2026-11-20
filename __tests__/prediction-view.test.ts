@@ -432,6 +432,9 @@ describe('per-process memory forecasts', () => {
     const midForecast = view.renderForecastChartSvg(group, 40000, { predictionMode: 'forecast' });
     expect(midForecast).toContain('forecast-trace-issuance');
     expect(midForecast).toContain('Issued at');
+    expect(midForecast).not.toContain('forecast-transition-label');
+    expect(midForecast).not.toContain('forecast-issuance-flash');
+    expect(midForecast).not.toContain('New issuance');
   });
 
   it('draws per-issuance horizon polylines for forecast mode', () => {
