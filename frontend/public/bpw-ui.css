@@ -1497,21 +1497,79 @@ footer {
 .forecast-replay-controls {
     margin: 0.75rem 0 1rem;
     display: grid;
-    gap: 0.65rem;
+    gap: 0.75rem;
 }
-.forecast-view-mode {
+.forecast-toolbar-primary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem 1.25rem;
+}
+.forecast-toolbar-cluster {
     display: inline-flex;
-    gap: 0.4rem;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.65rem;
+    min-width: 0;
 }
-.forecast-history-mode {
+.forecast-toolbar-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--bpw-muted, #6b7280);
+}
+.forecast-segmented {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.2rem;
+    border: 1px solid rgba(22, 26, 29, 0.10);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.72);
+}
+.forecast-segmented .btn {
+    min-height: 1.95rem;
+    padding: 0.35rem 0.7rem;
+    box-shadow: none;
+}
+.forecast-replay-transport {
+    margin-left: auto;
+}
+.forecast-replay-transport .meta {
+    min-width: 8.5rem;
+}
+.forecast-toolbar-timeline {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.55rem 1rem;
+    align-items: center;
+    width: 100%;
+    flex: 1 1 100%;
+}
+.forecast-toolbar-timeline input[type="range"] {
+    grid-column: 1 / -1;
+}
+.forecast-timeline-meta {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+}
+.forecast-speed-control {
     display: inline-flex;
     align-items: center;
-    gap: 0.45rem;
+    gap: 0.4rem;
+    margin: 0;
     font-size: 0.85rem;
-    color: #4b5563;
+    color: var(--bpw-muted, #6b7280);
 }
-.forecast-history-mode select {
-    min-width: 8.5rem;
+.forecast-speed-control select {
+    min-width: 4.5rem;
 }
 .forecast-live-status {
     margin: 0.35rem 0 0.5rem;
@@ -1537,6 +1595,16 @@ footer {
 .forecast-replay-controls.is-live #btn-forecast-replay-reset,
 .forecast-replay-controls.is-live #forecast-replay-speed {
     pointer-events: none;
+}
+@media (max-width: 720px) {
+    .forecast-toolbar-primary {
+        justify-content: flex-start;
+    }
+    .forecast-replay-transport {
+        margin-left: 0;
+        width: 100%;
+        justify-content: space-between;
+    }
 }
 .process-forecast { margin-top: 1.5rem; }
 .process-forecast-charts {

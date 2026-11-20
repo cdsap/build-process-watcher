@@ -1062,16 +1062,17 @@
 
     function forecastHistoryModeControls(historyMode) {
         const selected = normalizeIssuanceHistoryMode(historyMode);
-        const option = (value, label) => (
-            `<option value="${value}"${selected === value ? ' selected' : ''}>${label}</option>`
-        );
-        return `<div class="forecast-history-mode">
-            <label for="forecast-history-mode">Issuances</label>
-            <select id="forecast-history-mode" aria-label="Issuance history">
-                ${option('latest', 'Latest only')}
+        const option = (value, label) => {
+            const active = selected === value;
+            return `<button class="btn${active ? '' : ' secondary'}" type="button" data-forecast-history-mode="${value}" aria-pressed="${active ? 'true' : 'false'}">${label}</button>`;
+        };
+        return `<div class="forecast-toolbar-cluster forecast-history-mode" id="forecast-history-mode" role="group" aria-label="Issuance history">
+            <span class="forecast-toolbar-label" id="forecast-history-mode-label">Issuances</span>
+            <div class="forecast-segmented" role="radiogroup" aria-labelledby="forecast-history-mode-label">
+                ${option('latest', 'Latest')}
                 ${option('recent', 'Last 3')}
-                ${option('all', 'All issuances')}
-            </select>
+                ${option('all', 'All')}
+            </div>
         </div>`;
     }
 
@@ -1100,30 +1101,39 @@
         const waiting = freshness.forecastCount === 0;
         const defaultHistoryMode = preferredIssuanceHistoryMode();
         const replayControls = `<div class="replay-controls forecast-replay-controls" id="forecast-replay-controls" data-forecast-view-mode="${defaultMode}" data-forecast-history-mode="${defaultHistoryMode}">
-            <div class="forecast-view-mode" role="group" aria-label="Forecast view mode">
-                <button class="btn${defaultMode === 'live' ? '' : ' secondary'}" type="button" id="btn-forecast-view-live" data-forecast-view-mode="live" aria-pressed="${defaultMode === 'live' ? 'true' : 'false'}">Live</button>
-                <button class="btn${defaultMode === 'replay' ? '' : ' secondary'}" type="button" id="btn-forecast-view-replay" data-forecast-view-mode="replay" aria-pressed="${defaultMode === 'replay' ? 'true' : 'false'}">Replay</button>
+            <div class="forecast-toolbar-primary">
+                <div class="forecast-toolbar-cluster forecast-view-mode" role="group" aria-label="Forecast view mode">
+                    <span class="forecast-toolbar-label">View</span>
+                    <div class="forecast-segmented">
+                        <button class="btn${defaultMode === 'live' ? '' : ' secondary'}" type="button" id="btn-forecast-view-live" data-forecast-view-mode="live" aria-pressed="${defaultMode === 'live' ? 'true' : 'false'}">Live</button>
+                        <button class="btn${defaultMode === 'replay' ? '' : ' secondary'}" type="button" id="btn-forecast-view-replay" data-forecast-view-mode="replay" aria-pressed="${defaultMode === 'replay' ? 'true' : 'false'}">Replay</button>
+                    </div>
+                </div>
+                ${forecastHistoryModeControls(defaultHistoryMode)}
+                <div class="forecast-toolbar-cluster forecast-replay-transport">
+                    <div class="buttons forecast-replay-buttons">
+                        <button class="btn" type="button" id="btn-forecast-replay-play">Play</button>
+                        <button class="btn secondary" type="button" id="btn-forecast-replay-pause">Pause</button>
+                        <button class="btn secondary" type="button" id="btn-forecast-replay-reset">Reset</button>
+                    </div>
+                    <div class="meta" id="forecast-replay-meta">Frame 0 / 0</div>
+                </div>
             </div>
-            ${forecastHistoryModeControls(defaultHistoryMode)}
-            <div class="buttons forecast-replay-buttons">
-                <button class="btn" type="button" id="btn-forecast-replay-play">Play</button>
-                <button class="btn secondary" type="button" id="btn-forecast-replay-pause">Pause</button>
-                <button class="btn secondary" type="button" id="btn-forecast-replay-reset">Reset</button>
-            </div>
-            <div class="meta" id="forecast-replay-meta">Frame 0 / 0</div>
-            <div class="timeline forecast-replay-timeline-wrap">
+            <div class="timeline forecast-replay-timeline-wrap forecast-toolbar-timeline">
                 <input type="range" id="forecast-replay-timeline" aria-label="Prediction replay timeline" min="0" max="0" value="0">
-                <div class="meta" id="forecast-replay-time-label">Elapsed: 0s</div>
-                <div class="meta">
-                    Speed:
-                    <select id="forecast-replay-speed" aria-label="Prediction replay speed">
-                        <option value="5">5x</option>
-                        <option value="10">10x</option>
-                        <option value="15" selected>15x</option>
-                        <option value="20">20x</option>
-                        <option value="30">30x</option>
-                        <option value="50">50x</option>
-                    </select>
+                <div class="forecast-timeline-meta">
+                    <div class="meta" id="forecast-replay-time-label">Elapsed: 0s</div>
+                    <label class="forecast-speed-control" for="forecast-replay-speed">
+                        <span class="forecast-toolbar-label">Speed</span>
+                        <select id="forecast-replay-speed" aria-label="Prediction replay speed">
+                            <option value="5">5x</option>
+                            <option value="10">10x</option>
+                            <option value="15" selected>15x</option>
+                            <option value="20">20x</option>
+                            <option value="30">30x</option>
+                            <option value="50">50x</option>
+                        </select>
+                    </label>
                 </div>
             </div>
         </div>`;
@@ -1160,7 +1170,9 @@
         const pauseBtn = controls.querySelector('#btn-forecast-replay-pause');
         const resetBtn = controls.querySelector('#btn-forecast-replay-reset');
         const speedSelect = controls.querySelector('#forecast-replay-speed');
-        const historySelect = controls.querySelector('#forecast-history-mode');
+        const historyButtons = () => Array.from(
+            controls.querySelectorAll?.('[data-forecast-history-mode]') || [],
+        );
 
         let isPlaying = false;
         let currentFrame = 0;
@@ -1184,7 +1196,7 @@
         }
         let mode = preferredForecastViewMode(latestData, options.initialMode);
         let historyMode = preferredIssuanceHistoryMode(
-            options.historyMode || controls.dataset.forecastHistoryMode || historySelect?.value,
+            options.historyMode || controls.dataset.forecastHistoryMode,
         );
         let announcedIssuanceByGroup = {};
         let issuanceBaselineReady = false;
@@ -1302,9 +1314,15 @@
                 replayBtn.setAttribute('aria-pressed', mode === 'replay' ? 'true' : 'false');
                 replayBtn.classList.toggle('secondary', mode !== 'replay');
             }
-            if (historySelect && historySelect.value !== historyMode) {
-                historySelect.value = historyMode;
-            }
+            historyButtons().forEach((btn) => {
+                const active = btn.getAttribute?.('data-forecast-history-mode') === historyMode;
+                if (typeof btn.setAttribute === 'function') {
+                    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+                }
+                if (btn.classList?.toggle) {
+                    btn.classList.toggle('secondary', !active);
+                }
+            });
             if (typeof window !== 'undefined') {
                 window.__bpwForecastViewMode = mode;
                 window.__bpwForecastHistoryMode = historyMode;
@@ -1463,14 +1481,14 @@
         if (liveBtn) liveBtn.addEventListener('click', () => setMode('live'));
         if (replayBtn) replayBtn.addEventListener('click', () => setMode('replay'));
         // Prefer delegation so the Issuances control keeps working across chart redraws.
-        controls.addEventListener('change', (event) => {
-            const target = event?.target;
-            if (!target || target.id !== 'forecast-history-mode') return;
-            setHistoryMode(target.value);
+        controls.addEventListener('click', (event) => {
+            const target = event?.target?.closest?.('[data-forecast-history-mode]')
+                || (event?.target?.getAttribute?.('data-forecast-history-mode') ? event.target : null);
+            if (!target) return;
+            const nextMode = target.getAttribute('data-forecast-history-mode');
+            if (!nextMode) return;
+            setHistoryMode(nextMode);
         });
-        if (historySelect) {
-            historySelect.addEventListener('input', () => setHistoryMode(historySelect.value));
-        }
         playBtn.addEventListener('click', play);
         pauseBtn.addEventListener('click', pause);
         resetBtn.addEventListener('click', () => {

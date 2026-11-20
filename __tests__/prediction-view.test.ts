@@ -485,13 +485,16 @@ describe('per-process memory forecasts', () => {
     }, null).html;
     expect(html).toContain('data-prediction-mode="forecast"');
     expect(html).toContain('id="forecast-history-mode"');
-    expect(html).toContain('Latest only');
+    expect(html).toContain('data-forecast-history-mode="latest"');
+    expect(html).toContain('data-forecast-history-mode="recent"');
+    expect(html).toContain('data-forecast-history-mode="all"');
+    expect(html).toContain('forecast-toolbar-primary');
+    expect(html).toContain('forecast-segmented');
     expect(html).toContain('forecast-trace-issuance');
     expect(html).toContain('forecast-trace-latest');
     expect(html).not.toContain('forecast-trace-prior');
     expect(html).toContain('forecast-horizon');
     expect(html).toContain('legend-horizon');
-    expect(html).toContain('Latest only');
     expect(html).not.toContain('forecast-band');
     const issuanceMarkers = html.match(/class="forecast-point forecast-issuance[^"]*"/g) || [];
     expect(issuanceMarkers).toHaveLength(2);
@@ -597,12 +600,26 @@ describe('per-process memory forecasts', () => {
     byId.set('btn-forecast-view-live', makeEl());
     byId.set('btn-forecast-view-replay', makeEl());
     byId.set('forecast-live-status', makeEl());
-    const historySelect = makeEl({ id: 'forecast-history-mode', value: 'latest' });
-    byId.set('forecast-history-mode', historySelect);
+    let historyLatest: any;
+    let historyAll: any;
+    historyLatest = makeEl({
+      id: 'btn-forecast-history-latest',
+      getAttribute: (name: string) => (name === 'data-forecast-history-mode' ? 'latest' : null),
+      closest: (selector: string) => (selector === '[data-forecast-history-mode]' ? historyLatest : null),
+    });
+    historyAll = makeEl({
+      id: 'btn-forecast-history-all',
+      getAttribute: (name: string) => (name === 'data-forecast-history-mode' ? 'all' : null),
+      closest: (selector: string) => (selector === '[data-forecast-history-mode]' ? historyAll : null),
+    });
+    byId.set('forecast-history-mode', makeEl({ id: 'forecast-history-mode' }));
     hosts.push(makeEl());
     const controls = makeEl({
       dataset: { forecastViewMode: 'replay', forecastHistoryMode: 'latest' },
       classList: { toggle: jest.fn() },
+      querySelectorAll: (selector: string) => (
+        selector === '[data-forecast-history-mode]' ? [historyLatest, historyAll] : []
+      ),
     });
     byId.set('forecast-replay-controls', controls);
     const root = makeEl();
@@ -631,8 +648,7 @@ describe('per-process memory forecasts', () => {
     expect(hosts[0].innerHTML).not.toContain('forecast-trace-prior');
     expect(hosts[0].innerHTML).not.toContain('forecast-band');
 
-    historySelect.value = 'all';
-    controls.listeners.change({ target: historySelect });
+    controls.listeners.click({ target: historyAll });
     expect(controller.getHistoryMode()).toBe('all');
     expect(hosts[0].innerHTML).toContain('forecast-trace-prior');
     expect(hosts[0].innerHTML).toContain('forecast-trace-latest');
@@ -699,9 +715,13 @@ describe('per-process memory forecasts', () => {
     byId.set('btn-forecast-view-live', makeEl());
     byId.set('btn-forecast-view-replay', makeEl());
     byId.set('forecast-live-status', makeEl());
-    byId.set('forecast-history-mode', makeEl({ value: 'latest' }));
+    byId.set('forecast-history-mode', makeEl({ id: 'forecast-history-mode' }));
     hosts.push(makeEl());
-    const controls = makeEl({ dataset: { forecastViewMode: 'live' }, classList: { toggle: jest.fn() } });
+    const controls = makeEl({
+      dataset: { forecastViewMode: 'live', forecastHistoryMode: 'latest' },
+      classList: { toggle: jest.fn() },
+      querySelectorAll: (selector: string) => (selector === '[data-forecast-history-mode]' ? [] : []),
+    });
     byId.set('forecast-replay-controls', controls);
     const root = makeEl();
     root.querySelector = (selector: string) => {
