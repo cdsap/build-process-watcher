@@ -522,12 +522,42 @@
         return TIMELINE_MODES.has(String(mode || ''));
     }
 
+    function normalizeIssuanceHistoryMode(mode) {
+        const value = String(mode || 'latest');
+        if (value === 'all' || value === 'recent') return value;
+        return 'latest';
+    }
+
+    function preferredIssuanceHistoryMode(explicitMode) {
+        const normalized = normalizeIssuanceHistoryMode(explicitMode);
+        if (explicitMode != null && String(explicitMode) !== '') return normalized;
+        if (typeof window !== 'undefined') {
+            const sticky = window.__bpwForecastHistoryMode;
+            if (sticky === 'all' || sticky === 'recent' || sticky === 'latest') return sticky;
+        }
+        return 'latest';
+    }
+
     // Reveal issuances as they arrive; keep each forecast's original issuance
     // origin and horizon values (never re-anchor to the replay cursor).
-    function visibleIssuancePaths(group, untilMs) {
+    // historyMode limits which forecast polylines are drawn (markers use all revealed).
+    function visibleIssuancePaths(group, untilMs, historyMode = 'latest') {
         const cutoff = finiteNumber(untilMs);
-        return (group.predictions || [])
-            .filter((prediction) => cutoff === null || prediction.created <= cutoff)
+        const available = (group.predictions || [])
+            .filter((prediction) => cutoff === null || prediction.created <= cutoff);
+        let selected;
+        switch (normalizeIssuanceHistoryMode(historyMode)) {
+            case 'all':
+                selected = available;
+                break;
+            case 'recent':
+                selected = available.slice(-3);
+                break;
+            default:
+                selected = available.slice(-1);
+                break;
+        }
+        return selected
             .map((prediction) => {
                 const fullPath = predictionPath(prediction, group.actual);
                 const horizonPoints = (prediction.points || []).map((point) => ({
@@ -544,9 +574,32 @@
             .filter((item) => item.path.length >= 2);
     }
 
-    function renderIssuancePolylineTraces(paths, xAt, yAt, elapsedS, actuals) {
-        if (!paths.length) return { traces: '', horizonMarkers: '', issuanceMarkers: '' };
-        const drawable = paths.filter((item) => item.path.length >= 2);
+    function revealedIssuanceMarkers(group, untilMs) {
+        const cutoff = finiteNumber(untilMs);
+        return (group.predictions || [])
+            .filter((prediction) => cutoff === null || prediction.created <= cutoff)
+            .map((prediction) => {
+                const fullPath = predictionPath(prediction, group.actual);
+                const horizonPoints = (prediction.points || []).map((point) => ({
+                    time: point.time,
+                    value: point.value,
+                }));
+                return {
+                    created: prediction.created,
+                    fullPath,
+                    path: fullPath,
+                    horizonPoints,
+                };
+            })
+            .filter((item) => (item.fullPath || item.path).length >= 1);
+    }
+
+    function renderIssuancePolylineTraces(paths, xAt, yAt, elapsedS, actuals, markerPaths) {
+        const drawable = (paths || []).filter((item) => item.path.length >= 2);
+        const markers = (markerPaths || paths || []).filter((item) => (item.fullPath || item.path).length >= 1);
+        if (!drawable.length && !markers.length) {
+            return { traces: '', horizonMarkers: '', issuanceMarkers: '' };
+        }
         const traces = drawable.map((item, index) => {
             const latest = index === drawable.length - 1;
             const cls = latest
@@ -573,8 +626,8 @@
                 return `<circle class="${cls}" cx="${xAt(point.time)}" cy="${yAt(point.value)}" r="3.5"><title>${escapeHtml(title)}</title></circle>`;
             });
         }).join('');
-        const issuanceMarkers = paths.map((item, index) => {
-            const latest = index === paths.length - 1;
+        const issuanceMarkers = markers.map((item, index) => {
+            const latest = index === markers.length - 1;
             const origin = (item.fullPath || item.path)[0];
             if (!origin || !Number.isFinite(origin.value)) return '';
             const horizonSummary = (item.horizonPoints || [])
@@ -596,15 +649,19 @@
     function renderForecastChartSvg(group, untilMs, options = {}) {
         if (!group?.actual?.length) return '';
         const mode = String(options.predictionMode || '');
+        const historyMode = normalizeIssuanceHistoryMode(options.historyMode);
         const issuanceMode = usesIssuancePolylines(mode);
         const cutoff = finiteNumber(untilMs);
-        const issuancePaths = issuanceMode ? visibleIssuancePaths(group, untilMs) : [];
+        const issuancePaths = issuanceMode ? visibleIssuancePaths(group, untilMs, historyMode) : [];
+        const markerPaths = issuanceMode ? revealedIssuanceMarkers(group, untilMs) : [];
+        // Domain uses every revealed issuance so history-mode toggles do not jump the axes.
+        const domainPaths = issuanceMode ? visibleIssuancePaths(group, untilMs, 'all') : [];
         const fullTrack = issuanceMode
             ? { observed: [], forward: [] }
             : buildTrackingSeries(group.predictions || [], group.actual);
         const trackPoints = fullTrack.observed.concat(fullTrack.forward);
         // Axis domain uses full unclipped geometry so scrubbing does not rescale the chart.
-        const issuanceDomainValues = issuancePaths.flatMap((item) => (
+        const issuanceDomainValues = domainPaths.flatMap((item) => (
             (item.fullPath || item.path).map((point) => point.value)
         ));
         const allValues = group.actual.map((point) => point.value)
@@ -614,7 +671,7 @@
         const maxTime = Math.max(
             group.actual[group.actual.length - 1].time,
             trackPoints[trackPoints.length - 1]?.time ?? group.actual[group.actual.length - 1].time,
-            ...issuancePaths.flatMap((item) => (item.fullPath || item.path).map((point) => point.time)),
+            ...domainPaths.flatMap((item) => (item.fullPath || item.path).map((point) => point.time)),
         );
         const minValue = Math.min(...allValues);
         const maxValue = Math.max(...allValues, 1);
@@ -645,7 +702,14 @@
         let predictionLayer = '';
         let issuanceMarkers = '';
         if (issuanceMode) {
-            const drawn = renderIssuancePolylineTraces(issuancePaths, xAt, yAt, elapsedS, group.actual);
+            const drawn = renderIssuancePolylineTraces(
+                issuancePaths,
+                xAt,
+                yAt,
+                elapsedS,
+                group.actual,
+                markerPaths,
+            );
             predictionLayer = `${drawn.traces}${drawn.horizonMarkers}`;
             issuanceMarkers = drawn.issuanceMarkers;
         } else {
@@ -705,16 +769,32 @@
 
     function renderForecastChartsHtml(groups, options = {}) {
         const predictionMode = String(options.predictionMode || '');
+        const historyMode = normalizeIssuanceHistoryMode(options.historyMode);
         return groups.map((group, index) => (
-            `<article class="process-forecast process-forecast-chart" data-forecast-group-index="${index}"><h3>${escapeHtml(group.name)} · PID ${escapeHtml(group.pid)} · ${group.metric === 'heap' ? 'Heap' : 'RSS'}</h3><div class="forecast-chart-host" data-forecast-chart-host>${renderForecastChartSvg(group, null, { predictionMode })}</div></article>`
+            `<article class="process-forecast process-forecast-chart" data-forecast-group-index="${index}"><h3>${escapeHtml(group.name)} · PID ${escapeHtml(group.pid)} · ${group.metric === 'heap' ? 'Heap' : 'RSS'}</h3><div class="forecast-chart-host" data-forecast-chart-host>${renderForecastChartSvg(group, null, { predictionMode, historyMode })}</div></article>`
         )).join('');
     }
 
     function forecastPanelHelp(mode) {
         if (usesIssuancePolylines(mode)) {
-            return 'Each orange marker is a forecast issuance. The emphasized dashed line is the latest issuance\'s original +10/+30/+60 forecast from that moment; earlier issuances stay gray for comparison. Replay never reveals an issuance before it was available, and forecast values do not move with the scrubber.';
+            return 'Each orange marker is a forecast issuance. By default only the latest issuance\'s original +10/+30/+60 forecast is drawn; switch to Last 3 or All issuances to compare earlier forecasts. Markers still show every revealed issuance. Replay never reveals an issuance before it was available, and forecast values do not move with the scrubber.';
         }
         return 'Live follows the latest sample and keeps the last forecast while new ones catch up. Each orange point marks when a forecast was issued.';
+    }
+
+    function forecastHistoryModeControls(historyMode) {
+        const selected = normalizeIssuanceHistoryMode(historyMode);
+        const option = (value, label) => (
+            `<option value="${value}"${selected === value ? ' selected' : ''}>${label}</option>`
+        );
+        return `<div class="forecast-history-mode">
+            <label for="forecast-history-mode">Issuances</label>
+            <select id="forecast-history-mode" aria-label="Issuance history">
+                ${option('latest', 'Latest only')}
+                ${option('recent', 'Last 3')}
+                ${option('all', 'All issuances')}
+            </select>
+        </div>`;
     }
 
     function forecastPanelLegend(mode) {
@@ -740,11 +820,13 @@
         const freshness = forecastFreshness(data);
         const delayed = freshness.forecastCount > 0 && freshness.lagS !== null && freshness.lagS >= lagWarn;
         const waiting = freshness.forecastCount === 0;
-        const replayControls = `<div class="replay-controls forecast-replay-controls" id="forecast-replay-controls" data-forecast-view-mode="${defaultMode}">
+        const defaultHistoryMode = preferredIssuanceHistoryMode();
+        const replayControls = `<div class="replay-controls forecast-replay-controls" id="forecast-replay-controls" data-forecast-view-mode="${defaultMode}" data-forecast-history-mode="${defaultHistoryMode}">
             <div class="forecast-view-mode" role="group" aria-label="Forecast view mode">
                 <button class="btn${defaultMode === 'live' ? '' : ' secondary'}" type="button" id="btn-forecast-view-live" data-forecast-view-mode="live" aria-pressed="${defaultMode === 'live' ? 'true' : 'false'}">Live</button>
                 <button class="btn${defaultMode === 'replay' ? '' : ' secondary'}" type="button" id="btn-forecast-view-replay" data-forecast-view-mode="replay" aria-pressed="${defaultMode === 'replay' ? 'true' : 'false'}">Replay</button>
             </div>
+            ${forecastHistoryModeControls(defaultHistoryMode)}
             <div class="buttons forecast-replay-buttons">
                 <button class="btn" type="button" id="btn-forecast-replay-play">Play</button>
                 <button class="btn secondary" type="button" id="btn-forecast-replay-pause">Pause</button>
@@ -770,7 +852,7 @@
         const predictionMode = String(data?.prediction_mode || '');
         const sharedLegend = forecastPanelLegend(predictionMode);
         const statusClass = `forecast-live-status${delayed ? ' is-delayed' : ''}${waiting ? ' is-waiting' : ''}`;
-        return `<section class="prediction-panel process-forecasts" data-forecast-panel data-prediction-mode="${escapeHtml(predictionMode)}"><h2>Process memory forecasts</h2><p id="forecast-live-status" class="${statusClass}">${escapeHtml(formatForecastStatus(data, defaultMode))}</p><p class="forecast-panel-help">${forecastPanelHelp(predictionMode)}</p>${replayControls}${sharedLegend}<div class="process-forecast-charts" aria-label="Forecast charts">${renderForecastChartsHtml(available, { predictionMode })}</div>${renderForecastLatencyHtml(data)}<script type="application/json" id="bpw-forecast-replay-data">${JSON.stringify(available).replace(/</g, '\\u003c')}</script></section>`;
+        return `<section class="prediction-panel process-forecasts" data-forecast-panel data-prediction-mode="${escapeHtml(predictionMode)}"><h2>Process memory forecasts</h2><p id="forecast-live-status" class="${statusClass}">${escapeHtml(formatForecastStatus(data, defaultMode))}</p><p class="forecast-panel-help">${forecastPanelHelp(predictionMode)}</p>${replayControls}${sharedLegend}<div class="process-forecast-charts" aria-label="Forecast charts">${renderForecastChartsHtml(available, { predictionMode, historyMode: defaultHistoryMode })}</div>${renderForecastLatencyHtml(data)}<script type="application/json" id="bpw-forecast-replay-data">${JSON.stringify(available).replace(/</g, '\\u003c')}</script></section>`;
     }
 
     function bindProcessForecastView(root, options = {}) {
@@ -803,6 +885,7 @@
         const pauseBtn = controls.querySelector('#btn-forecast-replay-pause');
         const resetBtn = controls.querySelector('#btn-forecast-replay-reset');
         const speedSelect = controls.querySelector('#forecast-replay-speed');
+        const historySelect = controls.querySelector('#forecast-history-mode');
 
         let isPlaying = false;
         let currentFrame = 0;
@@ -812,6 +895,9 @@
             options.finished === true ? { finished: true } : { finished: false }
         );
         let mode = preferredForecastViewMode(latestData, options.initialMode);
+        let historyMode = preferredIssuanceHistoryMode(
+            options.historyMode || controls.dataset.forecastHistoryMode || historySelect?.value,
+        );
         const clockApi = (typeof globalThis !== 'undefined' && globalThis.BpwPlaybackClock)
             || (typeof window !== 'undefined' && window.BpwPlaybackClock)
             || null;
@@ -894,6 +980,7 @@
 
         function applyModeChrome() {
             controls.dataset.forecastViewMode = mode;
+            controls.dataset.forecastHistoryMode = historyMode;
             controls.classList.toggle('is-live', mode === 'live');
             controls.classList.toggle('is-replay', mode === 'replay');
             if (liveBtn) {
@@ -904,7 +991,13 @@
                 replayBtn.setAttribute('aria-pressed', mode === 'replay' ? 'true' : 'false');
                 replayBtn.classList.toggle('secondary', mode !== 'replay');
             }
-            if (typeof window !== 'undefined') window.__bpwForecastViewMode = mode;
+            if (historySelect && historySelect.value !== historyMode) {
+                historySelect.value = historyMode;
+            }
+            if (typeof window !== 'undefined') {
+                window.__bpwForecastViewMode = mode;
+                window.__bpwForecastHistoryMode = historyMode;
+            }
             refreshStatus();
         }
 
@@ -924,11 +1017,22 @@
             hosts.forEach((host, index) => {
                 const group = groups[index];
                 if (!group) return;
-                host.innerHTML = renderForecastChartSvg(group, timestamp, { predictionMode });
+                host.innerHTML = renderForecastChartSvg(group, timestamp, { predictionMode, historyMode });
             });
             if (!opts.fromClock && clock) {
                 clock.seekTo(cursorMsForFrame(currentFrame));
             }
+        }
+
+        function setHistoryMode(nextMode) {
+            const resolved = normalizeIssuanceHistoryMode(nextMode);
+            if (resolved === historyMode) {
+                applyModeChrome();
+                return;
+            }
+            historyMode = resolved;
+            applyModeChrome();
+            renderFrame(currentFrame);
         }
 
         function pause() {
@@ -985,7 +1089,7 @@
                 root.setAttribute('data-prediction-mode', predictionMode);
             }
             if (dataNode) dataNode.textContent = JSON.stringify(groups);
-            if (chartsNode) chartsNode.innerHTML = renderForecastChartsHtml(groups, { predictionMode });
+            if (chartsNode) chartsNode.innerHTML = renderForecastChartsHtml(groups, { predictionMode, historyMode });
             const helpNode = root.querySelector('.forecast-panel-help');
             if (helpNode) helpNode.textContent = forecastPanelHelp(predictionMode);
             const legendNode = root.querySelector('.forecast-chart-legend');
@@ -1011,11 +1115,16 @@
                 update,
                 getMode() { return mode; },
                 setMode,
+                getHistoryMode() { return historyMode; },
+                setHistoryMode,
             };
         }
 
         if (liveBtn) liveBtn.addEventListener('click', () => setMode('live'));
         if (replayBtn) replayBtn.addEventListener('click', () => setMode('replay'));
+        if (historySelect) {
+            historySelect.addEventListener('change', () => setHistoryMode(historySelect.value));
+        }
         playBtn.addEventListener('click', play);
         pauseBtn.addEventListener('click', pause);
         resetBtn.addEventListener('click', () => {
@@ -1046,6 +1155,8 @@
             update,
             getMode() { return mode; },
             setMode,
+            getHistoryMode() { return historyMode; },
+            setHistoryMode,
         };
     }
 
@@ -1071,7 +1182,10 @@
         actualNear,
         isTimelinePredictionMode,
         usesIssuancePolylines,
+        normalizeIssuanceHistoryMode,
+        preferredIssuanceHistoryMode,
         visibleIssuancePaths,
+        revealedIssuanceMarkers,
         renderForecastChartSvg,
         preferredForecastViewMode,
         forecastFreshness,

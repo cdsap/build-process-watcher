@@ -158,6 +158,7 @@ describe('per-process memory forecasts', () => {
     }, null).html;
     expect(html).toContain('Latest issuance');
     expect(html).toContain('Previous issuances');
+    expect(html).toContain('id="forecast-history-mode"');
     expect(html).toContain('original +10/+30/+60 forecast');
     expect(html).toContain('id="forecast-replay-controls"');
     expect(html).toContain('id="btn-forecast-view-live"');
@@ -362,18 +363,40 @@ describe('per-process memory forecasts', () => {
       prediction_mode: 'forecast',
     }, null).html;
     expect(html).toContain('data-prediction-mode="forecast"');
+    expect(html).toContain('id="forecast-history-mode"');
+    expect(html).toContain('Latest only');
     expect(html).toContain('forecast-trace-issuance');
-    expect(html).toContain('forecast-trace-prior');
     expect(html).toContain('forecast-trace-latest');
+    expect(html).not.toContain('forecast-trace-prior');
     expect(html).toContain('forecast-horizon');
     expect(html).toContain('legend-horizon');
-    expect(html).toContain('original +10/+30/+60 forecast');
+    expect(html).toContain('Latest only');
     expect(html).not.toContain('forecast-band');
     const issuanceMarkers = html.match(/class="forecast-point forecast-issuance[^"]*"/g) || [];
     expect(issuanceMarkers).toHaveLength(2);
     expect(html).toContain('forecast-issuance-prior');
     const horizonMarkers = html.match(/class="forecast-point forecast-horizon/g) || [];
-    expect(horizonMarkers.length).toBeGreaterThanOrEqual(6);
+    expect(horizonMarkers.length).toBe(3);
+
+    const group = {
+      name: 'GradleDaemon',
+      pid: '1',
+      metric: 'heap',
+      actual: samples.map((sample) => ({ time: sample.Timestamp, value: sample.HeapUsed })),
+      predictions: [
+        { created: 20000, points: [{ time: 30000, value: 112 }, { time: 50000, value: 118 }, { time: 80000, value: 125 }] },
+        { created: 40000, points: [{ time: 50000, value: 122 }, { time: 70000, value: 128 }, { time: 100000, value: 135 }] },
+      ],
+    };
+    expect(view.visibleIssuancePaths(group, 60000, 'latest')).toHaveLength(1);
+    expect(view.visibleIssuancePaths(group, 60000, 'recent')).toHaveLength(2);
+    expect(view.visibleIssuancePaths(group, 60000, 'all')).toHaveLength(2);
+    const allHtml = view.renderForecastChartSvg(group, 60000, {
+      predictionMode: 'forecast',
+      historyMode: 'all',
+    });
+    expect(allHtml).toContain('forecast-trace-prior');
+    expect(allHtml).toContain('forecast-trace-latest');
   });
 
   it('binds prediction replay controls and scrubs chart frames', () => {
