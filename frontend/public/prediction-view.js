@@ -753,55 +753,6 @@
         return parts.join(' · ');
     }
 
-    function activeForecastSummary(group, untilMs) {
-        const cutoff = finiteNumber(untilMs);
-        const available = (group?.predictions || [])
-            .filter((prediction) => cutoff === null || prediction.created <= cutoff);
-        if (!available.length) {
-            return { status: 'waiting', issuedS: null, horizonS: null, endS: null, predicted60: null };
-        }
-        const latest = available[available.length - 1];
-        const minTime = group.actual?.[0]?.time ?? latest.created;
-        const elapsedS = (time) => (time - minTime) / 1000;
-        const endMs = issuanceHorizonEndMs(latest);
-        const cursor = cutoff === null
-            ? group.actual?.[group.actual.length - 1]?.time ?? endMs
-            : cutoff;
-        const expired = isIssuanceExpired(latest, cursor);
-        const lastPoint = latest.points?.[latest.points.length - 1] || null;
-        return {
-            status: expired ? 'expired' : 'active',
-            created: latest.created,
-            issuedS: Math.round(elapsedS(latest.created)),
-            horizonS: endMs !== null ? Math.round((endMs - latest.created) / 1000) : null,
-            endS: endMs !== null ? Math.round(elapsedS(endMs)) : null,
-            predicted60: lastPoint && Number.isFinite(lastPoint.value) ? Math.round(lastPoint.value) : null,
-        };
-    }
-
-    function renderActiveForecastMetaHtml(summary, options = {}) {
-        if (!summary || summary.status === 'waiting') {
-            return `<div class="forecast-active-meta is-waiting" data-forecast-active-meta><span class="forecast-active-pill">Waiting for forecast</span></div>`;
-        }
-        const statusLabel = summary.status === 'expired' ? 'Expired forecast' : 'Active forecast';
-        const statusClass = summary.status === 'expired' ? 'is-expired' : 'is-active';
-        const callout = options.showTransition
-            ? `<span class="forecast-transition-callout" data-forecast-transition>New prediction · ${summary.issuedS}s</span>`
-            : '';
-        const bits = [
-            `<span class="forecast-active-pill">${escapeHtml(statusLabel)}</span>`,
-            `<span>Issued at <strong>${summary.issuedS}s</strong></span>`,
-        ];
-        if (summary.horizonS != null) bits.push(`<span>Horizon <strong>${summary.horizonS}s</strong></span>`);
-        if (summary.endS != null) {
-            bits.push(summary.status === 'expired'
-                ? `<span>Ended at <strong>${summary.endS}s</strong></span>`
-                : `<span>Ends at <strong>${summary.endS}s</strong></span>`);
-        }
-        if (summary.predicted60 != null) bits.push(`<span>+${summary.horizonS ?? 60}s <strong>${summary.predicted60} MB</strong></span>`);
-        return `<div class="forecast-active-meta ${statusClass}" data-forecast-active-meta>${callout}${bits.join('')}</div>`;
-    }
-
     function forecastAccuracyByHorizon(groups) {
         const buckets = new Map([
             [10, []],
@@ -1042,15 +993,9 @@
         const predictionMode = String(options.predictionMode || '');
         const historyMode = normalizeIssuanceHistoryMode(options.historyMode);
         const untilMs = Object.prototype.hasOwnProperty.call(options, 'untilMs') ? options.untilMs : null;
-        return groups.map((group, index) => {
-            const summary = usesIssuancePolylines(predictionMode)
-                ? activeForecastSummary(group, untilMs)
-                : null;
-            const meta = summary
-                ? renderActiveForecastMetaHtml(summary)
-                : '';
-            return `<article class="process-forecast process-forecast-chart" data-forecast-group-index="${index}"><h3>${escapeHtml(group.name)} · PID ${escapeHtml(group.pid)} · ${group.metric === 'heap' ? 'Heap' : 'RSS'}</h3>${meta}<div class="forecast-chart-host" data-forecast-chart-host>${renderForecastChartSvg(group, untilMs, { predictionMode, historyMode })}</div></article>`;
-        }).join('');
+        return groups.map((group, index) => (
+            `<article class="process-forecast process-forecast-chart" data-forecast-group-index="${index}"><h3>${escapeHtml(group.name)} · PID ${escapeHtml(group.pid)} · ${group.metric === 'heap' ? 'Heap' : 'RSS'}</h3><div class="forecast-chart-host" data-forecast-chart-host>${renderForecastChartSvg(group, untilMs, { predictionMode, historyMode })}</div></article>`
+        )).join('');
     }
 
     function forecastPanelHelp(mode) {
@@ -1338,18 +1283,6 @@
                     && latestCreated !== previousCreated;
                 announcedIssuanceByGroup[index] = latestCreated;
                 const highlightCreated = isNewIssuance ? latestCreated : null;
-                const summary = usesIssuancePolylines(predictionMode)
-                    ? activeForecastSummary(group, timestamp)
-                    : null;
-                const article = typeof host.closest === 'function'
-                    ? host.closest('[data-forecast-group-index]')
-                    : host.parentElement;
-                const metaNode = article?.querySelector?.('[data-forecast-active-meta]');
-                if (metaNode && summary) {
-                    metaNode.outerHTML = renderActiveForecastMetaHtml(summary, {
-                        showTransition: Boolean(highlightCreated),
-                    });
-                }
                 host.innerHTML = renderForecastChartSvg(group, timestamp, {
                     predictionMode,
                     historyMode,
@@ -1532,7 +1465,6 @@
         preferredIssuanceHistoryMode,
         visibleIssuancePaths,
         revealedIssuanceMarkers,
-        activeForecastSummary,
         forecastAccuracyByHorizon,
         isIssuanceExpired,
         renderForecastChartSvg,
