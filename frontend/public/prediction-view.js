@@ -779,15 +779,29 @@
         };
     }
 
+    function activeForecastMetaKey(summary) {
+        if (!summary || summary.status === 'waiting') return 'waiting';
+        return [
+            summary.status,
+            summary.created,
+            summary.issuedS,
+            summary.horizonS,
+            summary.endS,
+            summary.predicted60,
+        ].join('|');
+    }
+
+    function forecastTransitionCalloutHtml(issuedS) {
+        return `<span class="forecast-transition-callout" data-forecast-transition>New prediction · ${escapeHtml(String(issuedS))}s</span>`;
+    }
+
     function renderActiveForecastMetaHtml(summary, options = {}) {
         if (!summary || summary.status === 'waiting') {
-            return `<div class="forecast-active-meta is-waiting" data-forecast-active-meta><span class="forecast-active-pill">Waiting for forecast</span></div>`;
+            return `<div class="forecast-active-meta is-waiting" data-forecast-active-meta data-forecast-meta-key="waiting"><span class="forecast-active-pill">Waiting for forecast</span></div>`;
         }
         const statusLabel = summary.status === 'expired' ? 'Expired forecast' : 'Active forecast';
         const statusClass = summary.status === 'expired' ? 'is-expired' : 'is-active';
-        const callout = options.showTransition
-            ? `<span class="forecast-transition-callout" data-forecast-transition>New prediction · ${summary.issuedS}s</span>`
-            : '';
+        const callout = options.showTransition ? forecastTransitionCalloutHtml(summary.issuedS) : '';
         const bits = [
             `<span class="forecast-active-pill">${escapeHtml(statusLabel)}</span>`,
             `<span>Issued at <strong>${summary.issuedS}s</strong></span>`,
@@ -799,7 +813,39 @@
                 : `<span>Ends at <strong>${summary.endS}s</strong></span>`);
         }
         if (summary.predicted60 != null) bits.push(`<span>+${summary.horizonS ?? 60}s <strong>${summary.predicted60} MB</strong></span>`);
-        return `<div class="forecast-active-meta ${statusClass}" data-forecast-active-meta>${callout}${bits.join('')}</div>`;
+        // Callout is last so absolute positioning does not shift the stable flex bits.
+        return `<div class="forecast-active-meta ${statusClass}" data-forecast-active-meta data-forecast-meta-key="${escapeHtml(activeForecastMetaKey(summary))}">${bits.join('')}${callout}</div>`;
+    }
+
+    function bindTransitionCalloutRemoval(callout) {
+        if (!callout || typeof callout.addEventListener !== 'function') return;
+        callout.addEventListener('animationend', () => {
+            if (typeof callout.remove === 'function') callout.remove();
+        }, { once: true });
+    }
+
+    function syncActiveForecastMeta(metaNode, summary, options = {}) {
+        if (!metaNode || !summary) return metaNode;
+        const showTransition = Boolean(options.showTransition);
+        const key = activeForecastMetaKey(summary);
+        if (metaNode.getAttribute('data-forecast-meta-key') !== key) {
+            const parent = metaNode.parentNode;
+            metaNode.outerHTML = renderActiveForecastMetaHtml(summary, { showTransition });
+            const next = parent?.querySelector?.('[data-forecast-active-meta]') || null;
+            if (showTransition && next) {
+                bindTransitionCalloutRemoval(next.querySelector('[data-forecast-transition]'));
+            }
+            return next || metaNode;
+        }
+        if (showTransition) {
+            const existing = metaNode.querySelector('[data-forecast-transition]');
+            if (existing && typeof existing.remove === 'function') existing.remove();
+            if (typeof metaNode.insertAdjacentHTML === 'function') {
+                metaNode.insertAdjacentHTML('beforeend', forecastTransitionCalloutHtml(summary.issuedS));
+            }
+            bindTransitionCalloutRemoval(metaNode.querySelector('[data-forecast-transition]'));
+        }
+        return metaNode;
     }
 
     function forecastAccuracyByHorizon(groups) {
@@ -1346,7 +1392,7 @@
                     : host.parentElement;
                 const metaNode = article?.querySelector?.('[data-forecast-active-meta]');
                 if (metaNode && summary) {
-                    metaNode.outerHTML = renderActiveForecastMetaHtml(summary, {
+                    syncActiveForecastMeta(metaNode, summary, {
                         showTransition: Boolean(highlightCreated),
                     });
                 }
@@ -1533,6 +1579,9 @@
         visibleIssuancePaths,
         revealedIssuanceMarkers,
         activeForecastSummary,
+        activeForecastMetaKey,
+        renderActiveForecastMetaHtml,
+        syncActiveForecastMeta,
         forecastAccuracyByHorizon,
         isIssuanceExpired,
         renderForecastChartSvg,

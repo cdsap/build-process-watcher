@@ -212,6 +212,39 @@ describe('per-process memory forecasts', () => {
     expect(html).toContain('Earlier issuance');
   });
 
+  it('keeps active forecast meta stable when transition callouts appear', () => {
+    const summary = {
+      status: 'active',
+      created: 20000,
+      issuedS: 20,
+      horizonS: 60,
+      endS: 80,
+      predicted60: 155,
+    };
+    const stable = view.renderActiveForecastMetaHtml(summary);
+    const withCallout = view.renderActiveForecastMetaHtml(summary, { showTransition: true });
+    expect(stable.indexOf('Active forecast')).toBeLessThan(stable.indexOf('Issued at'));
+    expect(withCallout.indexOf('Issued at')).toBeLessThan(withCallout.indexOf('New prediction'));
+    expect(withCallout).toContain('forecast-transition-callout');
+
+    const key = view.activeForecastMetaKey(summary);
+    const metaNode = {
+      getAttribute: (name: string) => (name === 'data-forecast-meta-key' ? key : null),
+      querySelector: jest.fn(() => null),
+      insertAdjacentHTML: jest.fn(),
+      addEventListener: jest.fn(),
+    };
+    expect(view.syncActiveForecastMeta(metaNode, summary, { showTransition: true })).toBe(metaNode);
+    expect(metaNode.insertAdjacentHTML).toHaveBeenCalledWith(
+      'beforeend',
+      expect.stringContaining('New prediction · 20s'),
+    );
+    // Unchanged summary should not rewrite outerHTML.
+    metaNode.insertAdjacentHTML.mockClear();
+    view.syncActiveForecastMeta(metaNode, summary, { showTransition: false });
+    expect(metaNode.insertAdjacentHTML).not.toHaveBeenCalled();
+  });
+
   it('marks expired forecasts and reports horizon accuracy', () => {
     const group = {
       name: 'GradleDaemon',
