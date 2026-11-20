@@ -212,6 +212,57 @@ describe('per-process memory forecasts', () => {
     expect(html).toContain('Earlier issuance');
   });
 
+  it('shows forecast model engine and inference table for timeline modes', () => {
+    const samples = [
+      { Timestamp: 1000, Name: 'GradleDaemon', PID: '1', HeapUsed: 100, RSS: 200 },
+      { Timestamp: 5000, Name: 'GradleDaemon', PID: '1', HeapUsed: 110, RSS: 210 },
+    ];
+    const tabpfn = view.render({
+      samples,
+      prediction_mode: 'tabpfn',
+      process_forecasts: [{
+        process_name: 'GradleDaemon',
+        pid: '1',
+        metric: 'heap',
+        created_at_ms: 1000,
+        method: 'tabpfn',
+        model_version: 'tabpfn-timeline-v1',
+        points: [{ target_at_ms: 5000, value_mb: 112 }],
+      }],
+    }, null).html;
+    expect(tabpfn).toContain('data-forecast-model');
+    expect(tabpfn).toContain('TabPFN GPU');
+    expect(tabpfn).toContain('tabpfn-timeline-v1');
+    expect(tabpfn).toContain('no BigQuery table');
+
+    const predict = view.render({
+      samples,
+      prediction_mode: 'predict',
+      process_forecasts: [{
+        process_name: 'GradleDaemon',
+        pid: '1',
+        metric: 'heap',
+        created_at_ms: 1000,
+        method: 'ai_predict',
+        model_version: 'bq-ai-predict-tabfm-v1',
+        points: [{ target_at_ms: 5000, value_mb: 112 }],
+      }],
+    }, null).html;
+    expect(predict).toContain('TabFM AI.PREDICT');
+    expect(predict).toContain('predictive_reliability.tabfm_context');
+
+    const boosted = view.forecastModelSummary({
+      prediction_mode: 'bqml-boosted',
+      process_forecasts: [{
+        method: 'bqml_boosted',
+        model_version: 'bpw_process_boosted_v1',
+      }],
+    });
+    expect(boosted.engine).toBe('BQML boosted trees');
+    expect(boosted.modelId).toBe('bpw_process_boosted_v1');
+    expect(boosted.inferenceTable).toBe('predictive_reliability.bqml_boosted_train');
+  });
+
   it('summarizes issuance latency telemetry in the Predictions panel', () => {
     const html = view.render({
       prediction_mode: 'forecast',
