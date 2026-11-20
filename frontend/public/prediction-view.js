@@ -872,9 +872,6 @@
             groups = [];
         }
         if (!Array.isArray(groups)) groups = [];
-        let predictionMode = String(
-            (typeof root.getAttribute === 'function' && root.getAttribute('data-prediction-mode')) || '',
-        );
 
         let timestamps = [];
         let hosts = [];
@@ -894,6 +891,19 @@
         let latestData = options.data || (
             options.finished === true ? { finished: true } : { finished: false }
         );
+        // Root is often #prediction-panel-content; the mode attribute lives on the
+        // nested panel. Without this, renderFrame falls back to legacy tracks and
+        // the Issuances selector appears to do nothing.
+        let predictionMode = String(
+            options.predictionMode
+            || latestData?.prediction_mode
+            || (typeof root.getAttribute === 'function' && root.getAttribute('data-prediction-mode'))
+            || root.querySelector?.('[data-prediction-mode]')?.getAttribute?.('data-prediction-mode')
+            || '',
+        );
+        if (predictionMode && typeof root.setAttribute === 'function') {
+            root.setAttribute('data-prediction-mode', predictionMode);
+        }
         let mode = preferredForecastViewMode(latestData, options.initialMode);
         let historyMode = preferredIssuanceHistoryMode(
             options.historyMode || controls.dataset.forecastHistoryMode || historySelect?.value,
@@ -1122,8 +1132,14 @@
 
         if (liveBtn) liveBtn.addEventListener('click', () => setMode('live'));
         if (replayBtn) replayBtn.addEventListener('click', () => setMode('replay'));
+        // Prefer delegation so the Issuances control keeps working across chart redraws.
+        controls.addEventListener('change', (event) => {
+            const target = event?.target;
+            if (!target || target.id !== 'forecast-history-mode') return;
+            setHistoryMode(target.value);
+        });
         if (historySelect) {
-            historySelect.addEventListener('change', () => setHistoryMode(historySelect.value));
+            historySelect.addEventListener('input', () => setHistoryMode(historySelect.value));
         }
         playBtn.addEventListener('click', play);
         pauseBtn.addEventListener('click', pause);

@@ -399,6 +399,126 @@ describe('per-process memory forecasts', () => {
     expect(allHtml).toContain('forecast-trace-latest');
   });
 
+  it('switches issuance history mode without resetting the scrubber', () => {
+    const samples = [
+      { Timestamp: 0, Name: 'GradleDaemon', PID: '1', HeapUsed: 100, RSS: 200 },
+      { Timestamp: 20000, Name: 'GradleDaemon', PID: '1', HeapUsed: 110, RSS: 210 },
+      { Timestamp: 40000, Name: 'GradleDaemon', PID: '1', HeapUsed: 120, RSS: 220 },
+      { Timestamp: 60000, Name: 'GradleDaemon', PID: '1', HeapUsed: 130, RSS: 230 },
+    ];
+    const forecasts = [
+      {
+        process_name: 'GradleDaemon',
+        pid: '1',
+        metric: 'heap',
+        created_at_ms: 20000,
+        points: [
+          { target_at_ms: 30000, value_mb: 112 },
+          { target_at_ms: 50000, value_mb: 118 },
+          { target_at_ms: 80000, value_mb: 125 },
+        ],
+      },
+      {
+        process_name: 'GradleDaemon',
+        pid: '1',
+        metric: 'heap',
+        created_at_ms: 40000,
+        points: [
+          { target_at_ms: 50000, value_mb: 122 },
+          { target_at_ms: 70000, value_mb: 128 },
+          { target_at_ms: 100000, value_mb: 135 },
+        ],
+      },
+    ];
+    const html = view.render({
+      samples,
+      process_forecasts: forecasts,
+      prediction_mode: 'predict',
+    }, null).html;
+
+    const byId = new Map<string, any>();
+    const hosts: any[] = [];
+    const makeEl = (overrides: Record<string, any> = {}) => {
+      const el: any = {
+        value: '',
+        textContent: '',
+        __innerHTML: '',
+        listeners: {} as Record<string, Function>,
+        dataset: {},
+        classList: { toggle: jest.fn() },
+        setAttribute: jest.fn(),
+        addEventListener: jest.fn((eventName: string, handler: Function) => {
+          el.listeners[eventName] = handler;
+        }),
+        querySelector: (selector: string) => {
+          const idMatch = selector.match(/^#(.+)$/);
+          return idMatch ? byId.get(idMatch[1]) || null : null;
+        },
+        querySelectorAll: (selector: string) => (selector === '[data-forecast-chart-host]' ? hosts : []),
+        ...overrides,
+      };
+      Object.defineProperty(el, 'innerHTML', {
+        get: () => el.__innerHTML,
+        set: (value: string) => { el.__innerHTML = String(value); },
+      });
+      return el;
+    };
+
+    const dataMatch = html.match(/id="bpw-forecast-replay-data">([\s\S]*?)<\/script>/);
+    byId.set('bpw-forecast-replay-data', makeEl({ textContent: dataMatch?.[1] || '[]' }));
+    byId.set('forecast-replay-timeline', makeEl({ value: '0' }));
+    byId.set('forecast-replay-meta', makeEl());
+    byId.set('forecast-replay-time-label', makeEl());
+    byId.set('btn-forecast-replay-play', makeEl());
+    byId.set('btn-forecast-replay-pause', makeEl());
+    byId.set('btn-forecast-replay-reset', makeEl());
+    byId.set('forecast-replay-speed', makeEl({ value: '15' }));
+    byId.set('btn-forecast-view-live', makeEl());
+    byId.set('btn-forecast-view-replay', makeEl());
+    byId.set('forecast-live-status', makeEl());
+    const historySelect = makeEl({ id: 'forecast-history-mode', value: 'latest' });
+    byId.set('forecast-history-mode', historySelect);
+    hosts.push(makeEl());
+    const controls = makeEl({
+      dataset: { forecastViewMode: 'replay', forecastHistoryMode: 'latest' },
+      classList: { toggle: jest.fn() },
+    });
+    byId.set('forecast-replay-controls', controls);
+    const root = makeEl();
+    root.querySelector = (selector: string) => {
+      const idMatch = selector.match(/^#(.+)$/);
+      return idMatch ? byId.get(idMatch[1]) || null : null;
+    };
+    root.querySelectorAll = (selector: string) => (selector === '[data-forecast-chart-host]' ? hosts : []);
+
+    const controller = view.bindProcessForecastView(root, {
+      initialMode: 'replay',
+      historyMode: 'latest',
+      predictionMode: 'predict',
+      data: {
+        finished: true,
+        prediction_mode: 'predict',
+        samples,
+        process_forecasts: forecasts,
+      },
+    });
+    const timeline = byId.get('forecast-replay-timeline');
+    timeline.value = '2';
+    timeline.listeners.input();
+    expect(controller.getMode()).toBe('replay');
+    expect(hosts[0].innerHTML).toContain('forecast-trace-latest');
+    expect(hosts[0].innerHTML).not.toContain('forecast-trace-prior');
+    expect(hosts[0].innerHTML).not.toContain('forecast-band');
+
+    historySelect.value = 'all';
+    controls.listeners.change({ target: historySelect });
+    expect(controller.getHistoryMode()).toBe('all');
+    expect(hosts[0].innerHTML).toContain('forecast-trace-prior');
+    expect(hosts[0].innerHTML).toContain('forecast-trace-latest');
+    expect(hosts[0].innerHTML).not.toContain('forecast-band');
+    expect(byId.get('forecast-replay-meta').textContent).toContain('Frame 3 / 4');
+  });
+
   it('binds prediction replay controls and scrubs chart frames', () => {
     const html = view.render({
       samples: [
@@ -458,6 +578,7 @@ describe('per-process memory forecasts', () => {
     byId.set('btn-forecast-view-live', makeEl());
     byId.set('btn-forecast-view-replay', makeEl());
     byId.set('forecast-live-status', makeEl());
+    byId.set('forecast-history-mode', makeEl({ value: 'latest' }));
     hosts.push(makeEl());
     const controls = makeEl({ dataset: { forecastViewMode: 'live' }, classList: { toggle: jest.fn() } });
     byId.set('forecast-replay-controls', controls);
@@ -473,6 +594,7 @@ describe('per-process memory forecasts', () => {
     const meta = byId.get('forecast-replay-meta');
     expect(timeline).toBeTruthy();
     expect(controller.getMode()).toBe('live');
+    expect(controller.getHistoryMode()).toBe('latest');
     expect(meta.textContent).toContain('Live · sample 3 / 3');
     expect(hosts[0].innerHTML).toContain('class="actual-trace"');
     timeline.value = '0';
