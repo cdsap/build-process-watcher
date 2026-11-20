@@ -68,7 +68,9 @@ describe('run dashboard prediction evolution integration', () => {
   it('binds process forecast replay after the finished dashboard render', () => {
     const source = readDashboardPage(pages[0]);
     expect(source).toContain('bindForecastReplayControls');
-    expect(source).toContain('BpwPredictionView.bindProcessForecastReplay');
+    expect(source).toContain('BpwPredictionView.bindProcessForecastView');
+    expect(source).toContain('forecastReplayController');
+    expect(source).toContain('existing.update(data)');
     expect(source).toContain("initialMode: data?.finished === true ? 'replay' : undefined");
     expect(source).toContain('shouldKeepPollingRun');
     expect(source).toContain('canUpdateFinishedPredictionPanel');

@@ -1719,17 +1719,17 @@ body.bpw-view-predictions #prediction-panel-content .prediction-panel {
 }
 /* Prior rules must follow base issuance/horizon colors or orange wins the cascade. */
 .process-forecast .forecast-trace-prior {
-    stroke: #64748b;
-    stroke-width: 1.5;
-    opacity: 0.25;
+    stroke: #475569;
+    stroke-width: 1.75;
+    opacity: 0.55;
 }
 .process-forecast .forecast-issuance-prior {
-    fill: #64748b;
+    fill: #475569;
     stroke: #fff;
-    opacity: 0.5;
+    opacity: 0.7;
 }
 .process-forecast .forecast-horizon-prior {
     fill: #64748b;
     stroke: rgba(255, 255, 255, 0.9);
-    opacity: 0.25;
+    opacity: 0.55;
 }

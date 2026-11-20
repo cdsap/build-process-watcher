@@ -160,14 +160,39 @@
         });
     }
 
+    function stopForecastReplayController() {
+        if (typeof window.forecastReplayStop === 'function') {
+            window.forecastReplayStop();
+        }
+        window.forecastReplayStop = null;
+        window.forecastReplayController = null;
+    }
+
+    function mountForecastReplayController(content, data) {
+        if (!content || typeof window.BpwPredictionView?.bindProcessForecastView !== 'function') {
+            return null;
+        }
+        const controller = BpwPredictionView.bindProcessForecastView(content, {
+            data,
+            predictionMode: data?.prediction_mode,
+            finished: data?.finished === true,
+            initialMode: data?.finished === true ? 'replay' : undefined,
+            historyMode: window.__bpwForecastHistoryMode,
+        });
+        window.forecastReplayController = controller;
+        window.forecastReplayStop = () => {
+            controller.stop();
+            if (window.forecastReplayController === controller) {
+                window.forecastReplayController = null;
+            }
+        };
+        return controller;
+    }
+
     function renderPredictionPanel(data, focusWindow = null) {
         const panel = document.getElementById('run-panel-predictions');
         const content = document.getElementById('prediction-panel-content');
         if (!panel || !content) return;
-        if (window.forecastReplayStop) {
-            window.forecastReplayStop();
-            window.forecastReplayStop = null;
-        }
         const hasProcessForecasts = Array.isArray(data?.process_forecasts) && data.process_forecasts.length > 0;
         const predictionMode = data?.prediction_mode;
         const predictionEnabled = predictionMode === 'predict'
@@ -178,14 +203,30 @@
         if (window.BpwExperimentLayout?.setPredictionsEnabled) {
             BpwExperimentLayout.setPredictionsEnabled(predictionEnabled);
         }
+
+        // Reuse the live controller so Issuances/history mode and scrubber position
+        // survive poll refreshes instead of remounting the whole Predictions panel.
+        const existing = window.forecastReplayController;
+        if (
+            existing
+            && typeof existing.update === 'function'
+            && content.querySelector('#forecast-replay-controls')
+            && content.querySelector('[data-forecast-chart-host]')
+        ) {
+            if (existing.update(data)) {
+                if (focusWindow !== null) {
+                    const selected = content.querySelector(`[data-prediction-window="${Number(focusWindow)}"]`);
+                    if (selected && typeof selected.focus === 'function') selected.focus({ preventScroll: true });
+                }
+                return;
+            }
+        }
+
+        stopForecastReplayController();
         const view = BpwPredictionView.render({ ...data, predictionEnabled }, predictionSelectedWindow);
         predictionSelectedWindow = view.selectedWindow;
         content.innerHTML = view.html;
-        window.forecastReplayStop = BpwPredictionView.bindProcessForecastReplay(content, {
-            data,
-            finished: data?.finished === true,
-            initialMode: data?.finished === true ? 'replay' : undefined,
-        });
+        mountForecastReplayController(content, data);
         if (focusWindow !== null) {
             const selected = content.querySelector(`[data-prediction-window="${Number(focusWindow)}"]`);
             if (selected && typeof selected.focus === 'function') selected.focus({ preventScroll: true });
@@ -333,17 +374,8 @@
 
     function bindForecastReplayControls() {
         const content = document.getElementById('prediction-panel-content');
-        if (window.forecastReplayStop) {
-            window.forecastReplayStop();
-            window.forecastReplayStop = null;
-        }
-        if (content && typeof window.BpwPredictionView?.bindProcessForecastReplay === 'function') {
-            window.forecastReplayStop = BpwPredictionView.bindProcessForecastReplay(content, {
-                data: window.currentRunData,
-                finished: window.currentRunData?.finished === true,
-                initialMode: window.currentRunData?.finished === true ? 'replay' : undefined,
-            });
-        }
+        stopForecastReplayController();
+        if (content) mountForecastReplayController(content, window.currentRunData);
     }
 
     function updateLiveHeader(summary, data) {
