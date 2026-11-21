@@ -44,8 +44,12 @@ This is not required for normal local or remote monitoring. Use it only when you
 
 ### Timeline Prediction (Experimental)
 
+The latest release `v0.7.0` does not accept timeline inputs. This example pins a
+verified timeline-capable commit; it is not a tagged release. See the
+[forecast guide](docs/forecast-guide.md) for compatibility, replay media, and validation evidence.
+
 ```yaml
-- uses: cdsap/build-process-watcher@v0.7.0
+- uses: cdsap/build-process-watcher@88f0d0b85857dd71009cf827564fb33d75769214
   with:
     prediction_mode: 'predict'
     prediction_throttle_s: '20'
