@@ -1119,3 +1119,50 @@ describe('per-process memory forecasts', () => {
   });
 
 });
+
+describe('public documentation forecast fixture', () => {
+  const view = loadView();
+  const fixture = JSON.parse(fs.readFileSync(
+    path.join(__dirname, '../docs/examples/process-forecasts.json'), 'utf8',
+  ));
+  const html = view.render(fixture, null).html;
+  const groups = JSON.parse(html.match(/id="bpw-forecast-replay-data">(.*?)<\/script>/s)[1]);
+
+  it('renders the synthetic fallback with optional timing and model fields absent', () => {
+    expect(fixture.samples).toHaveLength(25);
+    expect(fixture.process_forecasts).toHaveLength(4);
+    expect(fixture.prediction_mode).toBe('predict');
+    expect(view.forecastLatencySummary(fixture).fallbackCount).toBe(4);
+    expect(view.forecastLatencySummary(fixture).timedCount).toBe(0);
+    expect(view.forecastLatencySummary(fixture).p50).toBeNull();
+    expect(html).toContain('last_value');
+    expect(groups).toHaveLength(1);
+    for (const issuance of fixture.process_forecasts) {
+      expect(issuance.points.map((point: any) =>
+        (point.target_at_ms - issuance.created_at_ms) / 1000)).toEqual([10, 30, 60]);
+      expect(issuance).not.toHaveProperty('latency_ms');
+      expect(issuance).not.toHaveProperty('model_version');
+    }
+  });
+
+  it('reveals issuances without moving targets as history and replay position change', () => {
+    const group = groups[0];
+    const start = fixture.samples[0].Timestamp;
+    expect(view.visibleIssuancePaths(group, start + 19000, 'all')).toHaveLength(0);
+    expect(view.visibleIssuancePaths(group, start + 80000, 'latest')).toHaveLength(1);
+    expect(view.visibleIssuancePaths(group, start + 80000, 'recent')).toHaveLength(3);
+    expect(view.visibleIssuancePaths(group, start + 80000, 'all')).toHaveLength(4);
+    const at80 = view.visibleIssuancePaths(group, start + 80000, 'latest')[0];
+    const at90 = view.visibleIssuancePaths(group, start + 90000, 'latest')[0];
+    expect(at90.horizonPoints).toEqual(at80.horizonPoints);
+    expect(at90.created).toBe(start + 80000);
+    expect(view.forecastAccuracyByHorizon(groups).map((row: any) => row.n)).toEqual([4, 4, 3]);
+  });
+
+  it('keeps legacy runs valid without forecasts or optional latency fields', () => {
+    const { process_forecasts, ...legacy } = fixture;
+    expect(() => view.render(legacy, null)).not.toThrow();
+    expect(view.forecastFreshness(legacy).forecastCount).toBe(0);
+    expect(view.render({ samples: legacy.samples }, null).html).not.toContain('forecast-trace');
+  });
+});
