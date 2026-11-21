@@ -12,10 +12,14 @@ Monitor Java/Kotlin build processes (`GradleDaemon`, `GradleWorkerMain`, `Kotlin
 
 ## ✨ Quick Start
 
+**Release status:** The planned next release is **v0.8.0 (unreleased)**. The examples and input/output documentation below use the verified development ref [`88f0d0b85857dd71009cf827564fb33d75769214`](https://github.com/cdsap/build-process-watcher/commit/88f0d0b85857dd71009cf827564fb33d75769214), which contains the timeline-mode manifest and built action bundle. It is a development snapshot, not a published v0.8.0 release or a guarantee of hosted provider availability. See [release validation](RELEASE_NOTES.md#release-validation) for the separate source, artifact, documentation, and deployment status.
+
+Published v0.7.0 exposes the former `predictive_reliability` input; it does **not** support `prediction_mode` or `prediction_throttle_s`. Use the development ref below for the new configuration, or wait for a validated release. These inputs apply to the root action only; `/start` and `/composite` expose only `interval`.
+
 ### Local Mode (Artifacts Only)
 
 ```yaml
-- uses: cdsap/build-process-watcher@v0.7.0
+- uses: cdsap/build-process-watcher@88f0d0b85857dd71009cf827564fb33d75769214
 ```
 
 Generates log files and charts as workflow artifacts.
@@ -23,7 +27,7 @@ Generates log files and charts as workflow artifacts.
 ### Remote Mode (Live Dashboard)
 
 ```yaml
-- uses: cdsap/build-process-watcher@v0.7.0
+- uses: cdsap/build-process-watcher@88f0d0b85857dd71009cf827564fb33d75769214
   with:
     remote_monitoring: 'true'
 ```
@@ -34,7 +38,7 @@ Dashboard URL shown in job output. GC (garbage collection) monitoring is always 
 ### Optional Metrics Export to BigQuery
 
 ```yaml
-- uses: cdsap/build-process-watcher@v0.7.0
+- uses: cdsap/build-process-watcher@88f0d0b85857dd71009cf827564fb33d75769214
   with:
     remote_monitoring: 'true'
     export_to_bigquery: 'true'
@@ -45,13 +49,43 @@ This is not required for normal local or remote monitoring. Use it only when you
 ### Timeline Prediction (Experimental)
 
 ```yaml
-- uses: cdsap/build-process-watcher@v0.7.0
+- uses: cdsap/build-process-watcher@88f0d0b85857dd71009cf827564fb33d75769214
   with:
     prediction_mode: 'predict'
     prediction_throttle_s: '20'
 ```
 
-`prediction_mode` enables Remote Mode and requests a timeline forecast path. `prediction_throttle_s` is optional (default `20`) and sets how often forecasts are issued in elapsed seconds.
+An active `prediction_mode` enables Remote Mode and requests a timeline forecast path. `prediction_throttle_s` is optional (default `20`) and sets how often forecasts are issued in elapsed seconds.
+
+Prediction is experimental, advisory, and disabled by default. It does not guarantee OOM, timeout, or build-failure outcomes. TabPFN additionally requires an available VM and is disabled by default; selecting `tabpfn` does not provision or start a VM. A mode request does not guarantee provider readiness.
+
+### Migration from `predictive_reliability`
+
+This is a behavior change, not a rename. Choose a timeline mode deliberately: `forecast`, `predict`, `bqml-boosted`, or `tabpfn`; choose `disabled` (or omit the input) for no prediction. There is no automatic mapping from the former boolean.
+
+**Before — historical v0.7.0 configuration (not compatible with the current backend):**
+
+```yaml
+- uses: cdsap/build-process-watcher@v0.7.0
+  with:
+    predictive_reliability: 'true'
+```
+
+That input requested reliability checkpoints and implicitly enabled Remote Mode and finished-run BigQuery export. The current backend rejects the former query parameter, so keeping this configuration does not select the new timeline path.
+
+**After — development ref for the upcoming release, deliberately choosing `predict` and retaining export:**
+
+```yaml
+- uses: cdsap/build-process-watcher@88f0d0b85857dd71009cf827564fb33d75769214
+  with:
+    prediction_mode: 'predict'
+    prediction_throttle_s: '20'
+    export_to_bigquery: 'true'
+```
+
+Active modes imply Remote Mode but no longer imply finished-run BigQuery export. Omit `export_to_bigquery` or set it to `'false'` when export is not needed. For export, the backend still needs `BIGQUERY_EXPORT_DATASET`. If choosing `disabled` while retaining export, also set `remote_monitoring: 'true'`.
+
+New timeline forecasts use `process_forecasts`; historical reliability records remain legacy data. Dashboard support for old artifacts does not make the old action input valid on the current backend, and historical checkpoints are not converted into new timeline forecasts. Existing artifacts without forecasts remain readable. The `prediction_mode` and `prediction_throttle_s` outputs replace the former `predictive_reliability` output; `export_to_bigquery` reports the independent export request. Historical v0.7.0 release notes describe that release and remain unchanged.
 
 ---
 

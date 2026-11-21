@@ -521,7 +521,7 @@
             <img class="home-hero-media" src="/performance.gif" alt="Build Process Watcher dashboard preview">
             <div class="home-hero-content">
                 <div>
-                    <span class="version-pill">Action snippets updated for v0.7.0</span>
+                    <span class="version-pill">v0.8.0 · unreleased development snapshot</span>
                     <h1>Build Process Watcher</h1>
                     <p>Capture Gradle, Kotlin, and JVM build-process metrics in Local Mode, watch a Remote Mode run live, then replay or compare the exported data when you need to explain what changed.</p>
                     <div class="hero-actions">
@@ -544,7 +544,7 @@
         <section class="home-section" id="whats-new">
             <div class="section-kicker">What is new</div>
             <h2 class="section-heading">More context at the end of every build.</h2>
-            <p class="section-copy">The current release makes the monitoring choices explicit while keeping the JSON and dashboard workflows compatible with older runs.</p>
+            <p class="section-copy">The upcoming v0.8.0 release (unreleased) makes the monitoring choices explicit while keeping the JSON and dashboard workflows compatible with older runs.</p>
             <div class="news-grid">
                 <article class="news-card">
                     <h3>Richer run dashboards</h3>
@@ -567,14 +567,14 @@
         <section class="home-section" id="quick-start">
             <div class="section-kicker">Collection modes</div>
             <h2 class="section-heading">Choose where a run should live.</h2>
-            <p class="section-copy">Every snippet uses the same action. Local Mode keeps outputs in GitHub Actions artifacts; Remote Mode adds the live hosted dashboard. Every snippet is pinned to <code>v0.7.0</code>.</p>
+            <p class="section-copy">Every snippet uses the same action. Local Mode keeps outputs in GitHub Actions artifacts; Remote Mode adds the live hosted dashboard. Every snippet uses the verified development ref <a href="https://github.com/cdsap/build-process-watcher/commit/88f0d0b85857dd71009cf827564fb33d75769214"><code>88f0d0b</code></a> for the planned v0.8.0 release (unreleased). Published v0.7.0 does not support the timeline inputs. <a href="https://github.com/cdsap/build-process-watcher#quick-start">Release status and migration →</a></p>
 
             <div class="snippet-grid">
                 <article class="snippet-card">
                     <h3>Local Mode · artifacts only</h3>
                     <p>Generates logs, JSON, CSV, SVG charts, and the Actions summary in the workflow. Download the JSON later for Replay or Compare; nothing is sent to the hosted dashboard.</p>
                     <pre><code>- name: Build Process Watcher
-  uses: cdsap/build-process-watcher@v0.7.0
+  uses: cdsap/build-process-watcher@88f0d0b85857dd71009cf827564fb33d75769214
 
 - name: Build project
   run: ./gradlew clean build</code></pre>
@@ -584,7 +584,7 @@
                     <h3>Remote Mode · live dashboard</h3>
                     <p>Streams samples to the hosted dashboard, prints a dashboard URL, and retains the hosted report for 24 hours. The action can still produce local artifacts when available.</p>
                     <pre><code>- name: Build Process Watcher
-  uses: cdsap/build-process-watcher@v0.7.0
+  uses: cdsap/build-process-watcher@88f0d0b85857dd71009cf827564fb33d75769214
   with:
     remote_monitoring: 'true'
 
@@ -596,7 +596,7 @@
                     <h3>BigQuery export · optional</h3>
                     <p>Not another monitoring mode. It is an independent export choice that requires Remote Mode and asks the backend to store finished-run metrics in your configured dataset.</p>
                     <pre><code>- name: Build Process Watcher
-  uses: cdsap/build-process-watcher@v0.7.0
+  uses: cdsap/build-process-watcher@88f0d0b85857dd71009cf827564fb33d75769214
   with:
     remote_monitoring: 'true'
     export_to_bigquery: 'true'
@@ -623,8 +623,10 @@
                 </article>
                 <article class="option-card" id="prediction">
                     <h3>Prediction <span class="version-pill" style="margin: 0; color: var(--bpw-gold); border-color: rgba(184, 132, 20, 0.28); background: #fff9e8;">Experimental</span></h3>
-                    <p><strong>Input:</strong> <code>prediction_mode: 'predict'</code>, optional <code>prediction_throttle_s: '20'</code>. Opt in to advisory predictive timeline forecasts. It is disabled by default.</p>
+                    <p><strong>Input:</strong> <code>prediction_mode: 'predict'</code>, optional <code>prediction_throttle_s: '20'</code>. Upcoming, unreleased timeline forecasts at the development ref above. Prediction is advisory and disabled by default. Active modes enable Remote Mode; request finished-run export separately with <code>export_to_bigquery</code>. TabPFN requires an available VM and is disabled by default.</p>
                     <a href="https://github.com/cdsap/build-process-watcher#inputs">Read the public contract →</a>
+                    <p>Migrating from <code>predictive_reliability</code> requires a deliberate mode choice. New forecasts use <code>process_forecasts</code>; historical reliability records remain legacy data. Reading old artifacts does not restore the retired action input. Timeline inputs apply to the root action; <code>/start</code> and <code>/composite</code> expose only <code>interval</code>.</p>
+                    <a href="https://github.com/cdsap/build-process-watcher#migration-from-predictive_reliability">Before/after migration YAML →</a>
                 </article>
             </div>
             <div class="callout"><strong>Experimental prediction:</strong> prediction is an opt-in advisory signal for triage, not a guaranteed OOM, timeout, or build-failure outcome. Availability and behavior may change while experimental. Do not use it as a production decision or reliability guarantee, and do not infer private model details from the public dashboard.</div>
@@ -712,8 +714,8 @@
                         </tr>
                         <tr>
                             <td><code>prediction_mode</code></td>
-                            <td>Experimental, opt-in advisory signals; implies Remote Mode and requests BigQuery export.</td>
-                            <td><code>false</code></td>
+                            <td>Experimental, opt-in advisory signals; implies Remote Mode; BigQuery export must be requested separately.</td>
+                            <td><code>disabled</code></td>
                             <td>No</td>
                         </tr>
                         <tr>
