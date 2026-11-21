@@ -1,0 +1,273 @@
+{
+  "run_id": "synthetic-forecast-demo",
+  "finished": true,
+  "prediction_mode": "predict",
+  "prediction_throttle_s": 20,
+  "samples": [
+    {
+      "Timestamp": 1700000000000,
+      "ElapsedTime": 0,
+      "Name": "GradleDaemon",
+      "PID": "1234",
+      "HeapUsed": 320
+    },
+    {
+      "Timestamp": 1700000005000,
+      "ElapsedTime": 5,
+      "Name": "GradleDaemon",
+      "PID": "1234",
+      "HeapUsed": 330
+    },
+    {
+      "Timestamp": 1700000010000,
+      "ElapsedTime": 10,
+      "Name": "GradleDaemon",
+      "PID": "1234",
+      "HeapUsed": 350
+    },
+    {
+      "Timestamp": 1700000015000,
+      "ElapsedTime": 15,
+      "Name": "GradleDaemon",
+      "PID": "1234",
+      "HeapUsed": 365
+    },
+    {
+      "Timestamp": 1700000020000,
+      "ElapsedTime": 20,
+      "Name": "GradleDaemon",
+      "PID": "1234",
+      "HeapUsed": 390
+    },
+    {
+      "Timestamp": 1700000025000,
+      "ElapsedTime": 25,
+      "Name": "GradleDaemon",
+      "PID": "1234",
+      "HeapUsed": 410
+    },
+    {
+      "Timestamp": 1700000030000,
+      "ElapsedTime": 30,
+      "Name": "GradleDaemon",
+      "PID": "1234",
+      "HeapUsed": 430
+    },
+    {
+      "Timestamp": 1700000035000,
+      "ElapsedTime": 35,
+      "Name": "GradleDaemon",
+      "PID": "1234",
+      "HeapUsed": 450
+    },
+    {
+      "Timestamp": 1700000040000,
+      "ElapsedTime": 40,
+      "Name": "GradleDaemon",
+      "PID": "1234",
+      "HeapUsed": 470
+    },
+    {
+      "Timestamp": 1700000045000,
+      "ElapsedTime": 45,
+      "Name": "GradleDaemon",
+      "PID": "1234",
+      "HeapUsed": 480
+    },
+    {
+      "Timestamp": 1700000050000,
+      "ElapsedTime": 50,
+      "Name": "GradleDaemon",
+      "PID": "1234",
+      "HeapUsed": 460
+    },
+    {
+      "Timestamp": 1700000055000,
+      "ElapsedTime": 55,
+      "Name": "GradleDaemon",
+      "PID": "1234",
+      "HeapUsed": 440
+    },
+    {
+      "Timestamp": 1700000060000,
+      "ElapsedTime": 60,
+      "Name": "GradleDaemon",
+      "PID": "1234",
+      "HeapUsed": 420
+    },
+    {
+      "Timestamp": 1700000065000,
+      "ElapsedTime": 65,
+      "Name": "GradleDaemon",
+      "PID": "1234",
+      "HeapUsed": 410
+    },
+    {
+      "Timestamp": 1700000070000,
+      "ElapsedTime": 70,
+      "Name": "GradleDaemon",
+      "PID": "1234",
+      "HeapUsed": 400
+    },
+    {
+      "Timestamp": 1700000075000,
+      "ElapsedTime": 75,
+      "Name": "GradleDaemon",
+      "PID": "1234",
+      "HeapUsed": 420
+    },
+    {
+      "Timestamp": 1700000080000,
+      "ElapsedTime": 80,
+      "Name": "GradleDaemon",
+      "PID": "1234",
+      "HeapUsed": 450
+    },
+    {
+      "Timestamp": 1700000085000,
+      "ElapsedTime": 85,
+      "Name": "GradleDaemon",
+      "PID": "1234",
+      "HeapUsed": 470
+    },
+    {
+      "Timestamp": 1700000090000,
+      "ElapsedTime": 90,
+      "Name": "GradleDaemon",
+      "PID": "1234",
+      "HeapUsed": 480
+    },
+    {
+      "Timestamp": 1700000095000,
+      "ElapsedTime": 95,
+      "Name": "GradleDaemon",
+      "PID": "1234",
+      "HeapUsed": 460
+    },
+    {
+      "Timestamp": 1700000100000,
+      "ElapsedTime": 100,
+      "Name": "GradleDaemon",
+      "PID": "1234",
+      "HeapUsed": 430
+    },
+    {
+      "Timestamp": 1700000105000,
+      "ElapsedTime": 105,
+      "Name": "GradleDaemon",
+      "PID": "1234",
+      "HeapUsed": 410
+    },
+    {
+      "Timestamp": 1700000110000,
+      "ElapsedTime": 110,
+      "Name": "GradleDaemon",
+      "PID": "1234",
+      "HeapUsed": 400
+    },
+    {
+      "Timestamp": 1700000115000,
+      "ElapsedTime": 115,
+      "Name": "GradleDaemon",
+      "PID": "1234",
+      "HeapUsed": 390
+    },
+    {
+      "Timestamp": 1700000120000,
+      "ElapsedTime": 120,
+      "Name": "GradleDaemon",
+      "PID": "1234",
+      "HeapUsed": 380
+    }
+  ],
+  "process_forecasts": [
+    {
+      "process_name": "GradleDaemon",
+      "pid": "1234",
+      "metric": "heap",
+      "created_at_ms": 1700000020000,
+      "points": [
+        {
+          "target_at_ms": 1700000030000,
+          "value_mb": 390
+        },
+        {
+          "target_at_ms": 1700000050000,
+          "value_mb": 390
+        },
+        {
+          "target_at_ms": 1700000080000,
+          "value_mb": 390
+        }
+      ],
+      "method": "last_value",
+      "fallback": true
+    },
+    {
+      "process_name": "GradleDaemon",
+      "pid": "1234",
+      "metric": "heap",
+      "created_at_ms": 1700000040000,
+      "points": [
+        {
+          "target_at_ms": 1700000050000,
+          "value_mb": 470
+        },
+        {
+          "target_at_ms": 1700000070000,
+          "value_mb": 470
+        },
+        {
+          "target_at_ms": 1700000100000,
+          "value_mb": 470
+        }
+      ],
+      "method": "last_value",
+      "fallback": true
+    },
+    {
+      "process_name": "GradleDaemon",
+      "pid": "1234",
+      "metric": "heap",
+      "created_at_ms": 1700000060000,
+      "points": [
+        {
+          "target_at_ms": 1700000070000,
+          "value_mb": 420
+        },
+        {
+          "target_at_ms": 1700000090000,
+          "value_mb": 420
+        },
+        {
+          "target_at_ms": 1700000120000,
+          "value_mb": 420
+        }
+      ],
+      "method": "last_value",
+      "fallback": true
+    },
+    {
+      "process_name": "GradleDaemon",
+      "pid": "1234",
+      "metric": "heap",
+      "created_at_ms": 1700000080000,
+      "points": [
+        {
+          "target_at_ms": 1700000090000,
+          "value_mb": 450
+        },
+        {
+          "target_at_ms": 1700000110000,
+          "value_mb": 450
+        },
+        {
+          "target_at_ms": 1700000140000,
+          "value_mb": 450
+        }
+      ],
+      "method": "last_value",
+      "fallback": true
+    }
+  ]
+}
