@@ -410,6 +410,10 @@
             -webkit-overflow-scrolling: touch;
         }
 
+        #prediction {
+            scroll-margin-top: 9rem;
+        }
+
         .input-table th,
         .input-table td {
             padding: 0.8rem;
@@ -521,7 +525,7 @@
             <img class="home-hero-media" src="/performance.gif" alt="Build Process Watcher dashboard preview">
             <div class="home-hero-content">
                 <div>
-                    <span class="version-pill">Action snippets updated for v0.7.0</span>
+                    <span class="version-pill">Snippets: development ref 88f0d0b</span>
                     <h1>Build Process Watcher</h1>
                     <p>Capture Gradle, Kotlin, and JVM build-process metrics in Local Mode, watch a Remote Mode run live, then replay or compare the exported data when you need to explain what changed.</p>
                     <div class="hero-actions">
@@ -544,7 +548,7 @@
         <section class="home-section" id="whats-new">
             <div class="section-kicker">What is new</div>
             <h2 class="section-heading">More context at the end of every build.</h2>
-            <p class="section-copy">The current release makes the monitoring choices explicit while keeping the JSON and dashboard workflows compatible with older runs.</p>
+            <p class="section-copy">Upcoming timeline prediction adds per-process memory forecasts. The examples below use a verified development ref; this capability is not in the published v0.7.0 release.</p>
             <div class="news-grid">
                 <article class="news-card">
                     <h3>Richer run dashboards</h3>
@@ -557,9 +561,10 @@
                     <a href="#analysis-tools">Explore the analysis tools →</a>
                 </article>
                 <article class="news-card">
-                    <h3>Experimental prediction</h3>
-                    <p>Opt-in predictive timeline forecasts. They are disabled by default and may change while experimental.</p>
-                    <a href="#prediction">Read the safeguards →</a>
+                    <h3>Experimental timeline prediction</h3>
+                    <p>Compare actual heap/RSS samples with future per-process forecasts. Prediction is disabled by default; provider availability and results may vary.</p>
+                    <a href="https://github.com/cdsap/build-process-watcher/blob/main/docs/prediction.md">Prediction guide →</a>
+                    <a href="https://github.com/cdsap/build-process-watcher/blob/main/RELEASE_NOTES.md#migration">Migration notes →</a>
                 </article>
             </div>
         </section>
@@ -567,14 +572,14 @@
         <section class="home-section" id="quick-start">
             <div class="section-kicker">Collection modes</div>
             <h2 class="section-heading">Choose where a run should live.</h2>
-            <p class="section-copy">Every snippet uses the same action. Local Mode keeps outputs in GitHub Actions artifacts; Remote Mode adds the live hosted dashboard. Every snippet is pinned to <code>v0.7.0</code>.</p>
+            <p class="section-copy">Every snippet uses the same action. Local Mode keeps outputs in GitHub Actions artifacts; Remote Mode adds the live hosted dashboard. Unreleased development ref: every snippet is pinned to <a href="https://github.com/cdsap/build-process-watcher/commit/88f0d0b85857dd71009cf827564fb33d75769214"><code>88f0d0b</code></a>, whose manifest and bundled action support timeline prediction. The published <code>v0.7.0</code> does not support these inputs. See <a href="https://github.com/cdsap/build-process-watcher/blob/main/RELEASE_NOTES.md#unreleased">release notes</a>.</p>
 
             <div class="snippet-grid">
                 <article class="snippet-card">
                     <h3>Local Mode · artifacts only</h3>
                     <p>Generates logs, JSON, CSV, SVG charts, and the Actions summary in the workflow. Download the JSON later for Replay or Compare; nothing is sent to the hosted dashboard.</p>
-                    <pre><code>- name: Build Process Watcher
-  uses: cdsap/build-process-watcher@v0.7.0
+                    <pre tabindex="0" aria-label="Workflow snippet; scroll horizontally to read"><code>- name: Build Process Watcher
+  uses: cdsap/build-process-watcher@88f0d0b85857dd71009cf827564fb33d75769214
 
 - name: Build project
   run: ./gradlew clean build</code></pre>
@@ -583,8 +588,8 @@
                 <article class="snippet-card">
                     <h3>Remote Mode · live dashboard</h3>
                     <p>Streams samples to the hosted dashboard, prints a dashboard URL, and retains the hosted report for 24 hours. The action can still produce local artifacts when available.</p>
-                    <pre><code>- name: Build Process Watcher
-  uses: cdsap/build-process-watcher@v0.7.0
+                    <pre tabindex="0" aria-label="Workflow snippet; scroll horizontally to read"><code>- name: Build Process Watcher
+  uses: cdsap/build-process-watcher@88f0d0b85857dd71009cf827564fb33d75769214
   with:
     remote_monitoring: 'true'
 
@@ -595,8 +600,8 @@
                 <article class="snippet-card">
                     <h3>BigQuery export · optional</h3>
                     <p>Not another monitoring mode. It is an independent export choice that requires Remote Mode and asks the backend to store finished-run metrics in your configured dataset.</p>
-                    <pre><code>- name: Build Process Watcher
-  uses: cdsap/build-process-watcher@v0.7.0
+                    <pre tabindex="0" aria-label="Workflow snippet; scroll horizontally to read"><code>- name: Build Process Watcher
+  uses: cdsap/build-process-watcher@88f0d0b85857dd71009cf827564fb33d75769214
   with:
     remote_monitoring: 'true'
     export_to_bigquery: 'true'
@@ -621,13 +626,46 @@
                     <p><strong>Input:</strong> two exported JSON files. <strong>Needs:</strong> no Remote Mode. Compare processes and timelines side by side.</p>
                     <a href="#" id="analysis-compare-link">Open Compare →</a>
                 </article>
-                <article class="option-card" id="prediction">
+                <article class="option-card">
                     <h3>Prediction <span class="version-pill" style="margin: 0; color: var(--bpw-gold); border-color: rgba(184, 132, 20, 0.28); background: #fff9e8;">Experimental</span></h3>
-                    <p><strong>Input:</strong> <code>prediction_mode: 'predict'</code>, optional <code>prediction_throttle_s: '20'</code>. Opt in to advisory predictive timeline forecasts. It is disabled by default.</p>
-                    <a href="https://github.com/cdsap/build-process-watcher#inputs">Read the public contract →</a>
+                    <p><strong>Input:</strong> <code>prediction_mode</code>. Request per-process heap/RSS forecasts. Prediction is disabled by default; active modes automatically enable Remote Mode.</p>
+                    <a href="#prediction">Choose a prediction mode →</a>
                 </article>
             </div>
             <div class="callout"><strong>Experimental prediction:</strong> prediction is an opt-in advisory signal for triage, not a guaranteed OOM, timeout, or build-failure outcome. Availability and behavior may change while experimental. Do not use it as a production decision or reliability guarantee, and do not infer private model details from the public dashboard.</div>
+        </section>
+
+        <section class="home-section" id="prediction">
+            <div class="section-kicker">Experimental prediction</div>
+            <h2 class="section-heading">Choose a timeline forecast request.</h2>
+            <p class="section-copy">Active modes automatically enable Remote Mode. Prediction does not enable <code>export_to_bigquery</code>; request finished-run metrics export separately. A selected input or output reports a request, not provider readiness or successful inference.</p>
+            <p class="section-copy"><strong>TabPFN is disabled by default; available only when its VM/provider is available.</strong> Selecting the input does not start the VM or guarantee forecasts.</p>
+            <div class="table-card" tabindex="0" role="region" aria-label="Prediction modes; scroll horizontally to view all columns">
+                <table class="input-table">
+                    <thead><tr><th scope="col">prediction_mode</th><th scope="col">Model / behavior</th><th scope="col">Availability</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>disabled</code> / omitted</td><td>No prediction request</td><td>Default; local monitoring remains possible.</td></tr>
+                        <tr><td><code>forecast</code></td><td>TimesFM time-series forecasts</td><td>Requires the configured hosted provider.</td></tr>
+                        <tr><td><code>predict</code></td><td>TabFM tabular prediction; distinct from TabPFN</td><td>Requires the configured hosted provider.</td></tr>
+                        <tr><td><code>bqml-boosted</code></td><td>Trained BigQuery ML boosted-tree forecasts</td><td>Requires the configured trained-model provider.</td></tr>
+                        <tr><td><code>tabpfn</code></td><td>TabPFN GPU inference on a VM</td><td>Disabled by default; requires an available VM/provider. Does not start the VM.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="section-copy"><code>prediction_throttle_s</code> controls issuance cadence in elapsed-time buckets: default <code>20</code>, integer range <code>1–3600</code> seconds. It is separate from sample collection <code>interval</code> and +10/+30/+60-second forecast horizons. Queueing and provider latency can delay delivery. See the <a href="https://github.com/cdsap/build-process-watcher/blob/main/docs/prediction.md#cadence">cadence guide</a>.</p>
+            <article class="snippet-card">
+                <h3>Timeline prediction · opt in</h3>
+                <p>Request TabFM with <code>predict</code>, or substitute an active mode above. The request depends on provider availability.</p>
+                <pre tabindex="0" aria-label="Prediction workflow snippet; scroll horizontally to read"><code>- name: Build Process Watcher
+  uses: cdsap/build-process-watcher@88f0d0b85857dd71009cf827564fb33d75769214
+  with:
+    prediction_mode: 'predict'
+    prediction_throttle_s: '20'
+
+- name: Build project
+  run: ./gradlew clean build</code></pre>
+            </article>
+            <p class="section-copy"><a href="https://github.com/cdsap/build-process-watcher/blob/main/docs/prediction.md">Read the prediction guide →</a> · <a href="https://github.com/cdsap/build-process-watcher/blob/main/RELEASE_NOTES.md#migration">Migration from the former input →</a></p>
         </section>
 
         <section class="home-section">
@@ -687,7 +725,7 @@
             <div class="section-kicker">Inputs</div>
             <h2 class="section-heading">Configuration that matters most.</h2>
             <p class="section-copy">These inputs are independent unless noted. See the <a href="https://github.com/cdsap/build-process-watcher#inputs">README input contract</a> for backend deployment details.</p>
-            <div class="table-card" tabindex="0" aria-label="Configuration inputs; scroll horizontally to view all columns">
+            <div class="table-card" tabindex="0" role="region" aria-label="Configuration inputs; scroll horizontally to view all columns">
                 <table class="input-table">
                     <thead>
                         <tr>
@@ -706,14 +744,20 @@
                         </tr>
                         <tr>
                             <td><code>export_to_bigquery</code></td>
-                            <td>Optional finished-run metrics export; requires <code>remote_monitoring: 'true'</code>.</td>
+                            <td>Optional finished-run metrics export; requires Remote Mode (explicit or enabled by an active prediction mode).</td>
                             <td><code>false</code></td>
                             <td>No</td>
                         </tr>
                         <tr>
                             <td><code>prediction_mode</code></td>
-                            <td>Experimental, opt-in advisory signals; implies Remote Mode and requests BigQuery export.</td>
-                            <td><code>false</code></td>
+                            <td>Request <code>disabled</code>, <code>forecast</code>, <code>predict</code>, <code>bqml-boosted</code>, or <code>tabpfn</code>. Active modes enable Remote Mode, not metrics export. <a href="#prediction">Modes and availability</a>.</td>
+                            <td><code>disabled</code></td>
+                            <td>No</td>
+                        </tr>
+                        <tr>
+                            <td><code>prediction_throttle_s</code></td>
+                            <td>Forecast issuance cadence in elapsed seconds; integer range 1–3600. <a href="https://github.com/cdsap/build-process-watcher/blob/main/docs/prediction.md#cadence">Cadence details</a>.</td>
+                            <td><code>20</code></td>
                             <td>No</td>
                         </tr>
                         <tr>

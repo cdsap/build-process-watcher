@@ -12,10 +12,12 @@ Monitor Java/Kotlin build processes (`GradleDaemon`, `GradleWorkerMain`, `Kotlin
 
 ## ✨ Quick Start
 
+**Unreleased development ref:** All examples below use verified commit [`88f0d0b85857dd71009cf827564fb33d75769214`](https://github.com/cdsap/build-process-watcher/commit/88f0d0b85857dd71009cf827564fb33d75769214). Its root action manifest and bundled action support the timeline inputs. The latest published release, `v0.7.0`, does not. See [release and migration notes](RELEASE_NOTES.md#unreleased).
+
 ### Local Mode (Artifacts Only)
 
 ```yaml
-- uses: cdsap/build-process-watcher@v0.7.0
+- uses: cdsap/build-process-watcher@88f0d0b85857dd71009cf827564fb33d75769214
 ```
 
 Generates log files and charts as workflow artifacts.
@@ -23,7 +25,7 @@ Generates log files and charts as workflow artifacts.
 ### Remote Mode (Live Dashboard)
 
 ```yaml
-- uses: cdsap/build-process-watcher@v0.7.0
+- uses: cdsap/build-process-watcher@88f0d0b85857dd71009cf827564fb33d75769214
   with:
     remote_monitoring: 'true'
 ```
@@ -34,7 +36,7 @@ Dashboard URL shown in job output. GC (garbage collection) monitoring is always 
 ### Optional Metrics Export to BigQuery
 
 ```yaml
-- uses: cdsap/build-process-watcher@v0.7.0
+- uses: cdsap/build-process-watcher@88f0d0b85857dd71009cf827564fb33d75769214
   with:
     remote_monitoring: 'true'
     export_to_bigquery: 'true'
@@ -45,13 +47,23 @@ This is not required for normal local or remote monitoring. Use it only when you
 ### Timeline Prediction (Experimental)
 
 ```yaml
-- uses: cdsap/build-process-watcher@v0.7.0
+- uses: cdsap/build-process-watcher@88f0d0b85857dd71009cf827564fb33d75769214
   with:
     prediction_mode: 'predict'
     prediction_throttle_s: '20'
 ```
 
-`prediction_mode` enables Remote Mode and requests a timeline forecast path. `prediction_throttle_s` is optional (default `20`) and sets how often forecasts are issued in elapsed seconds.
+Prediction is disabled by default. Active modes automatically enable Remote Mode and do not enable `export_to_bigquery`. A selected mode requests a provider; it does not establish availability or successful inference.
+
+| Mode | Model / behavior | Availability |
+|------|------------------|--------------|
+| `disabled` / omitted | No prediction request | Default; local monitoring remains possible |
+| `forecast` | TimesFM time-series forecasts | Requires the configured hosted provider |
+| `predict` | TabFM tabular prediction; distinct from TabPFN | Requires the configured hosted provider |
+| `bqml-boosted` | Trained BigQuery ML boosted-tree forecasts | Requires the configured trained-model provider |
+| `tabpfn` | TabPFN GPU inference on a VM | **TabPFN is disabled by default; available only when its VM/provider is available.** Selecting the input does not start the VM or guarantee forecasts. |
+
+`prediction_throttle_s` is optional (default `20`, integer range `1–3600` seconds). It controls forecast issuance cadence in elapsed-time buckets, separately from collection `interval` and +10/+30/+60-second forecast horizons. Queueing and provider latency can delay delivery. See the [prediction guide](docs/prediction.md) and [migration notes](RELEASE_NOTES.md#migration).
 
 ---
 
