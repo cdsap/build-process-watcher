@@ -1166,3 +1166,27 @@ describe('public documentation forecast fixture', () => {
     expect(view.render({ samples: legacy.samples }, null).html).not.toContain('forecast-trace');
   });
 });
+
+describe('class activity forecasts', () => {
+ const view = loadView();
+ const start = 1700000000000;
+ const samples = Array.from({length:25}, (_,i) => ({Name:'GradleDaemon',PID:'1',Timestamp:start+i*5000,ClassesLoaded:100+i*10}));
+ const issuance = {process_name:'GradleDaemon',pid:'1',metric:'classes_loaded',created_at_ms:start+60000,origin_value_count:220,status:'ready',method:'tabpfn',points:[{target_at_ms:start+120000,predicted_delta_count:120,predicted_total_count:340}]};
+ const data = {prediction_mode:'tabpfn',prediction_target:'class_loading',samples,process_activity_forecasts:[issuance]};
+ it('uses count units and pending actuals through the public renderer', () => {
+  const issued=view.render({...data,samples:samples.slice(0,13)}).html;expect(issued).toContain('Predicted additional classes in 60s: +120');expect(issued).toContain('Observed increase: Pending');expect(issued).not.toContain(' MB');
+  const end=view.render(data).html;expect(end).toContain('Observed increase: 120');expect(end).toContain('Class-loading activity');expect(end).not.toContain('Process memory forecasts');
+ });
+ it('keeps unavailable data empty and never matches across a counter reset', () => {
+  expect(view.render(data).html).toContain('Observed increase: 120');
+  const reset=samples.map((sample,i)=>({...sample,ClassesLoaded:i===18?1:sample.ClassesLoaded}));
+  expect(view.render({...data,samples:reset}).html).toContain('Observed increase: Pending');
+  const unavailable=view.render({...data,process_activity_forecasts:[{...issuance,status:'unavailable',points:[]}]}).html;
+  expect(unavailable).toContain('Status: unavailable');expect(unavailable).not.toContain('Predicted additional classes');
+ });
+ it('does not mix PIDs and keeps legacy memory rendering', () => {
+  const isolated={...data,samples:samples.map(s=>({...s,PID:'2'}))};
+  expect(view.render(isolated).html).toContain('Observed increase: Pending');
+  expect(view.render({samples:[]}).html).not.toContain('Class-loading activity');
+ });
+});

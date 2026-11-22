@@ -71,6 +71,8 @@ func (h *Handlers) GetRun(w http.ResponseWriter, r *http.Request) {
 	response.PredictionThrottleS = runDoc.PredictionThrottleS
 	response.PredictionCheckpoints = runDoc.PredictionCheckpoints
 	response.ProcessForecasts = runDoc.ProcessForecasts
+	response.PredictionTarget = runDoc.PredictionTarget
+	response.ProcessActivityForecasts = runDoc.ProcessActivityForecasts
 	response.Finished = runDoc.Finished
 	response.UpdatedAt = runDoc.UpdatedAt
 	if !runDoc.FinishedAt.IsZero() {

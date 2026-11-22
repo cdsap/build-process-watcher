@@ -28,6 +28,7 @@ export interface MonitoringProcessLaunchInputs {
   debugMode: boolean;
   exportToBigquery: boolean;
   predictionMode: PredictionMode;
+  predictionTarget?: string;
   predictionThrottleS: number;
   freshnessDiagnostics: boolean;
   enableBackend: boolean;
@@ -57,6 +58,7 @@ export function createMonitoringProcessLaunchPlan(
       REMOTE_MONITORING: inputs.enableBackend && inputs.backendUrl ? 'true' : 'false',
       EXPORT_TO_BIGQUERY: inputs.exportToBigquery ? 'true' : 'false',
       PREDICTION_MODE: inputs.predictionMode,
+      PREDICTION_TARGET: inputs.predictionTarget || 'memory',
       PREDICTION_THROTTLE_S: String(inputs.predictionThrottleS),
       FRESHNESS_DIAGNOSTICS: inputs.freshnessDiagnostics ? 'true' : 'false',
       COLLECT_GC: 'true',

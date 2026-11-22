@@ -123,6 +123,7 @@ func Build(ctx context.Context, options Options, deps Deps) (*App, error) {
 			TabPredict:  tabPredictProvider,
 			BQMLBoosted: bqmlBoostedProvider,
 			TabPFN:      tabpfnProvider,
+			Activity:    options.ActivityProvider,
 		},
 		Authenticator:       authenticator,
 		PredictionScheduler: predictionSched,

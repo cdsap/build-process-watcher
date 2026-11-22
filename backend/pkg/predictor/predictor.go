@@ -14,6 +14,8 @@ type Sample = models.Sample
 type ProcessInfo = models.ProcessInfo
 type PredictionCheckpoint = models.PredictionCheckpoint
 type ProcessForecast = models.ProcessForecast
+type ProcessActivityForecast = models.ProcessActivityForecast
+type ActivityForecastPoint = models.ActivityForecastPoint
 
 var defaultCheckpoints = []int{60, 300, 600, 1200}
 

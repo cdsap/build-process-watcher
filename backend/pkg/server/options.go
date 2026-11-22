@@ -22,6 +22,7 @@ type Options struct {
 	TabPredictProvider     predictor.ForecastProvider
 	BQMLBoostedProvider    predictor.ForecastProvider
 	TabPFNProvider         predictor.ForecastProvider
+	ActivityProvider       predictor.ActivityProvider
 	// Prediction job queue (Cloud Tasks). Empty values disable the scheduler.
 	PredictionTasksQueue    string
 	PredictionTasksLocation string
@@ -88,6 +89,17 @@ func buildOptions(config serverConfig) (Options, error) {
 		{enabled: config.tabpfnProviderEnabled, timeout: config.tabpfnProviderTimeout, construct: predictor.NewRemoteTabPFNProvider},
 	})
 
+	var activityProvider predictor.ActivityProvider
+	if config.tabpfnProviderEnabled {
+		cfg := baseRemote
+		cfg.Timeout = config.tabpfnProviderTimeout
+		remote, err := predictor.NewRemoteActivityProvider(cfg)
+		if err == nil {
+			activityProvider = remote
+		} else if timelineErr == nil {
+			timelineErr = err
+		}
+	}
 	return Options{
 		ProjectID:              strings.TrimSpace(config.projectID),
 		Port:                   portOrDefault(config.port),
@@ -98,6 +110,7 @@ func buildOptions(config serverConfig) (Options, error) {
 		TabPredictProvider:     tabPredictProvider,
 		BQMLBoostedProvider:    bqmlBoostedProvider,
 		TabPFNProvider:         tabpfnProvider,
+		ActivityProvider:       activityProvider,
 	}, timelineErr
 }
 
