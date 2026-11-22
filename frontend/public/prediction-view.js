@@ -1072,8 +1072,8 @@
     }
 
     function bindProcessForecastView(root, options = {}) {
-        if (options.data?.prediction_target === "class_loading") return bindActivityView(root, options);
         if (!root) return { stop() {}, update() { return false; }, getMode() { return 'live'; } };
+        if (options.data?.prediction_target === "class_loading") return bindActivityView(root, options);
         const controls = root.querySelector('#forecast-replay-controls');
         const dataNode = root.querySelector('#bpw-forecast-replay-data');
         const statusNode = root.querySelector('#forecast-live-status');

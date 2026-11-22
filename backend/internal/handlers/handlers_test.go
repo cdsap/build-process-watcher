@@ -754,6 +754,23 @@ func TestAuthPersistsPredictionThrottle(t *testing.T) {
 	}
 }
 
+func TestAuthPersistsClassLoadingTargetWithoutEnablingExport(t *testing.T) {
+	store := newFakeStorage()
+	recorder := httptest.NewRecorder()
+	newTestHandlers(store, nil).Auth(recorder, httptest.NewRequest(
+		http.MethodPost,
+		"/auth/run/run-activity?prediction_mode=tabpfn&prediction_target=class_loading",
+		nil,
+	))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	run := store.Runs["run-activity"]
+	if run == nil || run.PredictionTarget != "class_loading" || store.PredictionModes["run-activity"] != "tabpfn" || store.ExportToBigQuery["run-activity"] {
+		t.Fatalf("unexpected run configuration: %+v", run)
+	}
+}
+
 type unavailableActivityProvider struct{ calls int }
 
 func (p *unavailableActivityProvider) ForecastActivity(context.Context, predictor.RunSnapshot) ([]predictor.ProcessActivityForecast, error) {
