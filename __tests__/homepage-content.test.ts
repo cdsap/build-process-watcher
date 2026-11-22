@@ -95,13 +95,50 @@ describe('public homepage content', () => {
     for (const doc of [homepage, readme]) {
       const refs = [...doc.matchAll(/uses: cdsap\/build-process-watcher@([^\s<]+)/g)].map(match => match[1]);
       expect(refs.length).toBeGreaterThanOrEqual(4);
-      expect(refs.every(value => value === ref)).toBe(true);
+      expect(refs.filter(value => value !== 'v0.7.0').every(value => value === ref)).toBe(true);
       expect(doc).toContain('Unreleased development ref');
     }
     expect(homepage).toContain('Snippets: development ref 88f0d0b');
     expect(releaseNotes).toContain(ref);
     expect(homepage).toContain('RELEASE_NOTES.md#migration');
     expect(homepage).toContain('docs/prediction.md');
+  });
+
+  it('pins README and homepage examples to the same identified development artifact', () => {
+    const readme = fs.readFileSync(path.join(__dirname, '../README.md'), 'utf8');
+    const refs = (text: string) => [...text.matchAll(/uses: cdsap\/build-process-watcher@([^\s<]+)/g)].map(match => match[1]);
+    const homepageRefs = refs(homepage);
+    expect(homepageRefs.length).toBeGreaterThan(0);
+    expect(homepageRefs[0]).toMatch(/^[a-f0-9]{40}$/);
+    expect(new Set(homepageRefs).size).toBe(1);
+    // v0.7.0 is allowed only in the historical "Before" migration example.
+    expect(new Set(refs(readme).filter(ref => ref !== 'v0.7.0'))).toEqual(new Set(homepageRefs));
+    const notes = fs.readFileSync(path.join(__dirname, '../RELEASE_NOTES.md'), 'utf8');
+    expect(notes).toContain(`cdsap/build-process-watcher@${homepageRefs[0]}`);
+    for (const doc of [readme, homepage]) {
+      expect(doc).toContain('v0.8.0');
+      expect(doc).toContain('unreleased');
+      expect(doc).toContain('development ref');
+    }
+    const yamlBlocks = [...readme.matchAll(/```yaml\n([\s\S]*?)```/g)].map(match => match[1]);
+    const legacyBlocks = yamlBlocks.filter(block => block.includes('@v0.7.0'));
+    expect(legacyBlocks).toHaveLength(1);
+    expect(legacyBlocks[0]).toContain("predictive_reliability: 'true'");
+    expect(legacyBlocks[0]).not.toContain('prediction_mode:');
+    expect(yamlBlocks.some(block => block.includes("prediction_mode: 'predict'") && block.includes("export_to_bigquery: 'true'"))).toBe(true);
+    expect(readme).toContain('behavior change, not a rename');
+    expect(readme).toContain('historical reliability records remain legacy data');
+  });
+
+  it('records release readiness separately from publication and deployment', () => {
+    const notes = fs.readFileSync(path.join(__dirname, '../RELEASE_NOTES.md'), 'utf8');
+    expect(notes).toContain('# v0.8.0 (unreleased)');
+    for (const field of ['Source commit', 'Published artifact/ref', 'Documentation', 'Deployment']) {
+      expect(notes).toContain(`| ${field} |`);
+    }
+    expect(notes).toContain('dist/index_with_backend.js');
+    expect(notes).toContain('does not authorize publication or deployment');
+    expect(notes).toContain('# v0.7.0\n\nReleased 2026-09-30.');
   });
 
   it('keeps homepage navigation and documentation links wired', () => {
