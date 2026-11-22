@@ -74,3 +74,10 @@ Earlier spike and reliability plans under `docs/plans/` are historical design
 records, not current consumer instructions. The timeline path does not require
 reliability checkpoint windows. Provider availability remains a separate runtime
 condition; a stored last-value fallback is not successful primary model inference.
+
+## Class-loading activity target (unreleased)
+
+`prediction_target: class_loading` is an additive TabPFN-only experiment. It uses
+`process_activity_forecasts` with count-based deltas and totals, never `value_mb`.
+Missing targets default to memory. See [the activity contract](class-loading-prediction.md)
+for statuses, +60-second timing, replay, and the required VM/model availability.

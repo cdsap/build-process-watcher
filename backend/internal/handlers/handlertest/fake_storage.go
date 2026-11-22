@@ -148,3 +148,17 @@ func (f *FakeStorage) MarkRunAsFinished(_ context.Context, runID string) (bool, 
 	f.FinishedRuns = append(f.FinishedRuns, runID)
 	return true, nil
 }
+
+func (f *FakeStorage) SetRunPredictionTarget(_ context.Context, runID, target string) error {
+	if f.Runs[runID] == nil {
+		f.Runs[runID] = &models.RunDoc{RunID: runID}
+	}
+	f.Runs[runID].PredictionTarget = target
+	return nil
+}
+func (f *FakeStorage) AppendProcessActivityForecasts(_ context.Context, runID string, values []models.ProcessActivityForecast) error {
+	if f.Runs[runID] != nil {
+		f.Runs[runID].ProcessActivityForecasts = models.MergeActivityForecasts(f.Runs[runID].ProcessActivityForecasts, values)
+	}
+	return nil
+}

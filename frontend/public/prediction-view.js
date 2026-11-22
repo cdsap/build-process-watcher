@@ -1072,6 +1072,7 @@
     }
 
     function bindProcessForecastView(root, options = {}) {
+        if (options.data?.prediction_target === "class_loading") return bindActivityView(root, options);
         if (!root) return { stop() {}, update() { return false; }, getMode() { return 'live'; } };
         const controls = root.querySelector('#forecast-replay-controls');
         const dataNode = root.querySelector('#bpw-forecast-replay-data');
@@ -1331,6 +1332,7 @@
         }
 
         function update(data) {
+            if (data.prediction_target === "class_loading") return false;
             if (!data) return false;
             const wasLiveUnfinished = mode === 'live' && latestData?.finished !== true;
             latestData = data;
@@ -1429,7 +1431,146 @@
         return () => controller.stop();
     }
 
+    // Count forecasts use their own contract and renderer, never value_mb.
+    function activityGroups(data) {
+        const groups = new Map();
+        const ensure = (name, pid) => {
+            if (!['GradleDaemon', 'KotlinCompileDaemon'].includes(name) || !pid) return null;
+            const key = `${name}|${pid}`;
+            if (!groups.has(key)) groups.set(key, { name, pid, actual: [], forecasts: [] });
+            return groups.get(key);
+        };
+        for (const sample of data.samples || []) {
+            const group = ensure(sample.Name, String(sample.PID || ''));
+            const time = finiteNumber(sample.Timestamp);
+            if (!group || time === null) continue;
+            const value = finiteNumber(sample.ClassesLoaded ?? sample.classes_loaded);
+            group.actual.push({ time, value: value !== null && value >= 0 ? value : null });
+        }
+        for (const forecast of data.process_activity_forecasts || []) {
+            const group = ensure(forecast.process_name, String(forecast.pid || ''));
+            if (group && forecast.metric === 'classes_loaded' && finiteNumber(forecast.created_at_ms) !== null) {
+                group.forecasts.push(forecast);
+            }
+        }
+        for (const group of groups.values()) {
+            group.actual.sort((a, b) => a.time - b.time);
+            group.forecasts.sort((a, b) => a.created_at_ms - b.created_at_ms);
+        }
+        return [...groups.values()];
+    }
+
+    function activityObserved(group, forecast, cursor) {
+        const target = forecast.created_at_ms + 60000;
+        const candidates = group.actual.filter(p => p.time <= cursor && Math.abs(p.time - target) <= 5000 && p.value !== null);
+        candidates.sort((a, b) => Math.abs(a.time - target) - Math.abs(b.time - target));
+        const point = candidates[0];
+        if (!point || forecast.origin_value_count == null) return null;
+        const segment = group.actual.filter(p => p.time >= forecast.created_at_ms && p.time <= point.time);
+        let previous = {time: forecast.created_at_ms, value: forecast.origin_value_count};
+        let previousSampleTime = null;
+        for (const p of segment) {
+            if (p.value === null || p.value < previous.value || p.time - previous.time > 15000 || (previousSampleTime !== null && p.time <= previousSampleTime)) return null;
+            previousSampleTime = p.time;
+            previous = p;
+        }
+        if (point.value < forecast.origin_value_count) return null;
+        return point.value - forecast.origin_value_count;
+    }
+
+    function activityResults(group, cursor) {
+        const rows = group.forecasts.filter(f => f.created_at_ms <= cursor && ['ready', 'fallback'].includes(f.status))
+            .filter(f => (f.points || []).some(p => p.target_at_ms === f.created_at_ms + 60000 && Number.isFinite(p.predicted_delta_count)))
+            .slice(-10).reverse().map(f => {
+                const point = f.points.find(p => p.target_at_ms === f.created_at_ms + 60000);
+                const observed = activityObserved(group, f, cursor);
+                return `<tr><td>${escapeHtml(new Date(f.created_at_ms).toISOString().slice(11, 19))}</td><td>${Math.round(point.predicted_delta_count)}</td><td>${observed === null ? 'Pending' : Math.round(observed)}</td><td>${observed === null ? 'Pending' : Math.round(point.predicted_delta_count - observed)}</td><td>${escapeHtml(f.status)}</td></tr>`;
+            }).join('');
+        if (!rows) return '';
+        return `<div class="activity-results"><table aria-label="Class-loading issuance results"><caption>Recent issuance results · classes</caption><thead><tr><th scope="col">Issued (UTC)</th><th scope="col">Predicted +60s</th><th scope="col">Observed +60s</th><th scope="col">Error</th><th scope="col">Status</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    }
+
+    function activityChart(group, cursor, history) {
+        let shown = group.forecasts.filter(f => f.created_at_ms <= cursor);
+        if (history === 'latest') shown = shown.slice(-1);
+        if (history === 'recent') shown = shown.slice(-3);
+        const points = shown.filter(f => ['ready', 'fallback'].includes(f.status)).flatMap(f => (f.points || []).map(p => ({f, p})))
+            .filter(({f,p}) => f.origin_value_count != null && p.target_at_ms === f.created_at_ms + 60000
+                && Number.isFinite(p.predicted_delta_count) && p.predicted_delta_count >= 0
+                && Number.isFinite(p.predicted_total_count) && p.predicted_total_count >= 0);
+        const actual = group.actual.filter(p => p.time <= cursor);
+        const times = [...actual.map(p => p.time), ...shown.map(f => f.created_at_ms), ...points.map(({p}) => p.target_at_ms)];
+        if (!times.length) return '<p>Waiting for class counters.</p>';
+        const start = Math.min(...times), end = Math.max(start + 1000, ...times);
+        const ymax = Math.max(1, ...actual.map(p => p.value || 0), ...points.map(({p}) => p.predicted_total_count));
+        const x = t => 70 + (t - start) / (end - start) * 800;
+        const y = v => 225 - v / ymax * 195;
+        let paths = '', segment = [], previous = null;
+        const flush = () => { if (segment.length) paths += `<polyline fill="none" stroke="#087f8c" stroke-width="2" points="${segment.join(' ')}"/>`; segment = []; };
+        for (const p of actual) {
+            if (p.value === null || (previous && (p.value < previous.value || p.time <= previous.time || p.time - previous.time > 15000))) flush();
+            if (p.value !== null) segment.push(`${x(p.time)},${y(p.value)}`);
+            previous = p;
+        }
+        flush();
+        const forecasts = points.map(({f,p}) => `<line x1="${x(f.created_at_ms)}" y1="${y(f.origin_value_count)}" x2="${x(p.target_at_ms)}" y2="${y(p.predicted_total_count)}" stroke="${cursor > p.target_at_ms ? '#9ca3af' : '#c2410c'}" stroke-width="2" stroke-dasharray="6 4"><title>Issued ${escapeHtml(new Date(f.created_at_ms).toISOString())}; +60s: ${Math.round(p.predicted_total_count)} classes</title></line>`).join('');
+        const latest = shown[shown.length - 1];
+        const latestPoint = latest && points.find(({f}) => f === latest)?.p;
+        const actualDelta = latestPoint ? activityObserved(group, latest, cursor) : null;
+        const summary = latestPoint
+            ? `<p><strong>Predicted additional classes in 60s: +${Math.round(latestPoint.predicted_delta_count).toLocaleString('en-US')}</strong></p><p>Observed increase: ${actualDelta === null ? 'Pending' : Math.round(actualDelta)} · Error (prediction − observed): ${actualDelta === null ? 'Pending' : Math.round(latestPoint.predicted_delta_count - actualDelta)} classes</p>` : '';
+        return `<div class="activity-plot"><svg viewBox="0 0 960 280" role="img" aria-label="${escapeHtml(group.name)} cumulative classes loaded and 60-second forecasts"><rect x="70" y="20" width="800" height="205" fill="none" stroke="#d1d5db"/>${paths}${forecasts}<text x="65" y="20">${Math.round(ymax)}</text><text x="55" y="230">0</text><text x="10" y="140">Classes</text><text x="70" y="250">0s</text><text x="790" y="250">${Math.round((end-start)/1000)}s</text><text x="360" y="270">Seconds from first visible sample</text></svg></div>${summary}${activityResults(group, cursor)}<p>Status: ${escapeHtml(latest?.status || 'waiting')} · Model: ${escapeHtml(latest?.model_version || 'Unavailable')} · Latency: ${latest?.latency_ms ? `${Math.round(latest.latency_ms)} ms` : 'Unavailable'}${latest?.fallback || latest?.status === 'fallback' ? ' · Fallback (not model inference)' : ''}</p>`;
+    }
+
+    function renderActivity(data, cursor, history = 'latest', mode) {
+        const groups = activityGroups(data);
+        const times = groups.flatMap(g => [...g.actual.map(p => p.time), ...g.forecasts.map(f => f.created_at_ms)]);
+        const first = times.length ? Math.min(...times) : 0, last = times.length ? Math.max(...times) : first;
+        cursor = Number.isFinite(cursor) ? cursor : last;
+        mode = mode || (data.finished ? 'replay' : 'live');
+        return `<section class="prediction-panel activity-panel" data-activity-panel><h2>Class-loading activity <small>Experimental</small></h2><p>Actual cumulative classes (solid) · +60s predicted total (dashed). TabPFN requires an available VM.</p><div id="forecast-replay-controls" class="activity-controls"><label>View <select aria-label="Class-loading view" data-activity-mode><option value="live" ${mode === 'live' ? 'selected' : ''}>Live</option><option value="replay" ${mode === 'replay' ? 'selected' : ''}>Replay</option></select></label><button type="button" data-activity-play>Play / pause</button><label>Issuances <select aria-label="Class-loading issuance history" data-activity-history><option value="latest" ${history === 'latest' ? 'selected' : ''}>Latest</option><option value="recent" ${history === 'recent' ? 'selected' : ''}>Last 3</option><option value="all" ${history === 'all' ? 'selected' : ''}>All</option></select></label><label class="activity-timeline">Class-loading replay timeline <input type="range" data-activity-cursor min="${first}" max="${last}" value="${cursor}" step="1000"></label></div><div data-forecast-chart-host>${groups.length ? groups.map(g => `<article class="process-forecast"><h3>${escapeHtml(g.name)} · PID ${escapeHtml(g.pid)}</h3>${activityChart(g, cursor, history)}</article>`).join('') : '<p>Waiting for eligible class-loading samples.</p>'}</div></section>`;
+    }
+
+    function bindActivityView(root, options) {
+        let data = options.data || {}, mode = options.initialMode || (data.finished ? 'replay' : 'live');
+        let history = 'latest', cursor = null, timer = null;
+        const stop = () => { if (timer !== null) clearInterval(timer); timer = null; };
+        const draw = () => {
+            const active = root.ownerDocument?.activeElement;
+            const control = active && root.contains(active) ? ['data-activity-mode', 'data-activity-history', 'data-activity-cursor', 'data-activity-play'].find(key => active.hasAttribute(key)) : null;
+            root.innerHTML = renderActivity(data, cursor, history, mode);
+            if (control) root.querySelector(`[${control}]`)?.focus({preventScroll: true});
+        };
+        const onChange = event => {
+            const target = event.target;
+            if (target.matches('[data-activity-history]')) history = target.value;
+            if (target.matches('[data-activity-mode]')) { mode = target.value; stop(); if (mode === 'live') cursor = null; }
+            if (target.matches('[data-activity-cursor]')) { mode = 'replay'; cursor = Number(target.value); stop(); }
+            draw();
+        };
+        const onClick = event => {
+            if (!event.target.closest('[data-activity-play]')) return;
+            if (timer !== null) { stop(); return; }
+            mode = 'replay';
+            const slider = root.querySelector('[data-activity-cursor]');
+            if (!slider) return;
+            if (cursor === null || cursor >= Number(slider.max)) cursor = Number(slider.min);
+            timer = setInterval(() => {
+                const slider = root.querySelector('[data-activity-cursor]');
+                if (!slider) { stop(); return; }
+                cursor = Math.min(Number(slider.max), cursor + 1000); draw();
+                if (cursor >= Number(slider.max)) stop();
+            }, 100);
+        };
+        root.addEventListener('change', onChange); root.addEventListener('click', onClick); draw();
+        return { update(next) { if (next.prediction_target !== 'class_loading') return false; if (next.finished && !data.finished) { mode = 'replay'; stop(); } data = next; if (mode === 'live') cursor = null; draw(); return true; },
+            stop() { stop(); root.removeEventListener('change', onChange); root.removeEventListener('click', onClick); },
+            seekTo(time) { stop(); mode = 'replay'; cursor = time; draw(); },
+            getMode: () => mode, getHistoryMode: () => history };
+    }
+
     function render(data, selectedWindow) {
+        if (data.prediction_target === "class_loading") return {selectedWindow: null, html: renderActivity(data)};
         // Reliability checkpoint panels are retired; timeline modes use process forecasts only.
         return { selectedWindow: null, html: renderProcessTimelines(data) };
     }

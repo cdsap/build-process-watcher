@@ -372,10 +372,10 @@
         );
     }
 
-    function bindForecastReplayControls() {
+    function bindForecastReplayControls(data) {
         const content = document.getElementById('prediction-panel-content');
         stopForecastReplayController();
-        if (content) mountForecastReplayController(content, window.currentRunData);
+        if (content) mountForecastReplayController(content, data);
     }
 
     function updateLiveHeader(summary, data) {
@@ -928,7 +928,7 @@
         }
 
         bindPredictionPanel(data);
-        bindForecastReplayControls();
+        bindForecastReplayControls(data);
 
         const content = document.getElementById('content');
         if (content) {
@@ -1917,8 +1917,6 @@
             console.error(`Failed to export ${metric} chart:`, e);
         }
     }
-
-    async
 
     function downloadJson(runId) {
         try {

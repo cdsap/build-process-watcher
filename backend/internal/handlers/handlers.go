@@ -44,6 +44,8 @@ type RunStore interface {
 	AppendProcessForecasts(ctx context.Context, runID string, forecasts []models.ProcessForecast) error
 	SetRunExportToBigquery(ctx context.Context, runID string, enabled bool) error
 	SetRunPredictionMode(ctx context.Context, runID, mode string) error
+	SetRunPredictionTarget(ctx context.Context, runID, target string) error
+	AppendProcessActivityForecasts(ctx context.Context, runID string, forecasts []models.ProcessActivityForecast) error
 	SetRunPredictionThrottleS(ctx context.Context, runID string, throttleS int) error
 	MarkRunAsFinished(ctx context.Context, runID string) (bool, error)
 }

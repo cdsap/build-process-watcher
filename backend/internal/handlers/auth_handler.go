@@ -34,7 +34,11 @@ func (h *Handlers) Auth(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	h.applyAuthRunOptions(r.Context(), runID, opts)
+	if err := h.applyAuthRunOptions(r.Context(), runID, opts); err != nil {
+		log.Printf("Failed to persist run options: %v", err)
+		http.Error(w, "Failed to configure run", http.StatusInternalServerError)
+		return
+	}
 
 	log.Printf("🔐 Auth request for run_id: %s", runID)
 

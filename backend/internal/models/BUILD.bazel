@@ -4,6 +4,7 @@ go_library(
     name = "models",
     srcs = [
         "models.go",
+        "activity.go",
         "prediction_mode.go",
     ],
     importpath = "github.com/cdsap/build-process-watcher/backend/internal/models",
