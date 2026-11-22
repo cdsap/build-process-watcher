@@ -62,5 +62,6 @@ func ParsePredictionTarget(raw string, mode PredictionMode) (string, bool) {
 	if raw == "" {
 		raw = "memory"
 	}
-	return raw, raw == "memory" || (raw == "class_loading" && mode == PredictionModeTabPFN)
+	return raw, raw == "memory" || (raw == "class_loading" &&
+		(mode == PredictionModePredict || mode == PredictionModeForecast || mode == PredictionModeTabPFN))
 }

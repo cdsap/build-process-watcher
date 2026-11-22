@@ -113,7 +113,7 @@ New timeline forecasts use `process_forecasts`; historical reliability records r
 | `disable_summary_output` | Disable GitHub Actions summary output | `false` | No |
 | `export_to_bigquery` | Optional metrics export to BigQuery when Remote Mode finishes | `false` | No |
 | `prediction_mode` | Request `disabled`, `forecast`, `predict`, `bqml-boosted`, or `tabpfn` | `disabled` | No |
-| `prediction_target` | `memory` (default), or experimental `class_loading` with `tabpfn` only | `memory` | No |
+| `prediction_target` | `memory` (default), or experimental `class_loading` with `predict`, `forecast`, or `tabpfn` | `memory` | No |
 | `prediction_throttle_s` | Process-forecast cadence in elapsed seconds for timeline modes | `20` | No |
 | `freshness_diagnostics` | Add opt-in collection-to-dashboard timing telemetry; implies Remote Mode | `false` | No |
 
@@ -246,10 +246,10 @@ MIT
 
 ### Class-loading activity experiment (unreleased)
 
-The development action supports `prediction_mode: tabpfn` together with
-`prediction_target: class_loading`. The default target is `memory`; other modes
-cannot select class loading. This predicts the number of additional classes over
-60 seconds for eligible Gradle/Kotlin daemons, not build completion or JVM warm-up.
+The development action supports `prediction_mode: predict`, `forecast`, or
+`tabpfn` together with `prediction_target: class_loading`. The default target is
+`memory`; `disabled` and `bqml-boosted` cannot select class loading. This predicts the
+number of additional classes over 60 seconds for eligible Gradle/Kotlin daemons, not build completion or JVM warm-up.
 TabPFN is disabled by default and requires an available VM and a separately fitted
 class-loading model. Selecting the target does not start or fit that model.
 Live prediction enables Remote Mode but does not require BigQuery export.

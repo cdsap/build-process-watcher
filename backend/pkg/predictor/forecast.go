@@ -38,6 +38,9 @@ type RemoteForecastConfig struct {
 	HTTPClient   *http.Client
 	// Path defaults to /forecast. Use /tabpredict, /bqml-boosted, or /tabpfn for other timeline modes.
 	Path string
+	// ExpectedMethod validates ready activity responses; defaults to tabpfn.
+	// Memory forecast responses retain their existing contract.
+	ExpectedMethod string
 }
 
 // RemoteForecastProvider calls a private timeline endpoint (/forecast, /tabpredict, /bqml-boosted, /tabpfn).

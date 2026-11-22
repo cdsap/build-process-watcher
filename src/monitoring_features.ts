@@ -70,8 +70,8 @@ export function resolveMonitoringFeatureFlags(inputs: {
   if (predictionTarget !== 'memory' && predictionTarget !== 'class_loading') {
     throw new Error('Invalid prediction_target; expected memory or class_loading');
   }
-  if (predictionTarget === 'class_loading' && predictionMode !== 'tabpfn') {
-    throw new Error('prediction_target=class_loading requires prediction_mode=tabpfn');
+  if (predictionTarget === 'class_loading' && !['predict', 'forecast', 'tabpfn'].includes(predictionMode)) {
+    throw new Error('prediction_target=class_loading requires prediction_mode=predict, forecast, or tabpfn');
   }
   const predictionThrottleS = resolvePredictionThrottleS(inputs.predictionThrottleS);
   const enableBackend =

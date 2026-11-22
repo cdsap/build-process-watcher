@@ -218,7 +218,10 @@ get_auth_token() {
     case "${PREDICTION_TARGET:-memory}" in
         memory) ;;
         class_loading)
-            if [ "${PREDICTION_MODE:-disabled}" != "tabpfn" ]; then return 1; fi
+            case "${PREDICTION_MODE:-disabled}" in
+                predict|forecast|tabpfn) ;;
+                *) return 1 ;;
+            esac
             auth_params+=("prediction_target=class_loading") ;;
         *) return 1 ;;
     esac
