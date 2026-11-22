@@ -1,4 +1,6 @@
-# v0.8.0 (unreleased)
+# Unreleased
+
+## v0.8.0 (unreleased)
 
 Planned next release for timeline forecasts. This is a release-preparation target, not an existing tag advertised for use. Examples currently use the verified development ref below. This work does not authorize publication or deployment.
 
@@ -13,6 +15,11 @@ Planned next release for timeline forecasts. This is a release-preparation targe
 - Prediction examples apply only to the root action. `/start` and `/composite` currently expose only `interval`.
 
 See the [before/after migration YAML](README.md#migration-from-predictive_reliability). The v0.7.0 notes below remain historical.
+
+## Migration
+
+Replace the former `predictive_reliability` input with a deliberate `prediction_mode` choice using the development ref above. The current backend rejects the former parameter. This changes behavior: new timeline forecasts use optional `process_forecasts`, while historical reliability checkpoints remain legacy data. Request `export_to_bigquery: 'true'` independently if finished-run metrics export is needed. Old JSON artifacts remain readable without forecasts.
+
 
 ## Release validation
 

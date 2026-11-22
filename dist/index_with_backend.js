@@ -25846,11 +25846,12 @@ async function run() {
         const disableSummaryOutput = core.getInput('disable_summary_output') === 'true';
         const exportToBigqueryRequested = core.getInput('export_to_bigquery') === 'true';
         const freshnessDiagnosticsRequested = core.getInput('freshness_diagnostics') === 'true';
-        const { enableBackend, backendUrl, frontendUrl, exportToBigquery, predictionMode, predictionThrottleS, freshnessDiagnostics, } = (0, monitoring_features_1.resolveMonitoringFeatureFlags)({
+        const { enableBackend, backendUrl, frontendUrl, exportToBigquery, predictionMode, predictionTarget, predictionThrottleS, freshnessDiagnostics, } = (0, monitoring_features_1.resolveMonitoringFeatureFlags)({
             remoteMonitoringRequested,
             exportToBigqueryRequested,
             freshnessDiagnosticsRequested,
             predictionMode: core.getInput('prediction_mode'),
+            predictionTarget: core.getInput('prediction_target'),
             predictionThrottleS: core.getInput('prediction_throttle_s'),
             backendUrl: requestedBackendUrl,
             frontendUrl: requestedFrontendUrl,
@@ -25883,6 +25884,7 @@ async function run() {
         core.exportVariable('DISABLE_SUMMARY_OUTPUT', disableSummaryOutput.toString());
         core.exportVariable('EXPORT_TO_BIGQUERY', exportToBigquery ? 'true' : 'false');
         core.exportVariable('PREDICTION_MODE', predictionMode);
+        core.exportVariable('PREDICTION_TARGET', predictionTarget);
         core.exportVariable('PREDICTION_THROTTLE_S', String(predictionThrottleS));
         core.exportVariable('FRESHNESS_DIAGNOSTICS', freshnessDiagnostics ? 'true' : 'false');
         // Also write RUN_ID to a file as a backup for the post step
@@ -25923,6 +25925,7 @@ async function run() {
         core.setOutput('frontend_url', frontendUrl);
         core.setOutput('export_to_bigquery', exportToBigquery.toString());
         core.setOutput('prediction_mode', predictionMode);
+        core.setOutput('prediction_target', predictionTarget);
         core.setOutput('prediction_throttle_s', String(predictionThrottleS));
         core.setOutput('freshness_diagnostics', freshnessDiagnostics.toString());
         // Always show the dashboard URL when remote monitoring is enabled (regardless of debug mode)
@@ -25956,6 +25959,7 @@ async function run() {
             debugMode,
             exportToBigquery,
             predictionMode,
+            predictionTarget,
             predictionThrottleS,
             freshnessDiagnostics,
             enableBackend,
@@ -26104,6 +26108,13 @@ function buildFrontendRunUrl(frontendBaseUrl, runId) {
 }
 function resolveMonitoringFeatureFlags(inputs) {
     const predictionMode = resolvePredictionMode(inputs.predictionMode || '');
+    const predictionTarget = inputs.predictionTarget || 'memory';
+    if (predictionTarget !== 'memory' && predictionTarget !== 'class_loading') {
+        throw new Error('Invalid prediction_target; expected memory or class_loading');
+    }
+    if (predictionTarget === 'class_loading' && predictionMode !== 'tabpfn') {
+        throw new Error('prediction_target=class_loading requires prediction_mode=tabpfn');
+    }
     const predictionThrottleS = resolvePredictionThrottleS(inputs.predictionThrottleS);
     const enableBackend = inputs.remoteMonitoringRequested ||
         predictionMode !== 'disabled' ||
@@ -26129,6 +26140,7 @@ function resolveMonitoringFeatureFlags(inputs) {
         frontendUrl,
         exportToBigquery: inputs.exportToBigqueryRequested && useBackend,
         predictionMode,
+        predictionTarget,
         predictionThrottleS,
         freshnessDiagnostics: inputs.freshnessDiagnosticsRequested === true && useBackend,
     };
@@ -26203,6 +26215,7 @@ function createMonitoringProcessLaunchPlan(inputs, environment = process.env) {
             REMOTE_MONITORING: inputs.enableBackend && inputs.backendUrl ? 'true' : 'false',
             EXPORT_TO_BIGQUERY: inputs.exportToBigquery ? 'true' : 'false',
             PREDICTION_MODE: inputs.predictionMode,
+            PREDICTION_TARGET: inputs.predictionTarget || 'memory',
             PREDICTION_THROTTLE_S: String(inputs.predictionThrottleS),
             FRESHNESS_DIAGNOSTICS: inputs.freshnessDiagnostics ? 'true' : 'false',
             COLLECT_GC: 'true',

@@ -132,11 +132,18 @@ Run the Process Action using the remote server with prediction enabled.
 This scenario must follow the behavior supported by the current prediction
 implementation rather than assuming a future prediction workflow.
 
-Prefer dispatching `.github/workflows/predictive-contract-smoke.yml` for the
-ref under test and use that workflow's defaults. Do not assume legacy
-checkpoint lists such as `30,60,180`. Production defaults are
-`60,300,600,1200`; the smoke workflow runs long enough for all of those v1
-checkpoint windows to become ready.
+Use `.github/workflows/predictive-contract-smoke.yml` on the exact ref under test
+when remote execution is authorized. Record `action_ref`, `prediction_mode`, and
+`prediction_throttle_s`; current defaults are `main`, `predict`, and `20` seconds,
+with a 90-second synthetic run. Pin `action_ref` for reproducible evidence. See the
+[forecast guide](../forecast-guide.md) for the release mismatch and offline demo.
+Timeline runs write `process_forecasts`, not reliability checkpoints. Do not wait
+for historical `60,300,600,1200` reliability windows. Throttle is elapsed-bucket
+cadence, not a latency or issuance delivery guarantee.
+
+TabPFN is conditional on an already available VM. Never start the VM for docs
+validation. Report the provider scenario `BLOCKED` when unavailable; continue
+independent ingestion and synthetic UI checks.
 
 ### Expected Behavior
 
@@ -147,7 +154,8 @@ TheTester must validate that:
 - Data is successfully sent to and retrieved from the remote server.
 - Prediction is executed according to the current implementation.
 - Prediction results are associated with the correct build/process data.
-- Ready prediction checkpoints match the smoke contract for the run duration.
+- Stored `process_forecasts` match the process, metric, and sample clock.
+- Issuances retain their original +10/+30/+60 targets during replay.
 - The application continues to work correctly with prediction enabled.
 
 TheTester must inspect all relevant UI produced by this flow, including:
@@ -165,7 +173,8 @@ provides deterministic expected values.
 
 Verify that:
 
-- Prediction execution succeeds.
+- The selected mode is recorded separately from observed methods and fallback.
+- Empty forecasts or provider errors are reported as unavailable, not inference success.
 - Prediction results are returned.
 - Results have the expected structure.
 - Results belong to the expected build.
@@ -206,3 +215,19 @@ TheTester must include:
 - Relevant command output, API responses, or logs.
 - Any blocked dependency, missing permission, or unsafe external side effect.
 - Whether the generated data corresponds to the builds created during the test.
+
+## Timeline review evidence
+
+Use the [deterministic fixture](../examples/process-forecasts.json) and current
+renderer to check Latest, Last 3, All, Play/Pause/Reset, speed, and scrubbing.
+Inspect desktop and mobile layouts, links, horizon tooltips, fixed targets,
+issuance reveal timing, and legacy data with `process_forecasts` removed. Omit
+latency fields and verify no fabricated zero timing. Record sample counts,
+issuance counts, and per-horizon matched counts separately; none is an accuracy
+claim. Historical plans remain design history.
+
+Report source/snippet validation, deployed-page verification after an authorized
+publication, and actual provider inference as separate results. A synthetic UI
+pass or successful workflow does not prove primary inference. Retain exact refs
+and observed method/fallback evidence; publication and provider unavailability
+must remain explicit when those checks cannot run.

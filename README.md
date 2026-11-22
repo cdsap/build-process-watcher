@@ -12,7 +12,7 @@ Monitor Java/Kotlin build processes (`GradleDaemon`, `GradleWorkerMain`, `Kotlin
 
 ## ✨ Quick Start
 
-**Release status:** The planned next release is **v0.8.0 (unreleased)**. The examples and input/output documentation below use the verified development ref [`88f0d0b85857dd71009cf827564fb33d75769214`](https://github.com/cdsap/build-process-watcher/commit/88f0d0b85857dd71009cf827564fb33d75769214), which contains the timeline-mode manifest and built action bundle. It is a development snapshot, not a published v0.8.0 release or a guarantee of hosted provider availability. See [release validation](RELEASE_NOTES.md#release-validation) for the separate source, artifact, documentation, and deployment status.
+**Unreleased development ref — release status:** The planned next release is **v0.8.0 (unreleased)**. The examples and input/output documentation below use the verified development ref [`88f0d0b85857dd71009cf827564fb33d75769214`](https://github.com/cdsap/build-process-watcher/commit/88f0d0b85857dd71009cf827564fb33d75769214), which contains the timeline-mode manifest and built action bundle. It is a development snapshot, not a published v0.8.0 release or a guarantee of hosted provider availability. See [release validation](RELEASE_NOTES.md#release-validation) for the separate source, artifact, documentation, and deployment status.
 
 Published v0.7.0 exposes the former `predictive_reliability` input; it does **not** support `prediction_mode` or `prediction_throttle_s`. Use the development ref below for the new configuration, or wait for a validated release. These inputs apply to the root action only; `/start` and `/composite` expose only `interval`.
 
@@ -48,6 +48,10 @@ This is not required for normal local or remote monitoring. Use it only when you
 
 ### Timeline Prediction (Experimental)
 
+The latest release `v0.7.0` does not accept timeline inputs. This example pins a
+verified timeline-capable commit; it is not a tagged release. See the
+[forecast guide](docs/forecast-guide.md) for compatibility, replay media, and validation evidence.
+
 ```yaml
 - uses: cdsap/build-process-watcher@88f0d0b85857dd71009cf827564fb33d75769214
   with:
@@ -55,9 +59,17 @@ This is not required for normal local or remote monitoring. Use it only when you
     prediction_throttle_s: '20'
 ```
 
-An active `prediction_mode` enables Remote Mode and requests a timeline forecast path. `prediction_throttle_s` is optional (default `20`) and sets how often forecasts are issued in elapsed seconds.
+Prediction is disabled by default. Active modes automatically enable Remote Mode and do not enable `export_to_bigquery`. A selected mode requests a provider; it does not establish availability or successful inference.
 
-Prediction is experimental, advisory, and disabled by default. It does not guarantee OOM, timeout, or build-failure outcomes. TabPFN additionally requires an available VM and is disabled by default; selecting `tabpfn` does not provision or start a VM. A mode request does not guarantee provider readiness.
+| Mode | Model / behavior | Availability |
+|------|------------------|--------------|
+| `disabled` / omitted | No prediction request | Default; local monitoring remains possible |
+| `forecast` | TimesFM time-series forecasts | Requires the configured hosted provider |
+| `predict` | TabFM tabular prediction; distinct from TabPFN | Requires the configured hosted provider |
+| `bqml-boosted` | Trained BigQuery ML boosted-tree forecasts | Requires the configured trained-model provider |
+| `tabpfn` | TabPFN GPU inference on a VM | **TabPFN is disabled by default; available only when its VM/provider is available.** Selecting the input does not start the VM or guarantee forecasts. |
+
+`prediction_throttle_s` is optional (default `20`, integer range `1–3600` seconds). It controls forecast issuance cadence in elapsed-time buckets, separately from collection `interval` and +10/+30/+60-second forecast horizons. Queueing and provider latency can delay delivery. See the [prediction guide](docs/prediction.md) and [migration notes](RELEASE_NOTES.md#migration).
 
 ### Migration from `predictive_reliability`
 
@@ -101,6 +113,7 @@ New timeline forecasts use `process_forecasts`; historical reliability records r
 | `disable_summary_output` | Disable GitHub Actions summary output | `false` | No |
 | `export_to_bigquery` | Optional metrics export to BigQuery when Remote Mode finishes | `false` | No |
 | `prediction_mode` | Request `disabled`, `forecast`, `predict`, `bqml-boosted`, or `tabpfn` | `disabled` | No |
+| `prediction_target` | `memory` (default), or experimental `class_loading` with `tabpfn` only | `memory` | No |
 | `prediction_throttle_s` | Process-forecast cadence in elapsed seconds for timeline modes | `20` | No |
 | `freshness_diagnostics` | Add opt-in collection-to-dashboard timing telemetry; implies Remote Mode | `false` | No |
 
@@ -229,3 +242,18 @@ The dashboard lets you:
 ## 📝 License
 
 MIT
+
+
+### Class-loading activity experiment (unreleased)
+
+The development action supports `prediction_mode: tabpfn` together with
+`prediction_target: class_loading`. The default target is `memory`; other modes
+cannot select class loading. This predicts the number of additional classes over
+60 seconds for eligible Gradle/Kotlin daemons, not build completion or JVM warm-up.
+TabPFN is disabled by default and requires an available VM and a separately fitted
+class-loading model. Selecting the target does not start or fit that model.
+Live prediction enables Remote Mode but does not require BigQuery export.
+
+This target is not supported by the published `v0.7.0` action. Use a verified
+commit containing this change until a supporting release is published. See the
+[class-loading contract and controls](docs/class-loading-prediction.md).

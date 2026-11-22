@@ -1119,3 +1119,81 @@ describe('per-process memory forecasts', () => {
   });
 
 });
+
+describe('public documentation forecast fixture', () => {
+  const view = loadView();
+  const fixture = JSON.parse(fs.readFileSync(
+    path.join(__dirname, '../docs/examples/process-forecasts.json'), 'utf8',
+  ));
+  const html = view.render(fixture, null).html;
+  const groups = JSON.parse(html.match(/id="bpw-forecast-replay-data">(.*?)<\/script>/s)[1]);
+
+  it('renders the synthetic fallback with optional timing and model fields absent', () => {
+    expect(fixture.samples).toHaveLength(25);
+    expect(fixture.process_forecasts).toHaveLength(4);
+    expect(fixture.prediction_mode).toBe('predict');
+    expect(view.forecastLatencySummary(fixture).fallbackCount).toBe(4);
+    expect(view.forecastLatencySummary(fixture).timedCount).toBe(0);
+    expect(view.forecastLatencySummary(fixture).p50).toBeNull();
+    expect(html).toContain('last_value');
+    expect(groups).toHaveLength(1);
+    for (const issuance of fixture.process_forecasts) {
+      expect(issuance.points.map((point: any) =>
+        (point.target_at_ms - issuance.created_at_ms) / 1000)).toEqual([10, 30, 60]);
+      expect(issuance).not.toHaveProperty('latency_ms');
+      expect(issuance).not.toHaveProperty('model_version');
+    }
+  });
+
+  it('reveals issuances without moving targets as history and replay position change', () => {
+    const group = groups[0];
+    const start = fixture.samples[0].Timestamp;
+    expect(view.visibleIssuancePaths(group, start + 19000, 'all')).toHaveLength(0);
+    expect(view.visibleIssuancePaths(group, start + 80000, 'latest')).toHaveLength(1);
+    expect(view.visibleIssuancePaths(group, start + 80000, 'recent')).toHaveLength(3);
+    expect(view.visibleIssuancePaths(group, start + 80000, 'all')).toHaveLength(4);
+    const at80 = view.visibleIssuancePaths(group, start + 80000, 'latest')[0];
+    const at90 = view.visibleIssuancePaths(group, start + 90000, 'latest')[0];
+    expect(at90.horizonPoints).toEqual(at80.horizonPoints);
+    expect(at90.created).toBe(start + 80000);
+    expect(view.forecastAccuracyByHorizon(groups).map((row: any) => row.n)).toEqual([4, 4, 3]);
+  });
+
+  it('keeps legacy runs valid without forecasts or optional latency fields', () => {
+    const { process_forecasts, ...legacy } = fixture;
+    expect(() => view.render(legacy, null)).not.toThrow();
+    expect(view.forecastFreshness(legacy).forecastCount).toBe(0);
+    expect(view.render({ samples: legacy.samples }, null).html).not.toContain('forecast-trace');
+  });
+});
+
+describe('class activity forecasts', () => {
+ const view = loadView();
+ const start = 1700000000000;
+ const samples = Array.from({length:25}, (_,i) => ({Name:'GradleDaemon',PID:'1',Timestamp:start+i*5000,ClassesLoaded:100+i*10}));
+ const issuance = {process_name:'GradleDaemon',pid:'1',metric:'classes_loaded',created_at_ms:start+60000,origin_value_count:220,status:'ready',method:'tabpfn',points:[{target_at_ms:start+120000,predicted_delta_count:120,predicted_total_count:340}]};
+ const data = {prediction_mode:'tabpfn',prediction_target:'class_loading',samples,process_activity_forecasts:[issuance]};
+ it('uses count units and pending actuals through the public renderer', () => {
+  const issued=view.render({...data,samples:samples.slice(0,13)}).html;expect(issued).toContain('Predicted additional classes in 60s: +120');expect(issued).toContain('Observed increase: Pending');expect(issued).not.toContain(' MB');
+  const end=view.render(data).html;expect(end).toContain('Observed increase: 120');expect(end).toContain('Class-loading activity');expect(end).not.toContain('Process memory forecasts');
+ });
+ it('keeps unavailable data empty and never matches across a counter reset', () => {
+  expect(view.render(data).html).toContain('Observed increase: 120');
+  const reset=samples.map((sample,i)=>({...sample,ClassesLoaded:i===18?1:sample.ClassesLoaded}));
+  expect(view.render({...data,samples:reset}).html).toContain('Observed increase: Pending');
+  const unavailable=view.render({...data,process_activity_forecasts:[{...issuance,status:'unavailable',points:[]}]}).html;
+  expect(unavailable).toContain('Status: unavailable');expect(unavailable).not.toContain('Predicted additional classes');
+ });
+ it('shows completed historical errors while a newer issuance is pending', () => {
+  const next={...issuance,created_at_ms:start+120000,origin_value_count:340,points:[{target_at_ms:start+180000,predicted_delta_count:10,predicted_total_count:350}]};
+  const html=view.render({...data,process_activity_forecasts:[issuance,next]}).html;
+  expect(html).toContain('Class-loading issuance results');
+  expect(html).toContain('<td>120</td><td>120</td><td>0</td>');
+  expect(html).toContain('<td>10</td><td>Pending</td><td>Pending</td>');
+ });
+ it('does not mix PIDs and keeps legacy memory rendering', () => {
+  const isolated={...data,samples:samples.map(s=>({...s,PID:'2'}))};
+  expect(view.render(isolated).html).toContain('Observed increase: Pending');
+  expect(view.render({samples:[]}).html).not.toContain('Class-loading activity');
+ });
+});

@@ -365,3 +365,39 @@ func TestForecastEvaluatorEvaluateLoadedSkipsGetRun(t *testing.T) {
 		t.Fatalf("appended = %d, want 1", len(repo.appended))
 	}
 }
+
+type activityRepoStub struct {
+	forecastRepoStub
+	activities []models.ProcessActivityForecast
+}
+
+func (s *activityRepoStub) AppendProcessActivityForecasts(_ context.Context, _ string, f []models.ProcessActivityForecast) error {
+	s.activities = models.MergeActivityForecasts(s.activities, f)
+	s.run.ProcessActivityForecasts = s.activities
+	return nil
+}
+
+type activityProviderStub struct{ calls *int }
+
+func (s activityProviderStub) ForecastActivity(context.Context, predictor.RunSnapshot) ([]models.ProcessActivityForecast, error) {
+	*s.calls++
+	return []models.ProcessActivityForecast{{ProcessName: "GradleDaemon", PID: "1", Metric: "classes_loaded", CreatedAtMs: 60000, Status: "ready"}}, nil
+}
+func TestActivityRoutingUnavailableAndThrottle(t *testing.T) {
+	run := &models.RunDoc{PredictionMode: "tabpfn", PredictionTarget: "class_loading", Samples: []models.Sample{{Name: "GradleDaemon", PID: "1", Timestamp: 60000, ElapsedTime: 60}}}
+	repo := &activityRepoStub{forecastRepoStub: forecastRepoStub{run: run}}
+	calls := 0
+	NewForecastEvaluator(repo, TimelineProviders{Activity: activityProviderStub{calls: &calls}}).Evaluate(context.Background(), "r")
+	if calls != 1 || len(repo.activities) != 1 || len(repo.appended) != 0 {
+		t.Fatal("activity was routed to memory")
+	}
+	NewForecastEvaluator(repo, TimelineProviders{Activity: activityProviderStub{calls: &calls}}).Evaluate(context.Background(), "r")
+	if calls != 1 {
+		t.Fatal("same bucket retried")
+	}
+	run.Samples = append(run.Samples, models.Sample{Name: "GradleDaemon", PID: "1", Timestamp: 80000, ElapsedTime: 80})
+	NewForecastEvaluator(repo, TimelineProviders{}).Evaluate(context.Background(), "r")
+	if len(repo.activities) != 2 || repo.activities[1].Status != "unavailable" || len(repo.activities[1].Points) != 0 {
+		t.Fatal("missing provider fabricated data")
+	}
+}

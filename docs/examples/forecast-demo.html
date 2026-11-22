@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Synthetic forecast replay</title>
+  <link rel="stylesheet" href="../../frontend/public/run-dashboard.css">
+  <link rel="stylesheet" href="../../frontend/public/bpw-ui.css">
+  <style>body { margin: 0; padding: 16px; } main { max-width: 1180px; margin: auto; } img { max-width: 100%; }</style>
+</head>
+<body>
+  <main>
+    <h1>Synthetic forecast replay</h1>
+    <p>Demo data · 25 heap samples · 4 issuances · selected: predict · observed: last_value fallback · no model inference.</p>
+    <div id="forecast-demo" aria-live="polite">Loading synthetic data…</div>
+  </main>
+  <script src="../../frontend/public/playback-clock.js"></script>
+  <script src="../../frontend/public/replay-controls.js"></script>
+  <script src="../../frontend/public/prediction-view.js"></script>
+  <script src="forecast-demo.js"></script>
+</body>
+</html>

@@ -60,6 +60,7 @@ async function run() {
       frontendUrl,
       exportToBigquery,
       predictionMode,
+      predictionTarget,
       predictionThrottleS,
       freshnessDiagnostics,
     } = resolveMonitoringFeatureFlags({
@@ -67,6 +68,7 @@ async function run() {
       exportToBigqueryRequested,
       freshnessDiagnosticsRequested,
       predictionMode: core.getInput('prediction_mode'),
+      predictionTarget: core.getInput('prediction_target'),
       predictionThrottleS: core.getInput('prediction_throttle_s'),
       backendUrl: requestedBackendUrl,
       frontendUrl: requestedFrontendUrl,
@@ -104,6 +106,7 @@ async function run() {
     core.exportVariable('DISABLE_SUMMARY_OUTPUT', disableSummaryOutput.toString());
     core.exportVariable('EXPORT_TO_BIGQUERY', exportToBigquery ? 'true' : 'false');
     core.exportVariable('PREDICTION_MODE', predictionMode);
+    core.exportVariable('PREDICTION_TARGET', predictionTarget);
     core.exportVariable('PREDICTION_THROTTLE_S', String(predictionThrottleS));
     core.exportVariable('FRESHNESS_DIAGNOSTICS', freshnessDiagnostics ? 'true' : 'false');
     
@@ -144,6 +147,7 @@ async function run() {
     core.setOutput('frontend_url', frontendUrl);
     core.setOutput('export_to_bigquery', exportToBigquery.toString());
     core.setOutput('prediction_mode', predictionMode);
+    core.setOutput('prediction_target', predictionTarget);
     core.setOutput('prediction_throttle_s', String(predictionThrottleS));
     core.setOutput('freshness_diagnostics', freshnessDiagnostics.toString());
 
@@ -181,6 +185,7 @@ async function run() {
       debugMode,
       exportToBigquery,
       predictionMode,
+      predictionTarget,
       predictionThrottleS,
       freshnessDiagnostics,
       enableBackend,

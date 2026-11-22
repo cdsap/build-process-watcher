@@ -9,15 +9,17 @@ import (
 // reservedRunWriteKeys must never appear in sample/checkpoint/forecast merge maps,
 // so concurrent writers cannot clobber sibling fields via a full document Set.
 var reservedRunWriteKeys = map[string]struct{}{
-	"prediction_checkpoints": {},
-	"process_forecasts":      {},
-	"finished":               {},
-	"finished_at":            {},
-	"expire_at":              {},
-	"export_to_bigquery":     {},
-	"predictive_reliability": {},
-	"prediction_mode":        {},
-	"prediction_throttle_s":  {},
+	"prediction_checkpoints":     {},
+	"process_forecasts":          {},
+	"process_activity_forecasts": {},
+	"prediction_target":          {},
+	"finished":                   {},
+	"finished_at":                {},
+	"expire_at":                  {},
+	"export_to_bigquery":         {},
+	"predictive_reliability":     {},
+	"prediction_mode":            {},
+	"prediction_throttle_s":      {},
 }
 
 // sampleStoreFields builds a MergeAll payload that only updates samples and
