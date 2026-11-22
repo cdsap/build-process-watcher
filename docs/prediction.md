@@ -34,7 +34,8 @@ seconds for `GradleDaemon` and `KotlinCompileDaemon`. It uses a separate count-b
 contract and panel in the dashboard and uploaded Replay. Other modes retain the
 memory target. TabPFN remains disabled by default and requires an available VM
 and fitted activity model; selecting this target does not start the VM.
-Held-out baseline evaluation and real GPU end-to-end validation remain required.
+Count forecasts remain experimental; successful inference does not establish
+accuracy or prove that JVM warm-up is complete.
 See the [class-loading experiment](class-loading-prediction.md).
 
 Use Live/Replay to inspect the timeline and Latest/Last 3/All to choose issuance history. Check the observed method and fallback indication rather than inferring model success from the requested mode. Accuracy summaries depend on matched actual samples and their counts; they are not an accuracy guarantee. See the [forecast data contract](process-forecast-contract.md) for fields and timestamp semantics. Historical artifacts without forecasts or optional timing fields remain valid.

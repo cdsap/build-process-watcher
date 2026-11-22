@@ -1187,6 +1187,13 @@ describe('class activity forecasts', () => {
   const unavailable=view.render({...data,process_activity_forecasts:[{...issuance,status:'unavailable',points:[]}]}).html;
   expect(unavailable).toContain('Status: unavailable');expect(unavailable).not.toContain('Predicted additional classes');
  });
+ it('shows completed historical errors while a newer issuance is pending', () => {
+  const next={...issuance,created_at_ms:start+120000,origin_value_count:340,points:[{target_at_ms:start+180000,predicted_delta_count:10,predicted_total_count:350}]};
+  const html=view.render({...data,process_activity_forecasts:[issuance,next]}).html;
+  expect(html).toContain('Class-loading issuance results');
+  expect(html).toContain('<td>120</td><td>120</td><td>0</td>');
+  expect(html).toContain('<td>10</td><td>Pending</td><td>Pending</td>');
+ });
  it('does not mix PIDs and keeps legacy memory rendering', () => {
   const isolated={...data,samples:samples.map(s=>({...s,PID:'2'}))};
   expect(view.render(isolated).html).toContain('Observed increase: Pending');

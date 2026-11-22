@@ -1073,7 +1073,7 @@
 
     function bindProcessForecastView(root, options = {}) {
         if (!root) return { stop() {}, update() { return false; }, getMode() { return 'live'; } };
-        if (options.data?.prediction_target === 'class_loading') return bindActivityView(root, options);
+        if (options.data?.prediction_target === "class_loading") return bindActivityView(root, options);
         const controls = root.querySelector('#forecast-replay-controls');
         const dataNode = root.querySelector('#bpw-forecast-replay-data');
         const statusNode = root.querySelector('#forecast-live-status');
@@ -1478,6 +1478,18 @@
         return point.value - forecast.origin_value_count;
     }
 
+    function activityResults(group, cursor) {
+        const rows = group.forecasts.filter(f => f.created_at_ms <= cursor && ['ready', 'fallback'].includes(f.status))
+            .filter(f => (f.points || []).some(p => p.target_at_ms === f.created_at_ms + 60000 && Number.isFinite(p.predicted_delta_count)))
+            .slice(-10).reverse().map(f => {
+                const point = f.points.find(p => p.target_at_ms === f.created_at_ms + 60000);
+                const observed = activityObserved(group, f, cursor);
+                return `<tr><td>${escapeHtml(new Date(f.created_at_ms).toISOString().slice(11, 19))}</td><td>${Math.round(point.predicted_delta_count)}</td><td>${observed === null ? 'Pending' : Math.round(observed)}</td><td>${observed === null ? 'Pending' : Math.round(point.predicted_delta_count - observed)}</td><td>${escapeHtml(f.status)}</td></tr>`;
+            }).join('');
+        if (!rows) return '';
+        return `<div class="activity-results"><table aria-label="Class-loading issuance results"><caption>Recent issuance results · classes</caption><thead><tr><th scope="col">Issued (UTC)</th><th scope="col">Predicted +60s</th><th scope="col">Observed +60s</th><th scope="col">Error</th><th scope="col">Status</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    }
+
     function activityChart(group, cursor, history) {
         let shown = group.forecasts.filter(f => f.created_at_ms <= cursor);
         if (history === 'latest') shown = shown.slice(-1);
@@ -1507,7 +1519,7 @@
         const actualDelta = latestPoint ? activityObserved(group, latest, cursor) : null;
         const summary = latestPoint
             ? `<p><strong>Predicted additional classes in 60s: +${Math.round(latestPoint.predicted_delta_count).toLocaleString('en-US')}</strong></p><p>Observed increase: ${actualDelta === null ? 'Pending' : Math.round(actualDelta)} · Error (prediction − observed): ${actualDelta === null ? 'Pending' : Math.round(latestPoint.predicted_delta_count - actualDelta)} classes</p>` : '';
-        return `<div class="activity-plot"><svg viewBox="0 0 960 280" role="img" aria-label="${escapeHtml(group.name)} cumulative classes loaded and 60-second forecasts"><rect x="70" y="20" width="800" height="205" fill="none" stroke="#d1d5db"/>${paths}${forecasts}<text x="65" y="20">${Math.round(ymax)}</text><text x="55" y="230">0</text><text x="10" y="140">Classes</text><text x="70" y="250">0s</text><text x="790" y="250">${Math.round((end-start)/1000)}s</text><text x="360" y="270">Seconds from first visible sample</text></svg></div>${summary}<p>Status: ${escapeHtml(latest?.status || 'waiting')} · Model: ${escapeHtml(latest?.model_version || 'Unavailable')} · Latency: ${latest?.latency_ms ? `${Math.round(latest.latency_ms)} ms` : 'Unavailable'}${latest?.fallback || latest?.status === 'fallback' ? ' · Fallback (not model inference)' : ''}</p>`;
+        return `<div class="activity-plot"><svg viewBox="0 0 960 280" role="img" aria-label="${escapeHtml(group.name)} cumulative classes loaded and 60-second forecasts"><rect x="70" y="20" width="800" height="205" fill="none" stroke="#d1d5db"/>${paths}${forecasts}<text x="65" y="20">${Math.round(ymax)}</text><text x="55" y="230">0</text><text x="10" y="140">Classes</text><text x="70" y="250">0s</text><text x="790" y="250">${Math.round((end-start)/1000)}s</text><text x="360" y="270">Seconds from first visible sample</text></svg></div>${summary}${activityResults(group, cursor)}<p>Status: ${escapeHtml(latest?.status || 'waiting')} · Model: ${escapeHtml(latest?.model_version || 'Unavailable')} · Latency: ${latest?.latency_ms ? `${Math.round(latest.latency_ms)} ms` : 'Unavailable'}${latest?.fallback || latest?.status === 'fallback' ? ' · Fallback (not model inference)' : ''}</p>`;
     }
 
     function renderActivity(data, cursor, history = 'latest', mode) {

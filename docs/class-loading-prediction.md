@@ -60,7 +60,8 @@ nearest same-process observation within ±5 seconds of the +60-second target,
 and only observations visible at the replay position. Ties favor the earlier
 sample. Missing actuals and counter resets remain pending. Collection gaps over
 15 seconds break actual lines and prevent comparisons across missing history.
-Status, model, latency, and fallback labels distinguish what happened. Counts
+The recent-issuance table retains completed comparisons while newer predictions
+are pending. Status, model, latency, and fallback labels distinguish what happened. Counts
 are rounded only for display.
 
 Declining loading activity is not proof that the JVM is warmed up. There is no

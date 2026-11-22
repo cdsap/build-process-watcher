@@ -51,3 +51,25 @@ test('uploaded class-loading JSON appears in Replay and follows its main clock',
   await page.locator('#replay-input').setInputFiles({ name: 'legacy-memory.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ samples: fixture().samples })) });
   await expect(page.locator('.activity-panel')).toHaveCount(0);
 });
+
+
+test('finished run dashboard binds activity controls to the loaded run on first render', async ({ page }) => {
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  await page.route('https://cdn.plot.ly/**', route => route.fulfill({ contentType: 'text/javascript', body: `window.Plotly={Plots:{resize(){}},newPlot(target,data){return this.react(target,data);},react(target,data){const node=typeof target==='string'?document.getElementById(target):target;node.data=data;node.on=()=>{};return Promise.resolve(node);},restyle(){return Promise.resolve();},relayout(){return Promise.resolve();}};` }));
+  await page.route('**/config.js', route => route.fulfill({ contentType: 'text/javascript', body: "window.BUILD_PROCESS_WATCHER_CONFIG={backendUrl:'http://127.0.0.1:4173'};" }));
+  await page.route('http://127.0.0.1:4173/runs/activity-first-load', route => route.fulfill({ json: fixture() }));
+  await page.route('http://127.0.0.1:4173/runs/activity-first-load-page', async route => {
+    const fs = require('fs');
+    await route.fulfill({ contentType: 'text/html', body: fs.readFileSync('frontend/public/runs/[runId].html', 'utf8').replace("mode: 'live'", "mode: 'live', runId: 'activity-first-load'") });
+  });
+  await page.goto('/runs/activity-first-load-page');
+  await page.locator('[data-bpw-view-mode="predictions"]').first().click();
+  await expect(page.getByRole('table', { name: 'Class-loading issuance results' })).toBeVisible();
+  const slider = page.getByLabel('Class-loading replay timeline');
+  await slider.fill('1700000055000'); await slider.dispatchEvent('change');
+  await expect(page.getByRole('table', { name: 'Class-loading issuance results' })).toHaveCount(0);
+  await expect(page.locator('svg line[stroke-dasharray]')).toHaveCount(0);
+  await slider.fill('1700000180000'); await slider.dispatchEvent('change');
+  await expect(page.getByRole('table', { name: 'Class-loading issuance results' })).toContainText('1200');
+  expect(errors).toEqual([]);
+});
