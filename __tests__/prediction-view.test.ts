@@ -1169,6 +1169,9 @@ describe('public documentation forecast fixture', () => {
 
 describe('class activity forecasts', () => {
  const view = loadView();
+ it('preserves the no-op controller when the panel host is absent', () => {
+  expect(view.bindProcessForecastView(null, {data: {prediction_target: 'class_loading'}}).update()).toBe(false);
+ });
  const start = 1700000000000;
  const samples = Array.from({length:25}, (_,i) => ({Name:'GradleDaemon',PID:'1',Timestamp:start+i*5000,ClassesLoaded:100+i*10}));
  const issuance = {process_name:'GradleDaemon',pid:'1',metric:'classes_loaded',created_at_ms:start+60000,origin_value_count:220,status:'ready',method:'tabpfn',points:[{target_at_ms:start+120000,predicted_delta_count:120,predicted_total_count:340}]};

@@ -26,6 +26,16 @@ Collection `interval` controls sample polling. Forecast horizons (+10/+30/+60 se
 
 ## Reading forecasts
 
-Active modes can add optional `process_forecasts` for eligible Gradle/Kotlin daemon heap-used and RSS samples, in MB. They do not predict every monitored process or GC/JIT/class-loading metrics. The dashboard overlays actual memory samples with dashed forecast traces. Issuance time identifies when a prediction was made; target times stay fixed when replay advances.
+The default `prediction_target: memory` can add optional `process_forecasts` for eligible Gradle/Kotlin daemon heap-used and RSS samples, in MB. It does not predict every monitored process or GC/JIT/class-loading metrics. The dashboard overlays actual memory samples with dashed forecast traces. Issuance time identifies when a prediction was made; target times stay fixed when replay advances.
+
+The unreleased opt-in combination `prediction_mode: tabpfn` and
+`prediction_target: class_loading` instead requests additional classes over +60
+seconds for `GradleDaemon` and `KotlinCompileDaemon`. It uses a separate count-based
+contract and panel in the dashboard and uploaded Replay. Other modes retain the
+memory target. TabPFN remains disabled by default and requires an available VM
+and fitted activity model; selecting this target does not start the VM.
+Count forecasts remain experimental; successful inference does not establish
+accuracy or prove that JVM warm-up is complete.
+See the [class-loading experiment](class-loading-prediction.md).
 
 Use Live/Replay to inspect the timeline and Latest/Last 3/All to choose issuance history. Check the observed method and fallback indication rather than inferring model success from the requested mode. Accuracy summaries depend on matched actual samples and their counts; they are not an accuracy guarantee. See the [forecast data contract](process-forecast-contract.md) for fields and timestamp semantics. Historical artifacts without forecasts or optional timing fields remain valid.
