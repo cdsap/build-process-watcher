@@ -40,7 +40,7 @@ for (const width of [390, 1280]) {
 
 test('uploaded class-loading JSON appears in Replay and follows its main clock', async ({ page }) => {
   // This test exercises the count panel; memory Plotly rendering is covered elsewhere.
-  await page.route('https://cdn.plot.ly/**', route => route.fulfill({ contentType: 'text/javascript', body: `window.Plotly={react(target,data){const node=typeof target==='string'?document.getElementById(target):target;node.data=data;node.on=()=>{};return Promise.resolve(node);},restyle(){return Promise.resolve();},relayout(){return Promise.resolve();}};` }));
+  await page.route('https://cdn.plot.ly/**', route => route.fulfill({ contentType: 'text/javascript', body: `window.Plotly={Plots:{resize(){}},react(target,data){const node=typeof target==='string'?document.getElementById(target):target;node.data=data;node.on=()=>{};return Promise.resolve(node);},restyle(){return Promise.resolve();},relayout(){return Promise.resolve();}};` }));
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto('/replay.html');
   await page.locator('#replay-input').setInputFiles({ name: 'synthetic-activity.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(fixture())) });
