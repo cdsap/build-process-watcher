@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import {
+  parseProcessInfo,
   loadProcessInfoFromFile,
   generateJsonReport,
   parseTimestampSeconds,
@@ -65,6 +66,52 @@ describe('parseTimestampSeconds', () => {
   });
 });
 
+describe('parseProcessInfo', () => {
+  it('parses valid records and trims surrounding whitespace', () => {
+    expect(parseProcessInfo(
+      ' 12345 \t GradleDaemon \t ["-XX:MaxHeapSize=2048m","-XX:+UseG1GC"] \r\n' +
+        '67890\tKotlinCompileDaemon\t["-XX:MaxHeapSize=512m"]\n'
+    )).toEqual({
+      '12345': {
+        name: 'GradleDaemon',
+        vm_flags: ['-XX:MaxHeapSize=2048m', '-XX:+UseG1GC'],
+      },
+      '67890': { name: 'KotlinCompileDaemon', vm_flags: ['-XX:MaxHeapSize=512m'] },
+    });
+  });
+
+  it('skips blank and malformed lines', () => {
+    expect(parseProcessInfo(
+      '\n \t \r\ninvalid-line\n123\tName\n' +
+        ' \tName\t[]\n456\t \t[]\n' +
+        '789\tValid\t[]\n'
+    )).toEqual({ '789': { name: 'Valid', vm_flags: [] } });
+    expect(parseProcessInfo('')).toEqual({});
+  });
+
+  it.each(['invalid-json', '{"flag":true}', 'null', '42', '"flag"', 'true'])(
+    'uses empty vm_flags for invalid or non-array JSON: %s', vmFlagsJson => {
+      expect(parseProcessInfo(`999\tName\t${vmFlagsJson}\n`)).toEqual({
+        '999': { name: 'Name', vm_flags: [] },
+      });
+    }
+  );
+
+  it('accepts JSON arrays without filtering their elements', () => {
+    expect(parseProcessInfo('123\tName\t["-XX:flag",42,null,{"flag":true}]')).toEqual({
+      '123': { name: 'Name', vm_flags: ['-XX:flag', 42, null, { flag: true }] },
+    });
+  });
+
+  it('overwrites repeated PIDs with the last valid record', () => {
+    expect(parseProcessInfo(
+      '123\tFirst\t["-XX:flag"]\n' +
+        '123\tLast\tinvalid-json\n' +
+        '123\t \t[]\n'
+    )).toEqual({ '123': { name: 'Last', vm_flags: [] } });
+  });
+});
+
 describe('loadProcessInfoFromFile', () => {
   let tmpDir: string;
 
@@ -103,24 +150,10 @@ describe('loadProcessInfoFromFile', () => {
     });
   });
 
-  it('ignores malformed lines and handles invalid JSON', () => {
+  it('returns empty object when process_info cannot be read as a file', () => {
     const logFile = path.join(tmpDir, 'test.log');
-    const processInfoFile = path.join(tmpDir, 'test.process_info');
-    fs.writeFileSync(logFile, 'header\n');
-    fs.writeFileSync(
-      processInfoFile,
-      '12345\tGradleDaemon\t["-XX:flag"]\n' +
-        'invalid-line\n' +
-        '\n' +
-        '999\tName\tinvalid-json\n'
-    );
-
-    const result = loadProcessInfoFromFile(logFile);
-    expect(result['12345']).toEqual({ name: 'GradleDaemon', vm_flags: ['-XX:flag'] });
-    // Invalid JSON yields empty vm_flags but line is still parsed
-    expect(result['999']).toEqual({ name: 'Name', vm_flags: [] });
-    // Lines without proper tab format are skipped
-    expect(Object.keys(result)).toHaveLength(2);
+    fs.mkdirSync(path.join(tmpDir, 'test.process_info'));
+    expect(loadProcessInfoFromFile(logFile)).toEqual({});
   });
 });
 
