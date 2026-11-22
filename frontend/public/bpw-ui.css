@@ -1876,3 +1876,8 @@ body.bpw-view-predictions #prediction-panel-content .prediction-panel {
 .activity-plot { overflow-x:auto; }
 .activity-panel svg { display:block; width:100%; min-width:640px; font-size:18px; }
 .activity-panel .process-forecast { overflow-wrap:anywhere; }
+
+.activity-results { overflow-x:auto; margin:1rem 0; }
+.activity-results table { border-collapse:collapse; min-width:520px; width:100%; }
+.activity-results th, .activity-results td { padding:.45rem .6rem; text-align:right; border-bottom:1px solid #d1d5db; }
+.activity-results caption { text-align:left; font-weight:600; margin-bottom:.5rem; }
