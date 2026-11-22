@@ -17,6 +17,7 @@ type ForecastRepository interface {
 
 // TimelineProviders maps prediction modes to forecast providers.
 type TimelineProviders struct {
+	Activity    predictor.ActivityProvider
 	Forecast    predictor.ForecastProvider
 	TabPredict  predictor.ForecastProvider
 	BQMLBoosted predictor.ForecastProvider
@@ -73,6 +74,12 @@ func (e *ForecastEvaluator) EvaluateLoaded(ctx context.Context, runID string, ru
 	// Do not skip when Finished: prediction jobs are enqueued from /ingest and may
 	// run after /finish. Throttle + AppendProcessForecasts idempotency prevent storms.
 	mode := models.NormalizePredictionMode(runDoc.PredictionMode)
+	if runDoc.PredictionTarget == "class_loading" {
+		if mode == models.PredictionModeTabPFN {
+			e.evaluateActivity(ctx, runID, runDoc)
+		}
+		return
+	}
 	provider := e.providerForMode(mode)
 	if provider == nil || !predictor.ForecastEnabled(provider) {
 		return
@@ -179,4 +186,45 @@ func issuanceElapsedS(samples []models.Sample, createdAtMs int64) int {
 		return nearestBeforeElapsed
 	}
 	return nearestAnyElapsed
+}
+
+type activityRepository interface {
+	AppendProcessActivityForecasts(context.Context, string, []models.ProcessActivityForecast) error
+}
+
+func (e *ForecastEvaluator) evaluateActivity(ctx context.Context, runID string, run *models.RunDoc) {
+	repo, ok := e.repo.(activityRepository)
+	if !ok {
+		return
+	}
+	prior := make([]models.ProcessForecast, 0, len(run.ProcessActivityForecasts))
+	for _, f := range run.ProcessActivityForecasts {
+		prior = append(prior, models.ProcessForecast{CreatedAtMs: f.CreatedAtMs})
+	}
+	if !shouldForecast(run.Samples, prior, models.NormalizeThrottleElapsedS(run.PredictionThrottleS)) {
+		return
+	}
+	var results []models.ProcessActivityForecast
+	var err error
+	if e.providers.Activity != nil {
+		results, err = e.providers.Activity.ForecastActivity(ctx, predictor.RunSnapshot{RunID: runID, Samples: run.Samples, Now: time.Now()})
+	}
+	if e.providers.Activity == nil || err != nil || len(results) == 0 {
+		latest := map[string]models.Sample{}
+		for _, s := range run.Samples {
+			if s.Name != "GradleDaemon" && s.Name != "KotlinCompileDaemon" {
+				continue
+			}
+			key := s.Name + "|" + s.PID
+			if s.Timestamp >= latest[key].Timestamp {
+				latest[key] = s
+			}
+		}
+		for _, s := range latest {
+			results = append(results, models.ProcessActivityForecast{ProcessName: s.Name, PID: s.PID, Metric: "classes_loaded", CreatedAtMs: s.Timestamp, Status: "unavailable"})
+		}
+	}
+	if err := repo.AppendProcessActivityForecasts(ctx, runID, results); err != nil {
+		log.Printf("activity store failed for run %s: %v", runID, err)
+	}
 }

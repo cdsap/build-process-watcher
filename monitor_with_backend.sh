@@ -215,6 +215,13 @@ get_auth_token() {
     if [ "${EXPORT_TO_BIGQUERY:-false}" = "true" ]; then
         auth_params+=("export_to_bigquery=true")
     fi
+    case "${PREDICTION_TARGET:-memory}" in
+        memory) ;;
+        class_loading)
+            if [ "${PREDICTION_MODE:-disabled}" != "tabpfn" ]; then return 1; fi
+            auth_params+=("prediction_target=class_loading") ;;
+        *) return 1 ;;
+    esac
     case "${PREDICTION_MODE:-disabled}" in
         forecast|predict|bqml-boosted|tabpfn) auth_params+=("prediction_mode=$PREDICTION_MODE") ;;
     esac

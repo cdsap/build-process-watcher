@@ -1868,3 +1868,11 @@ body.bpw-view-predictions #prediction-panel-content .prediction-panel {
     padding-right: 1.25rem;
     color: #6b7280;
 }
+
+.activity-controls { display:flex; flex-wrap:wrap; align-items:center; gap:1rem; margin:1rem 0; }
+.activity-controls label { display:flex; gap:.5rem; align-items:center; }
+.activity-controls .activity-timeline { flex:1 1 100%; flex-wrap:wrap; }
+.activity-timeline input { flex:1; min-width:120px; }
+.activity-plot { overflow-x:auto; }
+.activity-panel svg { display:block; width:100%; min-width:640px; font-size:18px; }
+.activity-panel .process-forecast { overflow-wrap:anywhere; }

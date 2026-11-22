@@ -549,3 +549,26 @@ func TestParsePredictionMode(t *testing.T) {
 		}
 	}
 }
+
+func TestActivityUpsertAndLegacyTarget(t *testing.T) {
+	value := 42.0
+	f := ProcessActivityForecast{ProcessName: "GradleDaemon", PID: "1", Metric: "classes_loaded", CreatedAtMs: 1000, Status: "unavailable"}
+	ready := f
+	ready.Status = "ready"
+	ready.OriginValueCount = &value
+	got := MergeActivityForecasts([]ProcessActivityForecast{f}, []ProcessActivityForecast{ready, ready})
+	if len(got) != 1 || got[0].Status != "ready" {
+		t.Fatalf("dedupe=%v", got)
+	}
+	got = MergeActivityForecasts(got, []ProcessActivityForecast{f})
+	if got[0].Status != "ready" {
+		t.Fatal("late unavailable result downgraded model inference")
+	}
+	if f.Status != "unavailable" {
+		t.Fatal("mutated existing issuance")
+	}
+	target, ok := ParsePredictionTarget("", PredictionModeForecast)
+	if !ok || target != "memory" {
+		t.Fatal("legacy default changed")
+	}
+}

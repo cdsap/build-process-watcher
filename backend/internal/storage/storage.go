@@ -405,3 +405,26 @@ func (c *Client) FindStaleRuns(ctx context.Context, timeout time.Duration) ([]st
 func ToMillis(t time.Time) int64 {
 	return t.UnixNano() / int64(time.Millisecond)
 }
+
+func (c *Client) SetRunPredictionTarget(ctx context.Context, runID, target string) error {
+	_, err := c.firestore.Collection("runs").Doc(runID).Set(ctx, map[string]interface{}{"run_id": runID, "prediction_target": target}, firestore.MergeAll)
+	return err
+}
+func (c *Client) AppendProcessActivityForecasts(ctx context.Context, runID string, additions []models.ProcessActivityForecast) error {
+	if len(additions) == 0 {
+		return nil
+	}
+	doc := c.firestore.Collection("runs").Doc(runID)
+	return c.firestore.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		run, err := readRunDocInTx(tx, doc)
+		if err != nil {
+			return err
+		}
+		var prior []models.ProcessActivityForecast
+		if run != nil {
+			prior = run.ProcessActivityForecasts
+		}
+		now := time.Now()
+		return tx.Set(doc, map[string]interface{}{"process_activity_forecasts": models.MergeActivityForecasts(prior, additions), "updated_at": now, "updated_at_timestamp": ToMillis(now)}, firestore.MergeAll)
+	})
+}

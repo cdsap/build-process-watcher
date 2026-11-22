@@ -5,6 +5,8 @@ export { DEFAULT_LOG_FILE_NAME } from './action_config';
 
 export type PredictionMode = 'disabled' | 'forecast' | 'predict' | 'bqml-boosted' | 'tabpfn';
 
+export type PredictionTarget = 'memory' | 'class_loading';
+
 const VALID_MODES: PredictionMode[] = ['disabled', 'forecast', 'predict', 'bqml-boosted', 'tabpfn'];
 export const DEFAULT_PREDICTION_THROTTLE_S = 20;
 const MAX_PREDICTION_THROTTLE_S = 3600;
@@ -41,6 +43,7 @@ export interface MonitoringFeatureFlags {
   exportToBigquery: boolean;
   predictionMode: PredictionMode;
   predictionThrottleS: number;
+  predictionTarget: PredictionTarget;
   freshnessDiagnostics: boolean;
 }
 
@@ -56,12 +59,20 @@ export function resolveMonitoringFeatureFlags(inputs: {
   exportToBigqueryRequested: boolean;
   freshnessDiagnosticsRequested?: boolean;
   predictionMode?: string;
+  predictionTarget?: string;
   predictionThrottleS?: string;
   backendUrl?: string;
   frontendUrl?: string;
   runId: string;
 }): MonitoringFeatureFlags {
   const predictionMode = resolvePredictionMode(inputs.predictionMode || '');
+  const predictionTarget = inputs.predictionTarget || 'memory';
+  if (predictionTarget !== 'memory' && predictionTarget !== 'class_loading') {
+    throw new Error('Invalid prediction_target; expected memory or class_loading');
+  }
+  if (predictionTarget === 'class_loading' && predictionMode !== 'tabpfn') {
+    throw new Error('prediction_target=class_loading requires prediction_mode=tabpfn');
+  }
   const predictionThrottleS = resolvePredictionThrottleS(inputs.predictionThrottleS);
   const enableBackend =
     inputs.remoteMonitoringRequested ||
@@ -91,6 +102,7 @@ export function resolveMonitoringFeatureFlags(inputs: {
     frontendUrl,
     exportToBigquery: inputs.exportToBigqueryRequested && useBackend,
     predictionMode,
+    predictionTarget,
     predictionThrottleS,
     freshnessDiagnostics: inputs.freshnessDiagnosticsRequested === true && useBackend,
   };
