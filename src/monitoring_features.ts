@@ -3,9 +3,9 @@ export const DEFAULT_BACKEND_URL =
 export const DEFAULT_FRONTEND_BASE_URL = 'https://process-watcher.web.app';
 export { DEFAULT_LOG_FILE_NAME } from './action_config';
 
-export type PredictionTarget = 'memory' | 'class_loading';
-
 export type PredictionMode = 'disabled' | 'forecast' | 'predict' | 'bqml-boosted' | 'tabpfn';
+
+export type PredictionTarget = 'memory' | 'class_loading';
 
 const VALID_MODES: PredictionMode[] = ['disabled', 'forecast', 'predict', 'bqml-boosted', 'tabpfn'];
 export const DEFAULT_PREDICTION_THROTTLE_S = 20;
@@ -42,8 +42,8 @@ export interface MonitoringFeatureFlags {
   frontendUrl: string;
   exportToBigquery: boolean;
   predictionMode: PredictionMode;
-  predictionTarget: PredictionTarget;
   predictionThrottleS: number;
+  predictionTarget: PredictionTarget;
   freshnessDiagnostics: boolean;
 }
 
@@ -66,10 +66,12 @@ export function resolveMonitoringFeatureFlags(inputs: {
   runId: string;
 }): MonitoringFeatureFlags {
   const predictionMode = resolvePredictionMode(inputs.predictionMode || '');
-  const predictionTarget = (inputs.predictionTarget || 'memory') as PredictionTarget;
-  if (!['memory', 'class_loading'].includes(predictionTarget) ||
-      (predictionTarget === 'class_loading' && predictionMode !== 'tabpfn')) {
-    throw new Error('Invalid prediction_target; class_loading requires prediction_mode=tabpfn; otherwise use memory');
+  const predictionTarget = inputs.predictionTarget || 'memory';
+  if (predictionTarget !== 'memory' && predictionTarget !== 'class_loading') {
+    throw new Error('Invalid prediction_target; expected memory or class_loading');
+  }
+  if (predictionTarget === 'class_loading' && predictionMode !== 'tabpfn') {
+    throw new Error('prediction_target=class_loading requires prediction_mode=tabpfn');
   }
   const predictionThrottleS = resolvePredictionThrottleS(inputs.predictionThrottleS);
   const enableBackend =

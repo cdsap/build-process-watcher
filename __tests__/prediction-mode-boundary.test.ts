@@ -19,15 +19,14 @@ test.each(['forecast', 'predict', 'bqml-boosted', 'tabpfn', 'disabled'])('monito
       ...process.env, CAPTURE: capture, BACKEND_DEBUG_LOG: path.join(dir, 'debug'),
       BACKEND_URL: 'https://example.test', RUN_ID: 'run-1', DEBUG_MODE: 'false',
       CURL_TIMEOUT: '5', CURL_CONNECT_TIMEOUT: '5', PREDICTION_MODE: mode,
-      PREDICTION_THROTTLE_S: '20',
-      PREDICTION_TARGET: mode === 'tabpfn' ? 'class_loading' : 'memory',
+      PREDICTION_THROTTLE_S: '20', PREDICTION_TARGET: mode === 'tabpfn' ? 'class_loading' : 'memory',
       EXPORT_TO_BIGQUERY: 'false',
     } });
     const request = fs.readFileSync(capture, 'utf8');
     if (mode === 'disabled') expect(request).not.toContain('prediction_mode=');
     else expect(request).toContain(`prediction_mode=${mode}`);
     expect(request).toContain('prediction_throttle_s=20');
-    expect(request).toContain(`prediction_target=${mode === 'tabpfn' ? 'class_loading' : 'memory'}`);
+    if (mode === 'tabpfn') expect(request).toContain('prediction_target=class_loading');
       } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

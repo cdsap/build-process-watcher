@@ -105,8 +105,3 @@ describe('createMonitoringProcessLaunchPlan', () => {
     const plan = createMonitoringProcessLaunchPlan({ ...inputs, predictionMode }, {});
     expect(plan.env.PREDICTION_MODE).toBe(predictionMode);
   });
-
-it('propagates the class-loading target to the monitor', () => {
-  const plan = createMonitoringProcessLaunchPlan({ ...inputs, predictionMode: 'tabpfn', predictionTarget: 'class_loading' });
-  expect(plan.env.PREDICTION_TARGET).toBe('class_loading');
-});

@@ -34,7 +34,7 @@ inputs:
     description: 'Prediction request: disabled, forecast, predict, bqml-boosted, or tabpfn (default disabled)'
     required: false
   prediction_target:
-    description: 'Prediction target: memory or class_loading (class_loading requires tabpfn)'
+    description: 'Prediction target: memory (default), or class_loading (TabPFN only; experimental and requires an available VM)'
     required: false
     default: 'memory'
   prediction_throttle_s:
@@ -60,7 +60,7 @@ outputs:
   prediction_mode:
     description: 'Selected prediction mode; a request does not imply provider availability'
   prediction_target:
-    description: 'Selected prediction target'
+    description: 'Prediction target: memory (default), or class_loading (TabPFN only; experimental and requires an available VM)'
   prediction_throttle_s:
     description: 'Selected process-forecast cadence in elapsed seconds'
   freshness_diagnostics:

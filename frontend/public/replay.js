@@ -25,6 +25,8 @@
 
     let samples = [];
     let stopReplay = null;
+    let activityRun = null;
+    let activityController = null;
 
     function updateHint(message) {
         if (hint) hint.textContent = message;
@@ -93,6 +95,13 @@
             `,
         });
 
+        activityController?.stop();
+        activityController = null;
+        if (activityRun?.prediction_target === 'class_loading' && window.BpwPredictionView) {
+            const activityHost = document.createElement('div');
+            section.appendChild(activityHost);
+            activityController = BpwPredictionView.bindProcessForecastView(activityHost, {data: {...activityRun, samples, finished: true}, initialMode: 'replay'});
+        }
         section.style.display = 'block';
 
         if (window.BpwExperimentLayout) {
@@ -182,6 +191,7 @@
             ));
             currentFrame = idx;
             const absoluteMs = Number.isFinite(playheadAbsoluteMs) ? playheadAbsoluteMs : chartTimestamps[idx];
+            activityController?.seekTo(absoluteMs);
             const tasks = [];
 
             let memoryLayout = {
@@ -363,6 +373,8 @@
 
     if (input) {
         input.addEventListener('change', () => {
+            activityController?.stop();
+            activityController = null;
             const file = input.files && input.files[0];
             if (!file) return;
             const reader = new FileReader();
@@ -377,6 +389,7 @@
                         return;
                     }
                     samples = parsed.samples;
+                    activityRun = parsed.raw;
                     if (nameEl) nameEl.textContent = file.name;
                     renderReplay();
                     updateHint('Replay rendered below.');

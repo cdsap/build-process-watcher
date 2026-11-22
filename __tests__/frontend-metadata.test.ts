@@ -31,7 +31,7 @@ describe('frontend discovery and social metadata', () => {
     expect(action).toContain('prediction_mode:');
     expect(action).not.toContain('predictive_reliability:');
     expect(readme).toContain('**Prediction mode selection:**');
-    expect(readme).not.toContain('predictive_reliability');
+    expect(readme).toContain('Migration from `predictive_reliability`');
     expect(readPage('index.html')).toContain('<code>prediction_mode</code>');
   });
 

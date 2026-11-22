@@ -90,12 +90,3 @@ func (m PredictionMode) String() string {
 func ShouldEnqueuePrediction(mode PredictionMode, _ bool) bool {
 	return mode.IsTimeline()
 }
-
-// ParsePredictionTarget defaults legacy runs to memory and validates the pair.
-func ParsePredictionTarget(raw string, mode PredictionMode) (string, bool) {
-	target := strings.TrimSpace(raw)
-	if target == "" {
-		target = "memory"
-	}
-	return target, target == "memory" || (target == "class_loading" && mode == PredictionModeTabPFN)
-}

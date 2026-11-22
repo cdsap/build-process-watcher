@@ -130,11 +130,3 @@ func containsReservedRunWriteKey(fields map[string]interface{}) string {
 	}
 	return ""
 }
-
-func activityForecastStoreFields(runID string, existing, additions []models.ProcessActivityForecast, now time.Time) map[string]interface{} {
-	return map[string]interface{}{
-		"run_id":                     runID,
-		"process_activity_forecasts": models.AppendProcessActivityForecasts(existing, additions),
-		"updated_at":                 now, "updated_at_timestamp": ToMillis(now),
-	}
-}

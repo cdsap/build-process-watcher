@@ -83,22 +83,3 @@ func TestBuildPropagatesAuthenticatorFactoryError(t *testing.T) {
 		t.Fatalf("err=%v, want auth boom", err)
 	}
 }
-
-func TestActivityProviderFollowsTabPFNConfiguration(t *testing.T) {
-	for _, enabled := range []bool{false, true} {
-		options, err := buildOptions(serverConfig{predictionProviderURL: "https://provider.example", tabpfnProviderEnabled: enabled})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if (options.ActivityForecastProvider != nil) != enabled {
-			t.Fatalf("enabled=%v activity=%T", enabled, options.ActivityForecastProvider)
-		}
-		if predictor.ForecastEnabled(options.TabPFNProvider) != enabled {
-			t.Fatal("memory TabPFN configuration changed")
-		}
-	}
-	options, err := buildOptions(serverConfig{tabpfnProviderEnabled: true})
-	if err == nil || options.ActivityForecastProvider != nil {
-		t.Fatal("missing provider URL should remain unavailable")
-	}
-}

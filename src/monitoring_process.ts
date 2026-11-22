@@ -1,7 +1,7 @@
 import * as core from '@actions/core';
 import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
-import { PredictionMode, PredictionTarget } from './monitoring_features';
+import { PredictionMode } from './monitoring_features';
 import {
   resolveMonitorSpawnInvocation,
 } from './monitor_spawn';
@@ -28,7 +28,7 @@ export interface MonitoringProcessLaunchInputs {
   debugMode: boolean;
   exportToBigquery: boolean;
   predictionMode: PredictionMode;
-  predictionTarget?: PredictionTarget;
+  predictionTarget?: string;
   predictionThrottleS: number;
   freshnessDiagnostics: boolean;
   enableBackend: boolean;

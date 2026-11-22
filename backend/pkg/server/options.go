@@ -13,16 +13,16 @@ import (
 
 // Options configures the public backend server composition.
 type Options struct {
-	ProjectID                string
-	Port                     string
-	BigQueryDataset          string
-	BigQueryTable            string
-	BigQueryProcessesTable   string
-	ForecastProvider         predictor.ForecastProvider
-	TabPredictProvider       predictor.ForecastProvider
-	BQMLBoostedProvider      predictor.ForecastProvider
-	TabPFNProvider           predictor.ForecastProvider
-	ActivityForecastProvider predictor.ActivityForecastProvider
+	ProjectID              string
+	Port                   string
+	BigQueryDataset        string
+	BigQueryTable          string
+	BigQueryProcessesTable string
+	ForecastProvider       predictor.ForecastProvider
+	TabPredictProvider     predictor.ForecastProvider
+	BQMLBoostedProvider    predictor.ForecastProvider
+	TabPFNProvider         predictor.ForecastProvider
+	ActivityProvider       predictor.ActivityProvider
 	// Prediction job queue (Cloud Tasks). Empty values disable the scheduler.
 	PredictionTasksQueue    string
 	PredictionTasksLocation string
@@ -89,30 +89,28 @@ func buildOptions(config serverConfig) (Options, error) {
 		{enabled: config.tabpfnProviderEnabled, timeout: config.tabpfnProviderTimeout, construct: predictor.NewRemoteTabPFNProvider},
 	})
 
-	var activity predictor.ActivityForecastProvider
+	var activityProvider predictor.ActivityProvider
 	if config.tabpfnProviderEnabled {
 		cfg := baseRemote
 		cfg.Timeout = config.tabpfnProviderTimeout
-		remote, err := predictor.NewRemoteActivityForecastProvider(cfg)
-		if err != nil {
-			if timelineErr == nil {
-				timelineErr = err
-			}
-		} else {
-			activity = remote
+		remote, err := predictor.NewRemoteActivityProvider(cfg)
+		if err == nil {
+			activityProvider = remote
+		} else if timelineErr == nil {
+			timelineErr = err
 		}
 	}
 	return Options{
-		ProjectID:                strings.TrimSpace(config.projectID),
-		Port:                     portOrDefault(config.port),
-		BigQueryDataset:          strings.TrimSpace(config.bigQueryDataset),
-		BigQueryTable:            strings.TrimSpace(config.bigQueryTable),
-		BigQueryProcessesTable:   strings.TrimSpace(config.bigQueryProcessesTable),
-		ForecastProvider:         forecastProvider,
-		TabPredictProvider:       tabPredictProvider,
-		BQMLBoostedProvider:      bqmlBoostedProvider,
-		TabPFNProvider:           tabpfnProvider,
-		ActivityForecastProvider: activity,
+		ProjectID:              strings.TrimSpace(config.projectID),
+		Port:                   portOrDefault(config.port),
+		BigQueryDataset:        strings.TrimSpace(config.bigQueryDataset),
+		BigQueryTable:          strings.TrimSpace(config.bigQueryTable),
+		BigQueryProcessesTable: strings.TrimSpace(config.bigQueryProcessesTable),
+		ForecastProvider:       forecastProvider,
+		TabPredictProvider:     tabPredictProvider,
+		BQMLBoostedProvider:    bqmlBoostedProvider,
+		TabPFNProvider:         tabpfnProvider,
+		ActivityProvider:       activityProvider,
 	}, timelineErr
 }
 

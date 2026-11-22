@@ -72,11 +72,11 @@ func (c *Client) SetRunPredictiveReliability(ctx context.Context, runID string, 
 	return nil
 }
 
-// SetRunPredictionSettings atomically records the requested mode and target.
-func (c *Client) SetRunPredictionSettings(ctx context.Context, runID, mode, target string) error {
+// SetRunPredictionMode records the requested public prediction mode.
+func (c *Client) SetRunPredictionMode(ctx context.Context, runID, mode string) error {
 	now := time.Now()
 	_, err := c.firestore.Collection("runs").Doc(runID).Set(ctx, map[string]interface{}{
-		"run_id": runID, "prediction_mode": mode, "prediction_target": target, "updated_at": now, "updated_at_timestamp": ToMillis(now),
+		"run_id": runID, "prediction_mode": mode, "updated_at": now, "updated_at_timestamp": ToMillis(now),
 	}, firestore.MergeAll)
 	if err != nil {
 		return fmt.Errorf("merge prediction mode for run %s: %w", runID, err)
@@ -258,30 +258,6 @@ func (c *Client) AppendProcessForecasts(ctx context.Context, runID string, forec
 	return nil
 }
 
-// AppendProcessActivityForecasts deduplicates issuances against a transactional
-// snapshot without touching samples, memory forecasts or export settings.
-func (c *Client) AppendProcessActivityForecasts(ctx context.Context, runID string, forecasts []models.ProcessActivityForecast) error {
-	if len(forecasts) == 0 {
-		return nil
-	}
-	doc := c.firestore.Collection("runs").Doc(runID)
-	err := c.firestore.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
-		existing, err := readRunDocInTx(tx, doc)
-		if err != nil {
-			return err
-		}
-		var prior []models.ProcessActivityForecast
-		if existing != nil {
-			prior = existing.ProcessActivityForecasts
-		}
-		return tx.Set(doc, activityForecastStoreFields(runID, prior, forecasts, time.Now()), firestore.MergeAll)
-	})
-	if err != nil {
-		return fmt.Errorf("append process forecasts for run %s: %w", runID, err)
-	}
-	return nil
-}
-
 // StoreProcessInfo stores or updates process information (VM flags) for a process in the processes collection
 func (c *Client) StoreProcessInfo(ctx context.Context, runID string, processInfo models.ProcessInfo) error {
 	log.Printf("🔄 Storing process info for PID: %s (Name: %s) in run ID: %s", processInfo.PID, processInfo.Name, runID)
@@ -428,4 +404,27 @@ func (c *Client) FindStaleRuns(ctx context.Context, timeout time.Duration) ([]st
 // ToMillis converts a time.Time to Unix milliseconds
 func ToMillis(t time.Time) int64 {
 	return t.UnixNano() / int64(time.Millisecond)
+}
+
+func (c *Client) SetRunPredictionTarget(ctx context.Context, runID, target string) error {
+	_, err := c.firestore.Collection("runs").Doc(runID).Set(ctx, map[string]interface{}{"run_id": runID, "prediction_target": target}, firestore.MergeAll)
+	return err
+}
+func (c *Client) AppendProcessActivityForecasts(ctx context.Context, runID string, additions []models.ProcessActivityForecast) error {
+	if len(additions) == 0 {
+		return nil
+	}
+	doc := c.firestore.Collection("runs").Doc(runID)
+	return c.firestore.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		run, err := readRunDocInTx(tx, doc)
+		if err != nil {
+			return err
+		}
+		var prior []models.ProcessActivityForecast
+		if run != nil {
+			prior = run.ProcessActivityForecasts
+		}
+		now := time.Now()
+		return tx.Set(doc, map[string]interface{}{"process_activity_forecasts": models.MergeActivityForecasts(prior, additions), "updated_at": now, "updated_at_timestamp": ToMillis(now)}, firestore.MergeAll)
+	})
 }

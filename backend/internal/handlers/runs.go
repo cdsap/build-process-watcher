@@ -68,11 +68,11 @@ func (h *Handlers) GetRun(w http.ResponseWriter, r *http.Request) {
 	response.Samples = runDoc.Samples
 	response.ProcessInfo = processDoc.ProcessInfo
 	response.PredictionMode = runDoc.PredictionMode
-	response.PredictionTarget, _ = models.ParsePredictionTarget(runDoc.PredictionTarget, models.NormalizePredictionMode(runDoc.PredictionMode))
-	response.ProcessActivityForecasts = runDoc.ProcessActivityForecasts
 	response.PredictionThrottleS = runDoc.PredictionThrottleS
 	response.PredictionCheckpoints = runDoc.PredictionCheckpoints
 	response.ProcessForecasts = runDoc.ProcessForecasts
+	response.PredictionTarget = runDoc.PredictionTarget
+	response.ProcessActivityForecasts = runDoc.ProcessActivityForecasts
 	response.Finished = runDoc.Finished
 	response.UpdatedAt = runDoc.UpdatedAt
 	if !runDoc.FinishedAt.IsZero() {

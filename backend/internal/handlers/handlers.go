@@ -42,9 +42,10 @@ type RunStore interface {
 	AppendSamples(ctx context.Context, runID string, build storage.SampleBuildFunc) (*storage.SampleAppendResult, error)
 	StoreProcessInfo(ctx context.Context, runID string, processInfo models.ProcessInfo) error
 	AppendProcessForecasts(ctx context.Context, runID string, forecasts []models.ProcessForecast) error
-	AppendProcessActivityForecasts(ctx context.Context, runID string, forecasts []models.ProcessActivityForecast) error
 	SetRunExportToBigquery(ctx context.Context, runID string, enabled bool) error
-	SetRunPredictionSettings(ctx context.Context, runID, mode, target string) error
+	SetRunPredictionMode(ctx context.Context, runID, mode string) error
+	SetRunPredictionTarget(ctx context.Context, runID, target string) error
+	AppendProcessActivityForecasts(ctx context.Context, runID string, forecasts []models.ProcessActivityForecast) error
 	SetRunPredictionThrottleS(ctx context.Context, runID string, throttleS int) error
 	MarkRunAsFinished(ctx context.Context, runID string) (bool, error)
 }
