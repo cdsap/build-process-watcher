@@ -72,11 +72,11 @@ func (c *Client) SetRunPredictiveReliability(ctx context.Context, runID string, 
 	return nil
 }
 
-// SetRunPredictionMode records the requested public prediction mode.
-func (c *Client) SetRunPredictionMode(ctx context.Context, runID, mode string) error {
+// SetRunPredictionSettings atomically records the requested mode and target.
+func (c *Client) SetRunPredictionSettings(ctx context.Context, runID, mode, target string) error {
 	now := time.Now()
 	_, err := c.firestore.Collection("runs").Doc(runID).Set(ctx, map[string]interface{}{
-		"run_id": runID, "prediction_mode": mode, "updated_at": now, "updated_at_timestamp": ToMillis(now),
+		"run_id": runID, "prediction_mode": mode, "prediction_target": target, "updated_at": now, "updated_at_timestamp": ToMillis(now),
 	}, firestore.MergeAll)
 	if err != nil {
 		return fmt.Errorf("merge prediction mode for run %s: %w", runID, err)
@@ -251,6 +251,30 @@ func (c *Client) AppendProcessForecasts(ctx context.Context, runID string, forec
 			prior = existing.ProcessForecasts
 		}
 		return tx.Set(doc, forecastStoreFields(runID, prior, forecasts, time.Now()), firestore.MergeAll)
+	})
+	if err != nil {
+		return fmt.Errorf("append process forecasts for run %s: %w", runID, err)
+	}
+	return nil
+}
+
+// AppendProcessActivityForecasts deduplicates issuances against a transactional
+// snapshot without touching samples, memory forecasts or export settings.
+func (c *Client) AppendProcessActivityForecasts(ctx context.Context, runID string, forecasts []models.ProcessActivityForecast) error {
+	if len(forecasts) == 0 {
+		return nil
+	}
+	doc := c.firestore.Collection("runs").Doc(runID)
+	err := c.firestore.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		existing, err := readRunDocInTx(tx, doc)
+		if err != nil {
+			return err
+		}
+		var prior []models.ProcessActivityForecast
+		if existing != nil {
+			prior = existing.ProcessActivityForecasts
+		}
+		return tx.Set(doc, activityForecastStoreFields(runID, prior, forecasts, time.Now()), firestore.MergeAll)
 	})
 	if err != nil {
 		return fmt.Errorf("append process forecasts for run %s: %w", runID, err)

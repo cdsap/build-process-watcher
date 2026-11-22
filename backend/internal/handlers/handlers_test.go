@@ -605,7 +605,7 @@ func TestGetRunUsesStoragePort(t *testing.T) {
 	if len(response.Samples) != 1 || response.ProcessInfo["12345"].VMFlags[0] != "-Xmx2g" {
 		t.Fatalf("unexpected response: %#v", response)
 	}
-	if response.PredictionMode != "predict" || response.PredictionThrottleS != 10 {
+	if response.PredictionTarget != "memory" || len(response.ProcessActivityForecasts) != 0 || response.PredictionMode != "predict" || response.PredictionThrottleS != 10 {
 		t.Fatalf("prediction fields = mode=%q throttle=%d, want predict/10", response.PredictionMode, response.PredictionThrottleS)
 	}
 }
@@ -719,6 +719,13 @@ func TestAuthPredictionModes(t *testing.T) {
 		{"prediction_mode=predict", "predict", http.StatusOK},
 		{"prediction_mode=bqml-boosted", "bqml-boosted", http.StatusOK},
 		{"prediction_mode=tabpfn", "tabpfn", http.StatusOK},
+		{"prediction_mode=tabpfn&prediction_target=class_loading", "tabpfn", http.StatusOK},
+		{"prediction_mode=tabpfn&prediction_target=jit", "", http.StatusBadRequest},
+		{"prediction_mode=forecast&prediction_target=class_loading", "", http.StatusBadRequest},
+		{"prediction_mode=predict&prediction_target=class_loading", "", http.StatusBadRequest},
+		{"prediction_mode=bqml-boosted&prediction_target=class_loading", "", http.StatusBadRequest},
+		{"prediction_mode=disabled&prediction_target=class_loading", "", http.StatusBadRequest},
+		{"prediction_target=class_loading", "", http.StatusBadRequest},
 		{"prediction_mode=reliability", "", http.StatusBadRequest},
 		{"predictive_reliability=true", "", http.StatusBadRequest},
 		{"prediction_mode=invalid", "", http.StatusBadRequest},
@@ -751,5 +758,69 @@ func TestAuthPersistsPredictionThrottle(t *testing.T) {
 	}
 	if store.PredictionThrottles["run-throttle"] != 20 {
 		t.Fatalf("throttle=%d, want 20", store.PredictionThrottles["run-throttle"])
+	}
+}
+
+type fakeActivityProvider struct{ calls int }
+
+func (p *fakeActivityProvider) ForecastActivity(context.Context, predictor.RunSnapshot) ([]models.ProcessActivityForecast, error) {
+	p.calls++
+	return nil, context.DeadlineExceeded
+}
+
+func TestActivityAuthIngestJobAndResponse(t *testing.T) {
+	store := newFakeStorage()
+	const runID = "activity-run"
+	before, after := 100, 120
+	store.Runs[runID] = &models.RunDoc{RunID: runID, StartTime: time.Now(), UpdatedAt: time.Now(), Samples: []models.Sample{
+		{PID: "1", Name: "GradleDaemon", Timestamp: 1000, ClassesLoaded: &before},
+		{PID: "1", Name: "GradleDaemon", Timestamp: 21000, ElapsedTime: 20, ClassesLoaded: &after},
+	}}
+	provider := &fakeActivityProvider{}
+	exporter := &fakeExporter{}
+	scheduled := 0
+	h := New(Config{Storage: store, Export: exporter, Authenticator: testAuthn, TimelineProviders: prediction.TimelineProviders{Activity: provider}, PredictionJobToken: "job-secret", PredictionScheduler: predictionqueue.Func(func(context.Context, string, int, int) error { scheduled++; return nil })})
+	authRec := httptest.NewRecorder()
+	h.Auth(authRec, httptest.NewRequest(http.MethodPost, "/auth/run/"+runID+"?prediction_mode=tabpfn&prediction_target=class_loading&export_to_bigquery=true", nil))
+	if authRec.Code != http.StatusOK || store.Runs[runID].PredictionTarget != "class_loading" || !store.ExportToBigQuery[runID] {
+		t.Fatalf("auth status=%d run=%+v", authRec.Code, store.Runs[runID])
+	}
+	token, _, err := testAuthn.GenerateToken(runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ingestReq := httptest.NewRequest(http.MethodPost, "/ingest", strings.NewReader(`{"run_id":"activity-run","data":"00:00:40 | 2 | KotlinCompileDaemon | 100MB | 200MB | 300MB"}`))
+	ingestReq.Header.Set("Authorization", "Bearer "+token)
+	ingestRec := httptest.NewRecorder()
+	h.Ingest(ingestRec, ingestReq)
+	if ingestRec.Code != http.StatusOK || scheduled != 1 || provider.calls != 0 {
+		t.Fatalf("ingest=%d scheduled=%d calls=%d", ingestRec.Code, scheduled, provider.calls)
+	}
+	jobReq := httptest.NewRequest(http.MethodPost, "/internal/prediction-jobs", strings.NewReader(`{"run_id":"activity-run"}`))
+	jobReq.Header.Set(predictionqueue.JobTokenHeader, "job-secret")
+	jobRec := httptest.NewRecorder()
+	h.EvaluatePredictionJob(jobRec, jobReq)
+	if jobRec.Code != http.StatusOK || provider.calls != 1 || len(store.AppendedActivityForecasts) == 0 || len(store.AppendedForecasts) != 0 {
+		t.Fatalf("job=%d calls=%d activity=%+v", jobRec.Code, provider.calls, store.AppendedActivityForecasts)
+	}
+	store.Runs[runID].ProcessActivityForecasts = store.AppendedActivityForecasts
+	responseRec := httptest.NewRecorder()
+	h.GetRun(responseRec, httptest.NewRequest(http.MethodGet, "/runs/"+runID, nil))
+	var response models.RunResponse
+	if err := json.NewDecoder(responseRec.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if response.PredictionTarget != "class_loading" || response.ProcessActivityForecasts[0].Status != "unavailable" || response.ProcessActivityForecasts[0].CreatedAtMs != 21000 || response.ProcessActivityForecasts[0].Points[0].TargetAtMs != 81000 {
+		t.Fatalf("response=%+v", response)
+	}
+	finishReq := httptest.NewRequest(http.MethodPost, "/finish/"+runID, nil)
+	finishReq.Header.Set("Authorization", "Bearer "+token)
+	finishRec := httptest.NewRecorder()
+	h.FinishRun(finishRec, finishReq)
+	if finishRec.Code != http.StatusOK || len(exporter.runIDs) != 1 || exporter.runIDs[0] != runID {
+		t.Fatalf("finish=%d exports=%v", finishRec.Code, exporter.runIDs)
+	}
+	if !store.ExportToBigQuery[runID] {
+		t.Fatal("prediction changed BigQuery opt-in")
 	}
 }

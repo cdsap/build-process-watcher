@@ -11,6 +11,7 @@ import (
 type forecastRepoStub struct {
 	run       *models.RunDoc
 	appended  []models.ProcessForecast
+	activity  []models.ProcessActivityForecast
 	appendErr error
 	lastCtx   context.Context
 	getRunN   int
@@ -363,5 +364,121 @@ func TestForecastEvaluatorEvaluateLoadedSkipsGetRun(t *testing.T) {
 	}
 	if len(repo.appended) != 1 {
 		t.Fatalf("appended = %d, want 1", len(repo.appended))
+	}
+}
+
+func (s *forecastRepoStub) AppendProcessActivityForecasts(ctx context.Context, _ string, f []models.ProcessActivityForecast) error {
+	s.lastCtx = ctx
+	s.activity = models.AppendProcessActivityForecasts(s.activity, f)
+	return s.appendErr
+}
+
+type activityProviderStub struct {
+	out   []models.ProcessActivityForecast
+	err   error
+	calls int
+}
+
+func (p *activityProviderStub) ForecastActivity(context.Context, predictor.RunSnapshot) ([]models.ProcessActivityForecast, error) {
+	p.calls++
+	return p.out, p.err
+}
+
+func TestActivityEvaluationUsesSampleClockAndStatuses(t *testing.T) {
+	count0, count1 := 0, 10
+	const clock = int64(1700000020000)
+	for _, status := range []string{"ready", "fallback", "insufficient_history", "unavailable"} {
+		t.Run(status, func(t *testing.T) {
+			delta, total := 5.0, 15.0
+			point := models.ProcessActivityForecastPoint{TargetAtMs: clock + 60000}
+			if status == "ready" || status == "fallback" {
+				point.DeltaCount = &delta
+				point.TotalCount = &total
+			}
+			provider := &activityProviderStub{out: []models.ProcessActivityForecast{{PID: "1", ProcessName: "GradleDaemon", Metric: "classes_loaded", CreatedAtMs: clock, Status: status, Points: []models.ProcessActivityForecastPoint{point}, Method: "tabpfn", ModelVersion: "v1"}}}
+			repo := &forecastRepoStub{run: &models.RunDoc{PredictionMode: "tabpfn", PredictionTarget: "class_loading", Samples: []models.Sample{
+				{PID: "1", Name: "GradleDaemon", Timestamp: clock, ElapsedTime: 20, ClassesLoaded: &count1},
+				{PID: "1", Name: "GradleDaemon", Timestamp: clock - 20000, ClassesLoaded: &count0},
+				{PID: "2", Name: "KotlinCompileDaemon", Timestamp: clock, ElapsedTime: 20},
+			}}}
+			ctx := context.WithValue(context.Background(), struct{}{}, "job")
+			evaluator := NewForecastEvaluator(repo, TimelineProviders{Activity: provider})
+			evaluator.Evaluate(ctx, "run")
+			if provider.calls != 1 || len(repo.activity) != 2 || len(repo.appended) != 0 {
+				t.Fatalf("provider=%d activity=%+v memory=%+v", provider.calls, repo.activity, repo.appended)
+			}
+			got := repo.activity[0]
+			if got.Status != status || got.CreatedAtMs != clock || got.Points[0].TargetAtMs != clock+60000 || got.LatencyMs < 1 || got.ModelVersion != "v1" {
+				t.Fatalf("forecast=%+v", got)
+			}
+			if repo.activity[1].Status != "insufficient_history" || repo.lastCtx != ctx {
+				t.Fatalf("legacy/context lost: %+v", repo.activity)
+			}
+			repo.run.ProcessActivityForecasts = repo.activity
+			evaluator.Evaluate(ctx, "run")
+			if provider.calls != 1 {
+				t.Fatal("same cadence retried")
+			}
+		})
+	}
+}
+
+func TestActivityUnavailableAndInvalidResultsNeverBecomeMemory(t *testing.T) {
+	before, after := 100, 120
+	for _, scenario := range []string{"missing", "error", "empty", "memory", "clock", "negative", "unknown_status", "wrong_total"} {
+		t.Run(scenario, func(t *testing.T) {
+			repo := &forecastRepoStub{run: &models.RunDoc{PredictionMode: "tabpfn", PredictionTarget: "class_loading", Samples: []models.Sample{
+				{PID: "1", Name: "GradleDaemon", Timestamp: 1000, ClassesLoaded: &before},
+				{PID: "1", Name: "GradleDaemon", Timestamp: 21000, ElapsedTime: 20, ClassesLoaded: &after},
+			}}}
+			var provider *activityProviderStub
+			providers := TimelineProviders{TabPFN: forecastProviderStub{out: []models.ProcessForecast{{Metric: "rss"}}}}
+			if scenario != "missing" {
+				provider = &activityProviderStub{}
+				providers.Activity = provider
+				if scenario == "error" {
+					provider.err = context.DeadlineExceeded
+				}
+				if scenario == "memory" {
+					provider.out = []models.ProcessActivityForecast{{Metric: "rss", Status: "ready", CreatedAtMs: 21000}}
+				}
+				if scenario == "clock" {
+					provider.out = []models.ProcessActivityForecast{{PID: "1", ProcessName: "GradleDaemon", Metric: "classes_loaded", Status: "unavailable", CreatedAtMs: 99999, Points: []models.ProcessActivityForecastPoint{{TargetAtMs: 159999}}}}
+				}
+				if scenario == "negative" || scenario == "unknown_status" || scenario == "wrong_total" {
+					delta, total := -1.0, 119.0
+					status := "ready"
+					if scenario == "wrong_total" {
+						delta = 2
+						total = 500
+					}
+					if scenario == "unknown_status" {
+						status = "ok"
+						delta = 1
+						total = 121
+					}
+					provider.out = []models.ProcessActivityForecast{{PID: "1", ProcessName: "GradleDaemon", Metric: "classes_loaded", Status: status, CreatedAtMs: 21000, Points: []models.ProcessActivityForecastPoint{{TargetAtMs: 81000, DeltaCount: &delta, TotalCount: &total}}}}
+				}
+			}
+			NewForecastEvaluator(repo, providers).Evaluate(context.Background(), "run")
+			if len(repo.activity) != 1 || repo.activity[0].Status != "unavailable" || len(repo.appended) != 0 || repo.activity[0].Points[0].DeltaCount != nil {
+				t.Fatalf("activity=%+v memory=%+v", repo.activity, repo.appended)
+			}
+		})
+	}
+}
+
+func TestActivityCounterResetAndSingleSampleAreInsufficient(t *testing.T) {
+	before, after := 100, 10
+	for _, samples := range [][]models.Sample{
+		{{PID: "1", Timestamp: 21000, ElapsedTime: 20, ClassesLoaded: &after}},
+		{{PID: "1", Timestamp: 1000, ClassesLoaded: &before}, {PID: "1", Timestamp: 21000, ElapsedTime: 20, ClassesLoaded: &after}},
+	} {
+		repo := &forecastRepoStub{run: &models.RunDoc{PredictionMode: "tabpfn", PredictionTarget: "class_loading", Samples: samples}}
+		provider := &activityProviderStub{}
+		NewForecastEvaluator(repo, TimelineProviders{Activity: provider}).Evaluate(context.Background(), "run")
+		if provider.calls != 0 || len(repo.activity) != 1 || repo.activity[0].Status != "insufficient_history" {
+			t.Fatalf("activity=%+v calls=%d", repo.activity, provider.calls)
+		}
 	}
 }

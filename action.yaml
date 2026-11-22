@@ -33,6 +33,10 @@ inputs:
   prediction_mode:
     description: 'Prediction request: disabled, forecast, predict, bqml-boosted, or tabpfn (default disabled)'
     required: false
+  prediction_target:
+    description: 'Prediction target: memory or class_loading (class_loading requires tabpfn)'
+    required: false
+    default: 'memory'
   prediction_throttle_s:
     description: 'Process-forecast cadence in elapsed seconds for timeline modes (default 20; range 1–3600)'
     required: false
@@ -55,6 +59,8 @@ outputs:
     description: 'Whether optional BigQuery metrics export was requested for this run (backend must be configured with BIGQUERY_EXPORT_DATASET)'
   prediction_mode:
     description: 'Selected prediction mode; a request does not imply provider availability'
+  prediction_target:
+    description: 'Selected prediction target'
   prediction_throttle_s:
     description: 'Selected process-forecast cadence in elapsed seconds'
   freshness_diagnostics:

@@ -277,3 +277,59 @@ func TestNormalizeTimelineBaseURLStripsPredictSuffix(t *testing.T) {
 		t.Fatalf("url = %q, want .../tabpredict", provider.client.url)
 	}
 }
+
+func TestRemoteActivityForecastPostsTypedTargetAndCounters(t *testing.T) {
+	var body struct {
+		RunID   string         `json:"run_id"`
+		Target  string         `json:"prediction_target"`
+		Samples []remoteSample `json:"samples"`
+	}
+	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/tabpfn" {
+			t.Errorf("path=%s", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		w.Write([]byte(`{"forecasts":[{"pid":"1","process_name":"GradleDaemon","metric":"classes_loaded","created_at_ms":1700000020000,"status":"ready","points":[{"target_at_ms":1700000080000,"delta_count":5,"total_count":15}],"model_version":"v1","method":"tabpfn","provider_latency_ms":12,"inference_latency_ms":8}]}`))
+	}))
+	defer remote.Close()
+	provider, err := NewRemoteActivityForecastProvider(RemoteForecastConfig{URL: remote.URL, HTTPClient: remote.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, unloaded, loadMs := 10, 0, 22
+	forecasts, err := provider.ForecastActivity(context.Background(), RunSnapshot{RunID: "run", Samples: []Sample{
+		{PID: "1", Name: "GradleDaemon", Timestamp: 1700000020000, ElapsedTime: 20, ClassesLoaded: &loaded, ClassesUnloaded: &unloaded, ClassLoadTimeMs: &loadMs},
+		{PID: "2", Name: "KotlinCompileDaemon", Timestamp: 1700000020000, ElapsedTime: 20},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body.Target != "class_loading" || body.RunID != "run" || len(body.Samples) != 2 {
+		t.Fatalf("request=%+v", body)
+	}
+	got := body.Samples[0]
+	if got.Timestamp != 1700000020000 || got.ElapsedTime != 20 || got.ClassesLoaded == nil || *got.ClassesLoaded != 10 || got.ClassesUnloaded == nil || *got.ClassesUnloaded != 0 || got.ClassLoadTimeMs == nil || *got.ClassLoadTimeMs != 22 || body.Samples[1].ClassesLoaded != nil {
+		t.Fatalf("samples=%+v", body.Samples)
+	}
+	if len(forecasts) != 1 || forecasts[0].LatencyMs < 1 || forecasts[0].ProviderLatencyMs != 12 || forecasts[0].InferenceLatencyMs != 8 || *forecasts[0].Points[0].DeltaCount != 5 || *forecasts[0].Points[0].TotalCount != 15 {
+		t.Fatalf("forecasts=%+v", forecasts)
+	}
+	encoded, err := json.Marshal(forecasts)
+	if err != nil || strings.Contains(string(encoded), "value_mb") {
+		t.Fatalf("activity encoding=%s err=%v", encoded, err)
+	}
+}
+
+func TestRemoteActivityUnavailable(t *testing.T) {
+	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusServiceUnavailable) }))
+	defer remote.Close()
+	provider, err := NewRemoteActivityForecastProvider(RemoteForecastConfig{URL: remote.URL, HTTPClient: remote.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = provider.ForecastActivity(context.Background(), RunSnapshot{}); !errors.Is(err, ErrRemoteUnavailable) {
+		t.Fatalf("error=%v", err)
+	}
+}

@@ -11,20 +11,21 @@ import (
 
 // FakeStorage is a shared in-memory handlers.RunStore double for package tests.
 type FakeStorage struct {
-	Runs                  map[string]*models.RunDoc
-	Processes             map[string]*models.ProcessDoc
-	ExportToBigQuery      map[string]bool
-	PredictiveReliability map[string]bool
-	PredictionModes       map[string]string
-	PredictionThrottles   map[string]int
-	GetRunErr             error
-	StoredSamples         []models.Sample
-	StoredProcessInfo     []models.ProcessInfo
-	AppendedForecasts     []models.ProcessForecast
-	FinishedRuns          []string
-	GetRunCalls           int
-	GetProcessesCalls     int
-	LastCtx               context.Context
+	Runs                      map[string]*models.RunDoc
+	Processes                 map[string]*models.ProcessDoc
+	ExportToBigQuery          map[string]bool
+	PredictiveReliability     map[string]bool
+	PredictionModes           map[string]string
+	PredictionThrottles       map[string]int
+	GetRunErr                 error
+	StoredSamples             []models.Sample
+	StoredProcessInfo         []models.ProcessInfo
+	AppendedForecasts         []models.ProcessForecast
+	AppendedActivityForecasts []models.ProcessActivityForecast
+	FinishedRuns              []string
+	GetRunCalls               int
+	GetProcessesCalls         int
+	LastCtx                   context.Context
 }
 
 // NewFakeStorage returns an empty FakeStorage.
@@ -116,10 +117,11 @@ func (f *FakeStorage) SetRunPredictiveReliability(_ context.Context, runID strin
 	return nil
 }
 
-func (f *FakeStorage) SetRunPredictionMode(_ context.Context, runID, mode string) error {
+func (f *FakeStorage) SetRunPredictionSettings(_ context.Context, runID, mode, target string) error {
 	f.PredictionModes[runID] = mode
 	if run := f.Runs[runID]; run != nil {
 		run.PredictionMode = mode
+		run.PredictionTarget = target
 	}
 	return nil
 }
@@ -147,4 +149,9 @@ func (f *FakeStorage) MarkRunAsFinished(_ context.Context, runID string) (bool, 
 	run.FinishedAt = time.Now()
 	f.FinishedRuns = append(f.FinishedRuns, runID)
 	return true, nil
+}
+
+func (f *FakeStorage) AppendProcessActivityForecasts(_ context.Context, _ string, forecasts []models.ProcessActivityForecast) error {
+	f.AppendedActivityForecasts = models.AppendProcessActivityForecasts(f.AppendedActivityForecasts, forecasts)
+	return nil
 }

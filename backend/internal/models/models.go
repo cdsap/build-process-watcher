@@ -58,23 +58,25 @@ type ProcessDoc struct {
 
 // RunDoc represents a monitoring run document in Firestore
 type RunDoc struct {
-	ID                    string                 `firestore:"id"`
-	RunID                 string                 `firestore:"run_id"`
-	StartTime             time.Time              `firestore:"start_time"`
-	EndTime               time.Time              `firestore:"end_time,omitempty"`
-	CreatedAt             time.Time              `firestore:"created_at"`
-	UpdatedAt             time.Time              `firestore:"updated_at"`
-	UpdatedAtTimestamp    int64                  `firestore:"updated_at_timestamp"` // Unix millis for timezone-independent queries
-	Samples               []Sample               `firestore:"samples"`
-	Finished              bool                   `firestore:"finished,omitempty"`
-	FinishedAt            time.Time              `firestore:"finished_at,omitempty"`
-	ExpireAt              time.Time              `firestore:"expire_at,omitempty"` // TTL field - set manually in Firestore, used by TTL policy
-	ExportToBigquery      bool                   `firestore:"export_to_bigquery,omitempty"`
-	PredictiveReliability bool                   `firestore:"predictive_reliability,omitempty"`
-	PredictionMode        string                 `firestore:"prediction_mode,omitempty"`
-	PredictionThrottleS   int                    `firestore:"prediction_throttle_s,omitempty"`
-	PredictionCheckpoints []PredictionCheckpoint `firestore:"prediction_checkpoints,omitempty"`
-	ProcessForecasts      []ProcessForecast      `firestore:"process_forecasts,omitempty"`
+	ID                       string                    `firestore:"id"`
+	RunID                    string                    `firestore:"run_id"`
+	StartTime                time.Time                 `firestore:"start_time"`
+	EndTime                  time.Time                 `firestore:"end_time,omitempty"`
+	CreatedAt                time.Time                 `firestore:"created_at"`
+	UpdatedAt                time.Time                 `firestore:"updated_at"`
+	UpdatedAtTimestamp       int64                     `firestore:"updated_at_timestamp"` // Unix millis for timezone-independent queries
+	Samples                  []Sample                  `firestore:"samples"`
+	Finished                 bool                      `firestore:"finished,omitempty"`
+	FinishedAt               time.Time                 `firestore:"finished_at,omitempty"`
+	ExpireAt                 time.Time                 `firestore:"expire_at,omitempty"` // TTL field - set manually in Firestore, used by TTL policy
+	ExportToBigquery         bool                      `firestore:"export_to_bigquery,omitempty"`
+	PredictiveReliability    bool                      `firestore:"predictive_reliability,omitempty"`
+	PredictionTarget         string                    `firestore:"prediction_target,omitempty"`
+	ProcessActivityForecasts []ProcessActivityForecast `firestore:"process_activity_forecasts,omitempty"`
+	PredictionMode           string                    `firestore:"prediction_mode,omitempty"`
+	PredictionThrottleS      int                       `firestore:"prediction_throttle_s,omitempty"`
+	PredictionCheckpoints    []PredictionCheckpoint    `firestore:"prediction_checkpoints,omitempty"`
+	ProcessForecasts         []ProcessForecast         `firestore:"process_forecasts,omitempty"`
 }
 
 // ProcessForecast is one public-safe process/metric forecast issuance.
@@ -151,15 +153,17 @@ func MergePredictionCheckpoint(existing []PredictionCheckpoint, checkpoint Predi
 
 // RunResponse is the API response for a run
 type RunResponse struct {
-	Samples               []Sample               `json:"samples"`
-	ProcessInfo           map[string]ProcessInfo `json:"process_info,omitempty"`
-	PredictionMode        string                 `json:"prediction_mode,omitempty"`
-	PredictionThrottleS   int                    `json:"prediction_throttle_s,omitempty"`
-	PredictionCheckpoints []PredictionCheckpoint `json:"prediction_checkpoints,omitempty"`
-	ProcessForecasts      []ProcessForecast      `json:"process_forecasts,omitempty"`
-	Finished              bool                   `json:"finished"`
-	FinishedAt            *time.Time             `json:"finished_at,omitempty"`
-	UpdatedAt             time.Time              `json:"updated_at"`
+	Samples                  []Sample                  `json:"samples"`
+	ProcessInfo              map[string]ProcessInfo    `json:"process_info,omitempty"`
+	PredictionTarget         string                    `json:"prediction_target,omitempty"`
+	ProcessActivityForecasts []ProcessActivityForecast `json:"process_activity_forecasts,omitempty"`
+	PredictionMode           string                    `json:"prediction_mode,omitempty"`
+	PredictionThrottleS      int                       `json:"prediction_throttle_s,omitempty"`
+	PredictionCheckpoints    []PredictionCheckpoint    `json:"prediction_checkpoints,omitempty"`
+	ProcessForecasts         []ProcessForecast         `json:"process_forecasts,omitempty"`
+	Finished                 bool                      `json:"finished"`
+	FinishedAt               *time.Time                `json:"finished_at,omitempty"`
+	UpdatedAt                time.Time                 `json:"updated_at"`
 }
 
 // TokenRequest is the request body for token generation
@@ -193,4 +197,48 @@ type IngestFreshness struct {
 	SampleID          string `json:"sample_id"`
 	Sequence          int    `json:"sequence"`
 	CollectedAtUnixMs int64  `json:"collected_at_unix_ms"`
+}
+
+// ProcessActivityForecast is a count-valued issuance, separate from memory MB.
+// Count values are absent for insufficient_history and unavailable statuses.
+type ProcessActivityForecast struct {
+	ProcessName        string                         `json:"process_name" firestore:"process_name"`
+	PID                string                         `json:"pid" firestore:"pid"`
+	Metric             string                         `json:"metric" firestore:"metric"`
+	CreatedAtMs        int64                          `json:"created_at_ms" firestore:"created_at_ms"`
+	Status             string                         `json:"status" firestore:"status"`
+	Points             []ProcessActivityForecastPoint `json:"points,omitempty" firestore:"points,omitempty"`
+	ModelVersion       string                         `json:"model_version,omitempty" firestore:"model_version,omitempty"`
+	Method             string                         `json:"method,omitempty" firestore:"method,omitempty"`
+	LatencyMs          int64                          `json:"latency_ms,omitempty" firestore:"latency_ms,omitempty"`
+	ProviderLatencyMs  int64                          `json:"provider_latency_ms,omitempty" firestore:"provider_latency_ms,omitempty"`
+	InferenceLatencyMs int64                          `json:"inference_latency_ms,omitempty" firestore:"inference_latency_ms,omitempty"`
+}
+
+type ProcessActivityForecastPoint struct {
+	TargetAtMs int64    `json:"target_at_ms" firestore:"target_at_ms"`
+	DeltaCount *float64 `json:"delta_count,omitempty" firestore:"delta_count,omitempty"`
+	TotalCount *float64 `json:"total_count,omitempty" firestore:"total_count,omitempty"`
+}
+
+// AppendProcessActivityForecasts preserves the first issuance for each process,
+// metric and sample-clock creation, including duplicates within a retry batch.
+func AppendProcessActivityForecasts(existing, additions []ProcessActivityForecast) []ProcessActivityForecast {
+	type key struct {
+		pid, name, metric string
+		created           int64
+	}
+	seen := make(map[key]bool)
+	out := append([]ProcessActivityForecast(nil), existing...)
+	for _, f := range existing {
+		seen[key{f.PID, f.ProcessName, f.Metric, f.CreatedAtMs}] = true
+	}
+	for _, f := range additions {
+		k := key{f.PID, f.ProcessName, f.Metric, f.CreatedAtMs}
+		if !seen[k] {
+			out = append(out, f)
+			seen[k] = true
+		}
+	}
+	return out
 }

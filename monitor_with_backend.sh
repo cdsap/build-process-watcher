@@ -211,7 +211,7 @@ get_auth_token() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Requesting auth token for run_id: $RUN_ID" >> "$BACKEND_DEBUG_LOG"
     
     local auth_path="$BACKEND_URL/auth/run/$RUN_ID"
-    local auth_params=()
+    local auth_params=("prediction_target=${PREDICTION_TARGET:-memory}")
     if [ "${EXPORT_TO_BIGQUERY:-false}" = "true" ]; then
         auth_params+=("export_to_bigquery=true")
     fi

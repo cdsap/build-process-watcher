@@ -17,6 +17,7 @@ describe('resolveMonitoringFeatureFlags', () => {
       frontendUrl: '',
       exportToBigquery: false,
       predictionMode: 'disabled',
+      predictionTarget: 'memory',
       predictionThrottleS: 20,
       freshnessDiagnostics: false,
     });
@@ -34,6 +35,7 @@ describe('resolveMonitoringFeatureFlags', () => {
       frontendUrl: '',
       exportToBigquery: false,
       predictionMode: 'disabled',
+      predictionTarget: 'memory',
       predictionThrottleS: 20,
       freshnessDiagnostics: false,
     });
@@ -51,6 +53,7 @@ describe('resolveMonitoringFeatureFlags', () => {
       frontendUrl: '',
       exportToBigquery: false,
       predictionMode: 'disabled',
+      predictionTarget: 'memory',
       predictionThrottleS: 20,
       freshnessDiagnostics: false,
     });
@@ -69,6 +72,7 @@ describe('resolveMonitoringFeatureFlags', () => {
       frontendUrl: `${DEFAULT_FRONTEND_BASE_URL}/runs/run-remote`,
       exportToBigquery: false,
       predictionMode: 'disabled',
+      predictionTarget: 'memory',
       predictionThrottleS: 20,
       freshnessDiagnostics: false,
     });
@@ -86,6 +90,7 @@ describe('resolveMonitoringFeatureFlags', () => {
       frontendUrl: `${DEFAULT_FRONTEND_BASE_URL}/runs/run-predictive`,
       exportToBigquery: false,
       predictionMode: 'predict',
+      predictionTarget: 'memory',
       predictionThrottleS: 20,
       freshnessDiagnostics: false,
     });
@@ -105,6 +110,7 @@ describe('resolveMonitoringFeatureFlags', () => {
       frontendUrl: 'https://frontend.example/runs/run-abc',
       exportToBigquery: false,
       predictionMode: 'disabled',
+      predictionTarget: 'memory',
       predictionThrottleS: 20,
       freshnessDiagnostics: false,
     });
@@ -123,6 +129,7 @@ describe('resolveMonitoringFeatureFlags', () => {
       frontendUrl: 'https://frontend.example/runs//run-abc',
       exportToBigquery: false,
       predictionMode: 'disabled',
+      predictionTarget: 'memory',
       predictionThrottleS: 20,
       freshnessDiagnostics: false,
     });
@@ -141,6 +148,7 @@ describe('resolveMonitoringFeatureFlags', () => {
       frontendUrl: 'https://frontend.example/runs/run-abc',
       exportToBigquery: false,
       predictionMode: 'disabled',
+      predictionTarget: 'memory',
       predictionThrottleS: 20,
       freshnessDiagnostics: false,
     });
@@ -158,6 +166,7 @@ describe('resolveMonitoringFeatureFlags', () => {
       frontendUrl: `${DEFAULT_FRONTEND_BASE_URL}/runs/run-freshness`,
       exportToBigquery: false,
       predictionMode: 'disabled',
+      predictionTarget: 'memory',
       predictionThrottleS: 20,
       freshnessDiagnostics: true,
     });
@@ -189,5 +198,19 @@ describe('prediction throttle selection', () => {
   it('rejects invalid values', () => {
     expect(() => resolveMonitoringFeatureFlags({ ...base, predictionThrottleS: '0' })).toThrow('Invalid prediction_throttle_s');
     expect(() => resolveMonitoringFeatureFlags({ ...base, predictionThrottleS: 'abc' })).toThrow('Invalid prediction_throttle_s');
+  });
+});
+
+describe('prediction target', () => {
+  const base = { remoteMonitoringRequested: false, exportToBigqueryRequested: false, runId: 'activity' };
+  it('defaults to memory and enables class loading only for tabpfn', () => {
+    expect(resolveMonitoringFeatureFlags(base)).toHaveProperty('predictionTarget', 'memory');
+    expect(resolveMonitoringFeatureFlags({ ...base, predictionMode: 'tabpfn', predictionTarget: 'class_loading' })).toMatchObject({ predictionTarget: 'class_loading', enableBackend: true });
+  });
+  it.each(['disabled', 'forecast', 'predict', 'bqml-boosted'])('rejects class loading with %s', predictionMode => {
+    expect(() => resolveMonitoringFeatureFlags({ ...base, predictionMode, predictionTarget: 'class_loading' })).toThrow('prediction_target');
+  });
+  it('rejects unknown targets', () => {
+    expect(() => resolveMonitoringFeatureFlags({ ...base, predictionMode: 'tabpfn', predictionTarget: 'jit' })).toThrow('prediction_target');
   });
 });

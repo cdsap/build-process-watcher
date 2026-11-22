@@ -9,15 +9,17 @@ import (
 // reservedRunWriteKeys must never appear in sample/checkpoint/forecast merge maps,
 // so concurrent writers cannot clobber sibling fields via a full document Set.
 var reservedRunWriteKeys = map[string]struct{}{
-	"prediction_checkpoints": {},
-	"process_forecasts":      {},
-	"finished":               {},
-	"finished_at":            {},
-	"expire_at":              {},
-	"export_to_bigquery":     {},
-	"predictive_reliability": {},
-	"prediction_mode":        {},
-	"prediction_throttle_s":  {},
+	"prediction_checkpoints":     {},
+	"process_forecasts":          {},
+	"process_activity_forecasts": {},
+	"prediction_target":          {},
+	"finished":                   {},
+	"finished_at":                {},
+	"expire_at":                  {},
+	"export_to_bigquery":         {},
+	"predictive_reliability":     {},
+	"prediction_mode":            {},
+	"prediction_throttle_s":      {},
 }
 
 // sampleStoreFields builds a MergeAll payload that only updates samples and
@@ -127,4 +129,12 @@ func containsReservedRunWriteKey(fields map[string]interface{}) string {
 		}
 	}
 	return ""
+}
+
+func activityForecastStoreFields(runID string, existing, additions []models.ProcessActivityForecast, now time.Time) map[string]interface{} {
+	return map[string]interface{}{
+		"run_id":                     runID,
+		"process_activity_forecasts": models.AppendProcessActivityForecasts(existing, additions),
+		"updated_at":                 now, "updated_at_timestamp": ToMillis(now),
+	}
 }

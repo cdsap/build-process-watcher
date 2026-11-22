@@ -13,15 +13,16 @@ import (
 
 // Options configures the public backend server composition.
 type Options struct {
-	ProjectID              string
-	Port                   string
-	BigQueryDataset        string
-	BigQueryTable          string
-	BigQueryProcessesTable string
-	ForecastProvider       predictor.ForecastProvider
-	TabPredictProvider     predictor.ForecastProvider
-	BQMLBoostedProvider    predictor.ForecastProvider
-	TabPFNProvider         predictor.ForecastProvider
+	ProjectID                string
+	Port                     string
+	BigQueryDataset          string
+	BigQueryTable            string
+	BigQueryProcessesTable   string
+	ForecastProvider         predictor.ForecastProvider
+	TabPredictProvider       predictor.ForecastProvider
+	BQMLBoostedProvider      predictor.ForecastProvider
+	TabPFNProvider           predictor.ForecastProvider
+	ActivityForecastProvider predictor.ActivityForecastProvider
 	// Prediction job queue (Cloud Tasks). Empty values disable the scheduler.
 	PredictionTasksQueue    string
 	PredictionTasksLocation string
@@ -88,16 +89,30 @@ func buildOptions(config serverConfig) (Options, error) {
 		{enabled: config.tabpfnProviderEnabled, timeout: config.tabpfnProviderTimeout, construct: predictor.NewRemoteTabPFNProvider},
 	})
 
+	var activity predictor.ActivityForecastProvider
+	if config.tabpfnProviderEnabled {
+		cfg := baseRemote
+		cfg.Timeout = config.tabpfnProviderTimeout
+		remote, err := predictor.NewRemoteActivityForecastProvider(cfg)
+		if err != nil {
+			if timelineErr == nil {
+				timelineErr = err
+			}
+		} else {
+			activity = remote
+		}
+	}
 	return Options{
-		ProjectID:              strings.TrimSpace(config.projectID),
-		Port:                   portOrDefault(config.port),
-		BigQueryDataset:        strings.TrimSpace(config.bigQueryDataset),
-		BigQueryTable:          strings.TrimSpace(config.bigQueryTable),
-		BigQueryProcessesTable: strings.TrimSpace(config.bigQueryProcessesTable),
-		ForecastProvider:       forecastProvider,
-		TabPredictProvider:     tabPredictProvider,
-		BQMLBoostedProvider:    bqmlBoostedProvider,
-		TabPFNProvider:         tabpfnProvider,
+		ProjectID:                strings.TrimSpace(config.projectID),
+		Port:                     portOrDefault(config.port),
+		BigQueryDataset:          strings.TrimSpace(config.bigQueryDataset),
+		BigQueryTable:            strings.TrimSpace(config.bigQueryTable),
+		BigQueryProcessesTable:   strings.TrimSpace(config.bigQueryProcessesTable),
+		ForecastProvider:         forecastProvider,
+		TabPredictProvider:       tabPredictProvider,
+		BQMLBoostedProvider:      bqmlBoostedProvider,
+		TabPFNProvider:           tabpfnProvider,
+		ActivityForecastProvider: activity,
 	}, timelineErr
 }
 

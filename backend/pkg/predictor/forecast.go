@@ -122,3 +122,42 @@ func stampForecastLatency(forecasts []ProcessForecast, latencyMs int64) {
 		}
 	}
 }
+
+// ActivityForecastProvider returns count-valued activity, never memory forecasts.
+type ActivityForecastProvider interface {
+	ForecastActivity(context.Context, RunSnapshot) ([]ProcessActivityForecast, error)
+}
+
+type RemoteActivityForecastProvider struct{ client *remoteClient }
+
+// NewRemoteActivityForecastProvider uses the TabPFN endpoint with a typed target.
+func NewRemoteActivityForecastProvider(config RemoteForecastConfig) (*RemoteActivityForecastProvider, error) {
+	remote, err := newRemoteTimelineProvider(config, "/tabpfn")
+	if err != nil {
+		return nil, err
+	}
+	return &RemoteActivityForecastProvider{client: remote.client}, nil
+}
+
+func (p *RemoteActivityForecastProvider) ForecastActivity(ctx context.Context, snapshot RunSnapshot) ([]ProcessActivityForecast, error) {
+	payload := struct {
+		RunID            string         `json:"run_id"`
+		PredictionTarget string         `json:"prediction_target"`
+		Samples          []remoteSample `json:"samples"`
+	}{snapshot.RunID, "class_loading", toRemoteSamples(snapshot.Samples)}
+	var response struct {
+		Forecasts []ProcessActivityForecast `json:"forecasts"`
+	}
+	started := time.Now()
+	if err := p.client.postJSON(ctx, payload, &response); err != nil {
+		return nil, err
+	}
+	latency := time.Since(started).Milliseconds()
+	if latency < 1 {
+		latency = 1
+	}
+	for i := range response.Forecasts {
+		response.Forecasts[i].LatencyMs = latency
+	}
+	return response.Forecasts, nil
+}

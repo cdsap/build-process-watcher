@@ -14,6 +14,9 @@ func TestParseAuthRunOptions(t *testing.T) {
 		want    authRunOptions
 		wantErr string
 	}{
+		{name: "activity", query: "prediction_mode=tabpfn&prediction_target=class_loading", want: authRunOptions{Mode: models.PredictionModeTabPFN, Target: "class_loading"}},
+		{name: "unsupported target", query: "prediction_mode=tabpfn&prediction_target=jit", wantErr: "invalid prediction_target: class_loading requires prediction_mode=tabpfn; otherwise use memory"},
+		{name: "unsupported pair", query: "prediction_mode=forecast&prediction_target=class_loading", wantErr: "invalid prediction_target: class_loading requires prediction_mode=tabpfn; otherwise use memory"},
 		{name: "empty", query: "", want: authRunOptions{}},
 		{name: "disabled", query: "prediction_mode=disabled", want: authRunOptions{Mode: models.PredictionModeDisabled}},
 		{name: "forecast", query: "prediction_mode=forecast", want: authRunOptions{Mode: models.PredictionModeForecast}},
@@ -39,6 +42,9 @@ func TestParseAuthRunOptions(t *testing.T) {
 			}
 			if err != nil {
 				t.Fatal(err)
+			}
+			if tt.want.Target == "" {
+				tt.want.Target = "memory"
 			}
 			if got != tt.want {
 				t.Fatalf("got %#v, want %#v", got, tt.want)

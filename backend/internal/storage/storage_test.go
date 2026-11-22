@@ -112,8 +112,8 @@ func TestCheckpointAndForecastFieldsPreserveSiblingArrays(t *testing.T) {
 	doc := map[string]interface{}{
 		"prediction_checkpoints": existingCheckpoints,
 		"process_forecasts":      existingForecasts,
-		"samples": []models.Sample{{PID: "1", RSS: 10}},
-		"finished": false,
+		"samples":                []models.Sample{{PID: "1", RSS: 10}},
+		"finished":               false,
 	}
 	applyMerge := func(fields map[string]interface{}) {
 		for key, value := range fields {
@@ -223,5 +223,32 @@ func TestIsRunStale(t *testing.T) {
 				t.Fatalf("isRunStale = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestActivityForecastTransactionFieldsDeduplicateAndPreserveSiblings(t *testing.T) {
+	first := models.ProcessActivityForecast{PID: "1", ProcessName: "GradleDaemon", Metric: "classes_loaded", CreatedAtMs: 1000, Status: "unavailable"}
+	next := first
+	next.CreatedAtMs = 21000
+	other := first
+	other.PID = "2"
+	replacement := first
+	replacement.Status = "ready"
+	fields := activityForecastStoreFields("run", []models.ProcessActivityForecast{first}, []models.ProcessActivityForecast{replacement, next, next, other}, time.Now())
+	got := fields["process_activity_forecasts"].([]models.ProcessActivityForecast)
+	if len(got) != 3 || got[0].CreatedAtMs != first.CreatedAtMs || got[0].Status != "unavailable" {
+		t.Fatalf("issuances=%+v", got)
+	}
+	retried := activityForecastStoreFields("run", got, []models.ProcessActivityForecast{first, next, other}, time.Now())
+	if len(retried["process_activity_forecasts"].([]models.ProcessActivityForecast)) != 3 {
+		t.Fatal("retry duplicated issuance")
+	}
+	for _, key := range []string{"samples", "process_forecasts", "prediction_checkpoints", "finished", "prediction_target", "export_to_bigquery"} {
+		if _, exists := fields[key]; exists {
+			t.Fatalf("activity write touches %s", key)
+		}
+	}
+	if _, exists := sampleStoreFields("run", nil, nil, time.Now())["process_activity_forecasts"]; exists {
+		t.Fatal("sample write clobbers activity")
 	}
 }
