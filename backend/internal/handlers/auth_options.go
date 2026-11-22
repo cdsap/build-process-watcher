@@ -32,6 +32,12 @@ func parseAuthRunOptions(query url.Values) (authRunOptions, error) {
 	if !valid {
 		return authRunOptions{}, fmt.Errorf("invalid prediction_target: class_loading requires prediction_mode=tabpfn; otherwise use memory")
 	}
+	// Token-only authentication must preserve the run's selected target. New
+	// runs still read as memory when the field is absent; selecting a mode
+	// without a target keeps the existing memory default.
+	if !query.Has("prediction_target") && mode == models.PredictionModeUnset {
+		target = ""
+	}
 	throttleS, ok := models.ParseThrottleElapsedS(query.Get("prediction_throttle_s"))
 	if !ok {
 		return authRunOptions{}, fmt.Errorf("invalid prediction_throttle_s")
@@ -48,8 +54,10 @@ func (h *Handlers) applyAuthRunOptions(ctx context.Context, runID string, opts a
 	if h == nil || h.storage == nil {
 		return nil
 	}
-	if err := h.storage.SetRunPredictionTarget(ctx, runID, opts.Target); err != nil {
-		return fmt.Errorf("persist prediction target: %w", err)
+	if opts.Target != "" {
+		if err := h.storage.SetRunPredictionTarget(ctx, runID, opts.Target); err != nil {
+			return fmt.Errorf("persist prediction target: %w", err)
+		}
 	}
 	mode := opts.Mode
 	if mode != models.PredictionModeUnset && mode != models.PredictionModeDisabled {

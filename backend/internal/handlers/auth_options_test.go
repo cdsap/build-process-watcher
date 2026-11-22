@@ -14,11 +14,13 @@ func TestParseAuthRunOptions(t *testing.T) {
 		want    authRunOptions
 		wantErr string
 	}{
-		{name: "empty", query: "", want: authRunOptions{Target: "memory"}},
+		{name: "empty", query: "", want: authRunOptions{}},
 		{name: "disabled", query: "prediction_mode=disabled", want: authRunOptions{Target: "memory", Mode: models.PredictionModeDisabled}},
 		{name: "forecast", query: "prediction_mode=forecast", want: authRunOptions{Target: "memory", Mode: models.PredictionModeForecast}},
 		{name: "throttle", query: "prediction_mode=predict&prediction_throttle_s=20", want: authRunOptions{Target: "memory", Mode: models.PredictionModePredict, ThrottleS: 20}},
-		{name: "export", query: "export_to_bigquery=true", want: authRunOptions{Target: "memory", ExportToBigQuery: true}},
+		{name: "export", query: "export_to_bigquery=true", want: authRunOptions{ExportToBigQuery: true}},
+		{name: "explicit memory", query: "prediction_target=memory", want: authRunOptions{Target: "memory"}},
+		{name: "throttle only", query: "prediction_throttle_s=20", want: authRunOptions{ThrottleS: 20}},
 		{name: "activity", query: "prediction_mode=tabpfn&prediction_target=class_loading", want: authRunOptions{Target: "class_loading", Mode: models.PredictionModeTabPFN}},
 		{name: "invalid target", query: "prediction_mode=predict&prediction_target=class_loading", wantErr: "invalid prediction_target: class_loading requires prediction_mode=tabpfn; otherwise use memory"},
 		{name: "unknown target", query: "prediction_mode=tabpfn&prediction_target=jit", wantErr: "invalid prediction_target: class_loading requires prediction_mode=tabpfn; otherwise use memory"},

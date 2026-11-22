@@ -838,3 +838,47 @@ func TestActivityAuthIngestJobAndResponse(t *testing.T) {
 		t.Fatal("prediction changed BigQuery opt-in")
 	}
 }
+
+func TestTokenRenewalAndFinishPreserveClassLoadingTarget(t *testing.T) {
+	store := newFakeStorage()
+	h := newTestHandlers(store, nil)
+	const runID = "renew-class-loading"
+	start := httptest.NewRecorder()
+	h.Auth(start, httptest.NewRequest(http.MethodPost,
+		"/auth/run/"+runID+"?prediction_mode=tabpfn&prediction_target=class_loading&prediction_throttle_s=20&export_to_bigquery=true", nil))
+	if start.Code != http.StatusOK {
+		t.Fatalf("start status=%d", start.Code)
+	}
+	store.Runs[runID].ProcessActivityForecasts = []models.ProcessActivityForecast{{
+		ProcessName: "GradleDaemon", PID: "1", Metric: "classes_loaded", CreatedAtMs: 1000, Status: "unavailable",
+	}}
+	// Cleanup renews its token without resending monitoring options.
+	renew := httptest.NewRecorder()
+	h.Auth(renew, httptest.NewRequest(http.MethodPost, "/auth/run/"+runID, nil))
+	if renew.Code != http.StatusOK {
+		t.Fatalf("renew status=%d", renew.Code)
+	}
+	var token models.TokenResponse
+	if err := json.NewDecoder(renew.Body).Decode(&token); err != nil {
+		t.Fatal(err)
+	}
+	finish := httptest.NewRequest(http.MethodPost, "/finish/"+runID, nil)
+	finish.Header.Set("Authorization", "Bearer "+token.Token)
+	finished := httptest.NewRecorder()
+	h.FinishRun(finished, finish)
+	if finished.Code != http.StatusOK {
+		t.Fatalf("finish status=%d", finished.Code)
+	}
+	response := httptest.NewRecorder()
+	h.GetRun(response, httptest.NewRequest(http.MethodGet, "/runs/"+runID, nil))
+	var run models.RunResponse
+	if err := json.NewDecoder(response.Body).Decode(&run); err != nil {
+		t.Fatal(err)
+	}
+	if !run.Finished || run.PredictionTarget != "class_loading" || run.PredictionMode != "tabpfn" || run.PredictionThrottleS != 20 || len(run.ProcessActivityForecasts) != 1 {
+		t.Fatalf("renewal/finish changed run configuration: %+v", run)
+	}
+	if !store.ExportToBigQuery[runID] {
+		t.Fatal("renewal disabled existing export opt-in")
+	}
+}
