@@ -1274,7 +1274,12 @@
 
             function syncPlayButton() {
                 if (!playBtn) return;
-                playBtn.textContent = playing ? 'Pause' : 'Play';
+                if (!pauseBtn) {
+                    playBtn.textContent = playing ? 'Pause' : 'Play';
+                } else {
+                    playBtn.textContent = 'Play';
+                    pauseBtn.disabled = !playing;
+                }
                 playBtn.setAttribute('aria-pressed', playing ? 'true' : 'false');
                 playBtn.classList.toggle('secondary', playing);
             }
@@ -1460,9 +1465,10 @@
             timeline.max = String(Math.max(0, chartTimestamps.length - 1));
 
             function syncPlayButton() {
-                playBtn.textContent = playing ? 'Pause' : 'Play';
+                playBtn.textContent = 'Play';
                 playBtn.setAttribute('aria-pressed', playing ? 'true' : 'false');
                 playBtn.classList.toggle('secondary', playing);
+                pauseBtn.disabled = !playing;
             }
 
             function updateUi(frameIndex) {

@@ -35,6 +35,7 @@ describe('replay re-render lifecycle', () => {
     expect(dashboardSource).toMatch(/const targetMs = Number\(timeline\.value\);\s*if \(playing\) pause\(\);\s*coalescer\?\.cancel\(\);\s*clock\.seekTo\(targetMs\);/);
     expect(dashboardSource).toMatch(/const frameIndex = Number\(timeline\.value\);\s*pause\(\);\s*renderFrame\(frameIndex\);/);
     expect(dashboardSource).toContain('position.sampleIndex !== lastRenderedSampleIndex');
+    expect(dashboardSource).toContain('pauseBtn.disabled = !playing;');
   });
 });
 
