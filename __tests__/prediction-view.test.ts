@@ -1180,12 +1180,33 @@ describe('class activity forecasts', () => {
   const issued=view.render({...data,samples:samples.slice(0,13)}).html;expect(issued).toContain('Predicted additional classes in 60s: +120');expect(issued).toContain('Observed increase: Pending');expect(issued).not.toContain(' MB');
   const end=view.render(data).html;expect(end).toContain('Observed increase: 120');expect(end).toContain('Class-loading activity');expect(end).not.toContain('Process memory forecasts');
  });
+ it('shares memory chart styling and controls while retaining class units', () => {
+  const html = view.render(data).html;
+  for (const cls of ['forecast-replay-controls', 'forecast-segmented', 'forecast-chart-legend', 'process-forecast-charts', 'process-forecast-chart', 'chart-grid', 'actual-trace', 'forecast-trace-issuance', 'forecast-horizon', 'forecast-issuance']) expect(html).toContain(cls);
+  expect(html).toContain('Classes loaded');
+  expect(html).toContain('Predicted 340 classes');
+  expect(html).toContain('>Pause</button>');
+  expect(html).toContain('>Reset</button>');
+  expect(html).not.toContain(' MB');
+ });
  it('keeps unavailable data empty and never matches across a counter reset', () => {
   expect(view.render(data).html).toContain('Observed increase: 120');
   const reset=samples.map((sample,i)=>({...sample,ClassesLoaded:i===18?1:sample.ClassesLoaded}));
   expect(view.render({...data,samples:reset}).html).toContain('Observed increase: Pending');
   const unavailable=view.render({...data,process_activity_forecasts:[{...issuance,status:'unavailable',points:[]}]}).html;
   expect(unavailable).toContain('Status: unavailable');expect(unavailable).not.toContain('Predicted additional classes');
+ });
+ it('breaks the actual trace at missing counters and keeps invalid actuals out of tooltips', () => {
+  const missing = samples.map((sample, i) => ({...sample, ClassesLoaded: i === 18 ? undefined : sample.ClassesLoaded}));
+  const html = view.render({...data, samples: missing}).html;
+  expect((html.match(/class="actual-trace"/g) || [])).toHaveLength(2);
+  expect(html).toContain('Actual pending');
+  expect(html).not.toContain('Actual 340 classes');
+ });
+ it('does not draw an older forecast as Latest when the newest issuance is unavailable', () => {
+  const html = view.render({...data, process_activity_forecasts: [issuance, {...issuance, created_at_ms: start + 120000, status: 'unavailable', points: []}]}).html;
+  expect(html).not.toContain('class="forecast-trace forecast-trace-issuance');
+  expect(html).toContain('Status: unavailable');
  });
  it('shows completed historical errors while a newer issuance is pending', () => {
   const next={...issuance,created_at_ms:start+120000,origin_value_count:340,points:[{target_at_ms:start+180000,predicted_delta_count:10,predicted_total_count:350}]};

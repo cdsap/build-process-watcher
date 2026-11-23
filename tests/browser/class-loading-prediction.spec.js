@@ -19,12 +19,12 @@ for (const width of [390, 1280]) {
       window.activityTestController = window.BpwPredictionView.bindProcessForecastView(document.getElementById('activity'), { data });
     }, fixture());
     await expect(page.getByRole('heading', { name: /Class-loading activity/ })).toBeVisible();
-    await expect(page.locator('svg line[stroke-dasharray]')).toHaveCount(1);
-    await page.getByLabel('Class-loading issuance history', { exact: true }).selectOption('all');
-    await expect(page.locator('svg line[stroke-dasharray]')).toHaveCount(4);
+    await expect(page.locator('svg .forecast-trace-issuance')).toHaveCount(1);
+    await page.getByRole('button', { name: 'All', exact: true }).click();
+    await expect(page.locator('svg .forecast-trace-issuance')).toHaveCount(4);
     const slider = page.getByLabel('Class-loading replay timeline');
     await slider.fill('1700000055000'); await slider.dispatchEvent('change');
-    await expect(page.locator('svg line[stroke-dasharray]')).toHaveCount(0);
+    await expect(page.locator('svg .forecast-trace-issuance')).toHaveCount(0);
     await expect(page.locator('body')).not.toContainText('Predicted additional classes');
     await slider.fill('1700000060000'); await slider.dispatchEvent('change');
     await expect(page.locator('body')).toContainText('Observed increase: Pending');
@@ -32,8 +32,19 @@ for (const width of [390, 1280]) {
     await expect(page.locator('body')).toContainText('Observed increase: 1200');
     await expect(page.locator('body')).not.toContainText('MB');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await page.getByRole('button', { name: 'Play / pause' }).click();
-    await page.getByRole('button', { name: 'Play / pause' }).click();
+    await expect(page.locator('.forecast-chart-legend')).toBeVisible();
+    await expect(page.locator('svg .chart-grid').first()).toBeAttached();
+    await page.screenshot({path: `/private/tmp/bpw-class-loading-style-${width}.png`, fullPage: true});
+    await page.getByRole('button', { name: 'Last 3', exact: true }).click();
+    await expect(page.locator('svg .forecast-trace-issuance')).toHaveCount(3);
+    await page.getByRole('button', { name: 'Live', exact: true }).click();
+    expect(await page.evaluate(() => window.activityTestController.getMode())).toBe('live');
+    await page.getByRole('button', { name: 'Replay', exact: true }).click();
+    await page.getByRole('button', { name: 'Play', exact: true }).click();
+    await page.getByRole('button', { name: 'Pause', exact: true }).click();
+    await page.getByRole('button', { name: 'Reset', exact: true }).click();
+    await expect(page.locator('svg .forecast-trace-issuance')).toHaveCount(0);
+    await page.getByLabel('Prediction replay speed').selectOption('30');
     await page.evaluate(() => window.activityTestController.stop());
   });
 }
@@ -68,7 +79,7 @@ test('finished run dashboard binds activity controls to the loaded run on first 
   const slider = page.getByLabel('Class-loading replay timeline');
   await slider.fill('1700000055000'); await slider.dispatchEvent('change');
   await expect(page.getByRole('table', { name: 'Class-loading issuance results' })).toHaveCount(0);
-  await expect(page.locator('svg line[stroke-dasharray]')).toHaveCount(0);
+  await expect(page.locator('svg .forecast-trace-issuance')).toHaveCount(0);
   await slider.fill('1700000180000'); await slider.dispatchEvent('change');
   await expect(page.getByRole('table', { name: 'Class-loading issuance results' })).toContainText('1200');
   expect(errors).toEqual([]);

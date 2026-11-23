@@ -1869,15 +1869,4 @@ body.bpw-view-predictions #prediction-panel-content .prediction-panel {
     color: #6b7280;
 }
 
-.activity-controls { display:flex; flex-wrap:wrap; align-items:center; gap:1rem; margin:1rem 0; }
-.activity-controls label { display:flex; gap:.5rem; align-items:center; }
-.activity-controls .activity-timeline { flex:1 1 100%; flex-wrap:wrap; }
-.activity-timeline input { flex:1; min-width:120px; }
-.activity-plot { overflow-x:auto; }
-.activity-panel svg { display:block; width:100%; min-width:640px; font-size:18px; }
-.activity-panel .process-forecast { overflow-wrap:anywhere; }
-
-.activity-results { overflow-x:auto; margin:1rem 0; }
-.activity-results table { border-collapse:collapse; min-width:520px; width:100%; }
-.activity-results th, .activity-results td { padding:.45rem .6rem; text-align:right; border-bottom:1px solid #d1d5db; }
-.activity-results caption { text-align:left; font-weight:600; margin-bottom:.5rem; }
+.activity-panel .process-forecast { min-width: 0; overflow-wrap: anywhere; }
