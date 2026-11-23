@@ -10,7 +10,7 @@ function fixture() {
 }
 
 for (const width of [390, 1280]) {
-  test(`activity replay preserves issuance history and count units at ${width}px`, async ({ page }) => {
+  test(`activity replay preserves issuance history and count units at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/');
     await page.setContent('<main id="activity"></main><link rel="stylesheet" href="/bpw-ui.css">');
@@ -34,7 +34,7 @@ for (const width of [390, 1280]) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await expect(page.locator('.forecast-chart-legend')).toBeVisible();
     await expect(page.locator('svg .chart-grid').first()).toBeAttached();
-    await page.screenshot({path: `/private/tmp/bpw-class-loading-style-${width}.png`, fullPage: true});
+    await page.screenshot({path: testInfo.outputPath(`class-loading-style-${width}.png`), fullPage: true});
     await page.getByRole('button', { name: 'Last 3', exact: true }).click();
     await expect(page.locator('svg .forecast-trace-issuance')).toHaveCount(3);
     await page.getByRole('button', { name: 'Live', exact: true }).click();
