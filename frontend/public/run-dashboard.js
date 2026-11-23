@@ -111,8 +111,8 @@
         [
             'chart',
             'gc-chart',
-            'rss-heap-chart',
             'jit-time-chart',
+            'jit-rate-chart',
             'classes-loaded-chart',
             'class-rate-chart',
         ].forEach((id) => {
@@ -899,8 +899,12 @@
         const btnGcSvg = document.getElementById('btn-download-gc-svg');
         const btnJitPng = document.getElementById('btn-download-jit-png');
         const btnJitSvg = document.getElementById('btn-download-jit-svg');
+        const btnJitRatePng = document.getElementById('btn-download-jit-rate-png');
+        const btnJitRateSvg = document.getElementById('btn-download-jit-rate-svg');
         const btnClassesPng = document.getElementById('btn-download-classes-png');
         const btnClassesSvg = document.getElementById('btn-download-classes-svg');
+        const btnClassRatePng = document.getElementById('btn-download-class-rate-png');
+        const btnClassRateSvg = document.getElementById('btn-download-class-rate-svg');
 
         if (btnPng) btnPng.onclick = () => downloadChart('png');
         if (btnSvg) btnSvg.onclick = () => downloadChart('svg');
@@ -910,8 +914,12 @@
         if (btnGcSvg) btnGcSvg.onclick = () => downloadGCChart('svg');
         if (btnJitPng) btnJitPng.onclick = () => downloadRuntimeChart('jit-time-chart', 'jit', 'png');
         if (btnJitSvg) btnJitSvg.onclick = () => downloadRuntimeChart('jit-time-chart', 'jit', 'svg');
+        if (btnJitRatePng) btnJitRatePng.onclick = () => downloadRuntimeChart('jit-rate-chart', 'jit-rate', 'png');
+        if (btnJitRateSvg) btnJitRateSvg.onclick = () => downloadRuntimeChart('jit-rate-chart', 'jit-rate', 'svg');
         if (btnClassesPng) btnClassesPng.onclick = () => downloadRuntimeChart('classes-loaded-chart', 'classes', 'png');
         if (btnClassesSvg) btnClassesSvg.onclick = () => downloadRuntimeChart('classes-loaded-chart', 'classes', 'svg');
+        if (btnClassRatePng) btnClassRatePng.onclick = () => downloadRuntimeChart('class-rate-chart', 'class-rate', 'png');
+        if (btnClassRateSvg) btnClassRateSvg.onclick = () => downloadRuntimeChart('class-rate-chart', 'class-rate', 'svg');
 
         if (window.BpwExperimentLayout) {
             if (typeof BpwExperimentLayout.initAfterRunRender === 'function') {
@@ -1418,6 +1426,18 @@
                     clock.seekTo(Number(timeline.value));
                 });
             }
+            controls.addEventListener('keydown', (event) => {
+                const tag = event.target?.tagName;
+                if (tag === 'SELECT' || tag === 'INPUT' || tag === 'TEXTAREA') return;
+                if (event.key === ' ' || event.code === 'Space') {
+                    event.preventDefault();
+                    togglePlay();
+                } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+                    event.preventDefault();
+                    pause();
+                    renderFrame(currentFrame + (event.key === 'ArrowRight' ? 1 : -1));
+                }
+            });
 
             syncPlayButton();
             clock.seekTo(Math.max(0, chartTimestamps[chartTimestamps.length - 1] - chartTimestamps[0]));
@@ -1473,11 +1493,14 @@
 
             function updateUi(frameIndex) {
                 timeline.value = String(frameIndex);
-                meta.textContent = `Frame ${frameIndex + 1} / ${chartTimestamps.length}`;
                 const timestamp = chartTimestamps[frameIndex];
                 const elapsed = elapsedByTimestamp.get(timestamp);
+                const elapsedSec = elapsed !== undefined
+                    ? elapsed
+                    : Math.max(0, Math.round((timestamp - chartTimestamps[0]) / 1000));
+                meta.textContent = `Elapsed ${elapsedSec}s · Frame ${frameIndex + 1} / ${chartTimestamps.length}`;
                 const timeText = new Date(timestamp).toLocaleTimeString();
-                timeLabel.textContent = `Elapsed: ${elapsed}s | ${timeText}`;
+                timeLabel.textContent = `Elapsed: ${elapsedSec}s | ${timeText}`;
                 syncPlayButton();
             }
 
@@ -1558,6 +1581,19 @@
                 const parsed = Number(speedSelect.value);
                 if (!Number.isNaN(parsed) && parsed > 0) {
                     clock.setSpeed(parsed);
+                }
+            });
+            controls.addEventListener('keydown', (event) => {
+                const tag = event.target?.tagName;
+                if (tag === 'SELECT' || tag === 'INPUT' || tag === 'TEXTAREA') return;
+                if (event.key === ' ' || event.code === 'Space') {
+                    event.preventDefault();
+                    if (playing) pause();
+                    else play();
+                } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+                    event.preventDefault();
+                    pause();
+                    renderFrame(currentFrame + (event.key === 'ArrowRight' ? 1 : -1));
                 }
             });
 
@@ -1659,7 +1695,6 @@
                     clearBtn.style.display = 'inline-flex';
                     if (compareSection) compareSection.style.display = 'block';
                     renderCompareSection(samples);
-                    initReplay(samples);
                 } catch (err) {
                     console.error('Failed to parse comparison JSON', err);
                     window.compareSamples = [];
@@ -1671,6 +1706,10 @@
         });
 
         clearBtn.addEventListener('click', () => {
+            if (window.compareReplayStops?.default) {
+                window.compareReplayStops.default();
+                window.compareReplayStops.default = null;
+            }
             window.compareSamples = [];
             window.compareProcessSummary = null;
             fileName.textContent = 'No file selected';
@@ -1678,7 +1717,6 @@
             input.value = '';
             if (compareSection) compareSection.style.display = 'none';
             if (compareSection) compareSection.innerHTML = '';
-            initReplay(samples);
         });
     }
 

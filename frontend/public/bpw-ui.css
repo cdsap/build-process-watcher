@@ -1423,6 +1423,10 @@ footer {
         align-items: stretch;
     }
 
+    .compare-replay-controls {
+        position: static;
+    }
+
     .replay-controls .timeline {
         flex-basis: auto;
     }
@@ -1870,3 +1874,30 @@ body.bpw-view-predictions #prediction-panel-content .prediction-panel {
 }
 
 .activity-panel .process-forecast { min-width: 0; overflow-wrap: anywhere; }
+
+.upload-controls.is-dragover,
+.compare-controls.is-dragover {
+    border-color: var(--bpw-teal, #087f8c) !important;
+    background: rgba(8, 127, 140, 0.08) !important;
+    box-shadow: 0 0 0 2px rgba(8, 127, 140, 0.2);
+}
+
+.compare-kpi-strip {
+    margin: 0.75rem 0 1rem;
+}
+
+.compare-kpi-delta.up {
+    color: var(--bpw-coral, #c9513d);
+}
+
+.compare-kpi-delta.down {
+    color: var(--bpw-green, #247b5b);
+}
+
+.compare-kpi-delta.neutral {
+    color: var(--bpw-ink, #161a1d);
+}
+
+.replay-summary-strip {
+    margin: 0 0 1rem;
+}

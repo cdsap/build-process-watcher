@@ -52,13 +52,17 @@
             </div>
         </header>
 
-        <section class="upload-controls">
+        <section class="upload-controls" id="replay-dropzone">
             <div class="row">
                 <strong>JSON File</strong>
                 <input type="file" id="replay-input" accept=".json">
                 <span class="meta" id="replay-name">No file selected</span>
             </div>
-            <div class="meta" id="replay-hint">Select a JSON file to render the replay.</div>
+            <div class="row">
+                <button type="button" class="btn secondary" id="btn-replay-demo">Load demo run</button>
+                <button type="button" class="btn secondary" id="btn-replay-clear" disabled>Clear</button>
+                <span class="meta" id="replay-hint">Select, drop a JSON file, or load the demo run.</span>
+            </div>
         </section>
 
         <section id="replay-section" class="replay-section"></section>

@@ -22,14 +22,151 @@
     const nameEl = document.getElementById('replay-name');
     const hint = document.getElementById('replay-hint');
     const section = document.getElementById('replay-section');
+    const demoBtn = document.getElementById('btn-replay-demo');
+    const clearBtn = document.getElementById('btn-replay-clear');
+    const dropzone = document.getElementById('replay-dropzone');
 
     let samples = [];
+    let processInfo = {};
     let stopReplay = null;
     let activityRun = null;
     let activityController = null;
 
     function updateHint(message) {
         if (hint) hint.textContent = message;
+    }
+
+    function escapeHtml(value) {
+        return String(value == null ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function formatDuration(seconds) {
+        const s = Math.max(0, Math.round(Number(seconds) || 0));
+        if (s < 60) return `${s}s`;
+        const m = Math.floor(s / 60);
+        const rem = s % 60;
+        return rem ? `${m}m ${rem}s` : `${m}m`;
+    }
+
+    function buildReplaySummaryHtml(runSamples, runProcessInfo, replayData) {
+        const list = Array.isArray(runSamples) ? runSamples : [];
+        const formatMb = (value) => value > 0 ? `${value.toFixed(value >= 1000 ? 0 : 1)} MB` : 'N/A';
+        let maxRss = 0;
+        let maxHeap = 0;
+        let maxGc = 0;
+        const tsList = [];
+        list.forEach((sample) => {
+            if (Number.isFinite(Number(sample.Timestamp))) tsList.push(Number(sample.Timestamp));
+            if (Number(sample.RSS) > maxRss) maxRss = Number(sample.RSS);
+            if (Number(sample.HeapUsed) > maxHeap) maxHeap = Number(sample.HeapUsed);
+            const gcSec = sample.GCTimeSeconds ?? (sample.GCTime != null && !Number.isNaN(Number(sample.GCTime)) ? Number(sample.GCTime) / 1000 : 0);
+            if (Number(gcSec) > maxGc) maxGc = Number(gcSec);
+        });
+        (replayData?.totalRss || []).forEach((v) => {
+            if (Number(v) > maxRss) maxRss = Number(v);
+        });
+        const durationSec = tsList.length >= 2
+            ? Math.max(0, (Math.max(...tsList) - Math.min(...tsList)) / 1000)
+            : 0;
+        const processCount = new Set(list.map((s) => `${s.Name}|${s.PID}`)).size;
+        const pressure = maxRss > 0 && maxHeap > 0 ? Math.min(999, (maxHeap / maxRss) * 100) : 0;
+
+        return `
+            <div class="run-kpi-strip replay-summary-strip" aria-label="Replay summary">
+                <div class="run-kpi">
+                    <div class="run-kpi-label">Peak RSS</div>
+                    <div class="run-kpi-value">${formatMb(maxRss)}</div>
+                    <div class="run-kpi-note">${processCount} process${processCount === 1 ? '' : 'es'}</div>
+                </div>
+                <div class="run-kpi">
+                    <div class="run-kpi-label">Peak Heap</div>
+                    <div class="run-kpi-value">${formatMb(maxHeap)}</div>
+                    <div class="run-kpi-note">${pressure > 0 ? `${pressure.toFixed(0)}% of peak RSS` : 'Heap signal unavailable'}</div>
+                </div>
+                <div class="run-kpi">
+                    <div class="run-kpi-label">GC Time</div>
+                    <div class="run-kpi-value">${maxGc > 0 ? `${maxGc.toFixed(2)} s` : 'N/A'}</div>
+                    <div class="run-kpi-note">Highest cumulative process value</div>
+                </div>
+                <div class="run-kpi">
+                    <div class="run-kpi-label">Duration</div>
+                    <div class="run-kpi-value">${durationSec > 0 ? formatDuration(durationSec) : 'N/A'}</div>
+                    <div class="run-kpi-note">${list.length} samples</div>
+                </div>
+            </div>`;
+    }
+
+    function buildReplayProcessInfoHtml(runSamples, runProcessInfo) {
+        const entries = Object.entries(runProcessInfo || {});
+        if (!entries.length) return '';
+        const formatMb = (value) => value > 0 ? `${value.toFixed(value >= 1000 ? 0 : 1)} MB` : 'N/A';
+        const cards = entries.map(([pid, info]) => {
+            const pSamples = runSamples.filter((s) => String(s.PID) === String(pid));
+            let maxRss = 0;
+            let maxHeap = 0;
+            let maxGc = 0;
+            pSamples.forEach((s) => {
+                if (Number(s.RSS) > maxRss) maxRss = Number(s.RSS);
+                if (Number(s.HeapUsed) > maxHeap) maxHeap = Number(s.HeapUsed);
+                const gcSec = s.GCTimeSeconds ?? (s.GCTime != null ? Number(s.GCTime) / 1000 : 0);
+                if (Number(gcSec) > maxGc) maxGc = Number(gcSec);
+            });
+            const vmFlags = Array.isArray(info?.vm_flags) ? info.vm_flags : [];
+            return `
+                <article class="process-info-card">
+                    <div class="process-card-main">
+                        <div class="process-card-title">
+                            <strong>${escapeHtml(info?.name || 'Process')} · PID ${escapeHtml(pid)}</strong>
+                            <span>${pSamples.length} samples</span>
+                        </div>
+                    </div>
+                    <div class="process-metric-grid">
+                        <div class="process-metric"><strong>Max RSS</strong><span>${formatMb(maxRss)}</span></div>
+                        <div class="process-metric"><strong>Max Heap</strong><span>${formatMb(maxHeap)}</span></div>
+                        <div class="process-metric"><strong>GC Time</strong><span>${maxGc > 0 ? `${maxGc.toFixed(2)} s` : 'N/A'}</span></div>
+                    </div>
+                    ${vmFlags.length ? `
+                        <details class="process-details">
+                            <summary>VM flags (${vmFlags.length})</summary>
+                            <div class="vm-flags-list">${vmFlags.map((flag) => `<span class="vm-flag">${escapeHtml(flag)}</span>`).join('')}</div>
+                        </details>` : ''}
+                </article>`;
+        }).join('');
+        return `
+            <div class="process-info-section">
+                <div class="process-info-head">
+                    <div><h2>Process Information</h2></div>
+                </div>
+                <div class="process-groups">${cards}</div>
+            </div>`;
+    }
+
+    async function exportReplayChart(chartId, filenameBase, format) {
+        const chart = document.getElementById(chartId);
+        if (!chart || typeof Plotly === 'undefined') return;
+        try {
+            const isMobile = window.innerWidth < 768;
+            const url = await Plotly.toImage(chart, {
+                format,
+                filename: filenameBase,
+                height: isMobile ? 400 : 500,
+                width: isMobile ? 800 : 1000,
+                scale: 2,
+            });
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${filenameBase}.${format}`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        } catch (err) {
+            console.error('Failed to export replay chart:', err);
+        }
     }
 
     function renderReplay() {
@@ -51,7 +188,9 @@
         const showJIT = hasJITData(samples);
         const showClasses = hasClassLoadingData(samples);
 
-        section.innerHTML = window.BpwChartPanels.render({
+        section.innerHTML = `
+            ${buildReplaySummaryHtml(samples, processInfo, data)}
+            ${window.BpwChartPanels.render({
             chartIdPrefix: 'single-',
             headingLevel: 4,
             chartHeights: { memory: 460, gc: 460, runtime: 400 },
@@ -60,11 +199,19 @@
             showClasses,
             includeUnifiedReplay: true,
             beforeGrid: `
+            <div class="downloads-toolbar" id="single-downloads-toolbar">
+                <button class="btn" type="button" id="btn-single-download-png">Download Memory PNG</button>
+                <button class="btn secondary" type="button" id="btn-single-download-svg">Download Memory SVG</button>
+                ${showGC ? `
+                <button class="btn secondary" type="button" id="btn-single-download-gc-png">Download GC PNG</button>
+                <button class="btn secondary" type="button" id="btn-single-download-gc-svg">Download GC SVG</button>
+                ` : ''}
+            </div>
             <div class="replay-controls" id="single-replay-controls">
                 <div class="buttons">
-                    <button class="btn" id="btn-single-play">Play</button>
-                    <button class="btn secondary" id="btn-single-pause">Pause</button>
-                    <button class="btn secondary" id="btn-single-reset">Reset</button>
+                    <button class="btn" type="button" id="btn-single-play">Play</button>
+                    <button class="btn secondary" type="button" id="btn-single-pause">Pause</button>
+                    <button class="btn secondary" type="button" id="btn-single-reset">Reset</button>
                 </div>
                 <div class="meta" id="single-replay-meta">Frame 0 / 0</div>
                 <div class="timeline">
@@ -93,7 +240,8 @@
                 <label><input type="checkbox" id="filter-single-heap" checked> Heap</label>
             </div>
             `,
-        });
+        })}
+            ${buildReplayProcessInfoHtml(samples, processInfo)}`;
 
         activityController?.stop();
         activityController = null;
@@ -372,6 +520,32 @@
             });
         }
 
+        const onKeydown = (event) => {
+            const tag = event.target?.tagName;
+            if (tag === 'SELECT' || tag === 'INPUT' || tag === 'TEXTAREA') return;
+            if (event.key === ' ' || event.code === 'Space') {
+                event.preventDefault();
+                if (clock.getState().playing) pause();
+                else clock.play();
+            } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+                event.preventDefault();
+                pause();
+                const delta = event.key === 'ArrowRight' ? 1 : -1;
+                renderFrameByIndex(currentFrame + delta);
+            }
+        };
+        const controlsBox = document.getElementById('single-replay-controls');
+        if (controlsBox) controlsBox.addEventListener('keydown', onKeydown);
+
+        const btnDlPng = document.getElementById('btn-single-download-png');
+        const btnDlSvg = document.getElementById('btn-single-download-svg');
+        const btnDlGcPng = document.getElementById('btn-single-download-gc-png');
+        const btnDlGcSvg = document.getElementById('btn-single-download-gc-svg');
+        if (btnDlPng) btnDlPng.addEventListener('click', () => exportReplayChart('single-rss', 'build-replay-memory', 'png'));
+        if (btnDlSvg) btnDlSvg.addEventListener('click', () => exportReplayChart('single-rss', 'build-replay-memory', 'svg'));
+        if (btnDlGcPng) btnDlGcPng.addEventListener('click', () => exportReplayChart('single-gc', 'build-replay-gc', 'png'));
+        if (btnDlGcSvg) btnDlGcSvg.addEventListener('click', () => exportReplayChart('single-gc', 'build-replay-gc', 'svg'));
+
         if (window.BpwExperimentLayout) {
             BpwExperimentLayout.registerReplayPanel({
                 pause,
@@ -385,37 +559,101 @@
         }
     }
 
+    function loadJsonText(text, label) {
+        activityController?.stop();
+        activityController = null;
+        try {
+            const parsed = parseJsonText(text);
+            if (!parsed.samples || !parsed.samples.length) {
+                samples = [];
+                processInfo = {};
+                if (section) section.style.display = 'none';
+                if (clearBtn) clearBtn.disabled = true;
+                updateHint('JSON is missing samples.');
+                return;
+            }
+            samples = parsed.samples;
+            processInfo = parsed.processInfo || {};
+            activityRun = parsed.raw;
+            if (nameEl) nameEl.textContent = label;
+            if (clearBtn) clearBtn.disabled = false;
+            renderReplay();
+            updateHint('Replay rendered below.');
+        } catch (err) {
+            console.error('Failed to parse JSON', err);
+            samples = [];
+            processInfo = {};
+            if (section) section.style.display = 'none';
+            if (nameEl) nameEl.textContent = 'Failed to parse JSON';
+            if (clearBtn) clearBtn.disabled = true;
+            updateHint('Failed to parse JSON. Please check the file format.');
+        }
+    }
+
+    function loadFile(file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => loadJsonText(String(reader.result || ''), file.name);
+        reader.readAsText(file);
+    }
+
     if (input) {
         input.addEventListener('change', () => {
+            loadFile(input.files && input.files[0]);
+        });
+    }
+
+    if (demoBtn) {
+        demoBtn.addEventListener('click', async () => {
+            updateHint('Loading demo run...');
+            try {
+                const response = await fetch('/demo-run.json');
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const text = await response.text();
+                loadJsonText(text, 'demo-run.json');
+            } catch (err) {
+                console.error('Failed to load demo run', err);
+                updateHint('Failed to load demo run.');
+            }
+        });
+    }
+
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            if (typeof stopReplay === 'function') {
+                stopReplay();
+                stopReplay = null;
+            }
             activityController?.stop();
             activityController = null;
-            const file = input.files && input.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = () => {
-                try {
-                    const text = String(reader.result || '');
-                    const parsed = parseJsonText(text);
-                    if (!parsed.samples || !parsed.samples.length) {
-                        samples = [];
-                        if (section) section.style.display = 'none';
-                        updateHint('JSON is missing samples.');
-                        return;
-                    }
-                    samples = parsed.samples;
-                    activityRun = parsed.raw;
-                    if (nameEl) nameEl.textContent = file.name;
-                    renderReplay();
-                    updateHint('Replay rendered below.');
-                } catch (err) {
-                    console.error('Failed to parse JSON', err);
-                    samples = [];
-                    if (section) section.style.display = 'none';
-                    if (nameEl) nameEl.textContent = 'Failed to parse JSON';
-                    updateHint('Failed to parse JSON. Please check the file format.');
-                }
-            };
-            reader.readAsText(file);
+            samples = [];
+            processInfo = {};
+            activityRun = null;
+            if (input) input.value = '';
+            if (nameEl) nameEl.textContent = 'No file selected';
+            if (section) {
+                section.style.display = 'none';
+                section.innerHTML = '';
+            }
+            clearBtn.disabled = true;
+            updateHint('Select, drop a JSON file, or load the demo run.');
+        });
+    }
+
+    if (dropzone) {
+        dropzone.addEventListener('dragover', (event) => {
+            event.preventDefault();
+            dropzone.classList.add('is-dragover');
+        });
+        dropzone.addEventListener('dragleave', () => {
+            dropzone.classList.remove('is-dragover');
+        });
+        dropzone.addEventListener('drop', (event) => {
+            event.preventDefault();
+            dropzone.classList.remove('is-dragover');
+            const file = Array.from(event.dataTransfer?.files || [])
+                .find((f) => /\.json$/i.test(f.name) || f.type === 'application/json');
+            if (file) loadFile(file);
         });
     }
 })();

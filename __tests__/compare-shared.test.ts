@@ -200,7 +200,7 @@ describe('JIT and class loading series', () => {
     expect(jitTime.layout.shapes).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'line', x0: 2, x1: 2 }),
     ]));
-    expect(jitTime.traces.find((trace: any) => trace.name.startsWith('Candidate:'))?.x).toEqual([2]);
+    expect(jitTime.traces.find((trace: any) => trace.name.startsWith('Candidate:'))?.x).toEqual([2, 3, 4]);
     expect(classRate.layout.xaxis.tickvals).toEqual([0, 2, 1, 3, 2, 4]);
 
     const timeline = document.getElementById('compare-replay-timeline');
@@ -210,6 +210,62 @@ describe('JIT and class loading series', () => {
 
     const updatedClassRate = plotCalls.filter(call => call.chartId === 'compare-class-rate').at(-1);
     expect(updatedClassRate.traces.find((trace: any) => trace.name.startsWith('Candidate:'))?.x).toEqual([2, 3]);
+  });
+
+  it('preserves full Run B duration on a union timeline and aligns side-by-side Y axes', async () => {
+    const document = createFakeDocument();
+    document.registerElement('compare-section');
+    const plotCalls: any[] = [];
+    const shared = loadShared({
+      document,
+      localStorage: {
+        getItem: () => 'side',
+        setItem: jest.fn(),
+      },
+      Plotly: {
+        react: jest.fn((chartId: string, traces: any[], layout: any, config: any) => {
+          const chart = document.registerElement(chartId);
+          chart.data = traces;
+          plotCalls.push({ chartId, traces, layout, config });
+          return Promise.resolve();
+        }),
+        restyle: jest.fn(),
+      },
+    });
+
+    const baseSamples = [
+      { Timestamp: 10_000, ElapsedTime: 10, Name: 'GradleDaemon', PID: '1', RSS: 200, HeapUsed: 100 },
+      { Timestamp: 20_000, ElapsedTime: 20, Name: 'GradleDaemon', PID: '1', RSS: 250, HeapUsed: 120 },
+    ];
+    const compareSamples = [
+      { Timestamp: 50_000, ElapsedTime: 12, Name: 'GradleDaemon', PID: '2', RSS: 400, HeapUsed: 200 },
+      { Timestamp: 60_000, ElapsedTime: 22, Name: 'GradleDaemon', PID: '2', RSS: 600, HeapUsed: 300 },
+      { Timestamp: 70_000, ElapsedTime: 32, Name: 'GradleDaemon', PID: '2', RSS: 800, HeapUsed: 350 },
+      { Timestamp: 80_000, ElapsedTime: 42, Name: 'GradleDaemon', PID: '2', RSS: 1000, HeapUsed: 400 },
+    ];
+
+    shared.renderCompareSection({
+      baseSamples,
+      compareSamplesRaw: compareSamples,
+      compareSectionId: 'compare-section',
+      baseLabel: 'Short',
+      compareLabel: 'Long',
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const leftRss = plotCalls.find(call => call.chartId === 'compare-current-rss');
+    const rightRss = plotCalls.find(call => call.chartId === 'compare-other-rss');
+    expect(leftRss).toBeTruthy();
+    expect(rightRss).toBeTruthy();
+    // Run B has 4 timestamps spanning 30s elapsed (0, 10, 20, 30) — not clipped to Run A's 10s!
+    const rightTotal = rightRss.traces.find((t: any) => t.name === 'Compare Total RSS Memory');
+    expect(rightTotal.x).toEqual([0, 10, 20, 30]);
+    // Both side-by-side charts share the same fixed Y range driven by the combined peak (1000 * 1.1 = 1100).
+    expect(leftRss.layout.yaxis.range).toEqual(rightRss.layout.yaxis.range);
+    expect(leftRss.layout.yaxis.range[1]).toBe(1100);
+    // Delta KPI strip is rendered in the comparison section.
+    expect(document.getElementById('compare-section').innerHTML).toContain('compare-kpi-strip');
   });
 
   it('derives GC collector type from VM flags', () => {

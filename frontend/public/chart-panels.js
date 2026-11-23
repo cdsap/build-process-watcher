@@ -107,11 +107,27 @@
                 ],
             },
             {
+                key: 'jit-rate',
+                replay: '',
+                downloads: [
+                    { id: 'btn-download-jit-rate-png', label: 'Download JIT Activity PNG' },
+                    { id: 'btn-download-jit-rate-svg', label: 'Download JIT Activity SVG' },
+                ],
+            },
+            {
                 key: 'classes-loaded',
                 replay: options.showMetricReplay ? renderPanelReplay('classes', 'Class loading') : '',
                 downloads: [
                     { id: 'btn-download-classes-png', label: 'Download Classes PNG' },
                     { id: 'btn-download-classes-svg', label: 'Download Classes SVG' },
+                ],
+            },
+            {
+                key: 'class-rate',
+                replay: '',
+                downloads: [
+                    { id: 'btn-download-class-rate-png', label: 'Download Class Activity PNG' },
+                    { id: 'btn-download-class-rate-svg', label: 'Download Class Activity SVG' },
                 ],
             },
         ];

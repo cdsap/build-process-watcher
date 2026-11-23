@@ -322,7 +322,7 @@
         };
     }
 
-    function buildReplayData(samples, timestamps, palette = COLOR_PALETTE) {
+    function buildReplayData(samples, timestamps, palette = COLOR_PALETTE, options = {}) {
         const processKeys = [...new Set(samples.map(s => `${s.Name}|${s.PID}`))];
         const colorMap = buildColorMap(processKeys, palette);
         const series = {};
@@ -375,7 +375,7 @@
         let finalTotalRss = totalRss;
         let finalDistribution = distribution;
 
-        if (buildEndIndex >= 0 && buildEndIndex < timestamps.length) {
+        if (!options?.preserveTimestamps && buildEndIndex >= 0 && buildEndIndex < timestamps.length) {
             finalTimestamps = timestamps.slice(0, buildEndIndex);
             finalTotalRss = totalRss.slice(0, buildEndIndex);
             finalDistribution = distribution.slice(0, buildEndIndex);
@@ -847,12 +847,19 @@
 
     function normalizeCompareSamples(samples, baseTimestamp) {
         if (!samples.length || !baseTimestamp) return [];
+        const finiteTimestamps = samples.map(s => Number(s.Timestamp)).filter(Number.isFinite);
+        const hasRealTimestamps = finiteTimestamps.length === samples.length
+            && (Math.max(...finiteTimestamps) > Math.min(...finiteTimestamps) || samples.length === 1);
+        const minTimestamp = hasRealTimestamps ? Math.min(...finiteTimestamps) : null;
+        const finiteElapsed = samples.map(s => Number(s.ElapsedTime)).filter(Number.isFinite);
+        const minElapsed = finiteElapsed.length ? Math.min(...finiteElapsed) : 0;
         return samples.map(sample => {
-            const elapsedMs = (sample.ElapsedTime || 0) * 1000;
-            const timestamp = baseTimestamp + elapsedMs;
+            const offsetMs = minTimestamp !== null
+                ? Math.max(0, Number(sample.Timestamp) - minTimestamp)
+                : Math.max(0, ((Number(sample.ElapsedTime) || 0) - minElapsed) * 1000);
             return {
                 ...sample,
-                Timestamp: timestamp
+                Timestamp: baseTimestamp + offsetMs
             };
         });
     }
@@ -1260,6 +1267,82 @@
         `;
     }
 
+    function computeRunTotals(samples, summary) {
+        const list = Array.isArray(samples) ? samples : [];
+        let maxRss = Number(summary?.overallMaxRss) || 0;
+        let maxHeap = 0;
+        let maxGc = 0;
+        const timestamps = [];
+        list.forEach(sample => {
+            if (Number.isFinite(Number(sample.Timestamp))) timestamps.push(Number(sample.Timestamp));
+            if (Number(sample.HeapUsed) > maxHeap) maxHeap = Number(sample.HeapUsed);
+            const gcSec = sample.GCTimeSeconds ?? (sample.GCTime != null && !Number.isNaN(Number(sample.GCTime)) ? Number(sample.GCTime) / 1000 : 0);
+            if (Number(gcSec) > maxGc) maxGc = Number(gcSec);
+            if (!maxRss && Number(sample.RSS) > maxRss) maxRss = Number(sample.RSS);
+        });
+        if (!maxRss && list.length) {
+            const uniqTs = [...new Set(timestamps)].sort((a, b) => a - b);
+            const keys = [...new Set(list.map(s => `${s.Name}|${s.PID}`))];
+            const totals = buildTotalRssSeries(list, uniqTs, keys).totalRss || [];
+            totals.forEach(v => { if (Number(v) > maxRss) maxRss = Number(v); });
+        }
+        const durationSec = timestamps.length >= 2
+            ? Math.max(0, (Math.max(...timestamps) - Math.min(...timestamps)) / 1000)
+            : 0;
+        return { maxRss, maxHeap, maxGc, durationSec };
+    }
+
+    function buildCompareKpiHtml({ baseLabel, compareLabel, baseSamples, compareSamples, baseProcessSummary, compareProcessSummary }) {
+        const base = computeRunTotals(baseSamples, baseProcessSummary);
+        const cmp = computeRunTotals(compareSamples, compareProcessSummary);
+        const formatSigned = (delta, digits, suffix) => {
+            if (!Number.isFinite(delta)) return 'N/A';
+            const prefix = delta > 0 ? '+' : '';
+            return `${prefix}${delta.toFixed(digits)}${suffix}`;
+        };
+        const deltaTone = (delta) => (!Number.isFinite(delta) || Math.abs(delta) < 1e-6 ? 'neutral' : (delta > 0 ? 'up' : 'down'));
+        const card = (label, aText, bText, delta, digits, suffix) => `
+            <div class="run-kpi compare-kpi-card">
+                <div class="run-kpi-label">${label}</div>
+                <div class="run-kpi-value compare-kpi-delta ${deltaTone(delta)}">${formatSigned(delta, digits, suffix)}</div>
+                <div class="run-kpi-note">${escapeHtml(aText)} → ${escapeHtml(bText)}</div>
+            </div>`;
+        const cards = [
+            card('Peak RSS delta', `${base.maxRss.toFixed(0)} MB`, `${cmp.maxRss.toFixed(0)} MB`, cmp.maxRss - base.maxRss, 0, ' MB'),
+            card('Peak Heap delta', `${base.maxHeap.toFixed(0)} MB`, `${cmp.maxHeap.toFixed(0)} MB`, cmp.maxHeap - base.maxHeap, 0, ' MB'),
+            card('Duration delta', `${Math.round(base.durationSec)}s`, `${Math.round(cmp.durationSec)}s`, cmp.durationSec - base.durationSec, 0, 's'),
+        ];
+        if (base.maxGc > 0 || cmp.maxGc > 0) {
+            cards.push(card('GC time delta', `${base.maxGc.toFixed(2)} s`, `${cmp.maxGc.toFixed(2)} s`, cmp.maxGc - base.maxGc, 2, ' s'));
+        }
+        return `<div class="run-kpi-strip compare-kpi-strip" aria-label="Comparison delta summary">${cards.join('')}</div>`;
+    }
+
+    function computeSharedYMax(baseData, compareData, metric) {
+        let max = 0;
+        const scan = (values) => {
+            if (!Array.isArray(values)) return;
+            for (let i = 0; i < values.length; i += 1) {
+                const v = Number(values[i]);
+                if (Number.isFinite(v) && v > max) max = v;
+            }
+        };
+        [baseData, compareData].forEach(data => {
+            if (!data) return;
+            if (metric === 'rss') {
+                scan(data.totalRss);
+                Object.values(data.series || {}).forEach(def => {
+                    scan(def.rss);
+                    scan(def.heap);
+                });
+            } else {
+                Object.values(data.series || {}).forEach(def => scan(def[metric]));
+            }
+        });
+        if (!(max > 0)) return null;
+        return Number((max * 1.1).toPrecision(3));
+    }
+
     function renderCompareSection(options) {
         const {
             baseSamples = [],
@@ -1276,6 +1359,11 @@
             compareProcessSummary
         } = options || {};
 
+        if (global.compareReplayStops && typeof global.compareReplayStops.default === 'function') {
+            global.compareReplayStops.default();
+            global.compareReplayStops.default = null;
+        }
+
         const compareSection = typeof compareSectionId === 'string'
             ? document.getElementById(compareSectionId)
             : compareSectionId;
@@ -1286,11 +1374,12 @@
             return;
         }
 
-        const timestamps = [...new Set(baseSamples.map(s => s.Timestamp))].sort((a, b) => a - b);
-        const compareSamples = normalizeCompareSamples(compareSamplesRaw, timestamps[0]);
+        const baseTimestamps = [...new Set(baseSamples.map(s => s.Timestamp))].sort((a, b) => a - b);
+        const compareSamples = normalizeCompareSamples(compareSamplesRaw, baseTimestamps[0]);
+        const compareTimestamps = [...new Set(compareSamples.map(s => s.Timestamp))].sort((a, b) => a - b);
         const baseHasGC = hasGCData(baseSamples);
         const compareHasGC = hasGCData(compareSamples);
-        const showGC = baseHasGC && compareHasGC;
+        const showGC = baseHasGC || compareHasGC;
         const showJIT = hasJITData(baseSamples) || hasJITData(compareSamples);
         const showClasses = hasClassLoadingData(baseSamples) || hasClassLoadingData(compareSamples);
 
@@ -1314,6 +1403,14 @@
                     </select>
                 </label>
             </div>
+            ${buildCompareKpiHtml({
+                baseLabel,
+                compareLabel,
+                baseSamples,
+                compareSamples,
+                baseProcessSummary,
+                compareProcessSummary
+            })}
             ${(global.BpwReplayControls && typeof global.BpwReplayControls.renderReplayControls === 'function'
                 ? global.BpwReplayControls.renderReplayControls({
                     idPrefix: 'compare-replay',
@@ -1407,9 +1504,23 @@
 
         compareSection.style.display = 'block';
 
-        const baseData = buildReplayData(baseSamples, timestamps, COLOR_PALETTE);
-        const chartTimestamps = baseData.timestamps || timestamps;
-        const compareData = buildReplayData(compareSamples, chartTimestamps, COLOR_PALETTE);
+        const baseInitialData = buildReplayData(baseSamples, baseTimestamps, COLOR_PALETTE);
+        const compareInitialData = buildReplayData(compareSamples, compareTimestamps, COLOR_PALETTE);
+        const chartTimestamps = [...new Set([
+            ...(baseInitialData.timestamps || baseTimestamps),
+            ...(compareInitialData.timestamps || compareTimestamps)
+        ])].sort((a, b) => a - b);
+        const baseData = buildReplayData(baseSamples, chartTimestamps, COLOR_PALETTE, { preserveTimestamps: true });
+        const compareData = buildReplayData(compareSamples, chartTimestamps, COLOR_PALETTE, { preserveTimestamps: true });
+
+        const sharedRssYMax = !isSplitMode ? computeSharedYMax(baseData, compareData, 'rss') : null;
+        const sharedGcYMax = !isSplitMode && showGC ? computeSharedYMax(baseData, compareData, 'gc') : null;
+        const sharedCounterYMax = !isSplitMode ? {
+            jitTime: computeSharedYMax(baseData, compareData, 'jitTime'),
+            jitRate: computeSharedYMax(baseData, compareData, 'jitRate'),
+            classesLoaded: computeSharedYMax(baseData, compareData, 'classesLoaded'),
+            classRate: computeSharedYMax(baseData, compareData, 'classRate'),
+        } : {};
 
         const elapsedSeconds = chartTimestamps.map(ts => Math.max(0, (ts - chartTimestamps[0]) / 1000));
         const maxElapsed = elapsedSeconds.length ? elapsedSeconds[elapsedSeconds.length - 1] : 0;
@@ -1510,17 +1621,20 @@
             };
             if (isSplitMode) {
                 const rssTraces = [
-                    ...buildMetricTraces(baseData, timestamps, frameIndex, 'rss', baseStyle, elapsedSeconds),
-                    ...buildMetricTraces(compareData, timestamps, frameIndex, 'rss', compareStyle, compareElapsed)
+                    ...buildMetricTraces(baseData, chartTimestamps, frameIndex, 'rss', baseStyle, elapsedSeconds),
+                    ...buildMetricTraces(compareData, chartTimestamps, frameIndex, 'rss', compareStyle, compareElapsed)
                 ];
                 tasks.push(Plotly.react('compare-rss', applyVisibilityToTraces('compare-rss', rssTraces), compareLayout, getMemoryConfig(memoryFilenameBase)));
             } else {
                 const sideLayout = {
                     ...compareLayout,
+                    yaxis: sharedRssYMax !== null
+                        ? { ...compareLayout.yaxis, range: [0, sharedRssYMax], autorange: false }
+                        : compareLayout.yaxis,
                     shapes: []
                 };
-                tasks.push(Plotly.react('compare-current-rss', applyVisibilityToTraces('compare-current-rss', buildMetricTraces(baseData, timestamps, frameIndex, 'rss', baseStyle, elapsedSeconds)), sideLayout, getMemoryConfig(memoryFilenameBase)));
-                tasks.push(Plotly.react('compare-other-rss', applyVisibilityToTraces('compare-other-rss', buildMetricTraces(compareData, timestamps, frameIndex, 'rss', compareStyle, elapsedSeconds)), sideLayout, getMemoryConfig(memoryFilenameBase)));
+                tasks.push(Plotly.react('compare-current-rss', applyVisibilityToTraces('compare-current-rss', buildMetricTraces(baseData, chartTimestamps, frameIndex, 'rss', baseStyle, elapsedSeconds)), sideLayout, getMemoryConfig(memoryFilenameBase)));
+                tasks.push(Plotly.react('compare-other-rss', applyVisibilityToTraces('compare-other-rss', buildMetricTraces(compareData, chartTimestamps, frameIndex, 'rss', compareStyle, elapsedSeconds)), sideLayout, getMemoryConfig(memoryFilenameBase)));
             }
             if (showGC) {
                 const compareGcLayout = {
@@ -1558,17 +1672,20 @@
                 };
                 if (isSplitMode) {
                     const gcTraces = [
-                        ...buildMetricTraces(baseData, timestamps, frameIndex, 'gc', baseStyle, elapsedSeconds),
-                        ...buildMetricTraces(compareData, timestamps, frameIndex, 'gc', compareStyle, compareElapsed)
+                        ...buildMetricTraces(baseData, chartTimestamps, frameIndex, 'gc', baseStyle, elapsedSeconds),
+                        ...buildMetricTraces(compareData, chartTimestamps, frameIndex, 'gc', compareStyle, compareElapsed)
                     ];
                     tasks.push(Plotly.react('compare-gc', applyVisibilityToTraces('compare-gc', gcTraces), compareGcLayout, getGcConfig(gcFilenameBase)));
                 } else {
                     const sideGcLayout = {
                         ...compareGcLayout,
+                        yaxis: sharedGcYMax !== null
+                            ? { ...compareGcLayout.yaxis, range: [0, sharedGcYMax], autorange: false }
+                            : compareGcLayout.yaxis,
                         shapes: []
                     };
-                    tasks.push(Plotly.react('compare-current-gc', applyVisibilityToTraces('compare-current-gc', buildMetricTraces(baseData, timestamps, frameIndex, 'gc', baseStyle, elapsedSeconds)), sideGcLayout, getGcConfig(gcFilenameBase)));
-                    tasks.push(Plotly.react('compare-other-gc', applyVisibilityToTraces('compare-other-gc', buildMetricTraces(compareData, timestamps, frameIndex, 'gc', compareStyle, compareElapsed)), sideGcLayout, getGcConfig(gcFilenameBase)));
+                    tasks.push(Plotly.react('compare-current-gc', applyVisibilityToTraces('compare-current-gc', buildMetricTraces(baseData, chartTimestamps, frameIndex, 'gc', baseStyle, elapsedSeconds)), sideGcLayout, getGcConfig(gcFilenameBase)));
+                    tasks.push(Plotly.react('compare-other-gc', applyVisibilityToTraces('compare-other-gc', buildMetricTraces(compareData, chartTimestamps, frameIndex, 'gc', compareStyle, elapsedSeconds)), sideGcLayout, getGcConfig(gcFilenameBase)));
                 }
             }
             const renderCounterMetric = (id, metric, title, yTitle) => {
@@ -1581,6 +1698,13 @@
                     tickvals: isSplitMode ? tickVals : undefined,
                     ticktext: isSplitMode ? tickText : undefined
                 };
+                if (!isSplitMode && sharedCounterYMax[metric] != null) {
+                    layout.yaxis = {
+                        ...layout.yaxis,
+                        range: [0, sharedCounterYMax[metric]],
+                        autorange: false
+                    };
+                }
                 layout.legend = {
                     x: 0.5,
                     y: -0.25,
@@ -1609,13 +1733,13 @@
                 }));
                 if (isSplitMode) {
                     const traces = [
-                        ...labelTraces(buildMetricTraces(baseData, timestamps, frameIndex, metric, baseStyle, elapsedSeconds), baseLabel),
-                        ...labelTraces(buildMetricTraces(compareData, timestamps, frameIndex, metric, compareStyle, compareElapsed), compareLabel)
+                        ...labelTraces(buildMetricTraces(baseData, chartTimestamps, frameIndex, metric, baseStyle, elapsedSeconds), baseLabel),
+                        ...labelTraces(buildMetricTraces(compareData, chartTimestamps, frameIndex, metric, compareStyle, compareElapsed), compareLabel)
                     ];
                     tasks.push(Plotly.react(`compare-${id}`, applyVisibilityToTraces(`compare-${id}`, traces), layout, getCounterConfig(`compare-${metric}`)));
                 } else {
-                    tasks.push(Plotly.react(`compare-current-${id}`, applyVisibilityToTraces(`compare-current-${id}`, buildMetricTraces(baseData, timestamps, frameIndex, metric, baseStyle, elapsedSeconds)), layout, getCounterConfig(`compare-current-${metric}`)));
-                    tasks.push(Plotly.react(`compare-other-${id}`, applyVisibilityToTraces(`compare-other-${id}`, buildMetricTraces(compareData, timestamps, frameIndex, metric, compareStyle, elapsedSeconds)), layout, getCounterConfig(`compare-other-${metric}`)));
+                    tasks.push(Plotly.react(`compare-current-${id}`, applyVisibilityToTraces(`compare-current-${id}`, buildMetricTraces(baseData, chartTimestamps, frameIndex, metric, baseStyle, elapsedSeconds)), layout, getCounterConfig(`compare-current-${metric}`)));
+                    tasks.push(Plotly.react(`compare-other-${id}`, applyVisibilityToTraces(`compare-other-${id}`, buildMetricTraces(compareData, chartTimestamps, frameIndex, metric, compareStyle, elapsedSeconds)), layout, getCounterConfig(`compare-other-${metric}`)));
                 }
             };
             if (showJIT) {
@@ -1663,12 +1787,12 @@
                 idPrefix: 'compare-replay',
                 timestamps: chartTimestamps,
                 timelineMode: 'frame',
-                initialFrame: 0,
+                initialFrame: 'end',
                 defaultSpeed: 15,
                 formatTime(position) {
                     if (!chartTimestamps.length || position.sampleIndex < 0) return 'Elapsed: 0s';
                     const timestamp = chartTimestamps[position.sampleIndex];
-                    const elapsed = elapsedByTimestamp.get(timestamp) || 0;
+                    const elapsed = Math.max(0, Math.round((timestamp - chartTimestamps[0]) / 1000));
                     return `Elapsed: ${elapsed}s`;
                 },
                 onFrame(position) {
@@ -1684,7 +1808,7 @@
         if (!global.compareReplayStops) {
             global.compareReplayStops = {};
         }
-        global.compareReplayStops.default = () => binding.pause();
+        global.compareReplayStops.default = () => binding.destroy();
 
         Promise.resolve(latestFrameRender).then(() => {
             const summaryHtml = buildCompareSummaryHtml({
