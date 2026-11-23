@@ -626,6 +626,35 @@ func TestGetRunPassesRequestContextToStorage(t *testing.T) {
 	}
 }
 
+func TestGetRunErrorsRemainReadableAcrossOrigins(t *testing.T) {
+	for _, tc := range []struct {
+		name, method, path string
+		storageError       error
+		wantStatus         int
+	}{
+		{name: "missing", method: http.MethodGet, path: "/runs/missing", wantStatus: http.StatusNotFound},
+		{name: "storage failure", method: http.MethodGet, path: "/runs/broken", storageError: errors.New("unavailable"), wantStatus: http.StatusInternalServerError},
+		{name: "missing ID", method: http.MethodGet, path: "/runs/", wantStatus: http.StatusBadRequest},
+		{name: "wrong method", method: http.MethodPost, path: "/runs/missing", wantStatus: http.StatusMethodNotAllowed},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newFakeStorage()
+			store.GetRunErr = tc.storageError
+			h := newTestHandlers(store, nil)
+			recorder := httptest.NewRecorder()
+			req := httptest.NewRequest(tc.method, tc.path, nil)
+			req.Header.Set("Origin", "https://process-watcher.web.app")
+			h.GetRun(recorder, req)
+			if recorder.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d", recorder.Code, tc.wantStatus)
+			}
+			if got := recorder.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+				t.Fatalf("CORS origin = %q, want *", got)
+			}
+		})
+	}
+}
+
 func TestGetRunReturns404WhenMissing(t *testing.T) {
 	h := newTestHandlers(newFakeStorage(), nil)
 	recorder := httptest.NewRecorder()

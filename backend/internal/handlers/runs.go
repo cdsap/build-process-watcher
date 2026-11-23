@@ -16,6 +16,8 @@ import (
 func (h *Handlers) GetRun(w http.ResponseWriter, r *http.Request) {
 	log.Printf("runsHandler called with path: %s, method: %s", r.URL.Path, r.Method)
 
+	// Browsers must be able to read error statuses as well as successful runs.
+	setCORSHeaders(w, corsMethodsGET, corsHeadersJSON)
 	if handleCORSPreflight(w, r, corsMethodsGET, corsHeadersJSON) {
 		return
 	}
@@ -82,7 +84,6 @@ func (h *Handlers) GetRun(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Found %d samples for run ID %s, finished: %v", len(response.Samples), runID, response.Finished)
 
 	w.Header().Set("Content-Type", "application/json")
-	setCORSHeaders(w, corsMethodsGET, corsHeadersJSON)
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.Printf("Error encoding response: %v", err)
