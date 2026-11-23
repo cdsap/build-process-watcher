@@ -502,8 +502,11 @@
     }
 
     function predictionPath(prediction, actuals) {
-        // Origin must be an observation available at issuance time (never after).
-        const origin = actualAtOrBefore(actuals, prediction.created);
+        if (!prediction.points?.length) return [];
+        // Count forecasts carry the counter observed at issuance time.
+        const origin = Number.isFinite(prediction.originValue)
+            ? { time: prediction.created, value: prediction.originValue }
+            : actualAtOrBefore(actuals, prediction.created);
         const start = origin
             ? { time: origin.time, value: origin.value }
             : { time: prediction.created, value: prediction.points[0].value };
@@ -734,19 +737,23 @@
         return `${pct > 0 ? '+' : ''}${rounded}%`;
     }
 
-    function horizonTooltip(item, point, elapsedS, actuals) {
+    function horizonTooltip(item, point, elapsedS, actuals, options = {}) {
+        const unit = options.valueUnit || 'MB';
         const horizonS = Math.round((point.time - item.created) / 1000);
-        const actual = actualNear(actuals || [], point.time, ACTUAL_MATCH_WINDOW_MS);
+        const actual = options.actualForHorizon
+            ? options.actualForHorizon(item, point)
+            : actualNear(actuals || [], point.time, ACTUAL_MATCH_WINDOW_MS);
         const parts = [
             `Issued at ${Math.round(elapsedS(item.created))}s`,
             `Horizon +${horizonS}s → ${Math.round(elapsedS(point.time))}s`,
-            `Predicted ${Math.round(point.value)} MB`,
+            `Predicted ${Math.round(point.value)} ${unit}`,
         ];
         if (actual) {
-            const errorMb = point.value - actual.value;
+            const errorValue = point.value - actual.value;
             const errorPct = formatErrorPct(point.value, actual.value);
-            parts.push(`Actual ${Math.round(actual.value)} MB`);
-            parts.push(`Error ${formatSignedMb(errorMb)}${errorPct ? ` (${errorPct})` : ''}`);
+            parts.push(`Actual ${Math.round(actual.value)} ${unit}`);
+            const error = unit === 'MB' ? formatSignedMb(errorValue) : `${errorValue > 0 ? '+' : ''}${Math.round(errorValue)} ${unit}`;
+            parts.push(`Error ${error}${errorPct ? ` (${errorPct})` : ''}`);
         } else {
             parts.push('Actual pending');
         }
@@ -822,7 +829,7 @@
             const expired = latest && isIssuanceExpired(item, cursorMs);
             const horizons = item.horizonPoints || item.path.slice(1);
             return horizons.map((point) => {
-                const title = horizonTooltip(item, point, elapsedS, actuals);
+                const title = horizonTooltip(item, point, elapsedS, actuals, options);
                 let cls = 'forecast-point forecast-horizon';
                 if (!latest) cls += ' forecast-horizon-prior';
                 else if (expired) cls += ' forecast-horizon-expired';
@@ -835,7 +842,7 @@
             if (!origin || !Number.isFinite(origin.value)) return '';
             const expired = latest && isIssuanceExpired(item, cursorMs);
             const horizonSummary = (item.horizonPoints || [])
-                .map((point) => `+${Math.round((point.time - item.created) / 1000)}s ${Math.round(point.value)} MB`)
+                .map((point) => `+${Math.round((point.time - item.created) / 1000)}s ${Math.round(point.value)} ${options.valueUnit || 'MB'}`)
                 .join(', ');
             const title = [
                 `Issued at ${Math.round(elapsedS(item.created))}s`,
@@ -899,9 +906,10 @@
             ? group.actual[group.actual.length - 1].time
             : Math.min(Math.max(cutoff, minTime), maxTime);
         const nowX = xAt(cursorTime);
-        const actualLine = visibleActual.length
-            ? `<polyline class="actual-trace" points="${visibleActual.map(xy).join(' ')}"/>`
-            : '';
+        const actualLine = (group.actualSegments || [visibleActual])
+            .map(segment => cutoff === null ? segment : segment.filter(point => point.time <= cutoff))
+            .filter(segment => segment.length)
+            .map(segment => `<polyline class="actual-trace" points="${segment.map(xy).join(' ')}"/>`).join('');
 
         let predictionLayer = '';
         let issuanceMarkers = '';
@@ -913,7 +921,7 @@
                 elapsedS,
                 group.actual,
                 markerPaths,
-                { cursorMs: cursorTime },
+                { ...options, cursorMs: cursorTime },
             );
             predictionLayer = `${drawn.traces}${drawn.horizonMarkers}`;
             issuanceMarkers = drawn.issuanceMarkers;
@@ -952,10 +960,10 @@
             }).join('');
         }
         const midY = (plot.top + plot.bottom) / 2;
-        const aria = issuanceMode
+        const aria = options.chartLabel || (issuanceMode
             ? 'Actual memory trajectory with per-issuance forecast horizons'
-            : 'Actual memory trajectory with prediction track';
-        return `<svg class="forecast-chart" viewBox="0 0 960 280" role="img" aria-label="${aria}"><rect class="chart-frame" x="${plot.left}" y="${plot.top}" width="${plot.right - plot.left}" height="${plot.bottom - plot.top}"/>${grid}${actualLine}${predictionLayer}${issuanceMarkers}<line class="forecast-now" x1="${nowX}" x2="${nowX}" y1="${plot.top}" y2="${plot.bottom}"/>${xLabels}${yLabels}<text class="chart-axis-label" x="${(plot.left + plot.right) / 2}" y="268" text-anchor="middle">Elapsed time (seconds)</text><text class="chart-axis-label" x="18" y="${midY}" text-anchor="middle" transform="rotate(-90 18 ${midY})">Memory (MB)</text></svg>`;
+            : 'Actual memory trajectory with prediction track');
+        return `<svg class="forecast-chart" viewBox="0 0 960 280" role="img" aria-label="${escapeHtml(aria)}"><rect class="chart-frame" x="${plot.left}" y="${plot.top}" width="${plot.right - plot.left}" height="${plot.bottom - plot.top}"/>${grid}${actualLine}${predictionLayer}${issuanceMarkers}<line class="forecast-now" x1="${nowX}" x2="${nowX}" y1="${plot.top}" y2="${plot.bottom}"/>${xLabels}${yLabels}<text class="chart-axis-label" x="${(plot.left + plot.right) / 2}" y="268" text-anchor="middle">Elapsed time (seconds)</text><text class="chart-axis-label" x="18" y="${midY}" text-anchor="middle" transform="rotate(-90 18 ${midY})">${escapeHtml(options.axisLabel || 'Memory (MB)')}</text></svg>`;
     }
 
     // Optional process_forecasts: {process_name, pid, metric, created_at_ms,
@@ -1011,6 +1019,46 @@
         return `<ul class="forecast-chart-legend" aria-label="Chart legend"><li><span class="legend-swatch legend-actual"></span>Actual</li><li><span class="legend-swatch legend-prediction"></span>Prediction</li><li><span class="legend-swatch legend-issuance"></span>Issuance</li><li><span class="legend-swatch legend-band"></span>Prediction range</li><li><span class="legend-swatch legend-now"></span>Latest sample</li></ul>`;
     }
 
+    function forecastReplayControls(defaultMode, defaultHistoryMode, options = {}) {
+        return `<div class="replay-controls forecast-replay-controls" id="forecast-replay-controls" data-forecast-view-mode="${defaultMode}" data-forecast-history-mode="${defaultHistoryMode}">
+            <div class="forecast-toolbar-primary">
+                <div class="forecast-toolbar-cluster forecast-view-mode" role="group" aria-label="Forecast view mode">
+                    <span class="forecast-toolbar-label">View</span>
+                    <div class="forecast-segmented">
+                        <button class="btn${defaultMode === 'live' ? '' : ' secondary'}" type="button" id="btn-forecast-view-live" data-forecast-view-mode="live" aria-pressed="${defaultMode === 'live' ? 'true' : 'false'}">Live</button>
+                        <button class="btn${defaultMode === 'replay' ? '' : ' secondary'}" type="button" id="btn-forecast-view-replay" data-forecast-view-mode="replay" aria-pressed="${defaultMode === 'replay' ? 'true' : 'false'}">Replay</button>
+                    </div>
+                </div>
+                ${forecastHistoryModeControls(defaultHistoryMode)}
+                <div class="forecast-toolbar-cluster forecast-replay-transport">
+                    <div class="buttons forecast-replay-buttons">
+                        <button class="btn" type="button" id="btn-forecast-replay-play">Play</button>
+                        <button class="btn secondary" type="button" id="btn-forecast-replay-pause">Pause</button>
+                        <button class="btn secondary" type="button" id="btn-forecast-replay-reset">Reset</button>
+                    </div>
+                    <div class="meta" id="forecast-replay-meta">Frame ${options.frame || 0} / ${options.frames || 0}</div>
+                </div>
+            </div>
+            <div class="timeline forecast-replay-timeline-wrap forecast-toolbar-timeline">
+                <input type="range" id="forecast-replay-timeline" aria-label="${escapeHtml(options.timelineLabel || 'Prediction replay timeline')}" min="${options.min || 0}" max="${options.max || 0}" value="${options.value || 0}">
+                <div class="forecast-timeline-meta">
+                    <div class="meta" id="forecast-replay-time-label">Elapsed: ${Math.round(((options.value || 0) - (options.min || 0)) / 1000)}s</div>
+                    <label class="forecast-speed-control" for="forecast-replay-speed">
+                        <span class="forecast-toolbar-label">Speed</span>
+                        <select id="forecast-replay-speed" aria-label="Prediction replay speed">
+                            <option value="5" ${(options.speed || 15) === 5 ? 'selected' : ''}>5x</option>
+                            <option value="10" ${(options.speed || 15) === 10 ? 'selected' : ''}>10x</option>
+                            <option value="15" ${(options.speed || 15) === 15 ? 'selected' : ''}>15x</option>
+                            <option value="20" ${(options.speed || 15) === 20 ? 'selected' : ''}>20x</option>
+                            <option value="30" ${(options.speed || 15) === 30 ? 'selected' : ''}>30x</option>
+                            <option value="50" ${(options.speed || 15) === 50 ? 'selected' : ''}>50x</option>
+                        </select>
+                    </label>
+                </div>
+            </div>
+        </div>`;
+    }
+
     function renderProcessTimelines(data) {
         const timelineMode = isTimelinePredictionMode(data?.prediction_mode);
         const available = collectForecastGroups(data, { allowEmptyPredictions: timelineMode });
@@ -1028,43 +1076,7 @@
         const delayed = freshness.forecastCount > 0 && freshness.lagS !== null && freshness.lagS >= lagWarn;
         const waiting = freshness.forecastCount === 0;
         const defaultHistoryMode = preferredIssuanceHistoryMode();
-        const replayControls = `<div class="replay-controls forecast-replay-controls" id="forecast-replay-controls" data-forecast-view-mode="${defaultMode}" data-forecast-history-mode="${defaultHistoryMode}">
-            <div class="forecast-toolbar-primary">
-                <div class="forecast-toolbar-cluster forecast-view-mode" role="group" aria-label="Forecast view mode">
-                    <span class="forecast-toolbar-label">View</span>
-                    <div class="forecast-segmented">
-                        <button class="btn${defaultMode === 'live' ? '' : ' secondary'}" type="button" id="btn-forecast-view-live" data-forecast-view-mode="live" aria-pressed="${defaultMode === 'live' ? 'true' : 'false'}">Live</button>
-                        <button class="btn${defaultMode === 'replay' ? '' : ' secondary'}" type="button" id="btn-forecast-view-replay" data-forecast-view-mode="replay" aria-pressed="${defaultMode === 'replay' ? 'true' : 'false'}">Replay</button>
-                    </div>
-                </div>
-                ${forecastHistoryModeControls(defaultHistoryMode)}
-                <div class="forecast-toolbar-cluster forecast-replay-transport">
-                    <div class="buttons forecast-replay-buttons">
-                        <button class="btn" type="button" id="btn-forecast-replay-play">Play</button>
-                        <button class="btn secondary" type="button" id="btn-forecast-replay-pause">Pause</button>
-                        <button class="btn secondary" type="button" id="btn-forecast-replay-reset">Reset</button>
-                    </div>
-                    <div class="meta" id="forecast-replay-meta">Frame 0 / 0</div>
-                </div>
-            </div>
-            <div class="timeline forecast-replay-timeline-wrap forecast-toolbar-timeline">
-                <input type="range" id="forecast-replay-timeline" aria-label="Prediction replay timeline" min="0" max="0" value="0">
-                <div class="forecast-timeline-meta">
-                    <div class="meta" id="forecast-replay-time-label">Elapsed: 0s</div>
-                    <label class="forecast-speed-control" for="forecast-replay-speed">
-                        <span class="forecast-toolbar-label">Speed</span>
-                        <select id="forecast-replay-speed" aria-label="Prediction replay speed">
-                            <option value="5">5x</option>
-                            <option value="10">10x</option>
-                            <option value="15" selected>15x</option>
-                            <option value="20">20x</option>
-                            <option value="30">30x</option>
-                            <option value="50">50x</option>
-                        </select>
-                    </label>
-                </div>
-            </div>
-        </div>`;
+        const replayControls = forecastReplayControls(defaultMode, defaultHistoryMode);
         const predictionMode = String(data?.prediction_mode || '');
         const sharedLegend = forecastPanelLegend(predictionMode);
         const statusClass = `forecast-live-status${delayed ? ' is-delayed' : ''}${waiting ? ' is-waiting' : ''}`;
@@ -1487,10 +1499,10 @@
                 return `<tr><td>${escapeHtml(new Date(f.created_at_ms).toISOString().slice(11, 19))}</td><td>${Math.round(point.predicted_delta_count)}</td><td>${observed === null ? 'Pending' : Math.round(observed)}</td><td>${observed === null ? 'Pending' : Math.round(point.predicted_delta_count - observed)}</td><td>${escapeHtml(f.status)}</td></tr>`;
             }).join('');
         if (!rows) return '';
-        return `<div class="activity-results"><table aria-label="Class-loading issuance results"><caption>Recent issuance results · classes</caption><thead><tr><th scope="col">Issued (UTC)</th><th scope="col">Predicted +60s</th><th scope="col">Observed +60s</th><th scope="col">Error</th><th scope="col">Status</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+        return `<div class="forecast-accuracy-table-wrap"><table class="forecast-accuracy-table" aria-label="Class-loading issuance results"><caption>Recent issuance results · classes</caption><thead><tr><th scope="col">Issued (UTC)</th><th scope="col">Predicted +60s</th><th scope="col">Observed +60s</th><th scope="col">Error</th><th scope="col">Status</th></tr></thead><tbody>${rows}</tbody></table></div>`;
     }
 
-    function activityChart(group, cursor, history) {
+    function activityChart(group, cursor, history, predictionMode) {
         let shown = group.forecasts.filter(f => f.created_at_ms <= cursor);
         if (history === 'latest') shown = shown.slice(-1);
         if (history === 'recent') shown = shown.slice(-3);
@@ -1498,69 +1510,100 @@
             .filter(({f,p}) => f.origin_value_count != null && p.target_at_ms === f.created_at_ms + 60000
                 && Number.isFinite(p.predicted_delta_count) && p.predicted_delta_count >= 0
                 && Number.isFinite(p.predicted_total_count) && p.predicted_total_count >= 0);
-        const actual = group.actual.filter(p => p.time <= cursor);
-        const times = [...actual.map(p => p.time), ...shown.map(f => f.created_at_ms), ...points.map(({p}) => p.target_at_ms)];
-        if (!times.length) return '<p>Waiting for class counters.</p>';
-        const start = Math.min(...times), end = Math.max(start + 1000, ...times);
-        const ymax = Math.max(1, ...actual.map(p => p.value || 0), ...points.map(({p}) => p.predicted_total_count));
-        const x = t => 70 + (t - start) / (end - start) * 800;
-        const y = v => 225 - v / ymax * 195;
-        let paths = '', segment = [], previous = null;
-        const flush = () => { if (segment.length) paths += `<polyline fill="none" stroke="#087f8c" stroke-width="2" points="${segment.join(' ')}"/>`; segment = []; };
-        for (const p of actual) {
-            if (p.value === null || (previous && (p.value < previous.value || p.time <= previous.time || p.time - previous.time > 15000))) flush();
-            if (p.value !== null) segment.push(`${x(p.time)},${y(p.value)}`);
-            previous = p;
+        const actualSegments = [];
+        let segment = [], previous = null;
+        for (const point of group.actual) {
+            if (point.value === null || (previous && (point.value < previous.value || point.time <= previous.time || point.time - previous.time > 15000))) {
+                if (segment.length) actualSegments.push(segment);
+                segment = [];
+            }
+            if (point.value !== null) segment.push(point);
+            previous = point;
         }
-        flush();
-        const forecasts = points.map(({f,p}) => `<line x1="${x(f.created_at_ms)}" y1="${y(f.origin_value_count)}" x2="${x(p.target_at_ms)}" y2="${y(p.predicted_total_count)}" stroke="${cursor > p.target_at_ms ? '#9ca3af' : '#c2410c'}" stroke-width="2" stroke-dasharray="6 4"><title>Issued ${escapeHtml(new Date(f.created_at_ms).toISOString())}; +60s: ${Math.round(p.predicted_total_count)} classes</title></line>`).join('');
+        if (segment.length) actualSegments.push(segment);
+        const chartGroup = {
+            actual: group.actual.filter(point => point.value !== null), actualSegments,
+            // Keep empty issuances so Latest never substitutes an older ready forecast.
+            predictions: group.forecasts.map(f => ({
+                created: f.created_at_ms, originValue: f.origin_value_count,
+                points: ['ready', 'fallback'].includes(f.status) && Number.isFinite(f.origin_value_count)
+                    ? (f.points || []).filter(p => p.target_at_ms === f.created_at_ms + 60000
+                        && Number.isFinite(p.predicted_delta_count) && p.predicted_delta_count >= 0
+                        && Number.isFinite(p.predicted_total_count) && p.predicted_total_count >= 0)
+                        .map(p => ({time: p.target_at_ms, value: p.predicted_total_count})) : [],
+            })),
+        };
+        const chart = renderForecastChartSvg(chartGroup, cursor, {
+            predictionMode, historyMode: history, valueUnit: 'classes', axisLabel: 'Classes loaded',
+            chartLabel: `${group.name} cumulative classes loaded and 60-second forecasts`,
+            actualForHorizon(item) {
+                const forecast = group.forecasts.find(f => f.created_at_ms === item.created);
+                const observed = forecast ? activityObserved(group, forecast, cursor) : null;
+                return observed === null ? null : {value: forecast.origin_value_count + observed};
+            },
+        });
         const latest = shown[shown.length - 1];
         const latestPoint = latest && points.find(({f}) => f === latest)?.p;
         const actualDelta = latestPoint ? activityObserved(group, latest, cursor) : null;
         const summary = latestPoint
             ? `<p><strong>Predicted additional classes in 60s: +${Math.round(latestPoint.predicted_delta_count).toLocaleString('en-US')}</strong></p><p>Observed increase: ${actualDelta === null ? 'Pending' : Math.round(actualDelta)} · Error (prediction − observed): ${actualDelta === null ? 'Pending' : Math.round(latestPoint.predicted_delta_count - actualDelta)} classes</p>` : '';
-        return `<div class="activity-plot"><svg viewBox="0 0 960 280" role="img" aria-label="${escapeHtml(group.name)} cumulative classes loaded and 60-second forecasts"><rect x="70" y="20" width="800" height="205" fill="none" stroke="#d1d5db"/>${paths}${forecasts}<text x="65" y="20">${Math.round(ymax)}</text><text x="55" y="230">0</text><text x="10" y="140">Classes</text><text x="70" y="250">0s</text><text x="790" y="250">${Math.round((end-start)/1000)}s</text><text x="360" y="270">Seconds from first visible sample</text></svg></div>${summary}${activityResults(group, cursor)}<p>Status: ${escapeHtml(latest?.status || 'waiting')} · Model: ${escapeHtml(latest?.model_version || 'Unavailable')} · Latency: ${latest?.latency_ms ? `${Math.round(latest.latency_ms)} ms` : 'Unavailable'}${latest?.fallback || latest?.status === 'fallback' ? ' · Fallback (not model inference)' : ''}</p>`;
+        return `<div class="forecast-chart-host" data-forecast-chart-host>${chart || '<p>Waiting for class counters.</p>'}</div>${summary}${activityResults(group, cursor)}<p class="forecast-live-status">Status: ${escapeHtml(latest?.status || 'waiting')} · Model: ${escapeHtml(latest?.model_version || 'Unavailable')} · Latency: ${Number.isFinite(latest?.latency_ms) ? `${Math.round(latest.latency_ms)} ms` : 'Unavailable'}${latest?.fallback || latest?.status === 'fallback' ? ' · Fallback (not model inference)' : ''}</p>`;
     }
 
-    function renderActivity(data, cursor, history = 'latest', mode) {
+    function renderActivity(data, cursor, history = 'latest', mode, speed = 15) {
         const groups = activityGroups(data);
         const times = groups.flatMap(g => [...g.actual.map(p => p.time), ...g.forecasts.map(f => f.created_at_ms)]);
         const first = times.length ? Math.min(...times) : 0, last = times.length ? Math.max(...times) : first;
         cursor = Number.isFinite(cursor) ? cursor : last;
         mode = mode || (data.finished ? 'replay' : 'live');
-        return `<section class="prediction-panel activity-panel" data-activity-panel><h2>Class-loading activity <small>Experimental</small></h2><p>Actual cumulative classes (solid) · +60s predicted total (dashed). TabPFN requires an available VM.</p><div id="forecast-replay-controls" class="activity-controls"><label>View <select aria-label="Class-loading view" data-activity-mode><option value="live" ${mode === 'live' ? 'selected' : ''}>Live</option><option value="replay" ${mode === 'replay' ? 'selected' : ''}>Replay</option></select></label><button type="button" data-activity-play>Play / pause</button><label>Issuances <select aria-label="Class-loading issuance history" data-activity-history><option value="latest" ${history === 'latest' ? 'selected' : ''}>Latest</option><option value="recent" ${history === 'recent' ? 'selected' : ''}>Last 3</option><option value="all" ${history === 'all' ? 'selected' : ''}>All</option></select></label><label class="activity-timeline">Class-loading replay timeline <input type="range" data-activity-cursor min="${first}" max="${last}" value="${cursor}" step="1000"></label></div><div data-forecast-chart-host>${groups.length ? groups.map(g => `<article class="process-forecast"><h3>${escapeHtml(g.name)} · PID ${escapeHtml(g.pid)}</h3>${activityChart(g, cursor, history)}</article>`).join('') : '<p>Waiting for eligible class-loading samples.</p>'}</div></section>`;
+        const frames = [...new Set(times)].sort((a, b) => a - b);
+        const controls = forecastReplayControls(mode, history, {min: first, max: last, value: cursor, speed,
+            frame: frames.filter(time => time <= cursor).length, frames: frames.length,
+            timelineLabel: 'Class-loading replay timeline'});
+        const help = `Actual cumulative classes · +60s predicted total.${data.prediction_mode === 'tabpfn' ? ' TabPFN requires an available VM.' : ''}`;
+        return `<section class="prediction-panel process-forecasts activity-panel" data-activity-panel><h2>Class-loading activity <small>Experimental</small></h2><p class="forecast-panel-help">${help}</p>${controls}${forecastPanelLegend(data.prediction_mode)}<div class="process-forecast-charts" aria-label="Forecast charts">${groups.length ? groups.map(g => `<article class="process-forecast process-forecast-chart"><h3>${escapeHtml(g.name)} · PID ${escapeHtml(g.pid)} · Classes loaded</h3>${activityChart(g, cursor, history, data.prediction_mode)}</article>`).join('') : '<p>Waiting for eligible class-loading samples.</p>'}</div></section>`;
     }
 
     function bindActivityView(root, options) {
         let data = options.data || {}, mode = options.initialMode || (data.finished ? 'replay' : 'live');
-        let history = 'latest', cursor = null, timer = null;
+        let history = 'latest', cursor = null, timer = null, speed = 15;
         const stop = () => { if (timer !== null) clearInterval(timer); timer = null; };
         const draw = () => {
             const active = root.ownerDocument?.activeElement;
-            const control = active && root.contains(active) ? ['data-activity-mode', 'data-activity-history', 'data-activity-cursor', 'data-activity-play'].find(key => active.hasAttribute(key)) : null;
-            root.innerHTML = renderActivity(data, cursor, history, mode);
-            if (control) root.querySelector(`[${control}]`)?.focus({preventScroll: true});
+            const selector = active && root.contains(active)
+                ? (active.id ? `#${active.id}` : active.dataset.forecastHistoryMode ? `[data-forecast-history-mode="${active.dataset.forecastHistoryMode}"]` : null) : null;
+            root.innerHTML = renderActivity(data, cursor, history, mode, speed);
+            if (selector) root.querySelector(selector)?.focus({preventScroll: true});
         };
         const onChange = event => {
             const target = event.target;
-            if (target.matches('[data-activity-history]')) history = target.value;
-            if (target.matches('[data-activity-mode]')) { mode = target.value; stop(); if (mode === 'live') cursor = null; }
-            if (target.matches('[data-activity-cursor]')) { mode = 'replay'; cursor = Number(target.value); stop(); }
+            if (target.id === 'forecast-replay-speed') speed = Number(target.value);
+            else if (target.id === 'forecast-replay-timeline') { mode = 'replay'; cursor = Number(target.value); stop(); }
+            else return;
             draw();
         };
         const onClick = event => {
-            if (!event.target.closest('[data-activity-play]')) return;
-            if (timer !== null) { stop(); return; }
-            mode = 'replay';
-            const slider = root.querySelector('[data-activity-cursor]');
-            if (!slider) return;
-            if (cursor === null || cursor >= Number(slider.max)) cursor = Number(slider.min);
-            timer = setInterval(() => {
-                const slider = root.querySelector('[data-activity-cursor]');
-                if (!slider) { stop(); return; }
-                cursor = Math.min(Number(slider.max), cursor + 1000); draw();
-                if (cursor >= Number(slider.max)) stop();
-            }, 100);
+            const button = event.target.closest('button');
+            if (!button) return;
+            if (button.dataset.forecastHistoryMode) history = button.dataset.forecastHistoryMode;
+            else if (button.dataset.forecastViewMode) { mode = button.dataset.forecastViewMode; stop(); if (mode === 'live') cursor = null; }
+            else if (button.id === 'btn-forecast-replay-pause') stop();
+            else if (button.id === 'btn-forecast-replay-reset') {
+                stop(); mode = 'replay'; cursor = Number(root.querySelector('#forecast-replay-timeline').min);
+            } else if (button.id === 'btn-forecast-replay-play') {
+                if (timer !== null) return;
+                mode = 'replay';
+                const slider = root.querySelector('#forecast-replay-timeline');
+                if (!slider) return;
+                if (cursor === null || cursor >= Number(slider.max)) cursor = Number(slider.min);
+                timer = setInterval(() => {
+                    const slider = root.querySelector('#forecast-replay-timeline');
+                    if (!slider) { stop(); return; }
+                    cursor = Math.min(Number(slider.max), cursor + speed * 100); draw();
+                    if (cursor >= Number(slider.max)) stop();
+                }, 100);
+            } else return;
+            draw();
         };
         root.addEventListener('change', onChange); root.addEventListener('click', onClick); draw();
         return { update(next) { if (next.prediction_target !== 'class_loading') return false; if (next.finished && !data.finished) { mode = 'replay'; stop(); } data = next; if (mode === 'live') cursor = null; draw(); return true; },
