@@ -121,4 +121,78 @@ describe('shared replay controls', () => {
 
     binding.destroy();
   });
+
+  it('skips duplicate onFrame renders on unchanged sampleIndex in frame mode and applies speed changes', () => {
+    const sandbox = loadReplayStack();
+    const byId = new Map<string, any>();
+    const makeEl = (overrides: Record<string, any> = {}) => {
+      const el: any = {
+        value: '',
+        textContent: '',
+        listeners: {} as Record<string, Function>,
+        addEventListener: jest.fn((eventName: string, handler: Function) => {
+          el.listeners[eventName] = handler;
+        }),
+        querySelector: (selector: string) => {
+          const idMatch = selector.match(/^#(.+)$/);
+          return idMatch ? byId.get(idMatch[1]) || null : null;
+        },
+        ...overrides,
+      };
+      return el;
+    };
+
+    const timestamps = [0, 10_000, 20_000, 30_000];
+    byId.set('compare-replay-timeline', makeEl({ value: '0' }));
+    byId.set('compare-replay-meta', makeEl());
+    byId.set('compare-replay-time-label', makeEl());
+    byId.set('btn-compare-replay-play', makeEl());
+    byId.set('btn-compare-replay-pause', makeEl());
+    byId.set('btn-compare-replay-reset', makeEl());
+    byId.set('compare-replay-speed', makeEl({ value: '5' }));
+    byId.set('compare-replay-controls', makeEl());
+    const root = makeEl();
+    root.querySelector = (selector: string) => {
+      const idMatch = selector.match(/^#(.+)$/);
+      return idMatch ? byId.get(idMatch[1]) || null : null;
+    };
+
+    const onFrame = jest.fn();
+    const binding = sandbox.BpwReplayControls.bindReplayControls({
+      root,
+      idPrefix: 'compare-replay',
+      timestamps,
+      timelineMode: 'frame',
+      initialFrame: 0,
+      createPlaybackClock: sandbox.BpwPlaybackClock.createPlaybackClock,
+      now: () => sandbox.__now,
+      requestAnimationFrame: (cb: Function) => {
+        sandbox.__raf = cb;
+        return 1;
+      },
+      cancelAnimationFrame: () => { sandbox.__raf = null; },
+      onFrame,
+    });
+
+    expect(onFrame).toHaveBeenCalledTimes(1);
+    byId.get('btn-compare-replay-play').listeners.click();
+    const callsAfterPlay = onFrame.mock.calls.length;
+
+    // Multiple rAF ticks inside frame 0 should not re-trigger onFrame.
+    sandbox.__now = 200; // 1_000ms logical
+    sandbox.__raf(sandbox.__now);
+    sandbox.__now = 400; // 2_000ms logical
+    sandbox.__raf(sandbox.__now);
+    expect(onFrame).toHaveBeenCalledTimes(callsAfterPlay);
+
+    // Switch speed to 50x mid-play and advance 200ms wall => +10_000ms logical (frame 1).
+    byId.get('compare-replay-speed').value = '50';
+    byId.get('compare-replay-speed').listeners.change();
+    sandbox.__now = 600;
+    sandbox.__raf(sandbox.__now);
+    expect(onFrame).toHaveBeenCalledTimes(callsAfterPlay + 1);
+    expect(onFrame.mock.calls[onFrame.mock.calls.length - 1][0].sampleIndex).toBe(1);
+
+    binding.destroy();
+  });
 });

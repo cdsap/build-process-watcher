@@ -122,6 +122,8 @@
         const speedSelect = document.getElementById('single-replay-speed');
 
         let currentFrame = 0;
+        let lastRenderedSampleIdx = -1;
+        let chartControlsBound = false;
         const memoryGapLimitMs = (getMedianDelta(chartTimestamps) || 0) * 2;
         const memoryValuePool = [];
         (data.totalRss || []).forEach((value) => {
@@ -189,9 +191,13 @@
                 Number.isFinite(frameIndex) ? frameIndex : chartTimestamps.length - 1,
                 chartTimestamps.length - 1,
             ));
+            const sampleChanged = idx !== lastRenderedSampleIdx;
             currentFrame = idx;
+            lastRenderedSampleIdx = idx;
             const absoluteMs = Number.isFinite(playheadAbsoluteMs) ? playheadAbsoluteMs : chartTimestamps[idx];
-            activityController?.seekTo(absoluteMs);
+            if (sampleChanged) {
+                activityController?.seekTo(absoluteMs);
+            }
             const tasks = [];
 
             let memoryLayout = {
@@ -233,47 +239,51 @@
             );
             tasks.push(Plotly.react('single-rss', applyVisibilityToTraces('single-rss', rssTraces), memoryLayout, getMemoryConfig('build-replay')));
 
-            if (showGC) {
-                const gcLayout = {
-                    ...getGcLayout(),
-                    xaxis: {
-                        ...getGcLayout().xaxis,
-                        title: 'Elapsed (s)',
-                        tickformat: null,
-                        type: 'linear'
-                    },
-                    legend: {
-                        x: 0.5,
-                        y: -0.25,
-                        xanchor: 'center',
-                        orientation: 'h'
-                    },
-                    margin: {
-                        ...getGcLayout().margin,
-                        b: 110
-                    }
+            if (sampleChanged) {
+                if (showGC) {
+                    const gcLayout = {
+                        ...getGcLayout(),
+                        xaxis: {
+                            ...getGcLayout().xaxis,
+                            title: 'Elapsed (s)',
+                            tickformat: null,
+                            type: 'linear'
+                        },
+                        legend: {
+                            x: 0.5,
+                            y: -0.25,
+                            xanchor: 'center',
+                            orientation: 'h'
+                        },
+                        margin: {
+                            ...getGcLayout().margin,
+                            b: 110
+                        }
+                    };
+                    const gcTraces = buildMetricTraces(data, chartTimestamps, idx, 'gc', {
+                        lineDash: 'solid'
+                    }, elapsedSeconds);
+                    tasks.push(Plotly.react('single-gc', applyVisibilityToTraces('single-gc', gcTraces), gcLayout, getGcConfig('build-replay-gc')));
+                }
+                const counterChart = (id, metric, title, yTitle) => {
+                    const layout = getCounterLayout(title, yTitle);
+                    layout.xaxis = { ...layout.xaxis, title: 'Elapsed (s)', tickformat: null, type: 'linear' };
+                    const traces = buildMetricTraces(data, chartTimestamps, idx, metric, {}, elapsedSeconds);
+                    tasks.push(Plotly.react(id, applyVisibilityToTraces(id, traces), layout, getCounterConfig(`build-replay-${metric}`)));
                 };
-                const gcTraces = buildMetricTraces(data, chartTimestamps, idx, 'gc', {
-                    lineDash: 'solid'
-                }, elapsedSeconds);
-                tasks.push(Plotly.react('single-gc', applyVisibilityToTraces('single-gc', gcTraces), gcLayout, getGcConfig('build-replay-gc')));
-            }
-            const counterChart = (id, metric, title, yTitle) => {
-                const layout = getCounterLayout(title, yTitle);
-                layout.xaxis = { ...layout.xaxis, title: 'Elapsed (s)', tickformat: null, type: 'linear' };
-                const traces = buildMetricTraces(data, chartTimestamps, idx, metric, {}, elapsedSeconds);
-                tasks.push(Plotly.react(id, applyVisibilityToTraces(id, traces), layout, getCounterConfig(`build-replay-${metric}`)));
-            };
-            if (showJIT) {
-                counterChart('single-jit-time', 'jitTime', 'Cumulative JIT Compilation Time', 'Compilation Time (s)');
-                counterChart('single-jit-rate', 'jitRate', 'JIT Compilation Activity', 'Compiled Methods / s');
-            }
-            if (showClasses) {
-                counterChart('single-classes-loaded', 'classesLoaded', 'Cumulative Classes Loaded', 'Classes Loaded');
-                counterChart('single-class-rate', 'classRate', 'Class Loading Activity', 'Classes / s');
+                if (showJIT) {
+                    counterChart('single-jit-time', 'jitTime', 'Cumulative JIT Compilation Time', 'Compilation Time (s)');
+                    counterChart('single-jit-rate', 'jitRate', 'JIT Compilation Activity', 'Compiled Methods / s');
+                }
+                if (showClasses) {
+                    counterChart('single-classes-loaded', 'classesLoaded', 'Cumulative Classes Loaded', 'Classes Loaded');
+                    counterChart('single-class-rate', 'classRate', 'Class Loading Activity', 'Classes / s');
+                }
             }
 
             return Promise.all(tasks).then(() => {
+                if (chartControlsBound) return;
+                chartControlsBound = true;
                 setupMemoryChartFilters('single-rss', 'filter-single-total-rss', 'filter-single-rss', 'filter-single-heap');
                 if (showGC) {
                     attachLegendVisibilityHandlers('single-gc');
@@ -304,7 +314,10 @@
         const clock = BpwPlaybackClock.createPlaybackClock({
             timestamps: chartTimestamps,
             speed: Number(speedSelect.value) || 15,
-            onPosition: (position) => coalescer.enqueue(position),
+            onPosition: (position) => {
+                updateUi(position);
+                coalescer.enqueue(position);
+            },
         });
 
         function pause() {
@@ -321,8 +334,11 @@
         pauseBtn.addEventListener('click', pause);
         resetBtn.addEventListener('click', () => clock.reset());
         timeline.addEventListener('input', () => {
-            pause();
-            clock.seekTo(Number(timeline.value));
+            // Read before pause(): pause emits onPosition and may synchronously rewrite the slider.
+            const targetMs = Number(timeline.value);
+            if (clock.getState().playing) pause();
+            coalescer.cancel();
+            clock.seekTo(targetMs);
         });
         speedSelect.addEventListener('change', () => {
             const parsed = Number(speedSelect.value);
@@ -367,8 +383,6 @@
                 elapsedByTimestamp
             });
         }
-
-        renderFrame(0);
     }
 
     if (input) {

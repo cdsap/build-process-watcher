@@ -1268,6 +1268,7 @@
 
             let latestRender = Promise.resolve();
             let currentFrame = Math.max(0, chartTimestamps.length - 1);
+            let lastRenderedSampleIndex = -1;
             let viewportMode = viewportSelect && viewportSelect.value === 'follow' ? 'follow' : 'full';
             let playing = false;
 
@@ -1322,6 +1323,7 @@
                 const traces = useSmoothMemory
                     ? buildTraces(position.sampleIndex, position.absoluteMs, allowVisual)
                     : buildTraces(position.sampleIndex);
+                lastRenderedSampleIndex = position.sampleIndex;
                 updateUi(position);
                 latestRender = Plotly.react(
                     chartId,
@@ -1343,8 +1345,14 @@
                 timestamps: chartTimestamps,
                 speed: Number(speedSelect.value) || 15,
                 onPosition: (position) => {
-                    if (coalescer) coalescer.enqueue(position);
-                    else renderAt(position);
+                    if (coalescer) {
+                        updateUi(position);
+                        coalescer.enqueue(position);
+                    } else if (position.sampleIndex !== lastRenderedSampleIndex || position.playing === false) {
+                        renderAt(position);
+                    } else {
+                        updateUi(position);
+                    }
                 },
                 onStateChange: (state) => {
                     playing = Boolean(state.playing);
@@ -1389,8 +1397,11 @@
                 clock.reset();
             });
             timeline.addEventListener('input', () => {
-                pause();
-                clock.seekTo(Number(timeline.value));
+                // Read before pause(): pause emits onPosition and rewrites the slider.
+                const targetMs = Number(timeline.value);
+                if (playing) pause();
+                coalescer?.cancel();
+                clock.seekTo(targetMs);
             });
             speedSelect.addEventListener('change', () => {
                 const parsed = Number(speedSelect.value);
@@ -1422,7 +1433,7 @@
             const { panelKey, controlsId, charts } = options;
             const controls = document.getElementById(controlsId);
             const availableCharts = charts.filter(chart => document.getElementById(chart.id));
-            if (!controls || !availableCharts.length) return;
+            if (!controls || !availableCharts.length || !window.BpwPlaybackClock) return;
 
             if (!window.replayStops) {
                 window.replayStops = {};
@@ -1440,12 +1451,19 @@
             const speedSelect = document.getElementById(`${panelKey}-replay-speed`);
             if (!timeline || !meta || !timeLabel || !playBtn || !pauseBtn || !resetBtn || !speedSelect) return;
 
-            let isPlaying = false;
-            let playTimer = null;
-            let currentFrame = 0;
-            let speedMultiplier = Number(speedSelect.value) || 15;
+            let playing = false;
+            let currentFrame = Math.max(0, chartTimestamps.length - 1);
+            let lastRenderedFrame = -1;
+            let latestRender = Promise.resolve();
 
+            timeline.min = '0';
             timeline.max = String(Math.max(0, chartTimestamps.length - 1));
+
+            function syncPlayButton() {
+                playBtn.textContent = playing ? 'Pause' : 'Play';
+                playBtn.setAttribute('aria-pressed', playing ? 'true' : 'false');
+                playBtn.classList.toggle('secondary', playing);
+            }
 
             function updateUi(frameIndex) {
                 timeline.value = String(frameIndex);
@@ -1454,16 +1472,19 @@
                 const elapsed = elapsedByTimestamp.get(timestamp);
                 const timeText = new Date(timestamp).toLocaleTimeString();
                 timeLabel.textContent = `Elapsed: ${elapsed}s | ${timeText}`;
+                syncPlayButton();
             }
 
-            function renderFrame(frameIndex) {
-                currentFrame = frameIndex;
-                updateUi(frameIndex);
+            function renderCounterFrame(frameIndex) {
+                const idx = Math.max(0, Math.min(frameIndex, chartTimestamps.length - 1));
+                currentFrame = idx;
+                lastRenderedFrame = idx;
+                updateUi(idx);
                 const tasks = availableCharts.map(chart => {
                     const traces = buildMetricTraces(
                         counterReplayData,
                         chartTimestamps,
-                        frameIndex,
+                        idx,
                         chart.metric,
                         {},
                         counterElapsedSeconds
@@ -1477,58 +1498,65 @@
                         CompareShared.getCounterConfig(`build-monitor-${chart.metric}-${runId}`)
                     );
                 });
-                return Promise.all(tasks);
+                latestRender = Promise.all(tasks);
+                return latestRender;
             }
 
-            function scheduleNext() {
-                if (!isPlaying) return;
-                if (currentFrame >= chartTimestamps.length - 1) {
-                    isPlaying = false;
-                    return;
-                }
-                const nextDelay = Math.max(
-                    16,
-                    (chartTimestamps[currentFrame + 1] - chartTimestamps[currentFrame]) / speedMultiplier
-                );
-                playTimer = setTimeout(() => {
-                    renderFrame(currentFrame + 1).then(scheduleNext);
-                }, nextDelay);
-            }
+            const clock = BpwPlaybackClock.createPlaybackClock({
+                timestamps: chartTimestamps,
+                speed: Number(speedSelect.value) || 15,
+                onPosition: (position) => {
+                    const idx = Math.max(0, position.sampleIndex);
+                    if (idx !== lastRenderedFrame || position.playing === false) {
+                        renderCounterFrame(idx);
+                    }
+                },
+                onStateChange: (state) => {
+                    playing = Boolean(state.playing);
+                    syncPlayButton();
+                },
+            });
 
             function play() {
-                if (isPlaying) return;
-                isPlaying = true;
-                scheduleNext();
+                clock.play();
             }
 
             function pause() {
-                isPlaying = false;
-                if (playTimer) {
-                    clearTimeout(playTimer);
-                    playTimer = null;
-                }
+                clock.pause();
             }
 
-            window.replayStops[panelKey] = pause;
+            function renderFrame(frameIndex) {
+                const idx = Math.max(0, Math.min(frameIndex, chartTimestamps.length - 1));
+                clock.seekTo(chartTimestamps[idx] - chartTimestamps[0]);
+                return latestRender;
+            }
+
+            window.replayStops[panelKey] = () => {
+                pause();
+                clock.destroy();
+            };
 
             playBtn.addEventListener('click', play);
             pauseBtn.addEventListener('click', pause);
             resetBtn.addEventListener('click', () => {
                 pause();
-                renderFrame(0);
+                clock.reset();
             });
             timeline.addEventListener('input', () => {
+                // Read before pause(): pause emits onPosition and rewrites the slider.
+                const frameIndex = Number(timeline.value);
                 pause();
-                renderFrame(Number(timeline.value));
+                renderFrame(frameIndex);
             });
             speedSelect.addEventListener('change', () => {
                 const parsed = Number(speedSelect.value);
                 if (!Number.isNaN(parsed) && parsed > 0) {
-                    speedMultiplier = parsed;
+                    clock.setSpeed(parsed);
                 }
             });
 
             const initialFrame = Math.max(0, chartTimestamps.length - 1);
+            syncPlayButton();
             renderFrame(initialFrame).then(() => {
                 availableCharts.forEach(chart => attachLegendVisibilityHandlers(chart.id));
             });

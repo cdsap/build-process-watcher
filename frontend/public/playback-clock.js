@@ -101,7 +101,8 @@
 
         function tick(nowMs) {
             if (destroyed || !playing) return;
-            cursorMs = Math.min(durationMs, anchorCursorMs + (nowMs - anchorWallMs) * speed);
+            const elapsedWallMs = Math.max(0, nowMs - anchorWallMs);
+            cursorMs = Math.min(durationMs, Math.max(0, anchorCursorMs + elapsedWallMs * speed));
             emit(false);
             if (cursorMs >= durationMs) {
                 cursorMs = durationMs;
@@ -154,11 +155,14 @@
         function setSpeed(multiplier) {
             const parsed = Number(multiplier);
             if (!Number.isFinite(parsed) || parsed <= 0) return;
-            speed = parsed;
             if (playing) {
+                const now = nowFn();
+                const elapsedWallMs = Math.max(0, now - anchorWallMs);
+                cursorMs = Math.min(durationMs, Math.max(0, anchorCursorMs + elapsedWallMs * speed));
                 anchorCursorMs = cursorMs;
-                anchorWallMs = nowFn();
+                anchorWallMs = now;
             }
+            speed = parsed;
             onStateChange({ playing, cursorMs, durationMs, speed, generation });
         }
 

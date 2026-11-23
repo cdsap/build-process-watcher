@@ -1026,6 +1026,7 @@
 
         let isPlaying = false;
         let currentFrame = 0;
+        let renderedFrame = -1;
         let speedMultiplier = Number(speedSelect?.value) || 15;
         let clock = null;
         let latestData = options.data || (
@@ -1079,6 +1080,7 @@
                 onPosition: (position) => {
                     const idx = position.sampleIndex;
                     if (idx < 0) return;
+                    if (position.playing && idx === currentFrame && renderedFrame === idx) return;
                     renderFrame(idx, { fromClock: true });
                 },
                 onStateChange: (state) => {
@@ -1199,6 +1201,7 @@
                     historyMode,
                 });
             });
+            renderedFrame = currentFrame;
             if (!opts.fromClock && clock) {
                 clock.seekTo(cursorMsForFrame(currentFrame));
             }
@@ -1211,6 +1214,7 @@
                 return;
             }
             historyMode = resolved;
+            renderedFrame = -1;
             applyModeChrome();
             renderFrame(currentFrame);
         }
@@ -1271,6 +1275,7 @@
             }
             if (dataNode) dataNode.textContent = JSON.stringify(groups);
             if (chartsNode) chartsNode.innerHTML = renderForecastChartsHtml(groups, { predictionMode, historyMode });
+            renderedFrame = -1;
             const helpNode = root.querySelector('.forecast-panel-help');
             if (helpNode) helpNode.textContent = forecastPanelHelp(predictionMode);
             const legendNode = root.querySelector('.forecast-chart-legend');
@@ -1459,6 +1464,12 @@
         return `<div class="forecast-chart-host" data-forecast-chart-host>${chart || '<p>Waiting for class counters.</p>'}</div>${summary}${activityResults(group, cursor)}<p class="forecast-live-status">Status: ${escapeHtml(latest?.status || 'waiting')} · Model: ${escapeHtml(latest?.model_version || 'Unavailable')} · Latency: ${Number.isFinite(latest?.latency_ms) ? `${Math.round(latest.latency_ms)} ms` : 'Unavailable'}${latest?.fallback || latest?.status === 'fallback' ? ' · Fallback (not model inference)' : ''}</p>`;
     }
 
+    function renderActivityCharts(groups, cursor, history, predictionMode) {
+        return groups.length
+            ? groups.map(g => `<article class="process-forecast process-forecast-chart"><h3>${escapeHtml(g.name)} · PID ${escapeHtml(g.pid)} · Classes loaded</h3>${activityChart(g, cursor, history, predictionMode)}</article>`).join('')
+            : '<p>Waiting for eligible class-loading samples.</p>';
+    }
+
     function renderActivity(data, cursor, history = 'latest', mode, speed = 15) {
         const groups = activityGroups(data);
         const times = groups.flatMap(g => [...g.actual.map(p => p.time), ...g.forecasts.map(f => f.created_at_ms)]);
@@ -1470,55 +1481,260 @@
             frame: frames.filter(time => time <= cursor).length, frames: frames.length,
             timelineLabel: 'Class-loading replay timeline'});
         const help = `Actual cumulative classes · +60s predicted total.${data.prediction_mode === 'tabpfn' ? ' TabPFN requires an available VM.' : ''}`;
-        return `<section class="prediction-panel process-forecasts activity-panel" data-activity-panel><h2>Class-loading activity <small>Experimental</small></h2><p class="forecast-panel-help">${help}</p>${controls}${forecastPanelLegend(data.prediction_mode)}<div class="process-forecast-charts" aria-label="Forecast charts">${groups.length ? groups.map(g => `<article class="process-forecast process-forecast-chart"><h3>${escapeHtml(g.name)} · PID ${escapeHtml(g.pid)} · Classes loaded</h3>${activityChart(g, cursor, history, data.prediction_mode)}</article>`).join('') : '<p>Waiting for eligible class-loading samples.</p>'}</div></section>`;
+        return `<section class="prediction-panel process-forecasts activity-panel" data-activity-panel><h2>Class-loading activity <small>Experimental</small></h2><p class="forecast-panel-help">${help}</p>${controls}${forecastPanelLegend(data.prediction_mode)}<div class="process-forecast-charts" aria-label="Forecast charts">${renderActivityCharts(groups, cursor, history, data.prediction_mode)}</div></section>`;
     }
 
     function bindActivityView(root, options) {
         let data = options.data || {}, mode = options.initialMode || (data.finished ? 'replay' : 'live');
-        let history = 'latest', cursor = null, timer = null, speed = 15;
-        const stop = () => { if (timer !== null) clearInterval(timer); timer = null; };
-        const draw = () => {
-            const active = root.ownerDocument?.activeElement;
-            const selector = active && root.contains(active)
-                ? (active.id ? `#${active.id}` : active.dataset.forecastHistoryMode ? `[data-forecast-history-mode="${active.dataset.forecastHistoryMode}"]` : null) : null;
-            root.innerHTML = renderActivity(data, cursor, history, mode, speed);
-            if (selector) root.querySelector(selector)?.focus({preventScroll: true});
+        let history = 'latest', cursor = null, speed = 15;
+        let groups = [], frames = [], first = 0, last = 0;
+        let clock = null, isPlaying = false, lastRenderedKey = null;
+        const clockApi = (typeof globalThis !== 'undefined' && globalThis.BpwPlaybackClock)
+            || (typeof window !== 'undefined' && window.BpwPlaybackClock)
+            || null;
+
+        const recomputeTimeline = () => {
+            groups = activityGroups(data);
+            const times = groups.flatMap(g => [...g.actual.map(p => p.time), ...g.forecasts.map(f => f.created_at_ms)])
+                .filter(Number.isFinite);
+            frames = [...new Set(times)].sort((a, b) => a - b);
+            first = frames.length ? frames[0] : 0;
+            last = frames.length ? frames[frames.length - 1] : first;
+            if (cursor === null || !Number.isFinite(cursor) || mode === 'live') {
+                cursor = last;
+            } else {
+                cursor = Math.max(first, Math.min(last, cursor));
+            }
         };
+
+        const destroyClock = () => {
+            if (!clock) return;
+            clock.destroy();
+            clock = null;
+            isPlaying = false;
+        };
+
+        const pause = () => {
+            if (clock) clock.pause();
+            isPlaying = false;
+        };
+
+        const frameCountAt = (time) => {
+            if (!frames.length) return 0;
+            let count = 0;
+            for (let i = 0; i < frames.length; i += 1) {
+                if (frames[i] <= time) count = i + 1;
+                else break;
+            }
+            return count;
+        };
+
+        const syncControlsChrome = () => {
+            const controls = root.querySelector('#forecast-replay-controls');
+            if (!controls) return;
+            controls.dataset.forecastViewMode = mode;
+            controls.dataset.forecastHistoryMode = history;
+            controls.classList?.toggle?.('is-live', mode === 'live');
+            controls.classList?.toggle?.('is-replay', mode === 'replay');
+            const liveBtn = controls.querySelector('#btn-forecast-view-live');
+            const replayBtn = controls.querySelector('#btn-forecast-view-replay');
+            if (liveBtn) {
+                liveBtn.setAttribute?.('aria-pressed', mode === 'live' ? 'true' : 'false');
+                liveBtn.classList?.toggle?.('secondary', mode !== 'live');
+            }
+            if (replayBtn) {
+                replayBtn.setAttribute?.('aria-pressed', mode === 'replay' ? 'true' : 'false');
+                replayBtn.classList?.toggle?.('secondary', mode !== 'replay');
+            }
+            Array.from(controls.querySelectorAll?.('[data-forecast-history-mode]') || []).forEach((btn) => {
+                const active = btn.getAttribute?.('data-forecast-history-mode') === history;
+                btn.setAttribute?.('aria-pressed', active ? 'true' : 'false');
+                btn.classList?.toggle?.('secondary', !active);
+            });
+            const slider = controls.querySelector('#forecast-replay-timeline');
+            if (slider) {
+                slider.min = String(first);
+                slider.max = String(last);
+                slider.value = String(Math.round(cursor));
+            }
+            const meta = controls.querySelector('#forecast-replay-meta');
+            if (meta) {
+                meta.textContent = `Frame ${frameCountAt(cursor)} / ${frames.length}`;
+            }
+            const timeLabel = controls.querySelector('#forecast-replay-time-label');
+            if (timeLabel) {
+                timeLabel.textContent = `Elapsed: ${Math.max(0, Math.round((cursor - first) / 1000))}s`;
+            }
+            const speedSelect = controls.querySelector('#forecast-replay-speed');
+            if (speedSelect && Number(speedSelect.value) !== speed) {
+                speedSelect.value = String(speed);
+            }
+        };
+
+        const syncCharts = (force = false) => {
+            const chartsNode = root.querySelector('.process-forecast-charts');
+            if (!chartsNode) return;
+            const frameCount = frameCountAt(cursor);
+            const renderKey = `${frameCount}|${history}|${data.prediction_mode || ''}`;
+            if (!force && renderKey === lastRenderedKey) return;
+            lastRenderedKey = renderKey;
+            chartsNode.innerHTML = renderActivityCharts(groups, cursor, history, data.prediction_mode);
+        };
+
+        const ensureShell = () => {
+            if (!root.querySelector?.('[data-activity-panel]')) {
+                root.innerHTML = renderActivity(data, cursor, history, mode, speed);
+                lastRenderedKey = `${frameCountAt(cursor)}|${history}|${data.prediction_mode || ''}`;
+                syncControlsChrome();
+                return true;
+            }
+            return false;
+        };
+
+        const ensureClock = () => {
+            if (!clockApi || !frames.length) {
+                destroyClock();
+                return null;
+            }
+            const wasPlaying = isPlaying && mode === 'replay';
+            destroyClock();
+            clock = clockApi.createPlaybackClock({
+                timestamps: frames,
+                speed,
+                onPosition: (position) => {
+                    cursor = Number.isFinite(position.absoluteMs) ? position.absoluteMs : first;
+                    syncControlsChrome();
+                    syncCharts(false);
+                },
+                onStateChange: (state) => {
+                    isPlaying = Boolean(state.playing);
+                },
+            });
+            clock.seekTo(Math.max(0, cursor - first));
+            if (wasPlaying) clock.play();
+            return clock;
+        };
+
+        const updateView = (forceCharts = false) => {
+            if (ensureShell()) return;
+            syncControlsChrome();
+            syncCharts(forceCharts);
+        };
+
+        const handleTimelineScrub = (target) => {
+            const nextCursor = Number(target.value);
+            if (!Number.isFinite(nextCursor)) return;
+            pause();
+            mode = 'replay';
+            cursor = Math.max(first, Math.min(last, nextCursor));
+            if (clock) {
+                clock.seekTo(cursor - first);
+            } else {
+                updateView(true);
+            }
+        };
+
+        const onInput = event => {
+            const target = event.target;
+            if (target?.id === 'forecast-replay-timeline') {
+                handleTimelineScrub(target);
+            }
+        };
+
         const onChange = event => {
             const target = event.target;
-            if (target.id === 'forecast-replay-speed') speed = Number(target.value);
-            else if (target.id === 'forecast-replay-timeline') { mode = 'replay'; cursor = Number(target.value); stop(); }
-            else return;
-            draw();
+            if (target?.id === 'forecast-replay-speed') {
+                const parsed = Number(target.value);
+                if (!Number.isFinite(parsed) || parsed <= 0) return;
+                speed = parsed;
+                if (clock) clock.setSpeed(parsed);
+            } else if (target?.id === 'forecast-replay-timeline') {
+                handleTimelineScrub(target);
+            }
         };
+
         const onClick = event => {
-            const button = event.target.closest('button');
+            const button = event.target?.closest?.('button');
             if (!button) return;
-            if (button.dataset.forecastHistoryMode) history = button.dataset.forecastHistoryMode;
-            else if (button.dataset.forecastViewMode) { mode = button.dataset.forecastViewMode; stop(); if (mode === 'live') cursor = null; }
-            else if (button.id === 'btn-forecast-replay-pause') stop();
-            else if (button.id === 'btn-forecast-replay-reset') {
-                stop(); mode = 'replay'; cursor = Number(root.querySelector('#forecast-replay-timeline').min);
-            } else if (button.id === 'btn-forecast-replay-play') {
-                if (timer !== null) return;
+            if (button.dataset?.forecastHistoryMode) {
+                history = button.dataset.forecastHistoryMode;
+                updateView(true);
+            } else if (button.dataset?.forecastViewMode) {
+                mode = button.dataset.forecastViewMode;
+                pause();
+                if (mode === 'live') {
+                    destroyClock();
+                    cursor = last;
+                }
+                updateView(true);
+            } else if (button.id === 'btn-forecast-replay-pause') {
+                pause();
+            } else if (button.id === 'btn-forecast-replay-reset') {
+                pause();
                 mode = 'replay';
-                const slider = root.querySelector('#forecast-replay-timeline');
-                if (!slider) return;
-                if (cursor === null || cursor >= Number(slider.max)) cursor = Number(slider.min);
-                timer = setInterval(() => {
-                    const slider = root.querySelector('#forecast-replay-timeline');
-                    if (!slider) { stop(); return; }
-                    cursor = Math.min(Number(slider.max), cursor + speed * 100); draw();
-                    if (cursor >= Number(slider.max)) stop();
-                }, 100);
-            } else return;
-            draw();
+                cursor = first;
+                if (clock) {
+                    clock.reset();
+                } else {
+                    updateView(true);
+                }
+            } else if (button.id === 'btn-forecast-replay-play') {
+                if (isPlaying) return;
+                mode = 'replay';
+                if (!clock) ensureClock();
+                if (!clock) return;
+                if (cursor >= last && last > first) {
+                    clock.seekTo(0);
+                }
+                syncControlsChrome();
+                clock.play();
+            }
         };
-        root.addEventListener('change', onChange); root.addEventListener('click', onClick); draw();
-        return { update(next) { if (next.prediction_target !== 'class_loading') return false; if (next.finished && !data.finished) { mode = 'replay'; stop(); } data = next; if (mode === 'live') cursor = null; draw(); return true; },
-            stop() { stop(); root.removeEventListener('change', onChange); root.removeEventListener('click', onClick); },
-            seekTo(time) { stop(); mode = 'replay'; cursor = time; draw(); },
-            getMode: () => mode, getHistoryMode: () => history };
+
+        recomputeTimeline();
+        const existingSpeed = root.querySelector?.('#forecast-replay-speed');
+        if (existingSpeed && Number(existingSpeed.value) > 0) {
+            speed = Number(existingSpeed.value);
+        }
+        root.addEventListener('input', onInput);
+        root.addEventListener('change', onChange);
+        root.addEventListener('click', onClick);
+        updateView(true);
+
+        return {
+            update(next) {
+                if (!next || next.prediction_target !== 'class_loading') return false;
+                if (next.finished && !data.finished) {
+                    mode = 'replay';
+                    pause();
+                }
+                data = next;
+                recomputeTimeline();
+                if (clock || (mode === 'replay' && isPlaying)) {
+                    ensureClock();
+                }
+                updateView(true);
+                return true;
+            },
+            stop() {
+                destroyClock();
+                root.removeEventListener('input', onInput);
+                root.removeEventListener('change', onChange);
+                root.removeEventListener('click', onClick);
+            },
+            seekTo(time) {
+                pause();
+                mode = 'replay';
+                cursor = Math.max(first, Math.min(last, Number(time) || first));
+                if (clock) {
+                    clock.seekTo(cursor - first);
+                } else {
+                    updateView(false);
+                }
+            },
+            getMode: () => mode,
+            getHistoryMode: () => history,
+        };
     }
 
     function render(data, selectedWindow) {
