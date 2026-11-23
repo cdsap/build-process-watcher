@@ -68,9 +68,13 @@ export function loadProcessInfoFromFile(logFile: string): Record<string, { name:
 }
 
 /**
- * Generate JSON report from log file, merging vm_flags from process_info when available.
+ * Build JSON report payload, merging supplied process metadata when available.
  */
-export function generateJsonReport(logFile: string, outputFile: string, hasGcData: boolean): void {
+export function buildJsonReport(
+    logText: string,
+    processInfo: Record<string, { name: string; vm_flags: string[] }>,
+    hasGcData: boolean
+) {
     const samples: Array<{
         Timestamp: number;
         ElapsedTime: number;
@@ -89,10 +93,9 @@ export function generateJsonReport(logFile: string, outputFile: string, hasGcDat
         ClassesUnloaded: number | null;
         ClassLoadTimeMs: number | null;
     }> = [];
-    const processInfoFromFile = loadProcessInfoFromFile(logFile);
-    const processInfo: Record<string, { name: string; vm_flags: string[] }> = {};
+    const mergedProcessInfo: Record<string, { name: string; vm_flags: string[] }> = {};
 
-    parseLogSamples(fs.readFileSync(logFile, 'utf8')).forEach(row => {
+    parseLogSamples(logText).forEach(row => {
         const elapsedSeconds = parseTimestampSeconds(row.timestamp);
         const gcSecondsValue = hasGcData ? row.gcTimeSeconds : null;
 
@@ -115,22 +118,29 @@ export function generateJsonReport(logFile: string, outputFile: string, hasGcDat
             ClassLoadTimeMs: row.classLoadTimeSeconds !== null ? row.classLoadTimeSeconds * 1000 : null
         });
 
-        if (!processInfo[row.pid]) {
-            const fromFile = processInfoFromFile[row.pid];
-            processInfo[row.pid] = {
+        if (!mergedProcessInfo[row.pid]) {
+            const fromFile = processInfo[row.pid];
+            mergedProcessInfo[row.pid] = {
                 name: row.name,
                 vm_flags: fromFile?.vm_flags ?? []
             };
         }
     });
 
-    const payload = {
+    return {
         sample_fields: SAMPLE_FIELDS,
         samples: samples.map(sample => SAMPLE_FIELDS.map(field => sample[field])),
-        process_info: processInfo,
+        process_info: mergedProcessInfo,
         finished: true
     };
+}
 
+/**
+ * Generate JSON report from log file, merging vm_flags from process_info when available.
+ */
+export function generateJsonReport(logFile: string, outputFile: string, hasGcData: boolean): void {
+    const processInfo = loadProcessInfoFromFile(logFile);
+    const payload = buildJsonReport(fs.readFileSync(logFile, 'utf8'), processInfo, hasGcData);
     fs.writeFileSync(outputFile, JSON.stringify(payload, null, 2));
 }
 

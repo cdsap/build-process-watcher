@@ -4,6 +4,7 @@ import * as os from 'os';
 import {
   parseProcessInfo,
   loadProcessInfoFromFile,
+  buildJsonReport,
   generateJsonReport,
   parseTimestampSeconds,
 } from '../src/lib/report';
@@ -187,7 +188,13 @@ describe('generateJsonReport', () => {
 
     generateJsonReport(logFile, outputFile, false);
 
-    const output = JSON.parse(fs.readFileSync(outputFile, 'utf8'));
+    const outputText = fs.readFileSync(outputFile, 'utf8');
+    const output = JSON.parse(outputText);
+    expect(outputText).toBe(JSON.stringify(buildJsonReport(
+      fs.readFileSync(logFile, 'utf8'),
+      { '12345': { name: 'GradleDaemon', vm_flags: ['-XX:MaxHeapSize=2048m', '-XX:+UseG1GC'] } },
+      false
+    ), null, 2));
     expect(output.finished).toBe(true);
     expect(output.samples).toHaveLength(2);
     expect(output.sample_fields).toEqual([
@@ -206,57 +213,134 @@ describe('generateJsonReport', () => {
     });
   });
 
-  it('generates JSON with empty vm_flags when process_info is missing', () => {
+  it('writes a report when the process_info sidecar is missing', () => {
     const logFile = path.join(tmpDir, 'test.log');
     const outputFile = path.join(tmpDir, 'output.json');
-
-    fs.writeFileSync(
-      logFile,
-      'Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB\n' +
-        '\n' +
-        '00:00:00 | 999 | SomeProcess | 50.0MB | 256.0MB | 128.0MB\n'
-    );
+    fs.writeFileSync(logFile, 'header\n\n0 | 999 | Proc | 10MB | 100MB | 50MB\n');
 
     generateJsonReport(logFile, outputFile, false);
 
     const output = JSON.parse(fs.readFileSync(outputFile, 'utf8'));
+    expect(output.process_info).toEqual({ '999': { name: 'Proc', vm_flags: [] } });
+    expect(output.samples).toHaveLength(1);
+    expect(output.finished).toBe(true);
+  });
+
+  it('propagates log read errors', () => {
+    expect(() => generateJsonReport(
+      path.join(tmpDir, 'missing.log'), path.join(tmpDir, 'output.json'), false
+    )).toThrow(/ENOENT/);
+  });
+
+  it('propagates output write errors', () => {
+    const logFile = path.join(tmpDir, 'test.log');
+    fs.writeFileSync(logFile, 'header\n\n');
+    expect(() => generateJsonReport(logFile, tmpDir, false)).toThrow(/EISDIR/);
+  });
+});
+
+describe('buildJsonReport', () => {
+  it('merges flags for sampled processes without mutating supplied metadata', () => {
+    const processInfo = {
+      '1': { name: 'SidecarName', vm_flags: ['-XX:+UseG1GC'] },
+      '2': { name: 'Unsampled', vm_flags: ['-Xmx1g'] },
+    };
+    Object.values(processInfo).forEach(info => {
+      Object.freeze(info.vm_flags);
+      Object.freeze(info);
+    });
+    Object.freeze(processInfo);
+
+    const output = buildJsonReport(
+      'header\n\n' +
+      '0 | 1 | FirstName | 10MB | 100MB | 50MB\n' +
+      '5 | 1 | LaterName | 20MB | 100MB | 60MB\n' +
+      '5 | 3 | NoMetadata | 20MB | 100MB | 60MB\n',
+      processInfo, false
+    );
+
+    expect(output.process_info).toEqual({
+      '1': { name: 'FirstName', vm_flags: ['-XX:+UseG1GC'] },
+      '3': { name: 'NoMetadata', vm_flags: [] },
+    });
+    expect(output.samples[1][3]).toBe('LaterName');
+    expect(processInfo).toEqual({
+      '1': { name: 'SidecarName', vm_flags: ['-XX:+UseG1GC'] },
+      '2': { name: 'Unsampled', vm_flags: ['-Xmx1g'] },
+    });
+  });
+
+  it('skips exactly two header lines and malformed rows, preserving base metric fallbacks', () => {
+    const output = buildJsonReport(
+      '0 | 1 | HeaderOne | 1MB | 2MB | 3MB\n' +
+      '0 | 2 | HeaderTwo | 1MB | 2MB | 3MB\n' +
+      '\nnot-a-row\n1 | 2 | 3\n' +
+      '-5 | 3 | Proc | bad | N/A | broken\n' +
+      '1.5 | 3 | Proc | 10MB | 100MB | 50MB\n',
+      {}, true
+    );
+
+    expect(output.samples).toEqual([
+      [0, 0, '3', 'Proc', 0, 0, 0, null, null, null, null, null, null, null, null, null],
+      [1500, 1.5, '3', 'Proc', 50, 10, 100, null, null, null, null, null, null, null, null, null],
+    ]);
+    expect(output.process_info).toEqual({ '3': { name: 'Proc', vm_flags: [] } });
+  });
+
+  it('builds a finished empty report when no samples are present', () => {
+    const output = buildJsonReport('', { '1': { name: 'Unsampled', vm_flags: [] } }, true);
+
+    expect(output.samples).toEqual([]);
+    expect(output.process_info).toEqual({});
+    expect(output.finished).toBe(true);
+  });
+
+  it('builds legacy samples with empty vm_flags when process metadata is missing', () => {
+    const output = buildJsonReport(
+      'Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB\n' +
+        '\n' +
+        '00:00:00 | 999 | SomeProcess | 50.0MB | 256.0MB | 128.0MB\n',
+      {}, false
+    );
+
+    expect(Object.keys(output)).toEqual(['sample_fields', 'samples', 'process_info', 'finished']);
+    expect(output.finished).toBe(true);
+    expect(output.samples).toEqual([[
+      0, 0, '999', 'SomeProcess', 128, 50, 256,
+      null, null, null, null, null, null, null, null, null,
+    ]]);
     expect(output.process_info['999']).toEqual({
       name: 'SomeProcess',
       vm_flags: [],
     });
   });
 
-  it('includes GC data when hasGcData is true', () => {
-    const logFile = path.join(tmpDir, 'test.log');
-    const outputFile = path.join(tmpDir, 'output.json');
-
-    fs.writeFileSync(
-      logFile,
+  it.each([true, false])('gates GC data with hasGcData=%s', hasGcData => {
+    const output = buildJsonReport(
       'Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB | GC_Time_S\n' +
         '\n' +
-        '00:00:00 | 1 | Proc | 10MB | 100MB | 50MB | 0.123s\n'
+        '00:00:00 | 1 | Proc | 10MB | 100MB | 50MB | 0.123s\n',
+      {}, hasGcData
     );
 
-    generateJsonReport(logFile, outputFile, true);
-
-    const output = JSON.parse(fs.readFileSync(outputFile, 'utf8'));
     const sample = Object.fromEntries(output.sample_fields.map((field: string, index: number) => [field, output.samples[0][index]]));
-    expect(sample.GCTime).toBe(123);
-    expect(sample.GCTimeSeconds).toBe(0.123);
+    expect(sample.GCTime).toBe(hasGcData ? 123 : null);
+    expect(sample.GCTimeSeconds).toBe(hasGcData ? 0.123 : null);
   });
 
-  it('parses extended JIT and class loading metrics', () => {
-    const logFile = path.join(tmpDir, 'test.log');
-    const outputFile = path.join(tmpDir, 'output.json');
-    fs.writeFileSync(logFile,
+  it.each([true, false])('parses extended JIT and class loading metrics with hasGcData=%s', hasGcData => {
+    const output = buildJsonReport(
       'header\n\n' +
-      '00:00:05 | 1 | Proc | 10MB | 100MB | 50MB | 0.123s | 42 | 1 | 2 | 0.456 | 900 | 12 | 0.789\n');
-
-    generateJsonReport(logFile, outputFile, true);
-    const output = JSON.parse(fs.readFileSync(outputFile, 'utf8'));
+      '00:00:05 | 1 | Proc | 10MB | 100MB | 50MB | 0.123s | 42 | 1 | 2 | 0.456 | 900 | 12 | 0.789\n',
+      {}, hasGcData
+    );
     const sample = Object.fromEntries(output.sample_fields.map((field: string, index: number) => [field, output.samples[0][index]]));
 
     expect(sample).toMatchObject({
+      Timestamp: 5000,
+      ElapsedTime: 5,
+      GCTime: hasGcData ? 123 : null,
+      GCTimeSeconds: hasGcData ? 0.123 : null,
       JITCompiledMethods: 42,
       JITFailedCompilations: 1,
       JITInvalidatedCompilations: 2,
@@ -268,21 +352,15 @@ describe('generateJsonReport', () => {
   });
 
   it('keeps the base sample when optional metrics are unavailable or malformed', () => {
-    const logFile = path.join(tmpDir, 'test.log');
-    const outputFile = path.join(tmpDir, 'output.json');
-    fs.writeFileSync(logFile,
+    const output = buildJsonReport(
       'header\n\n' +
-      '00:00:05 | 1 | Proc | 10MB | 100MB | 50MB | N/A | N/A | bad | N/A | N/A | 0 | N/A | broken\n');
+      '00:00:05 | 1 | Proc | 10MB | 100MB | 50MB | N/A | N/A | bad | N/A | N/A | 0 | N/A | broken\n',
+      {}, true
+    );
 
-    generateJsonReport(logFile, outputFile, true);
-    const output = JSON.parse(fs.readFileSync(outputFile, 'utf8'));
-    const sample = Object.fromEntries(output.sample_fields.map((field: string, index: number) => [field, output.samples[0][index]]));
-
-    expect(sample.RSS).toBe(50);
-    expect(sample.GCTime).toBeNull();
-    expect(sample.JITCompiledMethods).toBeNull();
-    expect(sample.JITFailedCompilations).toBeNull();
-    expect(sample.ClassesLoaded).toBe(0);
-    expect(sample.ClassLoadTimeMs).toBeNull();
+    expect(output.samples).toEqual([[
+      5000, 5, '1', 'Proc', 50, 10, 100,
+      null, null, null, null, null, null, 0, null, null,
+    ]]);
   });
 });
