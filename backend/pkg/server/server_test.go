@@ -83,3 +83,21 @@ func TestBuildPropagatesAuthenticatorFactoryError(t *testing.T) {
 		t.Fatalf("err=%v, want auth boom", err)
 	}
 }
+
+func TestActivityOptionsFollowModeEnablement(t *testing.T) {
+	for _, mode := range []string{"disabled", "forecast", "predict", "tabpfn", "bqml-boosted"} {
+		t.Run(mode, func(t *testing.T) {
+			options, err := buildOptions(serverConfig{predictionProviderURL: "https://provider.example", forecastProviderEnabled: mode == "forecast", tabPredictProviderEnabled: mode == "predict", tabpfnProviderEnabled: mode == "tabpfn", bqmlBoostedProviderEnabled: mode == "bqml-boosted"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if (options.ForecastActivityProvider != nil) != (mode == "forecast") || (options.TabPredictActivityProvider != nil) != (mode == "predict") || (options.ActivityProvider != nil) != (mode == "tabpfn") {
+				t.Fatal("activity providers did not follow their mode enablement")
+			}
+		})
+	}
+	options, err := buildOptions(serverConfig{forecastProviderEnabled: true, tabPredictProviderEnabled: true, tabpfnProviderEnabled: true})
+	if err == nil || options.ForecastActivityProvider != nil || options.TabPredictActivityProvider != nil || options.ActivityProvider != nil {
+		t.Fatal("missing provider URL must not enable activity")
+	}
+}

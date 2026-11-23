@@ -779,106 +779,114 @@ func (p *unavailableActivityProvider) ForecastActivity(context.Context, predicto
 }
 
 func TestActivityAuthIngestJobAndResponse(t *testing.T) {
-	store := newFakeStorage()
-	const runID = "activity-run"
-	before, after := 100, 120
-	store.Runs[runID] = &models.RunDoc{RunID: runID, StartTime: time.Now(), UpdatedAt: time.Now(), Samples: []models.Sample{
-		{PID: "1", Name: "GradleDaemon", Timestamp: 1000, ClassesLoaded: &before},
-		{PID: "1", Name: "GradleDaemon", Timestamp: 21000, ElapsedTime: 20, ClassesLoaded: &after},
-	}}
-	provider := &unavailableActivityProvider{}
-	exporter := &fakeExporter{}
-	scheduled := 0
-	h := New(Config{Storage: store, Export: exporter, Authenticator: testAuthn, TimelineProviders: prediction.TimelineProviders{Activity: provider}, PredictionJobToken: "job-secret", PredictionScheduler: predictionqueue.Func(func(context.Context, string, int, int) error { scheduled++; return nil })})
-	authRec := httptest.NewRecorder()
-	h.Auth(authRec, httptest.NewRequest(http.MethodPost, "/auth/run/"+runID+"?prediction_mode=tabpfn&prediction_target=class_loading&export_to_bigquery=true", nil))
-	if authRec.Code != http.StatusOK || store.Runs[runID].PredictionTarget != "class_loading" || !store.ExportToBigQuery[runID] {
-		t.Fatalf("auth status=%d run=%+v", authRec.Code, store.Runs[runID])
-	}
-	token, _, err := testAuthn.GenerateToken(runID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ingestReq := httptest.NewRequest(http.MethodPost, "/ingest", strings.NewReader(`{"run_id":"activity-run","data":"00:00:40 | 2 | KotlinCompileDaemon | 100MB | 200MB | 300MB"}`))
-	ingestReq.Header.Set("Authorization", "Bearer "+token)
-	ingestRec := httptest.NewRecorder()
-	h.Ingest(ingestRec, ingestReq)
-	if ingestRec.Code != http.StatusOK || scheduled != 1 || provider.calls != 0 {
-		t.Fatalf("ingest=%d scheduled=%d calls=%d", ingestRec.Code, scheduled, provider.calls)
-	}
-	jobReq := httptest.NewRequest(http.MethodPost, "/internal/prediction-jobs", strings.NewReader(`{"run_id":"activity-run"}`))
-	jobReq.Header.Set(predictionqueue.JobTokenHeader, "job-secret")
-	jobRec := httptest.NewRecorder()
-	h.EvaluatePredictionJob(jobRec, jobReq)
-	if jobRec.Code != http.StatusOK || provider.calls != 1 || len(store.Runs[runID].ProcessActivityForecasts) == 0 || len(store.AppendedForecasts) != 0 {
-		t.Fatalf("job=%d calls=%d activity=%+v", jobRec.Code, provider.calls, store.Runs[runID].ProcessActivityForecasts)
-	}
-	responseRec := httptest.NewRecorder()
-	h.GetRun(responseRec, httptest.NewRequest(http.MethodGet, "/runs/"+runID, nil))
-	var response models.RunResponse
-	if err := json.NewDecoder(responseRec.Body).Decode(&response); err != nil {
-		t.Fatal(err)
-	}
-	if responseRec.Code != http.StatusOK || len(response.ProcessActivityForecasts) != 2 || response.PredictionTarget != "class_loading" || response.ProcessActivityForecasts[0].Status != "unavailable" || response.ProcessActivityForecasts[0].CreatedAtMs != 21000 || len(response.ProcessActivityForecasts[0].Points) != 0 {
-		t.Fatalf("response=%+v", response)
-	}
-	for _, forecast := range response.ProcessActivityForecasts {
-		if forecast.Status != "unavailable" || len(forecast.Points) != 0 {
-			t.Fatalf("provider failure fabricated a numeric forecast: %+v", forecast)
-		}
-	}
-	finishReq := httptest.NewRequest(http.MethodPost, "/finish/"+runID, nil)
-	finishReq.Header.Set("Authorization", "Bearer "+token)
-	finishRec := httptest.NewRecorder()
-	h.FinishRun(finishRec, finishReq)
-	if finishRec.Code != http.StatusOK || len(exporter.runIDs) != 1 || exporter.runIDs[0] != runID {
-		t.Fatalf("finish=%d exports=%v", finishRec.Code, exporter.runIDs)
-	}
-	if !store.ExportToBigQuery[runID] {
-		t.Fatal("prediction changed BigQuery opt-in")
+	for _, mode := range []string{"predict", "forecast", "tabpfn"} {
+		t.Run(mode, func(t *testing.T) {
+			store := newFakeStorage()
+			const runID = "activity-run"
+			before, after := 100, 120
+			store.Runs[runID] = &models.RunDoc{RunID: runID, StartTime: time.Now(), UpdatedAt: time.Now(), Samples: []models.Sample{
+				{PID: "1", Name: "GradleDaemon", Timestamp: 1000, ClassesLoaded: &before},
+				{PID: "1", Name: "GradleDaemon", Timestamp: 21000, ElapsedTime: 20, ClassesLoaded: &after},
+			}}
+			provider := &unavailableActivityProvider{}
+			exporter := &fakeExporter{}
+			scheduled := 0
+			h := New(Config{Storage: store, Export: exporter, Authenticator: testAuthn, TimelineProviders: prediction.TimelineProviders{Activity: provider, ForecastActivity: provider, TabPredictActivity: provider}, PredictionJobToken: "job-secret", PredictionScheduler: predictionqueue.Func(func(context.Context, string, int, int) error { scheduled++; return nil })})
+			authRec := httptest.NewRecorder()
+			h.Auth(authRec, httptest.NewRequest(http.MethodPost, "/auth/run/"+runID+"?prediction_mode="+mode+"&prediction_target=class_loading&export_to_bigquery=true", nil))
+			if authRec.Code != http.StatusOK || store.Runs[runID].PredictionTarget != "class_loading" || !store.ExportToBigQuery[runID] {
+				t.Fatalf("auth status=%d run=%+v", authRec.Code, store.Runs[runID])
+			}
+			token, _, err := testAuthn.GenerateToken(runID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ingestReq := httptest.NewRequest(http.MethodPost, "/ingest", strings.NewReader(`{"run_id":"activity-run","data":"00:00:40 | 2 | KotlinCompileDaemon | 100MB | 200MB | 300MB"}`))
+			ingestReq.Header.Set("Authorization", "Bearer "+token)
+			ingestRec := httptest.NewRecorder()
+			h.Ingest(ingestRec, ingestReq)
+			if ingestRec.Code != http.StatusOK || scheduled != 1 || provider.calls != 0 {
+				t.Fatalf("ingest=%d scheduled=%d calls=%d", ingestRec.Code, scheduled, provider.calls)
+			}
+			jobReq := httptest.NewRequest(http.MethodPost, "/internal/prediction-jobs", strings.NewReader(`{"run_id":"activity-run"}`))
+			jobReq.Header.Set(predictionqueue.JobTokenHeader, "job-secret")
+			jobRec := httptest.NewRecorder()
+			h.EvaluatePredictionJob(jobRec, jobReq)
+			if jobRec.Code != http.StatusOK || provider.calls != 1 || len(store.Runs[runID].ProcessActivityForecasts) == 0 || len(store.AppendedForecasts) != 0 {
+				t.Fatalf("job=%d calls=%d activity=%+v", jobRec.Code, provider.calls, store.Runs[runID].ProcessActivityForecasts)
+			}
+			responseRec := httptest.NewRecorder()
+			h.GetRun(responseRec, httptest.NewRequest(http.MethodGet, "/runs/"+runID, nil))
+			var response models.RunResponse
+			if err := json.NewDecoder(responseRec.Body).Decode(&response); err != nil {
+				t.Fatal(err)
+			}
+			if responseRec.Code != http.StatusOK || len(response.ProcessActivityForecasts) != 2 || response.PredictionTarget != "class_loading" || response.ProcessActivityForecasts[0].Status != "unavailable" || response.ProcessActivityForecasts[0].CreatedAtMs != 21000 || len(response.ProcessActivityForecasts[0].Points) != 0 {
+				t.Fatalf("response=%+v", response)
+			}
+			for _, forecast := range response.ProcessActivityForecasts {
+				if forecast.Status != "unavailable" || len(forecast.Points) != 0 {
+					t.Fatalf("provider failure fabricated a numeric forecast: %+v", forecast)
+				}
+			}
+			finishReq := httptest.NewRequest(http.MethodPost, "/finish/"+runID, nil)
+			finishReq.Header.Set("Authorization", "Bearer "+token)
+			finishRec := httptest.NewRecorder()
+			h.FinishRun(finishRec, finishReq)
+			if finishRec.Code != http.StatusOK || len(exporter.runIDs) != 1 || exporter.runIDs[0] != runID {
+				t.Fatalf("finish=%d exports=%v", finishRec.Code, exporter.runIDs)
+			}
+			if !store.ExportToBigQuery[runID] {
+				t.Fatal("prediction changed BigQuery opt-in")
+			}
+		})
 	}
 }
 
 func TestTokenRenewalAndFinishPreserveClassLoadingTarget(t *testing.T) {
-	store := newFakeStorage()
-	h := newTestHandlers(store, nil)
-	const runID = "renew-class-loading"
-	start := httptest.NewRecorder()
-	h.Auth(start, httptest.NewRequest(http.MethodPost,
-		"/auth/run/"+runID+"?prediction_mode=tabpfn&prediction_target=class_loading&prediction_throttle_s=20&export_to_bigquery=true", nil))
-	if start.Code != http.StatusOK {
-		t.Fatalf("start status=%d", start.Code)
-	}
-	store.Runs[runID].ProcessActivityForecasts = []models.ProcessActivityForecast{{
-		ProcessName: "GradleDaemon", PID: "1", Metric: "classes_loaded", CreatedAtMs: 1000, Status: "unavailable",
-	}}
-	// Cleanup renews its token without resending monitoring options.
-	renew := httptest.NewRecorder()
-	h.Auth(renew, httptest.NewRequest(http.MethodPost, "/auth/run/"+runID, nil))
-	if renew.Code != http.StatusOK {
-		t.Fatalf("renew status=%d", renew.Code)
-	}
-	var token models.TokenResponse
-	if err := json.NewDecoder(renew.Body).Decode(&token); err != nil {
-		t.Fatal(err)
-	}
-	finish := httptest.NewRequest(http.MethodPost, "/finish/"+runID, nil)
-	finish.Header.Set("Authorization", "Bearer "+token.Token)
-	finished := httptest.NewRecorder()
-	h.FinishRun(finished, finish)
-	if finished.Code != http.StatusOK {
-		t.Fatalf("finish status=%d", finished.Code)
-	}
-	response := httptest.NewRecorder()
-	h.GetRun(response, httptest.NewRequest(http.MethodGet, "/runs/"+runID, nil))
-	var run models.RunResponse
-	if err := json.NewDecoder(response.Body).Decode(&run); err != nil {
-		t.Fatal(err)
-	}
-	if !run.Finished || run.PredictionTarget != "class_loading" || run.PredictionMode != "tabpfn" || run.PredictionThrottleS != 20 || len(run.ProcessActivityForecasts) != 1 {
-		t.Fatalf("renewal/finish changed run configuration: %+v", run)
-	}
-	if !store.ExportToBigQuery[runID] {
-		t.Fatal("renewal disabled existing export opt-in")
+	for _, mode := range []string{"predict", "forecast", "tabpfn"} {
+		t.Run(mode, func(t *testing.T) {
+			store := newFakeStorage()
+			h := newTestHandlers(store, nil)
+			const runID = "renew-class-loading"
+			start := httptest.NewRecorder()
+			h.Auth(start, httptest.NewRequest(http.MethodPost,
+				"/auth/run/"+runID+"?prediction_mode="+mode+"&prediction_target=class_loading&prediction_throttle_s=20&export_to_bigquery=true", nil))
+			if start.Code != http.StatusOK {
+				t.Fatalf("start status=%d", start.Code)
+			}
+			store.Runs[runID].ProcessActivityForecasts = []models.ProcessActivityForecast{{
+				ProcessName: "GradleDaemon", PID: "1", Metric: "classes_loaded", CreatedAtMs: 1000, Status: "unavailable",
+			}}
+			// Cleanup renews its token without resending monitoring options.
+			renew := httptest.NewRecorder()
+			h.Auth(renew, httptest.NewRequest(http.MethodPost, "/auth/run/"+runID, nil))
+			if renew.Code != http.StatusOK {
+				t.Fatalf("renew status=%d", renew.Code)
+			}
+			var token models.TokenResponse
+			if err := json.NewDecoder(renew.Body).Decode(&token); err != nil {
+				t.Fatal(err)
+			}
+			finish := httptest.NewRequest(http.MethodPost, "/finish/"+runID, nil)
+			finish.Header.Set("Authorization", "Bearer "+token.Token)
+			finished := httptest.NewRecorder()
+			h.FinishRun(finished, finish)
+			if finished.Code != http.StatusOK {
+				t.Fatalf("finish status=%d", finished.Code)
+			}
+			response := httptest.NewRecorder()
+			h.GetRun(response, httptest.NewRequest(http.MethodGet, "/runs/"+runID, nil))
+			var run models.RunResponse
+			if err := json.NewDecoder(response.Body).Decode(&run); err != nil {
+				t.Fatal(err)
+			}
+			if !run.Finished || run.PredictionTarget != "class_loading" || run.PredictionMode != mode || run.PredictionThrottleS != 20 || len(run.ProcessActivityForecasts) != 1 {
+				t.Fatalf("renewal/finish changed run configuration: %+v", run)
+			}
+			if !store.ExportToBigQuery[runID] {
+				t.Fatal("renewal disabled existing export opt-in")
+			}
+		})
 	}
 }

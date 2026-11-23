@@ -30,7 +30,7 @@ func parseAuthRunOptions(query url.Values) (authRunOptions, error) {
 	}
 	target, valid := models.ParsePredictionTarget(query.Get("prediction_target"), mode)
 	if !valid {
-		return authRunOptions{}, fmt.Errorf("invalid prediction_target: class_loading requires prediction_mode=tabpfn; otherwise use memory")
+		return authRunOptions{}, fmt.Errorf("invalid prediction_target: class_loading requires prediction_mode=predict, forecast, or tabpfn; otherwise use memory")
 	}
 	// Token-only authentication must preserve the run's selected target. New
 	// runs still read as memory when the field is absent; selecting a mode

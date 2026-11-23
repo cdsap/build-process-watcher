@@ -10,14 +10,21 @@ import (
 type ActivityProvider interface {
 	ForecastActivity(context.Context, RunSnapshot) ([]ProcessActivityForecast, error)
 }
-type RemoteActivityProvider struct{ client *remoteClient }
+type RemoteActivityProvider struct {
+	client         *remoteClient
+	expectedMethod string
+}
 
 func NewRemoteActivityProvider(config RemoteForecastConfig) (*RemoteActivityProvider, error) {
-	client, err := newRemoteClient(remoteHTTPConfig{URL: config.URL, Timeout: config.Timeout, AuthAudience: config.AuthAudience, HTTPClient: config.HTTPClient, DefaultPath: "/tabpfn/activity", StripPredictSuffix: true}, defaultForecastTimeout)
+	method := config.ExpectedMethod
+	if method == "" {
+		method = "tabpfn"
+	}
+	client, err := newRemoteClient(remoteHTTPConfig{URL: config.URL, Timeout: config.Timeout, AuthAudience: config.AuthAudience, HTTPClient: config.HTTPClient, Path: config.Path, DefaultPath: "/tabpfn/activity", StripPredictSuffix: true}, defaultForecastTimeout)
 	if err != nil {
 		return nil, err
 	}
-	return &RemoteActivityProvider{client}, nil
+	return &RemoteActivityProvider{client: client, expectedMethod: method}, nil
 }
 func (p *RemoteActivityProvider) ForecastActivity(ctx context.Context, snapshot RunSnapshot) ([]ProcessActivityForecast, error) {
 	var response struct {
@@ -29,7 +36,7 @@ func (p *RemoteActivityProvider) ForecastActivity(ctx context.Context, snapshot 
 		return nil, err
 	}
 	for _, f := range response.Forecasts {
-		if err := validateActivity(f, snapshot); err != nil {
+		if err := validateActivity(f, snapshot, p.expectedMethod); err != nil {
 			return nil, err
 		}
 	}
@@ -39,7 +46,7 @@ func (p *RemoteActivityProvider) ForecastActivity(ctx context.Context, snapshot 
 	return response.Forecasts, nil
 }
 
-func validateActivity(f ProcessActivityForecast, snapshot RunSnapshot) error {
+func validateActivity(f ProcessActivityForecast, snapshot RunSnapshot, expectedMethod string) error {
 	invalid := func() error { return fmt.Errorf("invalid activity forecast contract") }
 	if f.Metric != "classes_loaded" || (f.ProcessName != "GradleDaemon" && f.ProcessName != "KotlinCompileDaemon") || f.CreatedAtMs <= 0 {
 		return invalid()
@@ -68,14 +75,14 @@ func validateActivity(f ProcessActivityForecast, snapshot RunSnapshot) error {
 	if origin.ClassesLoaded == nil || f.OriginValueCount == nil || *f.OriginValueCount != float64(*origin.ClassesLoaded) || *f.OriginValueCount < 0 || len(f.Points) != 1 {
 		return invalid()
 	}
-	if f.Status == "ready" && (f.Fallback || f.Method != "tabpfn" || f.ModelVersion == "") {
+	if f.Status == "ready" && (f.Fallback || f.Method != expectedMethod || f.ModelVersion == "") {
 		return invalid()
 	}
 	if f.Status == "fallback" && !f.Fallback {
 		return invalid()
 	}
 	point := f.Points[0]
-	if point.TargetAtMs != f.CreatedAtMs+60000 || point.PredictedDeltaCount < 0 || math.IsNaN(point.PredictedDeltaCount) || math.IsInf(point.PredictedDeltaCount, 0) || math.IsNaN(point.PredictedTotalCount) || math.IsInf(point.PredictedTotalCount, 0) || math.Abs(point.PredictedTotalCount-(*f.OriginValueCount+point.PredictedDeltaCount)) > 0.000001 {
+	if point.TargetAtMs != f.CreatedAtMs+60000 || point.PredictedDeltaCount < 0 || point.PredictedTotalCount < 0 || math.IsNaN(point.PredictedDeltaCount) || math.IsInf(point.PredictedDeltaCount, 0) || math.IsNaN(point.PredictedTotalCount) || math.IsInf(point.PredictedTotalCount, 0) || math.Abs(point.PredictedTotalCount-(*f.OriginValueCount+point.PredictedDeltaCount)) > 0.000001 {
 		return invalid()
 	}
 	return nil

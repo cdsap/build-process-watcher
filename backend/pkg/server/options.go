@@ -13,16 +13,18 @@ import (
 
 // Options configures the public backend server composition.
 type Options struct {
-	ProjectID              string
-	Port                   string
-	BigQueryDataset        string
-	BigQueryTable          string
-	BigQueryProcessesTable string
-	ForecastProvider       predictor.ForecastProvider
-	TabPredictProvider     predictor.ForecastProvider
-	BQMLBoostedProvider    predictor.ForecastProvider
-	TabPFNProvider         predictor.ForecastProvider
-	ActivityProvider       predictor.ActivityProvider
+	ProjectID                  string
+	Port                       string
+	BigQueryDataset            string
+	BigQueryTable              string
+	BigQueryProcessesTable     string
+	ForecastProvider           predictor.ForecastProvider
+	TabPredictProvider         predictor.ForecastProvider
+	BQMLBoostedProvider        predictor.ForecastProvider
+	TabPFNProvider             predictor.ForecastProvider
+	ActivityProvider           predictor.ActivityProvider
+	ForecastActivityProvider   predictor.ActivityProvider
+	TabPredictActivityProvider predictor.ActivityProvider
 	// Prediction job queue (Cloud Tasks). Empty values disable the scheduler.
 	PredictionTasksQueue    string
 	PredictionTasksLocation string
@@ -89,28 +91,38 @@ func buildOptions(config serverConfig) (Options, error) {
 		{enabled: config.tabpfnProviderEnabled, timeout: config.tabpfnProviderTimeout, construct: predictor.NewRemoteTabPFNProvider},
 	})
 
-	var activityProvider predictor.ActivityProvider
-	if config.tabpfnProviderEnabled {
+	buildActivity := func(enabled bool, timeout time.Duration, path, method string) predictor.ActivityProvider {
+		if !enabled {
+			return nil
+		}
 		cfg := baseRemote
-		cfg.Timeout = config.tabpfnProviderTimeout
+		cfg.Timeout = timeout
+		cfg.Path = path
+		cfg.ExpectedMethod = method
 		remote, err := predictor.NewRemoteActivityProvider(cfg)
 		if err == nil {
-			activityProvider = remote
+			return remote
 		} else if timelineErr == nil {
 			timelineErr = err
 		}
+		return nil
 	}
+	activityProvider := buildActivity(config.tabpfnProviderEnabled, config.tabpfnProviderTimeout, "/tabpfn/activity", "tabpfn")
+	forecastActivityProvider := buildActivity(config.forecastProviderEnabled, config.forecastProviderTimeout, "/forecast/activity", "timesfm")
+	tabPredictActivityProvider := buildActivity(config.tabPredictProviderEnabled, config.tabPredictProviderTimeout, "/tabpredict/activity", "tabfm")
 	return Options{
-		ProjectID:              strings.TrimSpace(config.projectID),
-		Port:                   portOrDefault(config.port),
-		BigQueryDataset:        strings.TrimSpace(config.bigQueryDataset),
-		BigQueryTable:          strings.TrimSpace(config.bigQueryTable),
-		BigQueryProcessesTable: strings.TrimSpace(config.bigQueryProcessesTable),
-		ForecastProvider:       forecastProvider,
-		TabPredictProvider:     tabPredictProvider,
-		BQMLBoostedProvider:    bqmlBoostedProvider,
-		TabPFNProvider:         tabpfnProvider,
-		ActivityProvider:       activityProvider,
+		ProjectID:                  strings.TrimSpace(config.projectID),
+		Port:                       portOrDefault(config.port),
+		BigQueryDataset:            strings.TrimSpace(config.bigQueryDataset),
+		BigQueryTable:              strings.TrimSpace(config.bigQueryTable),
+		BigQueryProcessesTable:     strings.TrimSpace(config.bigQueryProcessesTable),
+		ForecastProvider:           forecastProvider,
+		TabPredictProvider:         tabPredictProvider,
+		BQMLBoostedProvider:        bqmlBoostedProvider,
+		TabPFNProvider:             tabpfnProvider,
+		ActivityProvider:           activityProvider,
+		ForecastActivityProvider:   forecastActivityProvider,
+		TabPredictActivityProvider: tabPredictActivityProvider,
 	}, timelineErr
 }
 

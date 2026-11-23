@@ -17,11 +17,13 @@ type ForecastRepository interface {
 
 // TimelineProviders maps prediction modes to forecast providers.
 type TimelineProviders struct {
-	Activity    predictor.ActivityProvider
-	Forecast    predictor.ForecastProvider
-	TabPredict  predictor.ForecastProvider
-	BQMLBoosted predictor.ForecastProvider
-	TabPFN      predictor.ForecastProvider
+	Activity           predictor.ActivityProvider
+	ForecastActivity   predictor.ActivityProvider
+	TabPredictActivity predictor.ActivityProvider
+	Forecast           predictor.ForecastProvider
+	TabPredict         predictor.ForecastProvider
+	BQMLBoosted        predictor.ForecastProvider
+	TabPFN             predictor.ForecastProvider
 }
 
 // ForecastEvaluator coordinates process-forecast provider calls after ingest.
@@ -75,8 +77,8 @@ func (e *ForecastEvaluator) EvaluateLoaded(ctx context.Context, runID string, ru
 	// run after /finish. Throttle + AppendProcessForecasts idempotency prevent storms.
 	mode := models.NormalizePredictionMode(runDoc.PredictionMode)
 	if runDoc.PredictionTarget == "class_loading" {
-		if mode == models.PredictionModeTabPFN {
-			e.evaluateActivity(ctx, runID, runDoc)
+		if _, valid := models.ParsePredictionTarget(runDoc.PredictionTarget, mode); valid {
+			e.evaluateActivity(ctx, runID, runDoc, e.activityProviderForMode(mode))
 		}
 		return
 	}
@@ -192,7 +194,20 @@ type activityRepository interface {
 	AppendProcessActivityForecasts(context.Context, string, []models.ProcessActivityForecast) error
 }
 
-func (e *ForecastEvaluator) evaluateActivity(ctx context.Context, runID string, run *models.RunDoc) {
+func (e *ForecastEvaluator) activityProviderForMode(mode models.PredictionMode) predictor.ActivityProvider {
+	switch mode {
+	case models.PredictionModeForecast:
+		return e.providers.ForecastActivity
+	case models.PredictionModePredict:
+		return e.providers.TabPredictActivity
+	case models.PredictionModeTabPFN:
+		return e.providers.Activity
+	default:
+		return nil
+	}
+}
+
+func (e *ForecastEvaluator) evaluateActivity(ctx context.Context, runID string, run *models.RunDoc, provider predictor.ActivityProvider) {
 	repo, ok := e.repo.(activityRepository)
 	if !ok {
 		return
@@ -206,10 +221,11 @@ func (e *ForecastEvaluator) evaluateActivity(ctx context.Context, runID string, 
 	}
 	var results []models.ProcessActivityForecast
 	var err error
-	if e.providers.Activity != nil {
-		results, err = e.providers.Activity.ForecastActivity(ctx, predictor.RunSnapshot{RunID: runID, Samples: run.Samples, Now: time.Now()})
+	if provider != nil {
+		results, err = provider.ForecastActivity(ctx, predictor.RunSnapshot{RunID: runID, Samples: run.Samples, Now: time.Now()})
 	}
-	if e.providers.Activity == nil || err != nil || len(results) == 0 {
+	if provider == nil || err != nil || len(results) == 0 {
+		results = nil
 		latest := map[string]models.Sample{}
 		for _, s := range run.Samples {
 			if s.Name != "GradleDaemon" && s.Name != "KotlinCompileDaemon" {

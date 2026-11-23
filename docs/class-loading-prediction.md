@@ -11,9 +11,9 @@ with:
   prediction_throttle_s: '20'
 ```
 
-`prediction_target` defaults to `memory`. Class loading is only supported with
-`tabpfn`; unsupported combinations fail validation. Prediction automatically
-uses Remote Mode. Finished-run BigQuery export is independent and optional.
+`prediction_target` defaults to `memory`. Class loading is supported with
+`predict`, `forecast`, and `tabpfn`; unsupported combinations fail validation.
+Prediction automatically uses Remote Mode. Finished-run BigQuery export is independent and optional.
 Cadence defaults to 20 elapsed seconds (integer range 1–3600), separate from the
 sampling interval and fixed +60-second forecast horizon. Scheduling and inference
 may delay delivery; a cadence is not a delivery-time guarantee.
@@ -22,6 +22,22 @@ TabPFN is disabled by default. Its VM, provider, and separate fitted activity
 model must be available. Selecting this target does not start the VM or train a
 model. Missing usable history and unavailable providers are explicit results;
 neither is a zero-class prediction. No new collector command is needed.
+
+## Provider routing
+
+Class-loading requests use `/tabpredict/activity` for `predict` (ready method
+`tabfm`), `/forecast/activity` for `forecast` (ready method `timesfm`), and
+`/tabpfn/activity` for `tabpfn` (ready method `tabpfn`). Each uses its mode's
+existing provider enable flag and timeout. All are disabled unless configured;
+accepting a mode/target pair does not guarantee adapter availability or provision
+a VM. Missing or failing providers produce `unavailable` issuances without points
+and leave ingestion available. Private adapters must pass separate validation
+before production enablement.
+
+Ready responses must identify the selected method and a model version, match the
+same-process sample origin, and contain finite nonnegative count values with
+`total = origin + delta` at exactly +60 seconds. Provider and inference latency
+metadata are preserved. Token-only renewal preserves the existing mode and target.
 
 ## Additive response
 
@@ -36,8 +52,8 @@ Each activity issuance has `process_name`, `pid`, `metric: classes_loaded`,
 All values are class counts. Optional method, model version and latency fields
 are descriptive metadata. Status is `ready`, `insufficient_history`, `unavailable`,
 or `fallback`; unavailable/short-history results omit points. Fallbacks must be
-marked and never represented as successful TabPFN inference. The first adapter
-uses unavailable status rather than fabricating a fallback. Model output is
+marked and never represented as successful inference by the selected provider.
+The first adapter uses unavailable status rather than fabricating a fallback. Model output is
 clamped to nonnegative counts before public display.
 
 Activity is currently scoped to `GradleDaemon` and `KotlinCompileDaemon`, with

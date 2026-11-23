@@ -401,3 +401,39 @@ func TestActivityRoutingUnavailableAndThrottle(t *testing.T) {
 		t.Fatal("missing provider fabricated data")
 	}
 }
+
+func TestActivityModesSelectOnlyTheirProvider(t *testing.T) {
+	for _, mode := range []string{"predict", "forecast", "tabpfn", "bqml-boosted", "disabled"} {
+		t.Run(mode, func(t *testing.T) {
+			run := &models.RunDoc{PredictionMode: mode, PredictionTarget: "class_loading", Samples: []models.Sample{{Name: "GradleDaemon", PID: "1", Timestamp: 60000, ElapsedTime: 60}}}
+			repo := &activityRepoStub{forecastRepoStub: forecastRepoStub{run: run}}
+			var forecastCalls, predictCalls, tabpfnCalls int
+			providers := TimelineProviders{ForecastActivity: activityProviderStub{calls: &forecastCalls}, TabPredictActivity: activityProviderStub{calls: &predictCalls}, Activity: activityProviderStub{calls: &tabpfnCalls}}
+			NewForecastEvaluator(repo, providers).Evaluate(context.Background(), "r")
+			wantForecast, wantPredict, wantTabpfn := 0, 0, 0
+			switch mode {
+			case "forecast":
+				wantForecast = 1
+			case "predict":
+				wantPredict = 1
+			case "tabpfn":
+				wantTabpfn = 1
+			}
+			if forecastCalls != wantForecast || predictCalls != wantPredict || tabpfnCalls != wantTabpfn || len(repo.appended) != 0 {
+				t.Fatalf("calls=%d,%d,%d memory=%v", forecastCalls, predictCalls, tabpfnCalls, repo.appended)
+			}
+			if wantForecast+wantPredict+wantTabpfn == 0 {
+				if len(repo.activities) != 0 {
+					t.Fatal("unsupported mode produced activity")
+				}
+				return
+			}
+			run.ProcessActivityForecasts = nil
+			repo.activities = nil
+			NewForecastEvaluator(repo, TimelineProviders{}).Evaluate(context.Background(), "r")
+			if len(repo.activities) != 1 || repo.activities[0].Status != "unavailable" || len(repo.activities[0].Points) != 0 {
+				t.Fatalf("missing provider: %v", repo.activities)
+			}
+		})
+	}
+}
