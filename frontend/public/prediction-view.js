@@ -1,17 +1,10 @@
 (function () {
     'use strict';
 
-    const RISK_LEVELS = ['low', 'elevated', 'high'];
-    const STATUS_VALUES = ['ready', 'pending', 'skipped', 'error'];
-
     function finiteNumber(value) {
         if (value === null || value === undefined || value === '') return null;
         const number = typeof value === 'number' ? value : Number(value);
         return Number.isFinite(number) ? number : null;
-    }
-
-    function presentNumber(value) {
-        return value !== null && value !== undefined && value !== '' && finiteNumber(value) !== null;
     }
 
     function escapeHtml(value) {
@@ -34,14 +27,6 @@
         return [...byWindow.values()].sort((a, b) => a.observation_window_s - b.observation_window_s);
     }
 
-    function statusOf(checkpoint) {
-        return STATUS_VALUES.includes(checkpoint?.status) ? checkpoint.status : 'unknown';
-    }
-
-    function riskOf(checkpoint) {
-        return RISK_LEVELS.includes(checkpoint?.risk_level) ? checkpoint.risk_level : 'unknown';
-    }
-
     function formatElapsed(seconds) {
         const value = finiteNumber(seconds);
         if (value === null || value < 0) return 'Not available';
@@ -56,52 +41,6 @@
         const number = finiteNumber(value);
         if (number === null) return 'Not available';
         return `${number.toFixed(Math.abs(number) >= 1000 ? 0 : 1)} ${unit}`;
-    }
-
-    function formatDelta(value, unit) {
-        const number = finiteNumber(value);
-        if (number === null) return '';
-        const sign = number > 0 ? '+' : '';
-        return `${sign}${number.toFixed(Math.abs(number) >= 1000 ? 0 : 1)} ${unit}`;
-    }
-
-    function latestReady(checkpoints) {
-        return [...checkpoints].reverse().find(checkpoint => statusOf(checkpoint) === 'ready') || null;
-    }
-
-    function selectCheckpoint(checkpoints, selectedWindow) {
-        const selected = checkpoints.find(checkpoint => checkpoint.observation_window_s === selectedWindow);
-        return selected || latestReady(checkpoints) || checkpoints[checkpoints.length - 1] || null;
-    }
-
-    function formatMarkerValue(value, unit) {
-        const number = Number(value);
-        return Number.isFinite(number) ? `${number.toFixed(number >= 1000 ? 0 : 1)} ${unit}` : 'N/A';
-    }
-
-    function markerColor(checkpoint) {
-        if ((checkpoint?.status || 'unknown') !== 'ready') return '#94a3b8';
-        return {
-            low: '#16a34a',
-            elevated: '#d97706',
-            high: '#dc2626',
-            unknown: '#64748b'
-        }[riskOf(checkpoint)] || '#64748b';
-    }
-
-    function markerHoverText(checkpoint) {
-        const bits = [
-            `Window: ${escapeHtml(String(checkpoint?.observation_window_s || 'N/A'))}s`,
-            `Status: ${escapeHtml(checkpoint?.status || 'unknown')}`,
-            `Risk: ${escapeHtml(checkpoint?.risk_level || 'unknown')}`
-        ];
-        if (checkpoint?.confidence) bits.push(`Confidence: ${escapeHtml(checkpoint.confidence)}`);
-        if (Number.isFinite(Number(checkpoint?.predicted_peak_rss_mb))) bits.push(`Predicted peak RSS: ${formatMarkerValue(checkpoint.predicted_peak_rss_mb, 'MB')}`);
-        if (Number.isFinite(Number(checkpoint?.predicted_duration_s))) bits.push(`Predicted duration: ${formatMarkerValue(checkpoint.predicted_duration_s, 's')}`);
-        if (Array.isArray(checkpoint?.signals) && checkpoint.signals.length) {
-            bits.push(`Top signals: ${checkpoint.signals.slice(0, 3).map(signal => escapeHtml(signal)).join(', ')}`);
-        }
-        return bits.join('<br>');
     }
 
     function buildMarkerData(checkpoints, timestamps, options = {}) {
@@ -149,22 +88,6 @@
         if (!timestamps.length) return null;
         const aggregates = timestamps.map(timestamp => aggregateRssAtTimestamp(samples, timestamp)).filter(value => value !== null);
         return aggregates.length ? Math.max(...aggregates) : null;
-    }
-
-    function evolution(checkpoints, field, unit) {
-        let previous = null;
-        return checkpoints.map((checkpoint) => {
-            const value = presentNumber(checkpoint[field]) ? finiteNumber(checkpoint[field]) : null;
-            const delta = value !== null && previous !== null ? formatDelta(value - previous, unit) : '';
-            if (value !== null) previous = value;
-            return { checkpoint, value, delta };
-        });
-    }
-
-    function renderMetricRow(label, rows, unit) {
-        const values = rows.filter(row => row.value !== null);
-        if (!values.length) return '';
-        return `<div class="prediction-evolution-row"><div><strong>${label}</strong><span>At each evaluation</span></div><div class="prediction-evolution-values">${values.map(row => `<button type="button" class="prediction-evolution-value" data-prediction-window="${row.checkpoint.observation_window_s}"><span>${formatElapsed(row.checkpoint.observation_window_s)}</span><strong>${formatValue(row.value, unit)}</strong>${row.delta ? `<em>${escapeHtml(row.delta)}</em>` : ''}</button>`).join('')}</div></div>`;
     }
 
     // Match an observed sample near a forecast target. Sparse monitor samples almost
@@ -964,20 +887,6 @@
             ? 'Actual memory trajectory with per-issuance forecast horizons'
             : 'Actual memory trajectory with prediction track');
         return `<svg class="forecast-chart" viewBox="0 0 960 280" role="img" aria-label="${escapeHtml(aria)}"><rect class="chart-frame" x="${plot.left}" y="${plot.top}" width="${plot.right - plot.left}" height="${plot.bottom - plot.top}"/>${grid}${actualLine}${predictionLayer}${issuanceMarkers}<line class="forecast-now" x1="${nowX}" x2="${nowX}" y1="${plot.top}" y2="${plot.bottom}"/>${xLabels}${yLabels}<text class="chart-axis-label" x="${(plot.left + plot.right) / 2}" y="268" text-anchor="middle">Elapsed time (seconds)</text><text class="chart-axis-label" x="18" y="${midY}" text-anchor="middle" transform="rotate(-90 18 ${midY})">${escapeHtml(options.axisLabel || 'Memory (MB)')}</text></svg>`;
-    }
-
-    // Optional process_forecasts: {process_name, pid, metric, created_at_ms,
-    // points: [{target_at_ms, value_mb}]}. Timestamps use the sample clock.
-    function renderForecastTablesHtml(groups) {
-        const timeLabel = (time) => new Date(time).toISOString();
-        return groups.map((group) => {
-            const rows = group.predictions.slice().reverse().flatMap((prediction) => prediction.points.map((point) => {
-                const actual = actualNear(group.actual, point.time, ACTUAL_MATCH_WINDOW_MS);
-                return `<tr><td>${timeLabel(prediction.created)}</td><td>${timeLabel(point.time)}</td><td>${formatValue(point.value, 'MB')}</td><td>${actual ? formatValue(actual.value, 'MB') : 'Pending'}</td></tr>`;
-            })).join('');
-            const body = rows || '<tr><td colspan="4">Waiting for forecast issuances</td></tr>';
-            return `<article class="process-forecast process-forecast-table"><h3>${escapeHtml(group.name)} · PID ${escapeHtml(group.pid)} · ${group.metric === 'heap' ? 'Heap' : 'RSS'}</h3><div class="forecast-table-scroll" tabindex="0" role="region" aria-label="Forecast values for ${escapeHtml(group.name)} PID ${escapeHtml(group.pid)} ${group.metric}"><table><thead><tr><th>Created (UTC)</th><th>Target (UTC)</th><th>Predicted</th><th>Actual at target</th></tr></thead><tbody>${body}</tbody></table></div></article>`;
-        }).join('');
     }
 
     function renderForecastChartsHtml(groups, options = {}) {

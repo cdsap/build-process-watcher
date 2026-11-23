@@ -1059,12 +1059,6 @@
         }[char]));
     }
 
-    function formatDelta(value, digits = 1) {
-        if (value === null || value === undefined || Number.isNaN(value)) return 'N/A';
-        const sign = value > 0 ? '+' : '';
-        return `${sign}${value.toFixed(digits)}`;
-    }
-
     function getProcessType(name) {
         if (!name) return 'Other';
         if (name.includes('GradleDaemon')) return 'Gradle Daemon';
@@ -1477,14 +1471,6 @@
                 elapsedByTimestamp.set(sample.Timestamp, sample.ElapsedTime);
             }
         });
-
-        function updateUi(frameIndex) {
-            timeline.value = String(frameIndex);
-            meta.textContent = `Frame ${frameIndex + 1} / ${chartTimestamps.length}`;
-            const timestamp = chartTimestamps[frameIndex];
-            const elapsed = elapsedByTimestamp.get(timestamp) || 0;
-            timeLabel.textContent = `Elapsed: ${elapsed}s`;
-        }
 
         function renderFrame(frameIndex) {
             currentFrame = frameIndex;

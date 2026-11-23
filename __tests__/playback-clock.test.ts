@@ -2,15 +2,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vm from 'vm';
 
-function loadClock(): any {
-  const root: any = {};
-  vm.runInNewContext(
-    fs.readFileSync(path.join(__dirname, '../frontend/public/playback-clock.js'), 'utf8'),
-    { module: { exports: {} }, globalThis: root, performance: { now: () => root.__now }, setTimeout, clearTimeout, matchMedia: () => ({ matches: false }) },
-  );
-  return root.BpwPlaybackClock || (module as any);
-}
-
 function loadClockDirect(): any {
   const sandbox: any = {
     module: { exports: {} },
