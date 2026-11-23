@@ -108,8 +108,8 @@ func buildOptions(config serverConfig) (Options, error) {
 		return nil
 	}
 	activityProvider := buildActivity(config.tabpfnProviderEnabled, config.tabpfnProviderTimeout, "/tabpfn/activity", "tabpfn")
-	forecastActivityProvider := buildActivity(config.forecastProviderEnabled, config.forecastProviderTimeout, "/forecast/activity", "timesfm")
-	tabPredictActivityProvider := buildActivity(config.tabPredictProviderEnabled, config.tabPredictProviderTimeout, "/tabpredict/activity", "tabfm")
+	forecastActivityProvider := buildActivity(config.forecastProviderEnabled, config.forecastProviderTimeout, "/forecast/activity", "ai_forecast")
+	tabPredictActivityProvider := buildActivity(config.tabPredictProviderEnabled, config.tabPredictProviderTimeout, "/tabpredict/activity", "ai_predict")
 	return Options{
 		ProjectID:                  strings.TrimSpace(config.projectID),
 		Port:                       portOrDefault(config.port),
