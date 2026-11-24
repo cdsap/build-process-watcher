@@ -8,8 +8,7 @@ const homepage = fs.readFileSync(
 
 describe('public homepage content', () => {
   it('explains the collection modes, outputs, and analysis workflows', () => {
-    expect(homepage).toContain('id="whats-new"');
-    expect(homepage).toContain('What is new');
+    expect(homepage).toContain('id="views"');
     expect(homepage).toContain('Local Mode · artifacts only');
     expect(homepage).toContain('Remote Mode · live dashboard');
     expect(homepage).toContain('BigQuery export · optional');
@@ -111,8 +110,7 @@ describe('public homepage content', () => {
     expect(homepageRefs.length).toBeGreaterThan(0);
     expect(homepageRefs[0]).toMatch(/^[a-f0-9]{40}$/);
     expect(new Set(homepageRefs).size).toBe(1);
-    // v0.7.0 is allowed only in the historical "Before" migration example.
-    expect(new Set(refs(readme).filter(ref => ref !== 'v0.7.0'))).toEqual(new Set(homepageRefs));
+    expect(new Set(refs(readme))).toEqual(new Set(homepageRefs));
     const notes = fs.readFileSync(path.join(__dirname, '../RELEASE_NOTES.md'), 'utf8');
     expect(notes).toContain(`cdsap/build-process-watcher@${homepageRefs[0]}`);
     for (const doc of [readme, homepage]) {
@@ -121,13 +119,9 @@ describe('public homepage content', () => {
       expect(doc).toContain('development ref');
     }
     const yamlBlocks = [...readme.matchAll(/```yaml\n([\s\S]*?)```/g)].map(match => match[1]);
-    const legacyBlocks = yamlBlocks.filter(block => block.includes('@v0.7.0'));
-    expect(legacyBlocks).toHaveLength(1);
-    expect(legacyBlocks[0]).toContain("predictive_reliability: 'true'");
-    expect(legacyBlocks[0]).not.toContain('prediction_mode:');
-    expect(yamlBlocks.some(block => block.includes("prediction_mode: 'predict'") && block.includes("export_to_bigquery: 'true'"))).toBe(true);
-    expect(readme).toContain('behavior change, not a rename');
-    expect(readme).toContain('historical reliability records remain legacy data');
+    expect(yamlBlocks.some(block => block.includes("prediction_mode: 'predict'"))).toBe(true);
+    expect(yamlBlocks.some(block => block.includes("export_to_bigquery: 'true'"))).toBe(true);
+    expect(yamlBlocks.some(block => block.includes('predictive_reliability'))).toBe(false);
   });
 
   it('records release readiness separately from publication and deployment', () => {
