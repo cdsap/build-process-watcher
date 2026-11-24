@@ -3,508 +3,571 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Build Process Watcher - Monitor Gradle Build Performance</title>
-    <meta name="description" content="Monitor Gradle and Kotlin build process memory, CPU, garbage collection, and performance over time.">
+    <title>Build Process Watcher - Monitor Gradle &amp; Kotlin JVM Builds</title>
+    <meta name="description" content="Monitor Gradle and Kotlin build process heap, RSS, garbage collection, JIT compilation, and class loading over time.">
     <meta name="robots" content="index, follow">
     <link rel="canonical" href="https://process-watcher.web.app/">
-    <meta property="og:title" content="Build Process Watcher - Monitor Gradle Build Performance">
-    <meta property="og:description" content="Monitor Gradle and Kotlin build process memory, CPU, garbage collection, and performance over time.">
+    <meta property="og:title" content="Build Process Watcher - Monitor Gradle &amp; Kotlin JVM Builds">
+    <meta property="og:description" content="Monitor Gradle and Kotlin build process heap, RSS, garbage collection, JIT compilation, and class loading over time.">
     <meta property="og:url" content="https://process-watcher.web.app/">
     <meta property="og:type" content="website">
-    <meta property="og:image" content="https://process-watcher.web.app/gha_log.png">
+    <meta property="og:image" content="https://process-watcher.web.app/media/run-metrics-overview.png">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Build Process Watcher - Monitor Gradle Build Performance">
-    <meta name="twitter:description" content="Monitor Gradle and Kotlin build process memory, CPU, garbage collection, and performance over time.">
-    <meta name="twitter:image" content="https://process-watcher.web.app/gha_log.png">
+    <meta name="twitter:title" content="Build Process Watcher - Monitor Gradle &amp; Kotlin JVM Builds">
+    <meta name="twitter:description" content="Monitor Gradle and Kotlin build process heap, RSS, garbage collection, JIT compilation, and class loading over time.">
+    <meta name="twitter:image" content="https://process-watcher.web.app/media/run-metrics-overview.png">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="stylesheet" href="/bpw-ui.css">
     <style>
-        * {
-            box-sizing: border-box;
-            padding: 0;
-            margin: 0;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            color: var(--bpw-ink);
-            line-height: 1.6;
-        }
-
         .home-shell {
-            min-height: 100vh;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 1rem 1.25rem 3rem;
         }
 
         .home-nav {
-            position: fixed;
-            top: 18px;
-            left: 50%;
-            z-index: 50;
+            position: sticky;
+            top: 0.75rem;
+            z-index: 40;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            width: min(1180px, calc(100% - 28px));
-            padding: 0.65rem 0.8rem;
-            border: 1px solid rgba(255, 255, 255, 0.24);
+            gap: 1rem;
+            padding: 0.7rem 1rem;
+            border: 1px solid rgba(22, 26, 29, 0.1);
             border-radius: 8px;
-            background: rgba(22, 26, 29, 0.74);
-            box-shadow: 0 18px 60px rgba(0, 0, 0, 0.22);
-            backdrop-filter: blur(18px);
-            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.92);
+            box-shadow: 0 8px 28px rgba(22, 26, 29, 0.06);
+            backdrop-filter: blur(14px);
         }
 
         .home-brand {
-            color: #fff;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--bpw-ink);
             font-weight: 800;
-            letter-spacing: 0;
+            font-size: 0.98rem;
             text-decoration: none;
+            white-space: nowrap;
+        }
+
+        .home-brand-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            background: var(--bpw-teal);
+            box-shadow: 0 0 0 3px rgba(8, 127, 140, 0.16);
         }
 
         .home-nav-links {
             display: flex;
             align-items: center;
-            gap: 0.4rem;
+            gap: 0.25rem;
             flex-wrap: wrap;
         }
 
         .home-nav-links a {
-            padding: 0.42rem 0.65rem;
-            color: rgba(255, 255, 255, 0.84);
-            border-radius: 8px;
-            font-size: 0.9rem;
+            padding: 0.38rem 0.65rem;
+            border-radius: 6px;
+            color: var(--bpw-muted);
+            font-size: 0.88rem;
             font-weight: 700;
             text-decoration: none;
         }
 
         .home-nav-links a:hover {
-            background: rgba(255, 255, 255, 0.12);
-            color: #fff;
+            background: rgba(8, 127, 140, 0.08);
+            color: var(--bpw-ink);
+        }
+
+        .home-nav-links a.nav-tool {
+            color: var(--bpw-teal);
         }
 
         .home-hero {
-            position: relative;
             display: grid;
-            align-items: end;
-            min-height: 92vh;
-            padding: 8.5rem max(24px, calc((100vw - 1180px) / 2)) 4.5rem;
-            overflow: hidden;
-            color: #fff;
-            background: #161a1d;
-        }
-
-        .home-hero-media {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            opacity: 0.42;
-            filter: saturate(0.9) contrast(1.08);
-        }
-
-        .home-hero::after {
-            content: "";
-            position: absolute;
-            inset: 0;
-            background:
-                linear-gradient(90deg, rgba(22, 26, 29, 0.92) 0%, rgba(22, 26, 29, 0.68) 48%, rgba(8, 127, 140, 0.46) 100%),
-                linear-gradient(180deg, rgba(22, 26, 29, 0.18) 0%, rgba(22, 26, 29, 0.92) 100%);
-        }
-
-        .home-hero-content {
-            position: relative;
-            z-index: 1;
-            display: grid;
-            grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.7fr);
-            gap: 2rem;
-            align-items: end;
-        }
-
-        .version-pill {
-            display: inline-flex;
-            width: fit-content;
-            margin-bottom: 1rem;
-            padding: 0.38rem 0.7rem;
-            border: 1px solid rgba(255, 255, 255, 0.22);
-            border-radius: 999px;
-            background: rgba(255, 255, 255, 0.12);
-            color: rgba(255, 255, 255, 0.9);
-            font-size: 0.82rem;
-            font-weight: 760;
-        }
-
-        .home-hero h1 {
-            max-width: 980px;
-            color: #fff !important;
-            font-size: clamp(3rem, 8vw, 7.6rem) !important;
-            line-height: 0.92;
-            letter-spacing: 0 !important;
-        }
-
-        .home-hero p {
-            max-width: 720px;
-            margin-top: 1.2rem;
-            color: rgba(255, 255, 255, 0.82);
-            font-size: clamp(1.05rem, 1.7vw, 1.45rem);
-        }
-
-        .hero-actions {
-            display: flex;
-            gap: 0.7rem;
-            flex-wrap: wrap;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+            gap: 1.5rem;
+            align-items: center;
             margin-top: 1.5rem;
-        }
-
-        .hero-actions .btn {
-            box-shadow: none;
-        }
-
-        .hero-panel {
-            padding: 1rem;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.11);
-            backdrop-filter: blur(12px);
-        }
-
-        .hero-panel h2 {
-            color: #fff;
-            font-size: 0.9rem;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-        }
-
-        .hero-metrics {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 0.7rem;
-            margin-top: 0.85rem;
-        }
-
-        .hero-metric {
-            padding: 0.85rem;
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.12);
-        }
-
-        .hero-metric strong {
-            display: block;
-            color: #fff;
-            font-size: 1.3rem;
-            line-height: 1;
-        }
-
-        .hero-metric span {
-            display: block;
-            margin-top: 0.35rem;
-            color: rgba(255, 255, 255, 0.72);
-            font-size: 0.78rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.07em;
-        }
-
-        .home-section {
-            padding: 4rem max(20px, calc((100vw - 1180px) / 2));
-        }
-
-        .section-kicker {
-            color: var(--bpw-coral);
-            font-size: 0.78rem;
-            font-weight: 800;
-            letter-spacing: 0.1em;
-            text-transform: uppercase;
-        }
-
-        .section-heading {
-            max-width: 760px;
-            margin-top: 0.35rem;
-            color: var(--bpw-ink);
-            font-size: clamp(2rem, 4vw, 4.2rem);
-            line-height: 1;
-            font-weight: 820;
-            letter-spacing: 0;
-        }
-
-        .section-copy {
-            max-width: 760px;
-            margin-top: 0.9rem;
-            color: var(--bpw-muted);
-            font-size: 1.05rem;
-        }
-
-        .snippet-grid,
-        .feature-grid,
-        .media-grid {
-            display: grid;
-            gap: 1rem;
-            margin-top: 1.8rem;
-        }
-
-        .snippet-grid {
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-        }
-
-        .news-grid,
-        .option-grid {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 1rem;
-            margin-top: 1.8rem;
-        }
-
-        .news-card,
-        .option-card {
-            padding: 1.15rem;
+            padding: 1.5rem;
             border: 1px solid rgba(22, 26, 29, 0.09);
-            border-radius: 8px;
+            border-radius: 10px;
             background: rgba(255, 255, 255, 0.92);
             box-shadow: var(--bpw-shadow);
         }
 
-        .news-card h3,
-        .option-card h3 {
+        .version-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.25rem 0.6rem;
+            border: 1px solid rgba(8, 127, 140, 0.24);
+            border-radius: 999px;
+            background: rgba(8, 127, 140, 0.08);
+            color: var(--bpw-teal);
+            font-size: 0.78rem;
+            font-weight: 700;
+        }
+
+        .badge-exp {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.14rem 0.5rem;
+            border: 1px solid rgba(184, 132, 20, 0.34);
+            border-radius: 999px;
+            background: #fff9e8;
+            color: var(--bpw-gold);
+            font-size: 0.74rem;
+            font-weight: 700;
+            vertical-align: middle;
+        }
+
+        .home-hero h1 {
+            margin: 0.75rem 0 0;
+            color: var(--bpw-ink) !important;
+            font-size: clamp(1.85rem, 3.2vw, 2.55rem) !important;
+            line-height: 1.12;
+            font-weight: 820 !important;
+        }
+
+        .home-hero-lead {
+            margin: 0.75rem 0 0;
+            color: var(--bpw-muted);
+            font-size: 1rem;
+            line-height: 1.55;
+        }
+
+        .hero-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            margin-top: 1rem;
+        }
+
+        .hero-chip {
+            padding: 0.22rem 0.55rem;
+            border: 1px solid var(--bpw-line);
+            border-radius: 6px;
+            background: var(--bpw-panel-soft);
             color: var(--bpw-ink);
-            font-size: 1.1rem;
+            font-size: 0.8rem;
+            font-weight: 650;
+        }
+
+        .hero-actions {
+            display: flex;
+            gap: 0.55rem;
+            flex-wrap: wrap;
+            margin-top: 1.15rem;
+        }
+
+        .hero-preview {
+            border: 1px solid var(--bpw-line);
+            border-radius: 8px;
+            background: #fff;
+            overflow: hidden;
+        }
+
+        .hero-preview img {
+            display: block;
+            width: 100%;
+            height: auto;
+            background: #fff;
+            cursor: zoom-in;
+        }
+
+        .hero-preview-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.55rem 0.8rem;
+            border-top: 1px solid var(--bpw-line);
+            background: var(--bpw-panel-soft);
+            font-size: 0.82rem;
+            color: var(--bpw-muted);
+        }
+
+        .hero-preview-bar a {
+            color: var(--bpw-teal);
+            font-weight: 700;
+            text-decoration: none;
+            white-space: nowrap;
+        }
+
+        .home-section {
+            margin-top: 2.75rem;
+            scroll-margin-top: 5.5rem;
+        }
+
+        .section-head {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .section-kicker {
+            color: var(--bpw-coral);
+            font-size: 0.74rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .section-heading {
+            margin: 0.2rem 0 0;
+            color: var(--bpw-ink);
+            font-size: clamp(1.35rem, 2.3vw, 1.85rem);
+            line-height: 1.18;
             font-weight: 800;
         }
 
-        .news-card p,
-        .option-card p {
-            margin-top: 0.45rem;
+        .section-copy {
+            max-width: 780px;
+            margin: 0.55rem 0 0;
             color: var(--bpw-muted);
             font-size: 0.94rem;
         }
 
-        .news-card a,
-        .option-card a {
-            display: inline-block;
-            margin-top: 0.85rem;
+        .filter-tabs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+        }
+
+        .filter-tab {
+            padding: 0.36rem 0.75rem;
+            border: 1px solid var(--bpw-line);
+            border-radius: 6px;
+            background: #fff;
+            color: var(--bpw-muted);
+            font-size: 0.84rem;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .filter-tab[aria-pressed="true"] {
+            border-color: var(--bpw-teal);
+            background: rgba(8, 127, 140, 0.1);
             color: var(--bpw-teal);
+        }
+
+        .gallery-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 1rem;
+            margin-top: 1.15rem;
+        }
+
+        .gallery-card {
+            display: flex;
+            flex-direction: column;
+            border: 1px solid rgba(22, 26, 29, 0.09);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.95);
+            box-shadow: 0 8px 26px rgba(30, 38, 31, 0.05);
+            overflow: hidden;
+        }
+
+        .gallery-card[hidden] {
+            display: none;
+        }
+
+        .gallery-media {
+            border-bottom: 1px solid var(--bpw-line);
+            background: #fff;
+            padding: 0.45rem;
+        }
+
+        .gallery-media img {
+            display: block;
+            width: 100%;
+            height: 290px;
+            object-fit: contain;
+            object-position: center;
+            background: #fff;
+            cursor: zoom-in;
+        }
+
+        .gallery-body {
+            display: flex;
+            flex: 1;
+            flex-direction: column;
+            gap: 0.45rem;
+            padding: 0.95rem 1rem;
+        }
+
+        .gallery-title-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+        }
+
+        .gallery-body h3 {
+            margin: 0;
+            color: var(--bpw-ink);
+            font-size: 1rem;
             font-weight: 800;
+        }
+
+        .gallery-body p {
+            margin: 0;
+            color: var(--bpw-muted);
+            font-size: 0.89rem;
+            line-height: 1.48;
+        }
+
+        .gallery-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            margin-top: auto;
+            padding-top: 0.55rem;
+            font-size: 0.84rem;
+        }
+
+        .gallery-footer a {
+            color: var(--bpw-teal);
+            font-weight: 750;
             text-decoration: none;
         }
 
-        .option-card strong {
+        .gallery-footer a:hover {
+            text-decoration: underline;
+        }
+
+        .media-tag {
+            color: var(--bpw-muted);
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .snippet-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 1rem;
+            margin-top: 1.15rem;
+        }
+
+        .snippet-card,
+        .table-card {
+            min-width: 0;
+            padding: 1rem;
+            border: 1px solid rgba(22, 26, 29, 0.09);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.95);
+            box-shadow: 0 8px 26px rgba(30, 38, 31, 0.05);
+        }
+
+        .snippet-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+        }
+
+        .snippet-card h3 {
+            margin: 0;
             color: var(--bpw-ink);
+            font-size: 0.98rem;
+            font-weight: 800;
+        }
+
+        .snippet-card p {
+            margin: 0.4rem 0 0;
+            color: var(--bpw-muted);
+            font-size: 0.88rem;
+        }
+
+        .copy-btn {
+            padding: 0.24rem 0.55rem;
+            border: 1px solid var(--bpw-line);
+            border-radius: 6px;
+            background: var(--bpw-panel-soft);
+            color: var(--bpw-ink);
+            font-size: 0.76rem;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .copy-btn:hover {
+            border-color: var(--bpw-teal);
+            color: var(--bpw-teal);
+        }
+
+        pre {
+            max-width: 100%;
+            margin: 0.75rem 0 0;
+            padding: 0.85rem;
+            overflow-x: auto;
+            border-radius: 7px;
+            background: #161a1d;
+            color: #e8ece7;
+            font-size: 0.82rem;
+            line-height: 1.48;
+        }
+
+        code {
+            font-family: "SF Mono", Monaco, Consolas, monospace;
+            font-size: 0.9em;
         }
 
         .callout {
-            margin-top: 1.2rem;
-            padding: 1rem 1.15rem;
+            margin-top: 0.9rem;
+            padding: 0.85rem 1rem;
             border-left: 4px solid var(--bpw-gold);
             border-radius: 0 8px 8px 0;
             background: #fff9e8;
             color: var(--bpw-ink);
+            font-size: 0.9rem;
         }
 
         .callout strong {
             color: var(--bpw-gold);
         }
 
-        .feature-grid {
-            grid-template-columns: repeat(4, minmax(0, 1fr));
-        }
-
-        .media-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-
-        .snippet-card,
-        .feature-card,
-        .media-card,
         .table-card {
-            border: 1px solid rgba(22, 26, 29, 0.09);
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.92);
-            box-shadow: var(--bpw-shadow);
-        }
-
-        .snippet-card,
-        .feature-card,
-        .table-card {
-            padding: 1rem;
-        }
-
-        .snippet-card,
-        .table-card {
-            min-width: 0;
-        }
-
-        .snippet-card h3,
-        .feature-card h3,
-        .media-card h3 {
-            color: var(--bpw-ink);
-            font-size: 1.05rem;
-            font-weight: 800;
-        }
-
-        .snippet-card p,
-        .feature-card p,
-        .media-card p {
-            margin-top: 0.45rem;
-            color: var(--bpw-muted);
-            font-size: 0.94rem;
-        }
-
-        pre {
-            max-width: 100%;
             margin-top: 1rem;
-            padding: 1rem;
-            overflow-x: auto;
-            border-radius: 8px;
-            background: #161a1d;
-            color: #e8ece7;
-            font-size: 0.88rem;
-            line-height: 1.5;
-        }
-
-        code {
-            font-family: "SF Mono", Monaco, Consolas, monospace;
-        }
-
-        .feature-card {
-            min-height: 190px;
-        }
-
-        .feature-number {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 2rem;
-            height: 2rem;
-            margin-bottom: 1rem;
-            border-radius: 8px;
-            background: var(--bpw-panel-soft);
-            color: var(--bpw-teal);
-            font-weight: 800;
-        }
-
-        .media-card {
-            overflow: hidden;
-        }
-
-        .media-card img {
-            display: block;
-            width: 100%;
-            aspect-ratio: 16 / 9;
-            object-fit: cover;
-            background: #fff;
-        }
-
-        .media-card-content {
-            padding: 1rem;
-        }
-
-        .input-table {
-            width: 100%;
-            min-width: 760px;
-            border-collapse: collapse;
-            margin-top: 1rem;
-            font-size: 0.94rem;
-        }
-
-        .table-card {
-            max-width: 100%;
             overflow-x: auto;
             -webkit-overflow-scrolling: touch;
         }
 
-        #prediction {
-            scroll-margin-top: 9rem;
+        .input-table {
+            width: 100%;
+            min-width: 680px;
+            border-collapse: collapse;
+            font-size: 0.89rem;
         }
 
         .input-table th,
         .input-table td {
-            padding: 0.8rem;
+            padding: 0.68rem 0.75rem;
             border-bottom: 1px solid var(--bpw-line);
             text-align: left;
             vertical-align: top;
         }
 
+        .input-table tr:last-child td {
+            border-bottom: 0;
+        }
+
         .input-table th {
             color: var(--bpw-muted);
-            font-size: 0.76rem;
-            letter-spacing: 0.08em;
+            font-size: 0.74rem;
+            font-weight: 800;
+            letter-spacing: 0.06em;
             text-transform: uppercase;
         }
 
-        .home-cta {
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) auto;
-            gap: 1rem;
-            align-items: center;
-            padding: 1.25rem;
-            border-radius: 8px;
-            background:
-                linear-gradient(130deg, rgba(22, 26, 29, 0.97), rgba(8, 127, 140, 0.9) 62%, rgba(201, 81, 61, 0.86));
-            color: #fff;
-            box-shadow: var(--bpw-shadow);
-        }
-
-        .home-cta h2 {
-            color: #fff;
-            font-size: clamp(1.5rem, 3vw, 3rem);
-            line-height: 1;
-        }
-
-        .home-cta p {
-            margin-top: 0.6rem;
-            color: rgba(255, 255, 255, 0.78);
-        }
-
-        .home-footer {
-            padding: 2rem max(20px, calc((100vw - 1180px) / 2));
-            border-top: 1px solid rgba(22, 26, 29, 0.08);
-            color: var(--bpw-muted);
+        .inline-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.85rem;
+            margin-top: 0.85rem;
             font-size: 0.9rem;
         }
 
+        .inline-links a {
+            color: var(--bpw-teal);
+            font-weight: 700;
+            text-decoration: none;
+        }
+
+        .inline-links a:hover {
+            text-decoration: underline;
+        }
+
+        .home-footer {
+            max-width: 1200px;
+            margin: 2rem auto 0;
+            padding: 1.25rem 1.25rem 2.25rem;
+            border-top: 1px solid rgba(22, 26, 29, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            color: var(--bpw-muted);
+            font-size: 0.86rem;
+        }
+
+        .home-footer-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .home-footer-links a {
+            color: var(--bpw-teal);
+            font-weight: 700;
+            text-decoration: none;
+        }
+
+        .media-lightbox {
+            max-width: min(1160px, 94vw);
+            max-height: 92vh;
+            margin: auto;
+            padding: 0.75rem;
+            border: 1px solid var(--bpw-line);
+            border-radius: 10px;
+            background: #fff;
+            box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
+        }
+
+        .media-lightbox::backdrop {
+            background: rgba(22, 26, 29, 0.7);
+            backdrop-filter: blur(4px);
+        }
+
+        .media-lightbox-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 0.6rem;
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: var(--bpw-ink);
+        }
+
+        .media-lightbox img {
+            display: block;
+            max-width: 100%;
+            max-height: calc(92vh - 4.5rem);
+            width: auto;
+            height: auto;
+            margin: 0 auto;
+        }
+
         @media (max-width: 900px) {
-            .home-nav {
-                position: absolute;
-            }
-
-            .home-nav-links {
-                justify-content: flex-end;
-            }
-
-            .home-hero {
-                min-height: 880px;
-                padding-top: 7rem;
-            }
-
-            .home-hero-content,
-            .snippet-grid,
-            .news-grid,
-            .option-grid,
-            .media-grid,
-            .home-cta {
+            .home-hero,
+            .gallery-grid,
+            .snippet-grid {
                 grid-template-columns: 1fr;
-            }
-
-            .feature-grid {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
             }
         }
 
-        @media (max-width: 560px) {
-            .home-nav {
-                align-items: flex-start;
-                flex-direction: column;
+        @media (max-width: 600px) {
+            .home-shell {
+                padding: 0.75rem 0.85rem 2.25rem;
             }
 
-            .home-nav-links a {
-                padding-left: 0;
+            .home-nav {
+                position: static;
+                flex-direction: column;
+                align-items: flex-start;
             }
 
             .home-hero {
-                min-height: 960px;
-            }
-
-            .feature-grid,
-            .hero-metrics {
-                grid-template-columns: 1fr;
+                padding: 1.1rem;
             }
         }
     </style>
@@ -512,73 +575,196 @@
 <body>
     <main class="home-shell">
         <nav class="home-nav" aria-label="Primary">
-            <a class="home-brand" href="/">Build Process Watcher</a>
+            <a class="home-brand" href="/"><span class="home-brand-dot" aria-hidden="true"></span>Build Process Watcher</a>
             <div class="home-nav-links">
-                <a href="#" id="nav-demo-link">Demo</a>
-                <a href="#" id="nav-replay-link">Replay</a>
-                <a href="#" id="nav-compare-link">Compare</a>
+                <a href="#views">Views</a>
+                <a href="#quick-start">Quick Start</a>
+                <a href="#prediction">Predictions</a>
+                <a href="#inputs">Inputs</a>
+                <a href="#" id="nav-demo-link" class="nav-tool">Demo</a>
+                <a href="#" id="nav-replay-link" class="nav-tool">Replay</a>
+                <a href="#" id="nav-compare-link" class="nav-tool">Compare</a>
                 <a href="https://github.com/cdsap/build-process-watcher">GitHub</a>
             </div>
         </nav>
 
         <section class="home-hero">
-            <img class="home-hero-media" src="/performance.gif" alt="Build Process Watcher dashboard preview">
-            <div class="home-hero-content">
-                <div>
-                    <span class="version-pill">Snippets: development ref 88f0d0b</span>
-                    <h1>Build Process Watcher</h1>
-                    <p>Capture Gradle, Kotlin, and JVM build-process metrics in Local Mode, watch a Remote Mode run live, then replay or compare the exported data when you need to explain what changed.</p>
-                    <div class="hero-actions">
-                        <a href="#" id="hero-demo-link" class="btn">Open Demo Dashboard</a>
-                        <a href="https://github.com/cdsap/build-process-watcher" class="btn secondary">View Repository</a>
-                    </div>
+            <div>
+                <span class="version-pill">Snippets: development ref 88f0d0b · v0.8.0 unreleased</span>
+                <h1>Monitor Gradle &amp; Kotlin JVM build processes in CI</h1>
+                <p class="home-hero-lead">Track <code>GradleDaemon</code>, <code>GradleWorkerMain</code>, and <code>KotlinCompileDaemon</code> heap, RSS, garbage collection, JIT compilation, and class loading with zero Java-agent setup. Inspect builds offline via JSON artifacts or stream live for 24 hours.</p>
+                <div class="hero-chips">
+                    <span class="hero-chip">Heap &amp; RSS</span>
+                    <span class="hero-chip">GC Time</span>
+                    <span class="hero-chip">JIT &amp; Classes</span>
+                    <span class="hero-chip">VM Flags</span>
+                    <span class="hero-chip">JSON · CSV · SVG</span>
                 </div>
-                <aside class="hero-panel" aria-label="Monitoring capabilities">
-                    <h2>Live run surface</h2>
-                    <div class="hero-metrics">
-                        <div class="hero-metric"><strong>RSS</strong><span>Total memory</span></div>
-                        <div class="hero-metric"><strong>Heap</strong><span>JVM pressure</span></div>
-                        <div class="hero-metric"><strong>GC</strong><span>Collector time</span></div>
-                        <div class="hero-metric"><strong>JSON</strong><span>Replay export</span></div>
-                    </div>
-                </aside>
+                <div class="hero-actions">
+                    <a href="#" id="hero-demo-link" class="btn">Open Demo</a>
+                    <a href="#" id="replay-link" class="btn secondary">Replay JSON</a>
+                    <a href="#" id="compare-link" class="btn secondary">Compare Runs</a>
+                </div>
+            </div>
+            <div class="hero-preview">
+                <img src="/media/run-memory-replay.gif" alt="Classic Run Dashboard replaying Heap and RSS memory usage over time" data-lightbox-title="Run Dashboard — Memory Usage Over Time (Heap + RSS)">
+                <div class="hero-preview-bar">
+                    <span>Classic Run Dashboard · Heap + RSS replay</span>
+                    <a href="#" id="demo-link">Inspect live demo →</a>
+                </div>
             </div>
         </section>
 
-        <section class="home-section" id="whats-new">
-            <div class="section-kicker">What is new</div>
-            <h2 class="section-heading">More context at the end of every build.</h2>
-            <p class="section-copy">The planned v0.8.0 release (unreleased) adds per-process memory forecasts. The examples below use a verified development ref; this capability is not in the published v0.7.0 release.</p>
-            <div class="news-grid">
-                <article class="news-card">
-                    <h3>Richer run dashboards</h3>
-                    <p>Remote runs show memory, heap, GC, JIT, class-loading, process metadata, and VM flags when the JVM exposes them. Hosted reports are retained for 24 hours.</p>
-                    <a href="#quick-start">See the mode options →</a>
+        <section class="home-section" id="views">
+            <div class="section-head">
+                <div>
+                    <div class="section-kicker">Views &amp; capabilities</div>
+                    <h2 class="section-heading">Every mode and view in the current UI</h2>
+                </div>
+                <div class="filter-tabs" role="group" aria-label="Filter views">
+                    <button type="button" class="filter-tab" data-view-filter="all" aria-pressed="true">All</button>
+                    <button type="button" class="filter-tab" data-view-filter="dashboard" aria-pressed="false">Dashboard</button>
+                    <button type="button" class="filter-tab" data-view-filter="offline" aria-pressed="false">Offline tools</button>
+                    <button type="button" class="filter-tab" data-view-filter="predictions" aria-pressed="false">Predictions</button>
+                </div>
+            </div>
+            <p class="section-copy">Click any GIF or screenshot to inspect full size. All views work from the same collector output; Replay and Compare run entirely in the browser without Remote Mode.</p>
+
+            <div class="gallery-grid" id="analysis-tools">
+                <article class="gallery-card" data-view-category="dashboard">
+                    <div class="gallery-media">
+                        <img src="/media/run-metrics-overview.png" loading="lazy" alt="GC time, JIT compilation, class loading, and process VM flags in the Run Dashboard" data-lightbox-title="Run Dashboard — GC, JIT, Classes &amp; VM Flags">
+                    </div>
+                    <div class="gallery-body">
+                        <div class="gallery-title-row">
+                            <h3>Run Dashboard · GC, JIT, Classes &amp; VM Flags</h3>
+                            <span class="media-tag">Remote / Demo</span>
+                        </div>
+                        <p>Inspect per-process garbage collection time, JIT compiled methods, loaded classes, and captured JVM flags (GC algorithm, heap bounds, metaspace) alongside peak memory.</p>
+                        <div class="gallery-footer">
+                            <a href="/runs/demo.html">Open Demo →</a>
+                            <span class="media-tag">PNG</span>
+                        </div>
+                    </div>
                 </article>
-                <article class="news-card">
-                    <h3>Replay and Compare</h3>
-                    <p>Local JSON artifacts can be opened offline in Replay or lined up against another build in Compare. Remote Mode is not required for either workflow.</p>
-                    <a href="#analysis-tools">Explore the analysis tools →</a>
+
+                <article class="gallery-card" data-view-category="dashboard">
+                    <div class="gallery-media">
+                        <img src="/media/studio-and-story.png" loading="lazy" alt="Chart Studio dual-axis overlay and Build Story detected phases" data-lightbox-title="Chart Studio &amp; Build Story">
+                    </div>
+                    <div class="gallery-body">
+                        <div class="gallery-title-row">
+                            <h3>Chart Studio &amp; Build Story</h3>
+                            <span class="media-tag">Run Dashboard</span>
+                        </div>
+                        <p>Overlay two metrics on dual axes (such as Memory and GC) in Chart Studio, or switch to Build Story for auto-detected build phases and peak pressure callouts.</p>
+                        <div class="gallery-footer">
+                            <a href="/runs/demo.html">Try in Demo →</a>
+                            <span class="media-tag">PNG</span>
+                        </div>
+                    </div>
                 </article>
-                <article class="news-card">
-                    <h3>Experimental timeline prediction</h3>
-                    <p>Compare actual heap/RSS samples with future per-process forecasts. Prediction is disabled by default; provider availability and results may vary.</p>
-                    <a href="https://github.com/cdsap/build-process-watcher/blob/main/docs/prediction.md">Prediction guide →</a>
-                    <a href="https://github.com/cdsap/build-process-watcher/blob/main/RELEASE_NOTES.md#migration">Migration notes →</a>
+
+                <article class="gallery-card" data-view-category="offline">
+                    <div class="gallery-media">
+                        <img src="/media/replay-offline.gif" loading="lazy" alt="Replay JSON Run page loading demo data and scrubbing the timeline" data-lightbox-title="Replay — Offline JSON Timeline">
+                    </div>
+                    <div class="gallery-body">
+                        <div class="gallery-title-row">
+                            <h3>Replay · Offline JSON</h3>
+                            <span class="media-tag">No backend</span>
+                        </div>
+                        <p>Drop a single exported <code>build_process_watcher.json</code> (or load the built-in demo) to scrub memory, GC, JIT, and class-loading timelines offline at 5x–50x speed.</p>
+                        <div class="gallery-footer">
+                            <a href="#" id="analysis-replay-link">Open Replay →</a>
+                            <span class="media-tag">GIF</span>
+                        </div>
+                    </div>
+                </article>
+
+                <article class="gallery-card" data-view-category="offline">
+                    <div class="gallery-media">
+                        <img src="/media/compare-runs.gif" loading="lazy" alt="Compare JSON Runs showing delta KPI strip, shared Y-axis side-by-side charts, and split view" data-lightbox-title="Compare — Two Builds Side by Side">
+                    </div>
+                    <div class="gallery-body">
+                        <div class="gallery-title-row">
+                            <h3>Compare · Two Builds Side by Side</h3>
+                            <span class="media-tag">No backend</span>
+                        </div>
+                        <p>Upload two JSON runs to inspect top delta KPIs, shared-scale Side-by-Side or Split timelines, and per-process GC/JVM flag diffs without enabling Remote Mode.</p>
+                        <div class="gallery-footer">
+                            <a href="#" id="analysis-compare-link">Open Compare →</a>
+                            <span class="media-tag">GIF</span>
+                        </div>
+                    </div>
+                </article>
+
+                <article class="gallery-card" data-view-category="offline">
+                    <div class="gallery-media">
+                        <img src="/media/ci-summary.png" loading="lazy" alt="Local Mode GitHub Actions job summary showing checkpoints, per-process statistics, and artifact list" data-lightbox-title="Local Mode — GitHub Actions Job Summary">
+                    </div>
+                    <div class="gallery-body">
+                        <div class="gallery-title-row">
+                            <h3>Local Mode · GitHub Actions Summary</h3>
+                            <span class="media-tag">Artifacts only</span>
+                        </div>
+                        <p>Default mode writes a Mermaid checkpoint flow and per-process table to the job summary plus <code>JSON</code>, <code>CSV</code>, and <code>SVG</code> artifacts directly in the workflow.</p>
+                        <div class="gallery-footer">
+                            <a href="#quick-start">Local Mode YAML →</a>
+                            <span class="media-tag">PNG</span>
+                        </div>
+                    </div>
+                </article>
+
+                <article class="gallery-card" data-view-category="predictions">
+                    <div class="gallery-media">
+                        <img src="/media/predictions-memory.gif" loading="lazy" alt="Experimental memory prediction chart showing +10s, +30s, and +60s Heap and RSS forecasts" data-lightbox-title="Predictions (Experimental) — Memory +10/+30/+60s">
+                    </div>
+                    <div class="gallery-body">
+                        <div class="gallery-title-row">
+                            <h3>Memory Predictions (+10 / +30 / +60s)</h3>
+                            <span class="badge-exp">Experimental</span>
+                        </div>
+                        <p>Opt-in timeline forecasts overlaid on actual Heap and RSS per process, with Latest, Last 3, and All issuance replay controls. Disabled by default.</p>
+                        <div class="gallery-footer">
+                            <a href="#prediction">Prediction modes →</a>
+                            <span class="media-tag">GIF</span>
+                        </div>
+                    </div>
+                </article>
+
+                <article class="gallery-card" data-view-category="predictions">
+                    <div class="gallery-media">
+                        <img src="/media/predictions-classes.png" loading="lazy" alt="Experimental class-loading activity panel showing +60s predicted delta versus observed classes loaded" data-lightbox-title="Predictions (Experimental) — Class Loading +60s">
+                    </div>
+                    <div class="gallery-body">
+                        <div class="gallery-title-row">
+                            <h3>Class-Loading Predictions (+60s)</h3>
+                            <span class="badge-exp">Experimental</span>
+                        </div>
+                        <p>Opt-in <code>prediction_target: class_loading</code> forecasts additional classes loaded over 60 seconds for Gradle and Kotlin daemons alongside observed deltas.</p>
+                        <div class="gallery-footer">
+                            <a href="https://github.com/cdsap/build-process-watcher/blob/main/docs/class-loading-prediction.md">Class-loading guide →</a>
+                            <span class="media-tag">PNG</span>
+                        </div>
+                    </div>
                 </article>
             </div>
         </section>
 
         <section class="home-section" id="quick-start">
-            <div class="section-kicker">Collection modes</div>
-            <h2 class="section-heading">Choose where a run should live.</h2>
-            <p class="section-copy">Every snippet uses the same action. Local Mode keeps outputs in GitHub Actions artifacts; Remote Mode adds the live hosted dashboard. Unreleased development ref: every snippet is pinned to <a href="https://github.com/cdsap/build-process-watcher/commit/88f0d0b85857dd71009cf827564fb33d75769214"><code>88f0d0b</code></a>, whose manifest and bundled action support timeline prediction. The published <code>v0.7.0</code> does not support these inputs. See <a href="https://github.com/cdsap/build-process-watcher/blob/main/RELEASE_NOTES.md#unreleased">release notes</a>.</p>
+            <div class="section-kicker">Quick start</div>
+            <h2 class="section-heading">Add to GitHub Actions</h2>
+            <p class="section-copy">Unreleased development ref: snippets below pin <a href="https://github.com/cdsap/build-process-watcher/commit/88f0d0b85857dd71009cf827564fb33d75769214"><code>88f0d0b</code></a> for planned <strong>v0.8.0 (unreleased)</strong> inputs. Published <code>v0.7.0</code> does not support <code>prediction_mode</code> or <code>prediction_throttle_s</code>. See <a href="https://github.com/cdsap/build-process-watcher/blob/main/RELEASE_NOTES.md#unreleased">release notes</a>.</p>
 
             <div class="snippet-grid">
                 <article class="snippet-card">
-                    <h3>Local Mode · artifacts only</h3>
-                    <p>Generates logs, JSON, CSV, SVG charts, and the Actions summary in the workflow. Download the JSON later for Replay or Compare; nothing is sent to the hosted dashboard.</p>
-                    <pre tabindex="0" aria-label="Workflow snippet; scroll horizontally to read"><code>- name: Build Process Watcher
+                    <div class="snippet-head">
+                        <h3>Local Mode · artifacts only</h3>
+                        <button type="button" class="copy-btn" data-copy-snippet>Copy</button>
+                    </div>
+                    <p>Writes JSON, CSV, SVG charts, and the Actions summary as workflow artifacts. Nothing is sent to the hosted dashboard.</p>
+                    <pre tabindex="0" aria-label="Local Mode workflow snippet"><code>- name: Build Process Watcher
   uses: cdsap/build-process-watcher@88f0d0b85857dd71009cf827564fb33d75769214
 
 - name: Build project
@@ -586,9 +772,12 @@
                 </article>
 
                 <article class="snippet-card">
-                    <h3>Remote Mode · live dashboard</h3>
-                    <p>Streams samples to the hosted dashboard, prints a dashboard URL, and retains the hosted report for 24 hours. The action can still produce local artifacts when available.</p>
-                    <pre tabindex="0" aria-label="Workflow snippet; scroll horizontally to read"><code>- name: Build Process Watcher
+                    <div class="snippet-head">
+                        <h3>Remote Mode · live dashboard</h3>
+                        <button type="button" class="copy-btn" data-copy-snippet>Copy</button>
+                    </div>
+                    <p>Streams samples live, prints a dashboard URL, and retains the hosted report for 24 hours.</p>
+                    <pre tabindex="0" aria-label="Remote Mode workflow snippet"><code>- name: Build Process Watcher
   uses: cdsap/build-process-watcher@88f0d0b85857dd71009cf827564fb33d75769214
   with:
     remote_monitoring: 'true'
@@ -598,9 +787,12 @@
                 </article>
 
                 <article class="snippet-card">
-                    <h3>BigQuery export · optional</h3>
-                    <p>Not another monitoring mode. It is an independent export choice that requires Remote Mode and asks the backend to store finished-run metrics in your configured dataset.</p>
-                    <pre tabindex="0" aria-label="Workflow snippet; scroll horizontally to read"><code>- name: Build Process Watcher
+                    <div class="snippet-head">
+                        <h3>BigQuery export · optional</h3>
+                        <button type="button" class="copy-btn" data-copy-snippet>Copy</button>
+                    </div>
+                    <p>Independent export choice requiring Remote Mode and a backend configured with <code>BIGQUERY_EXPORT_DATASET</code>.</p>
+                    <pre tabindex="0" aria-label="BigQuery export workflow snippet"><code>- name: Build Process Watcher
   uses: cdsap/build-process-watcher@88f0d0b85857dd71009cf827564fb33d75769214
   with:
     remote_monitoring: 'true'
@@ -609,54 +801,14 @@
 - name: Build project
   run: ./gradlew clean build</code></pre>
                 </article>
-            </div>
-        </section>
 
-        <section class="home-section" id="analysis-tools">
-            <div class="section-kicker">Analysis tools</div>
-            <h2 class="section-heading">The action inputs work together in predictable ways.</h2>
-            <div class="option-grid">
-                <article class="option-card">
-                    <h3>Replay</h3>
-                    <p><strong>Input:</strong> one exported <code>build_process_watcher.json</code>. <strong>Needs:</strong> no Remote Mode. Scrub metrics offline in the browser.</p>
-                    <a href="#" id="analysis-replay-link">Open Replay →</a>
-                </article>
-                <article class="option-card">
-                    <h3>Compare</h3>
-                    <p><strong>Input:</strong> two exported JSON files. <strong>Needs:</strong> no Remote Mode. Compare processes and timelines side by side.</p>
-                    <a href="#" id="analysis-compare-link">Open Compare →</a>
-                </article>
-                <article class="option-card">
-                    <h3>Prediction <span class="version-pill" style="margin: 0; color: var(--bpw-gold); border-color: rgba(184, 132, 20, 0.28); background: #fff9e8;">Experimental</span></h3>
-                    <p><strong>Input:</strong> <code>prediction_mode</code>. Request per-process heap/RSS forecasts. Prediction is disabled by default; active modes automatically enable Remote Mode.</p>
-                    <a href="#prediction">Choose a prediction mode →</a>
-                </article>
-            </div>
-            <div class="callout"><strong>Experimental prediction:</strong> prediction is an opt-in advisory signal for triage, not a guaranteed OOM, timeout, or build-failure outcome. Availability and behavior may change while experimental. Do not use it as a production decision or reliability guarantee, and do not infer private model details from the public dashboard.</div>
-        </section>
-
-        <section class="home-section" id="prediction">
-            <div class="section-kicker">Experimental prediction</div>
-            <h2 class="section-heading">Choose a timeline forecast request.</h2>
-            <p class="section-copy">Active modes automatically enable Remote Mode. Prediction does not enable <code>export_to_bigquery</code>; request finished-run metrics export separately. A selected input or output reports a request, not provider readiness or successful inference.</p>
-            <p class="section-copy"><strong>TabPFN is disabled by default; available only when its VM/provider is available.</strong> Selecting the input does not start the VM or guarantee forecasts.</p>
-            <div class="table-card" tabindex="0" role="region" aria-label="Prediction modes; scroll horizontally to view all columns">
-                <table class="input-table">
-                    <thead><tr><th scope="col">prediction_mode</th><th scope="col">Model / behavior</th><th scope="col">Availability</th></tr></thead>
-                    <tbody>
-                        <tr><td><code>disabled</code> / omitted</td><td>No prediction request</td><td>Default; local monitoring remains possible.</td></tr>
-                        <tr><td><code>forecast</code></td><td>TimesFM time-series forecasts</td><td>Requires the configured hosted provider.</td></tr>
-                        <tr><td><code>predict</code></td><td>TabFM tabular prediction; distinct from TabPFN</td><td>Requires the configured hosted provider.</td></tr>
-                        <tr><td><code>bqml-boosted</code></td><td>Trained BigQuery ML boosted-tree forecasts</td><td>Requires the configured trained-model provider.</td></tr>
-                        <tr><td><code>tabpfn</code></td><td>TabPFN GPU inference on a VM</td><td>Disabled by default; requires an available VM/provider. Does not start the VM.</td></tr>
-                    </tbody>
-                </table>
-            </div>
-            <p class="section-copy"><code>prediction_throttle_s</code> controls issuance cadence in elapsed-time buckets: default <code>20</code>, integer range <code>1–3600</code> seconds. It is separate from sample collection <code>interval</code> and +10/+30/+60-second forecast horizons. Queueing and provider latency can delay delivery. See the <a href="https://github.com/cdsap/build-process-watcher/blob/main/docs/prediction.md#cadence">cadence guide</a>.</p>
-            <article class="snippet-card">
-                <h3>Timeline prediction · opt in</h3>
-                <p>Request TabFM with <code>predict</code>, or substitute an active mode above. The request depends on provider availability.</p>
-                <pre tabindex="0" aria-label="Prediction workflow snippet; scroll horizontally to read"><code>- name: Build Process Watcher
+                <article class="snippet-card">
+                    <div class="snippet-head">
+                        <h3>Timeline prediction · <span class="badge-exp">Experimental</span></h3>
+                        <button type="button" class="copy-btn" data-copy-snippet>Copy</button>
+                    </div>
+                    <p>Opt-in per-process forecasts. Add <code>prediction_target: 'class_loading'</code> for +60s class-loading activity.</p>
+                    <pre tabindex="0" aria-label="Prediction workflow snippet"><code>- name: Build Process Watcher
   uses: cdsap/build-process-watcher@88f0d0b85857dd71009cf827564fb33d75769214
   with:
     prediction_mode: 'predict'
@@ -664,133 +816,94 @@
 
 - name: Build project
   run: ./gradlew clean build</code></pre>
-            </article>
-            <p class="section-copy"><a href="https://github.com/cdsap/build-process-watcher/blob/main/docs/prediction.md">Read the prediction guide →</a> · <a href="https://github.com/cdsap/build-process-watcher/blob/main/RELEASE_NOTES.md#migration">Migration from the former input →</a></p>
-        </section>
-
-        <section class="home-section">
-            <div class="section-kicker">Workflow</div>
-            <h2 class="section-heading">Built for comparing real CI behavior.</h2>
-            <p class="section-copy">The UI now centers on the three analysis loops the action supports: watch a run, replay an exported run, and compare two builds side by side.</p>
-            <div class="feature-grid">
-                <article class="feature-card">
-                    <span class="feature-number">01</span>
-                    <h3>Run dashboard</h3>
-                    <p>Track peak RSS, heap, GC time, process metadata, VM flags, and live refresh status.</p>
-                </article>
-                <article class="feature-card">
-                    <span class="feature-number">02</span>
-                    <h3>Replay JSON</h3>
-                    <p>Upload an artifact JSON file and scrub through memory and GC timelines offline.</p>
-                </article>
-                <article class="feature-card">
-                    <span class="feature-number">03</span>
-                    <h3>Compare runs</h3>
-                    <p>Overlay two exported runs with a shared elapsed timeline and per-process colors.</p>
-                </article>
-                <article class="feature-card">
-                    <span class="feature-number">04</span>
-                    <h3>Optional BigQuery export</h3>
-                    <p>Collect finished-run metrics in BigQuery when `export_to_bigquery` is enabled.</p>
                 </article>
             </div>
         </section>
 
-        <section class="home-section">
-            <div class="section-kicker">Screens</div>
-            <h2 class="section-heading">The data stays inspectable after the job finishes.</h2>
-            <div class="media-grid">
-                <article class="media-card">
-                    <img src="/reply.gif" alt="Replay JSON run demo">
-                    <div class="media-card-content">
-                        <h3>Replay exported runs</h3>
-                        <p>Use workflow artifacts without enabling remote mode.</p>
-                    </div>
-                </article>
-                <article class="media-card">
-                    <img src="/compare.gif" alt="Compare JSON runs demo">
-                    <div class="media-card-content">
-                        <h3>Compare two builds</h3>
-                        <p>Spot changes in memory pressure, GC, and process configuration.</p>
-                    </div>
-                </article>
-            </div>
-            <div class="hero-actions" style="margin-top: 1.2rem;">
-                <a href="#" id="compare-link" class="btn">Compare JSON Runs</a>
-                <a href="#" id="replay-link" class="btn secondary">Replay JSON Run</a>
-            </div>
-        </section>
+        <section class="home-section" id="prediction">
+            <div class="section-kicker">Experimental prediction</div>
+            <h2 class="section-heading">Timeline prediction modes</h2>
+            <p class="section-copy">Prediction is disabled by default. Active modes automatically enable Remote Mode. Prediction does not enable <code>export_to_bigquery</code>; enable BigQuery export separately when needed. A selected mode reports a request, not provider availability or successful inference.</p>
+            <p class="section-copy"><strong>TabPFN is disabled by default; available only when its VM/provider is available.</strong> Selecting the input does not start the VM or guarantee forecasts.</p>
+            <div class="callout"><strong>Advisory only:</strong> prediction is an opt-in advisory signal for triage, not a guaranteed OOM, timeout, or build-failure outcome. Do not use it as a production decision or reliability guarantee.</div>
 
-        <section class="home-section">
-            <div class="section-kicker">Inputs</div>
-            <h2 class="section-heading">Configuration that matters most.</h2>
-            <p class="section-copy">These inputs are independent unless noted. See the <a href="https://github.com/cdsap/build-process-watcher#inputs">README input contract</a> for backend deployment details.</p>
-            <div class="table-card" tabindex="0" role="region" aria-label="Configuration inputs; scroll horizontally to view all columns">
+            <div class="table-card" tabindex="0" role="region" aria-label="Prediction modes">
                 <table class="input-table">
                     <thead>
                         <tr>
-                            <th>Input</th>
-                            <th>Description</th>
-                            <th>Default</th>
-                            <th>Required</th>
+                            <th scope="col">prediction_mode</th>
+                            <th scope="col">Model / behavior</th>
+                            <th scope="col">Availability</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr>
-                            <td><code>remote_monitoring</code></td>
-                            <td>Enable cloud dashboard ingestion.</td>
-                            <td><code>false</code></td>
-                            <td>No</td>
-                        </tr>
-                        <tr>
-                            <td><code>export_to_bigquery</code></td>
-                            <td>Optional finished-run metrics export; requires Remote Mode (explicit or enabled by an active prediction mode).</td>
-                            <td><code>false</code></td>
-                            <td>No</td>
-                        </tr>
-                        <tr>
-                            <td><code>prediction_mode</code></td>
-                            <td>Request <code>disabled</code>, <code>forecast</code>, <code>predict</code>, <code>bqml-boosted</code>, or <code>tabpfn</code>. Active modes enable Remote Mode, not metrics export. <a href="#prediction">Modes and availability</a>.</td>
-                            <td><code>disabled</code></td>
-                            <td>No</td>
-                        </tr>
-                        <tr>
-                            <td><code>prediction_throttle_s</code></td>
-                            <td>Forecast issuance cadence in elapsed seconds; integer range 1–3600. <a href="https://github.com/cdsap/build-process-watcher/blob/main/docs/prediction.md#cadence">Cadence details</a>.</td>
-                            <td><code>20</code></td>
-                            <td>No</td>
-                        </tr>
-                        <tr>
-                            <td><code>interval</code></td>
-                            <td>Polling interval in seconds.</td>
-                            <td><code>5</code></td>
-                            <td>No</td>
-                        </tr>
-                        <tr>
-                            <td><code>disable_summary_output</code></td>
-                            <td>Suppress the GitHub Actions job summary.</td>
-                            <td><code>false</code></td>
-                            <td>No</td>
-                        </tr>
+                        <tr><td><code>disabled</code> / omitted</td><td>No prediction request</td><td>Default; local monitoring remains possible.</td></tr>
+                        <tr><td><code>forecast</code></td><td>TimesFM time-series forecasts</td><td>Requires the configured hosted provider.</td></tr>
+                        <tr><td><code>predict</code></td><td>TabFM tabular prediction; distinct from TabPFN</td><td>Requires the configured hosted provider.</td></tr>
+                        <tr><td><code>bqml-boosted</code></td><td>Trained BigQuery ML boosted-tree forecasts</td><td>Requires the configured trained-model provider (memory only).</td></tr>
+                        <tr><td><code>tabpfn</code></td><td>TabPFN GPU inference on a VM</td><td>Disabled by default; requires an available VM/provider. Does not start the VM.</td></tr>
                     </tbody>
                 </table>
             </div>
+
+            <div class="inline-links">
+                <a href="https://github.com/cdsap/build-process-watcher/blob/main/docs/prediction.md">Prediction guide →</a>
+                <a href="https://github.com/cdsap/build-process-watcher/blob/main/docs/prediction.md#cadence">Cadence details →</a>
+                <a href="https://github.com/cdsap/build-process-watcher/blob/main/docs/class-loading-prediction.md">Class-loading target →</a>
+                <a href="https://github.com/cdsap/build-process-watcher/blob/main/RELEASE_NOTES.md#migration">Migration notes →</a>
+            </div>
         </section>
 
-        <section class="home-section">
-            <div class="home-cta">
-                <div>
-                    <h2>Open a real dashboard.</h2>
-                    <p>The demo uses recorded build data so you can inspect the run UI without waiting for a workflow.</p>
-                </div>
-                <a href="#" id="demo-link" class="btn">View Example</a>
+        <section class="home-section" id="inputs">
+            <div class="section-kicker">Reference</div>
+            <h2 class="section-heading">Action inputs</h2>
+            <p class="section-copy">Complete root action inputs from <code>action.yaml</code>. See the <a href="https://github.com/cdsap/build-process-watcher#inputs">README inputs reference</a> for environment variables and backend configuration.</p>
+
+            <div class="table-card" tabindex="0" role="region" aria-label="Action inputs">
+                <table class="input-table">
+                    <thead>
+                        <tr>
+                            <th scope="col">Input</th>
+                            <th scope="col">Description</th>
+                            <th scope="col">Default</th>
+                            <th scope="col">Required</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>remote_monitoring</code></td><td>Enable cloud dashboard ingestion (24-hour retention).</td><td><code>false</code></td><td>No</td></tr>
+                        <tr><td><code>run_id</code></td><td>Custom run identifier.</td><td>Auto-generated</td><td>No</td></tr>
+                        <tr><td><code>log_file</code></td><td>Log file name for local monitoring.</td><td><code>build_process_watcher.log</code></td><td>No</td></tr>
+                        <tr><td><code>interval</code></td><td>Process polling interval in seconds.</td><td><code>5</code></td><td>No</td></tr>
+                        <tr><td><code>debug</code></td><td>Enable debug logging and attach debug logs to artifacts.</td><td><code>false</code></td><td>No</td></tr>
+                        <tr><td><code>disable_summary_output</code></td><td>Suppress GitHub Actions job summary output when Remote Mode is enabled.</td><td><code>false</code></td><td>No</td></tr>
+                        <tr><td><code>export_to_bigquery</code></td><td>Optional finished-run export to BigQuery; requires Remote Mode and backend dataset config.</td><td><code>false</code></td><td>No</td></tr>
+                        <tr><td><code>prediction_mode</code></td><td>Request <code>disabled</code>, <code>forecast</code>, <code>predict</code>, <code>bqml-boosted</code>, or <code>tabpfn</code>. Active modes enable Remote Mode.</td><td><code>disabled</code></td><td>No</td></tr>
+                        <tr><td><code>prediction_target</code></td><td><code>memory</code> (default), or experimental <code>class_loading</code> with <code>predict</code>, <code>forecast</code>, or <code>tabpfn</code>.</td><td><code>memory</code></td><td>No</td></tr>
+                        <tr><td><code>prediction_throttle_s</code></td><td>Forecast issuance cadence in elapsed seconds; integer range 1–3600.</td><td><code>20</code></td><td>No</td></tr>
+                        <tr><td><code>freshness_diagnostics</code></td><td>Opt-in collection-to-dashboard timing diagnostics; enables Remote Mode.</td><td><code>false</code></td><td>No</td></tr>
+                    </tbody>
+                </table>
             </div>
         </section>
     </main>
 
     <footer class="home-footer">
-        <p>Build Process Watcher. Free hosted reports are retained for 24 hours.</p>
+        <span>Build Process Watcher · Hosted reports are retained for 24 hours.</span>
+        <div class="home-footer-links">
+            <a href="/runs/demo.html">Demo</a>
+            <a href="/replay.html">Replay</a>
+            <a href="/compare.html">Compare</a>
+            <a href="https://github.com/cdsap/build-process-watcher">GitHub</a>
+        </div>
     </footer>
+
+    <dialog class="media-lightbox" id="media-lightbox" aria-label="Image preview">
+        <div class="media-lightbox-head">
+            <span id="media-lightbox-title">Preview</span>
+            <button type="button" class="copy-btn" id="media-lightbox-close">Close</button>
+        </div>
+        <img id="media-lightbox-img" alt="">
+    </dialog>
 
     <script src="/config.js"></script>
     <script>
@@ -804,6 +917,53 @@
             setHref('#nav-demo-link, #hero-demo-link, #demo-link', '/runs/demo.html');
             setHref('#nav-replay-link, #replay-link, #analysis-replay-link', '/replay.html');
             setHref('#nav-compare-link, #compare-link, #analysis-compare-link', '/compare.html');
+
+            // Gallery filter tabs
+            const filterButtons = document.querySelectorAll('[data-view-filter]');
+            const cards = document.querySelectorAll('[data-view-category]');
+            filterButtons.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const target = btn.getAttribute('data-view-filter');
+                    filterButtons.forEach(b => b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'));
+                    cards.forEach(card => {
+                        card.hidden = target !== 'all' && card.getAttribute('data-view-category') !== target;
+                    });
+                });
+            });
+
+            // Copy YAML snippet buttons
+            document.querySelectorAll('[data-copy-snippet]').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const code = btn.closest('.snippet-card')?.querySelector('pre code')?.textContent || '';
+                    if (!code || !navigator.clipboard) return;
+                    try {
+                        await navigator.clipboard.writeText(code.trim());
+                        const prev = btn.textContent;
+                        btn.textContent = 'Copied';
+                        setTimeout(() => { btn.textContent = prev; }, 1400);
+                    } catch {}
+                });
+            });
+
+            // Click-to-zoom lightbox
+            const lightbox = document.getElementById('media-lightbox');
+            const lightboxImg = document.getElementById('media-lightbox-img');
+            const lightboxTitle = document.getElementById('media-lightbox-title');
+            const lightboxClose = document.getElementById('media-lightbox-close');
+            if (lightbox && lightboxImg && typeof lightbox.showModal === 'function') {
+                document.querySelectorAll('img[data-lightbox-title]').forEach(img => {
+                    img.addEventListener('click', () => {
+                        lightboxImg.src = img.src;
+                        lightboxImg.alt = img.alt;
+                        lightboxTitle.textContent = img.getAttribute('data-lightbox-title') || img.alt;
+                        lightbox.showModal();
+                    });
+                });
+                lightboxClose?.addEventListener('click', () => lightbox.close());
+                lightbox.addEventListener('click', (e) => {
+                    if (e.target === lightbox) lightbox.close();
+                });
+            }
         });
 
         if (window.location.pathname.startsWith('/runs/')) {
