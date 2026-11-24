@@ -36,6 +36,19 @@ describe('replay re-render lifecycle', () => {
     expect(dashboardSource).toMatch(/const frameIndex = Number\(timeline\.value\);\s*pause\(\);\s*renderFrame\(frameIndex\);/);
     expect(dashboardSource).toContain('position.sampleIndex !== lastRenderedSampleIndex');
     expect(dashboardSource).toContain('pauseBtn.disabled = !playing;');
+    expect(dashboardSource).not.toMatch(/renderCompareSection\(samples\);\s*initReplay\(samples\);/);
+    expect(dashboardSource).toContain("downloadRuntimeChart('jit-rate-chart', 'jit-rate', 'png')");
+    expect(dashboardSource).toContain("downloadRuntimeChart('class-rate-chart', 'class-rate', 'png')");
+  });
+
+  it('offers demo load, clear, dropzone, summary KPIs, and exports on replay.html', () => {
+    const replayHtml = readPublic('replay.html');
+    expect(replayHtml).toContain('id="btn-replay-demo"');
+    expect(replayHtml).toContain('id="btn-replay-clear"');
+    expect(replayHtml).toContain('id="replay-dropzone"');
+    expect(replaySource).toContain('buildReplaySummaryHtml');
+    expect(replaySource).toContain('buildReplayProcessInfoHtml');
+    expect(replaySource).toContain('exportReplayChart');
   });
 });
 
