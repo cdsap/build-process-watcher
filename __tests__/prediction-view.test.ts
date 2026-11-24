@@ -578,8 +578,12 @@ describe('per-process memory forecasts', () => {
         ...overrides,
       };
       Object.defineProperty(el, 'innerHTML', {
+        configurable: true,
         get: () => el.__innerHTML,
-        set: (value: string) => { el.__innerHTML = String(value); },
+        set: (value: string) => {
+          el.__innerHTML = String(value);
+          el.innerHTMLWrites = (el.innerHTMLWrites || 0) + 1;
+        },
       });
       return el;
     };
@@ -693,8 +697,12 @@ describe('per-process memory forecasts', () => {
         ...overrides,
       };
       Object.defineProperty(el, 'innerHTML', {
+        configurable: true,
         get: () => el.__innerHTML,
-        set: (value: string) => { el.__innerHTML = String(value); },
+        set: (value: string) => {
+          el.__innerHTML = String(value);
+          el.innerHTMLWrites = (el.innerHTMLWrites || 0) + 1;
+        },
       });
       return el;
     };
@@ -910,8 +918,12 @@ describe('per-process memory forecasts', () => {
         ...overrides,
       };
       Object.defineProperty(el, 'innerHTML', {
+        configurable: true,
         get: () => el.__innerHTML,
-        set: (value: string) => { el.__innerHTML = String(value); },
+        set: (value: string) => {
+          el.__innerHTML = String(value);
+          el.innerHTMLWrites = (el.innerHTMLWrites || 0) + 1;
+        },
       });
       return el;
     };
@@ -1029,8 +1041,12 @@ describe('per-process memory forecasts', () => {
         ...overrides,
       };
       Object.defineProperty(el, 'innerHTML', {
+        configurable: true,
         get: () => el.__innerHTML,
-        set: (value: string) => { el.__innerHTML = String(value); },
+        set: (value: string) => {
+          el.__innerHTML = String(value);
+          el.innerHTMLWrites = (el.innerHTMLWrites || 0) + 1;
+        },
       });
       return el;
     };
@@ -1073,8 +1089,18 @@ describe('per-process memory forecasts', () => {
     expect(clock.getState().playing).toBe(true);
 
     sandbox.__now = 200; // 0.2s wall * 5x => 1s logical; sample spacing is 5s so still frame 0
+    const rendersBeforeHold = hosts[0].innerHTML;
+    const writesBeforeHold = hosts[0].innerHTMLWrites || 0;
     sandbox.__raf(sandbox.__now);
+    expect(hosts[0].innerHTMLWrites || 0).toBe(writesBeforeHold);
+    expect(hosts[0].innerHTML).toBe(rendersBeforeHold);
     expect(byId.get('forecast-replay-meta').textContent).toContain('Frame');
+
+    // Advancing past the next sample triggers exactly one SVG redraw.
+    sandbox.__now = 1100; // 1.1s wall * 5x => 5.5s logical => frame 1
+    sandbox.__raf(sandbox.__now);
+    expect(hosts[0].innerHTMLWrites || 0).toBe(writesBeforeHold + 1);
+    expect(byId.get('forecast-replay-meta').textContent).toContain('Frame 2 / 3');
 
     pauseBtn.listeners.click();
     expect(clock.getState().playing).toBe(false);
@@ -1219,5 +1245,133 @@ describe('class activity forecasts', () => {
   const isolated={...data,samples:samples.map(s=>({...s,PID:'2'}))};
   expect(view.render(isolated).html).toContain('Observed increase: Pending');
   expect(view.render({samples:[]}).html).not.toContain('Class-loading activity');
+ });
+ it('drives class-loading replay via BpwPlaybackClock without recreating speed controls', () => {
+  const sandbox: any = {
+   module: { exports: {} },
+   exports: {},
+   performance: { now: () => sandbox.__now },
+   setTimeout,
+   clearTimeout,
+   matchMedia: () => ({ matches: false }),
+   requestAnimationFrame: (cb: Function) => {
+    sandbox.__raf = cb;
+    return 1;
+   },
+   cancelAnimationFrame: () => { sandbox.__raf = null; },
+   document: { querySelector: () => null },
+   __now: 0,
+   __raf: null as null | Function,
+  };
+  sandbox.globalThis = sandbox;
+  sandbox.window = sandbox;
+  vm.runInNewContext(
+   fs.readFileSync(path.join(__dirname, '../frontend/public/playback-clock.js'), 'utf8'),
+   sandbox,
+  );
+  vm.runInNewContext(
+   fs.readFileSync(path.join(__dirname, '../frontend/public/prediction-view.js'), 'utf8'),
+   sandbox,
+  );
+  const localView = sandbox.BpwPredictionView;
+
+  const byId = new Map<string, any>();
+  const historyBtns: any[] = [];
+  const makeEl = (overrides: Record<string, any> = {}) => {
+   const el: any = {
+    value: '',
+    min: '0',
+    max: '0',
+    textContent: '',
+    __innerHTML: '',
+    dataset: {},
+    classList: { toggle: jest.fn() },
+    setAttribute: jest.fn(),
+    getAttribute: (name: string) => el.attrs?.[name] ?? null,
+    closest: (selector: string) => (selector === 'button' && el.isButton ? el : null),
+    listeners: {} as Record<string, Function>,
+    addEventListener: jest.fn((eventName: string, handler: Function) => {
+     el.listeners[eventName] = handler;
+    }),
+    removeEventListener: jest.fn((eventName: string) => {
+     delete el.listeners[eventName];
+    }),
+    querySelector: (selector: string) => {
+     const idMatch = selector.match(/^#(.+)$/);
+     if (idMatch) return byId.get(idMatch[1]) || null;
+     if (selector === '[data-activity-panel]') return byId.get('__activity-panel') || null;
+     if (selector === '.process-forecast-charts') return byId.get('__charts') || null;
+     return null;
+    },
+    querySelectorAll: (selector: string) => (
+     selector === '[data-forecast-history-mode]' ? historyBtns : []
+    ),
+    ...overrides,
+   };
+   Object.defineProperty(el, 'innerHTML', {
+    get: () => el.__innerHTML,
+    set: (value: string) => {
+     el.__innerHTML = String(value);
+     el.innerHTMLWrites = (el.innerHTMLWrites || 0) + 1;
+    },
+   });
+   return el;
+  };
+
+  const timeline = makeEl({ id: 'forecast-replay-timeline', value: String(start) });
+  const meta = makeEl({ id: 'forecast-replay-meta' });
+  const timeLabel = makeEl({ id: 'forecast-replay-time-label' });
+  const speedSelect = makeEl({ id: 'forecast-replay-speed', value: '15' });
+  const playBtn = makeEl({ id: 'btn-forecast-replay-play', isButton: true });
+  const pauseBtn = makeEl({ id: 'btn-forecast-replay-pause', isButton: true });
+  const resetBtn = makeEl({ id: 'btn-forecast-replay-reset', isButton: true });
+  const liveBtn = makeEl({ id: 'btn-forecast-view-live', isButton: true, dataset: { forecastViewMode: 'live' } });
+  const replayBtn = makeEl({ id: 'btn-forecast-view-replay', isButton: true, dataset: { forecastViewMode: 'replay' } });
+  const chartsNode = makeEl();
+  const controls = makeEl({ id: 'forecast-replay-controls' });
+  byId.set('__activity-panel', makeEl());
+  byId.set('__charts', chartsNode);
+  byId.set('forecast-replay-controls', controls);
+  byId.set('forecast-replay-timeline', timeline);
+  byId.set('forecast-replay-meta', meta);
+  byId.set('forecast-replay-time-label', timeLabel);
+  byId.set('forecast-replay-speed', speedSelect);
+  byId.set('btn-forecast-replay-play', playBtn);
+  byId.set('btn-forecast-replay-pause', pauseBtn);
+  byId.set('btn-forecast-replay-reset', resetBtn);
+  byId.set('btn-forecast-view-live', liveBtn);
+  byId.set('btn-forecast-view-replay', replayBtn);
+  const root = makeEl();
+
+  const createSpy = jest.spyOn(sandbox.BpwPlaybackClock, 'createPlaybackClock');
+  const controller = localView.bindProcessForecastView(root, {
+   data: { ...data, finished: true },
+   initialMode: 'replay',
+  });
+  expect(root.innerHTMLWrites || 0).toBe(0);
+
+  // Start playback and change speed mid-play without replacing root.innerHTML.
+  root.listeners.click({ target: playBtn });
+  expect(createSpy).toHaveBeenCalledTimes(1);
+  sandbox.__now = 1_000; // 1s wall * 15x = 15s logical => frame 4 (index 3)
+  sandbox.__raf(sandbox.__now);
+  expect(meta.textContent).toBe('Frame 4 / 25');
+  expect(root.innerHTMLWrites || 0).toBe(0);
+
+  speedSelect.value = '50';
+  root.listeners.change({ target: speedSelect });
+  sandbox.__now = 2_000; // +1s wall * 50x = +50s => 65s logical => frame 14 (index 13)
+  sandbox.__raf(sandbox.__now);
+  expect(meta.textContent).toBe('Frame 14 / 25');
+  expect(root.innerHTMLWrites || 0).toBe(0);
+
+  // Scrubbing via input event pauses and jumps without snapping back.
+  timeline.value = String(start + 10_000);
+  root.listeners.input({ target: timeline });
+  expect(meta.textContent).toBe('Frame 3 / 25');
+  expect(timeline.value).toBe(String(start + 10_000));
+
+  controller.stop();
+  createSpy.mockRestore();
  });
 });

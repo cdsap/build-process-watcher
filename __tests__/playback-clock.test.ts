@@ -104,4 +104,39 @@ describe('playback clock', () => {
     clock.seekTo(5_500);
     expect(clock.getState().sampleIndex).toBe(2);
   });
+
+  it('clamps non-monotonic rAF timestamps and preserves cursor on mid-frame speed changes', () => {
+    const { api, sandbox } = loadClockDirect();
+    const timestamps = [1_000, 11_000, 21_000, 31_000];
+    const positions: any[] = [];
+    sandbox.__now = 1_000;
+    const clock = api.createPlaybackClock({
+      timestamps,
+      speed: 5,
+      now: () => sandbox.__now,
+      requestAnimationFrame: (cb: Function) => {
+        sandbox.__raf = cb;
+        return 1;
+      },
+      cancelAnimationFrame: () => { sandbox.__raf = null; },
+      onPosition: (position: any) => positions.push(position),
+    });
+
+    clock.play();
+    // Simulate a browser rAF timestamp slightly earlier than performance.now() at play().
+    sandbox.__raf(995);
+    expect(clock.getState().cursorMs).toBe(0);
+    expect(clock.getState().sampleIndex).toBe(0);
+
+    // Advance wall clock before changing speed mid-frame (without an intervening rAF).
+    sandbox.__now = 1_400; // 400ms at 5x => 2_000ms logical
+    clock.setSpeed(50);
+    expect(clock.getState().cursorMs).toBe(2_000);
+
+    sandbox.__now = 1_600; // +200ms at 50x => +10_000ms logical
+    sandbox.__raf(sandbox.__now);
+    expect(clock.getState().cursorMs).toBe(12_000);
+    expect(clock.getState().sampleIndex).toBe(1);
+    expect(positions.every((pos) => pos.cursorMs >= 0 && pos.sampleIndex >= 0)).toBe(true);
+  });
 });

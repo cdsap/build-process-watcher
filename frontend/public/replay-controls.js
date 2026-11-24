@@ -143,10 +143,13 @@
                 }
                 if (els.meta) els.meta.textContent = formatMeta(position, timestamps);
                 if (els.timeLabel) els.timeLabel.textContent = formatTime(position, timestamps);
-                if (position.sampleIndex !== lastSampleIndex || position.playing === false) {
+                const shouldRenderFrame = timelineMode !== 'frame'
+                    || position.sampleIndex !== lastSampleIndex
+                    || position.playing === false;
+                if (shouldRenderFrame) {
                     lastSampleIndex = position.sampleIndex;
+                    onFrame(position);
                 }
-                onFrame(position);
             },
             onStateChange: opts.onStateChange,
         });

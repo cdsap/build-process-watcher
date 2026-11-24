@@ -22,6 +22,21 @@ describe('replay re-render lifecycle', () => {
     expect(replaySource).toMatch(/BpwBuildStory\.init\(\{\s*samples,\s*replayData: data,/);
     expect(replaySource.match(/buildReplayData\(/g) || []).toHaveLength(1);
   });
+
+  it('reads timeline value before pause and avoids per-frame resize thrashing', () => {
+    expect(replaySource).toMatch(/const targetMs = Number\(timeline\.value\);\s*if \(clock\.getState\(\)\.playing\) pause\(\);\s*coalescer\.cancel\(\);\s*clock\.seekTo\(targetMs\);/);
+    expect(replaySource).not.toMatch(/initUnifiedReplay\([\s\S]*renderFrame\(0\);/);
+    expect(replaySource).toContain('if (chartControlsBound) return;');
+  });
+
+  it('uses BpwPlaybackClock for run-dashboard counter replay and reads timeline before pause', () => {
+    const dashboardSource = readPublic('run-dashboard.js');
+    expect(dashboardSource).not.toMatch(/playTimer\s*=\s*setTimeout/);
+    expect(dashboardSource).toMatch(/const targetMs = Number\(timeline\.value\);\s*if \(playing\) pause\(\);\s*coalescer\?\.cancel\(\);\s*clock\.seekTo\(targetMs\);/);
+    expect(dashboardSource).toMatch(/const frameIndex = Number\(timeline\.value\);\s*pause\(\);\s*renderFrame\(frameIndex\);/);
+    expect(dashboardSource).toContain('position.sampleIndex !== lastRenderedSampleIndex');
+    expect(dashboardSource).toContain('pauseBtn.disabled = !playing;');
+  });
 });
 
 describe('shared replayData reuse in studio and story', () => {
