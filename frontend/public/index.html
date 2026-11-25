@@ -19,26 +19,24 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="stylesheet" href="/bpw-ui.css">
     <style>
-        .home-shell {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 1rem 1.25rem 3rem;
+        body {
+            background: #f8f9f6;
+            background-image: none;
+        }
+
+        .home-nav-wrap {
+            border-bottom: 1px solid var(--bpw-line);
+            background: #fff;
         }
 
         .home-nav {
-            position: sticky;
-            top: 0.75rem;
-            z-index: 40;
+            max-width: 1140px;
+            margin: 0 auto;
+            padding: 0.8rem 1.25rem;
             display: flex;
             align-items: center;
             justify-content: space-between;
             gap: 1rem;
-            padding: 0.7rem 1rem;
-            border: 1px solid rgba(22, 26, 29, 0.1);
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.92);
-            box-shadow: 0 8px 28px rgba(22, 26, 29, 0.06);
-            backdrop-filter: blur(14px);
         }
 
         .home-brand {
@@ -46,126 +44,97 @@
             align-items: center;
             gap: 0.5rem;
             color: var(--bpw-ink);
-            font-weight: 800;
-            font-size: 0.98rem;
+            font-weight: 700;
+            font-size: 0.95rem;
+            letter-spacing: -0.01em;
             text-decoration: none;
             white-space: nowrap;
         }
 
-        .home-brand-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 999px;
-            background: var(--bpw-teal);
-            box-shadow: 0 0 0 3px rgba(8, 127, 140, 0.16);
+        .home-brand img {
+            width: 18px;
+            height: 18px;
+            display: block;
         }
 
         .home-nav-links {
             display: flex;
             align-items: center;
-            gap: 0.25rem;
+            gap: 1.1rem;
             flex-wrap: wrap;
         }
 
         .home-nav-links a {
-            padding: 0.38rem 0.65rem;
-            border-radius: 6px;
             color: var(--bpw-muted);
-            font-size: 0.88rem;
-            font-weight: 700;
+            font-size: 0.875rem;
+            font-weight: 500;
             text-decoration: none;
         }
 
         .home-nav-links a:hover {
-            background: rgba(8, 127, 140, 0.08);
             color: var(--bpw-ink);
         }
 
         .home-nav-links a.nav-tool {
             color: var(--bpw-teal);
+            font-weight: 600;
+        }
+
+        .home-shell {
+            max-width: 1140px;
+            margin: 0 auto;
+            padding: 2.25rem 1.25rem 3.5rem;
         }
 
         .home-hero {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
-            gap: 1.5rem;
-            align-items: center;
-            margin-top: 1.5rem;
-            padding: 1.5rem;
-            border: 1px solid rgba(22, 26, 29, 0.09);
-            border-radius: 10px;
-            background: rgba(255, 255, 255, 0.92);
-            box-shadow: var(--bpw-shadow);
-        }
-
-        .version-pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.4rem;
-            padding: 0.25rem 0.6rem;
-            border: 1px solid rgba(8, 127, 140, 0.24);
-            border-radius: 999px;
-            background: rgba(8, 127, 140, 0.08);
-            color: var(--bpw-teal);
-            font-size: 0.78rem;
-            font-weight: 700;
-        }
-
-        .badge-exp {
-            display: inline-flex;
-            align-items: center;
-            padding: 0.14rem 0.5rem;
-            border: 1px solid rgba(184, 132, 20, 0.34);
-            border-radius: 999px;
-            background: #fff9e8;
-            color: var(--bpw-gold);
-            font-size: 0.74rem;
-            font-weight: 700;
-            vertical-align: middle;
+            grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.25fr);
+            gap: 2rem;
+            align-items: start;
+            padding-bottom: 2.5rem;
+            border-bottom: 1px solid var(--bpw-line);
         }
 
         .home-hero h1 {
-            margin: 0.75rem 0 0;
+            margin: 0;
             color: var(--bpw-ink) !important;
-            font-size: clamp(1.85rem, 3.2vw, 2.55rem) !important;
-            line-height: 1.12;
-            font-weight: 820 !important;
+            font-size: clamp(1.75rem, 2.8vw, 2.25rem) !important;
+            line-height: 1.16;
+            font-weight: 700 !important;
+            letter-spacing: -0.02em !important;
         }
 
         .home-hero-lead {
-            margin: 0.75rem 0 0;
+            margin: 0.85rem 0 0;
             color: var(--bpw-muted);
-            font-size: 1rem;
-            line-height: 1.55;
+            font-size: 0.98rem;
+            line-height: 1.6;
         }
 
-        .hero-chips {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.4rem;
-            margin-top: 1rem;
-        }
-
-        .hero-chip {
-            padding: 0.22rem 0.55rem;
-            border: 1px solid var(--bpw-line);
-            border-radius: 6px;
-            background: var(--bpw-panel-soft);
-            color: var(--bpw-ink);
-            font-size: 0.8rem;
-            font-weight: 650;
+        .home-hero-meta {
+            margin: 0.85rem 0 0;
+            color: var(--bpw-muted);
+            font-size: 0.82rem;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
         }
 
         .hero-actions {
             display: flex;
-            gap: 0.55rem;
+            gap: 0.6rem;
             flex-wrap: wrap;
-            margin-top: 1.15rem;
+            margin-top: 1.25rem;
+        }
+
+        .hero-actions .btn {
+            box-shadow: none;
+            font-weight: 600;
+            border-radius: 6px;
         }
 
         .hero-preview {
+            margin: 0;
             border: 1px solid var(--bpw-line);
-            border-radius: 8px;
+            border-radius: 6px;
             background: #fff;
             overflow: hidden;
         }
@@ -174,122 +143,96 @@
             display: block;
             width: 100%;
             height: auto;
-            background: #fff;
             cursor: zoom-in;
         }
 
-        .hero-preview-bar {
+        .hero-preview figcaption {
             display: flex;
             justify-content: space-between;
             align-items: center;
             gap: 0.75rem;
             padding: 0.55rem 0.8rem;
             border-top: 1px solid var(--bpw-line);
-            background: var(--bpw-panel-soft);
+            background: #fafbf9;
             font-size: 0.82rem;
             color: var(--bpw-muted);
         }
 
-        .hero-preview-bar a {
+        .hero-preview figcaption a {
             color: var(--bpw-teal);
-            font-weight: 700;
+            font-weight: 600;
             text-decoration: none;
-            white-space: nowrap;
+        }
+
+        .hero-preview figcaption a:hover {
+            text-decoration: underline;
         }
 
         .home-section {
-            margin-top: 2.75rem;
-            scroll-margin-top: 5.5rem;
+            padding-top: 2.5rem;
+            margin-top: 0;
+            scroll-margin-top: 1.5rem;
         }
 
-        .section-head {
-            display: flex;
-            align-items: flex-end;
-            justify-content: space-between;
-            gap: 1rem;
-            flex-wrap: wrap;
-        }
-
-        .section-kicker {
-            color: var(--bpw-coral);
-            font-size: 0.74rem;
-            font-weight: 800;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
+        .home-section + .home-section {
+            margin-top: 2.5rem;
+            border-top: 1px solid var(--bpw-line);
         }
 
         .section-heading {
-            margin: 0.2rem 0 0;
+            margin: 0;
             color: var(--bpw-ink);
-            font-size: clamp(1.35rem, 2.3vw, 1.85rem);
-            line-height: 1.18;
-            font-weight: 800;
+            font-size: 1.35rem;
+            line-height: 1.25;
+            font-weight: 700;
+            letter-spacing: -0.015em;
         }
 
         .section-copy {
-            max-width: 780px;
-            margin: 0.55rem 0 0;
+            max-width: 74ch;
+            margin: 0.5rem 0 0;
             color: var(--bpw-muted);
-            font-size: 0.94rem;
+            font-size: 0.93rem;
+            line-height: 1.58;
         }
 
-        .filter-tabs {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.4rem;
-        }
-
-        .filter-tab {
-            padding: 0.36rem 0.75rem;
-            border: 1px solid var(--bpw-line);
-            border-radius: 6px;
-            background: #fff;
-            color: var(--bpw-muted);
-            font-size: 0.84rem;
-            font-weight: 700;
-            cursor: pointer;
-        }
-
-        .filter-tab[aria-pressed="true"] {
-            border-color: var(--bpw-teal);
-            background: rgba(8, 127, 140, 0.1);
+        .section-copy a {
             color: var(--bpw-teal);
+            text-decoration: none;
+        }
+
+        .section-copy a:hover {
+            text-decoration: underline;
         }
 
         .gallery-grid {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 1rem;
-            margin-top: 1.15rem;
+            gap: 1.25rem;
+            margin-top: 1.25rem;
         }
 
         .gallery-card {
             display: flex;
             flex-direction: column;
-            border: 1px solid rgba(22, 26, 29, 0.09);
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.95);
-            box-shadow: 0 8px 26px rgba(30, 38, 31, 0.05);
+            border: 1px solid var(--bpw-line);
+            border-radius: 6px;
+            background: #fff;
             overflow: hidden;
-        }
-
-        .gallery-card[hidden] {
-            display: none;
         }
 
         .gallery-media {
             border-bottom: 1px solid var(--bpw-line);
             background: #fff;
-            padding: 0.45rem;
+            padding: 0.4rem;
         }
 
         .gallery-media img {
             display: block;
             width: 100%;
-            height: 290px;
+            height: 270px;
             object-fit: contain;
             object-position: center;
-            background: #fff;
             cursor: zoom-in;
         }
 
@@ -297,63 +240,95 @@
             display: flex;
             flex: 1;
             flex-direction: column;
-            gap: 0.45rem;
-            padding: 0.95rem 1rem;
+            gap: 0.35rem;
+            padding: 0.85rem 1rem 0.95rem;
         }
 
-        .gallery-title-row {
+        .gallery-head {
             display: flex;
-            align-items: center;
+            align-items: baseline;
             justify-content: space-between;
-            gap: 0.5rem;
+            gap: 0.75rem;
         }
 
         .gallery-body h3 {
             margin: 0;
             color: var(--bpw-ink);
-            font-size: 1rem;
-            font-weight: 800;
+            font-size: 0.96rem;
+            font-weight: 650;
         }
 
         .gallery-body p {
             margin: 0;
             color: var(--bpw-muted);
-            font-size: 0.89rem;
-            line-height: 1.48;
+            font-size: 0.875rem;
+            line-height: 1.5;
         }
 
-        .gallery-footer {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 0.75rem;
-            margin-top: auto;
-            padding-top: 0.55rem;
-            font-size: 0.84rem;
-        }
-
-        .gallery-footer a {
+        .gallery-link {
             color: var(--bpw-teal);
-            font-weight: 750;
+            font-size: 0.84rem;
+            font-weight: 600;
             text-decoration: none;
+            white-space: nowrap;
         }
 
-        .gallery-footer a:hover {
+        .gallery-link:hover {
             text-decoration: underline;
         }
 
-        .media-tag {
+        .summary-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.85fr);
+            gap: 1.25rem;
+            align-items: center;
+            margin-top: 1.25rem;
+            padding: 1rem;
+            border: 1px solid var(--bpw-line);
+            border-radius: 6px;
+            background: #fff;
+        }
+
+        .summary-row img {
+            display: block;
+            width: 100%;
+            height: auto;
+            border: 1px solid #e7ebe4;
+            border-radius: 4px;
+            cursor: zoom-in;
+        }
+
+        .summary-row h3 {
+            margin: 0;
+            font-size: 0.98rem;
+            font-weight: 650;
+            color: var(--bpw-ink);
+        }
+
+        .summary-row p {
+            margin: 0.45rem 0 0;
+            font-size: 0.89rem;
             color: var(--bpw-muted);
-            font-size: 0.75rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
+            line-height: 1.55;
+        }
+
+        .summary-row a {
+            display: inline-block;
+            margin-top: 0.7rem;
+            color: var(--bpw-teal);
+            font-size: 0.86rem;
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .summary-row a:hover {
+            text-decoration: underline;
         }
 
         .snippet-grid {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 1rem;
+            gap: 1.1rem;
             margin-top: 1.15rem;
         }
 
@@ -361,10 +336,9 @@
         .table-card {
             min-width: 0;
             padding: 1rem;
-            border: 1px solid rgba(22, 26, 29, 0.09);
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.95);
-            box-shadow: 0 8px 26px rgba(30, 38, 31, 0.05);
+            border: 1px solid var(--bpw-line);
+            border-radius: 6px;
+            background: #fff;
         }
 
         .snippet-head {
@@ -377,65 +351,71 @@
         .snippet-card h3 {
             margin: 0;
             color: var(--bpw-ink);
-            font-size: 0.98rem;
-            font-weight: 800;
+            font-size: 0.94rem;
+            font-weight: 650;
         }
 
         .snippet-card p {
-            margin: 0.4rem 0 0;
+            margin: 0.35rem 0 0;
             color: var(--bpw-muted);
-            font-size: 0.88rem;
+            font-size: 0.86rem;
+            line-height: 1.48;
         }
 
         .copy-btn {
-            padding: 0.24rem 0.55rem;
+            padding: 0.2rem 0.55rem;
             border: 1px solid var(--bpw-line);
-            border-radius: 6px;
-            background: var(--bpw-panel-soft);
-            color: var(--bpw-ink);
+            border-radius: 4px;
+            background: #fafbf9;
+            color: var(--bpw-muted);
             font-size: 0.76rem;
-            font-weight: 700;
+            font-weight: 600;
             cursor: pointer;
         }
 
         .copy-btn:hover {
-            border-color: var(--bpw-teal);
-            color: var(--bpw-teal);
+            border-color: var(--bpw-ink);
+            color: var(--bpw-ink);
         }
 
         pre {
             max-width: 100%;
-            margin: 0.75rem 0 0;
-            padding: 0.85rem;
+            margin: 0.7rem 0 0;
+            padding: 0.75rem 0.85rem;
             overflow-x: auto;
-            border-radius: 7px;
-            background: #161a1d;
-            color: #e8ece7;
-            font-size: 0.82rem;
-            line-height: 1.48;
+            border-radius: 5px;
+            background: #1b2024;
+            color: #e6ebe6;
+            font-size: 0.75rem;
+            line-height: 1.5;
         }
 
         code {
-            font-family: "SF Mono", Monaco, Consolas, monospace;
-            font-size: 0.9em;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.88em;
+        }
+
+        .exp-note {
+            color: var(--bpw-gold);
+            font-size: 0.8rem;
+            font-weight: 600;
         }
 
         .callout {
             margin-top: 0.9rem;
-            padding: 0.85rem 1rem;
-            border-left: 4px solid var(--bpw-gold);
-            border-radius: 0 8px 8px 0;
-            background: #fff9e8;
+            padding: 0.75rem 0.95rem;
+            border: 1px solid #ead8a8;
+            border-left: 3px solid var(--bpw-gold);
+            border-radius: 4px;
+            background: #fdfaf0;
             color: var(--bpw-ink);
-            font-size: 0.9rem;
-        }
-
-        .callout strong {
-            color: var(--bpw-gold);
+            font-size: 0.88rem;
+            line-height: 1.52;
         }
 
         .table-card {
-            margin-top: 1rem;
+            margin-top: 1.1rem;
+            padding: 0;
             overflow-x: auto;
             -webkit-overflow-scrolling: touch;
         }
@@ -444,13 +424,13 @@
             width: 100%;
             min-width: 680px;
             border-collapse: collapse;
-            font-size: 0.89rem;
+            font-size: 0.875rem;
         }
 
         .input-table th,
         .input-table td {
-            padding: 0.68rem 0.75rem;
-            border-bottom: 1px solid var(--bpw-line);
+            padding: 0.65rem 0.85rem;
+            border-bottom: 1px solid #e7ebe4;
             text-align: left;
             vertical-align: top;
         }
@@ -460,24 +440,25 @@
         }
 
         .input-table th {
+            background: #fafbf9;
             color: var(--bpw-muted);
-            font-size: 0.74rem;
-            font-weight: 800;
-            letter-spacing: 0.06em;
+            font-size: 0.75rem;
+            font-weight: 650;
+            letter-spacing: 0.04em;
             text-transform: uppercase;
         }
 
         .inline-links {
             display: flex;
             flex-wrap: wrap;
-            gap: 0.85rem;
-            margin-top: 0.85rem;
-            font-size: 0.9rem;
+            gap: 1.1rem;
+            margin-top: 0.9rem;
+            font-size: 0.875rem;
         }
 
         .inline-links a {
             color: var(--bpw-teal);
-            font-weight: 700;
+            font-weight: 600;
             text-decoration: none;
         }
 
@@ -486,17 +467,17 @@
         }
 
         .home-footer {
-            max-width: 1200px;
-            margin: 2rem auto 0;
+            max-width: 1140px;
+            margin: 0 auto;
             padding: 1.25rem 1.25rem 2.25rem;
-            border-top: 1px solid rgba(22, 26, 29, 0.1);
+            border-top: 1px solid var(--bpw-line);
             display: flex;
             justify-content: space-between;
             align-items: center;
             flex-wrap: wrap;
             gap: 0.75rem;
             color: var(--bpw-muted);
-            font-size: 0.86rem;
+            font-size: 0.84rem;
         }
 
         .home-footer-links {
@@ -506,25 +487,26 @@
         }
 
         .home-footer-links a {
-            color: var(--bpw-teal);
-            font-weight: 700;
+            color: var(--bpw-muted);
             text-decoration: none;
         }
 
+        .home-footer-links a:hover {
+            color: var(--bpw-ink);
+        }
+
         .media-lightbox {
-            max-width: min(1160px, 94vw);
+            max-width: min(1140px, 94vw);
             max-height: 92vh;
             margin: auto;
             padding: 0.75rem;
             border: 1px solid var(--bpw-line);
-            border-radius: 10px;
+            border-radius: 6px;
             background: #fff;
-            box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
         }
 
         .media-lightbox::backdrop {
-            background: rgba(22, 26, 29, 0.7);
-            backdrop-filter: blur(4px);
+            background: rgba(22, 26, 29, 0.65);
         }
 
         .media-lightbox-head {
@@ -533,8 +515,8 @@
             align-items: center;
             gap: 1rem;
             margin-bottom: 0.6rem;
-            font-size: 0.9rem;
-            font-weight: 700;
+            font-size: 0.88rem;
+            font-weight: 600;
             color: var(--bpw-ink);
         }
 
@@ -550,32 +532,29 @@
         @media (max-width: 900px) {
             .home-hero,
             .gallery-grid,
+            .summary-row,
             .snippet-grid {
                 grid-template-columns: 1fr;
             }
         }
 
         @media (max-width: 600px) {
-            .home-shell {
-                padding: 0.75rem 0.85rem 2.25rem;
-            }
-
             .home-nav {
-                position: static;
                 flex-direction: column;
                 align-items: flex-start;
+                gap: 0.55rem;
             }
 
-            .home-hero {
-                padding: 1.1rem;
+            .home-shell {
+                padding: 1.5rem 0.9rem 2.5rem;
             }
         }
     </style>
 </head>
 <body>
-    <main class="home-shell">
+    <div class="home-nav-wrap">
         <nav class="home-nav" aria-label="Primary">
-            <a class="home-brand" href="/"><span class="home-brand-dot" aria-hidden="true"></span>Build Process Watcher</a>
+            <a class="home-brand" href="/"><img src="/favicon.svg" alt="" aria-hidden="true">Build Process Watcher</a>
             <div class="home-nav-links">
                 <a href="#views">Views</a>
                 <a href="#quick-start">Quick Start</a>
@@ -587,175 +566,101 @@
                 <a href="https://github.com/cdsap/build-process-watcher">GitHub</a>
             </div>
         </nav>
+    </div>
 
+    <main class="home-shell">
         <section class="home-hero">
             <div>
-                <span class="version-pill">Snippets: development ref 88f0d0b · v0.8.0 unreleased</span>
-                <h1>Monitor Gradle &amp; Kotlin JVM build processes in CI</h1>
-                <p class="home-hero-lead">Track <code>GradleDaemon</code>, <code>GradleWorkerMain</code>, and <code>KotlinCompileDaemon</code> heap, RSS, garbage collection, JIT compilation, and class loading with zero Java-agent setup. Inspect builds offline via JSON artifacts or stream live for 24 hours.</p>
-                <div class="hero-chips">
-                    <span class="hero-chip">Heap &amp; RSS</span>
-                    <span class="hero-chip">GC Time</span>
-                    <span class="hero-chip">JIT &amp; Classes</span>
-                    <span class="hero-chip">VM Flags</span>
-                    <span class="hero-chip">JSON · CSV · SVG</span>
-                </div>
+                <h1>Build Process Watcher</h1>
+                <p class="home-hero-lead">GitHub Action and browser dashboard for monitoring <code>GradleDaemon</code>, <code>GradleWorkerMain</code>, and <code>KotlinCompileDaemon</code> heap, RSS, GC time, JIT compilation, class loading, and VM flags, without injecting a Java agent.</p>
+                <p class="home-hero-lead">Export artifacts locally (JSON, CSV, SVGs, job summary) or stream live runs with 24-hour retention.</p>
+                <p class="home-hero-meta">Snippets: development ref 88f0d0b (v0.8.0 unreleased)</p>
                 <div class="hero-actions">
                     <a href="#" id="hero-demo-link" class="btn">Open Demo</a>
                     <a href="#" id="replay-link" class="btn secondary">Replay JSON</a>
                     <a href="#" id="compare-link" class="btn secondary">Compare Runs</a>
                 </div>
             </div>
-            <div class="hero-preview">
-                <img src="/media/run-memory-replay.gif" alt="Classic Run Dashboard replaying Heap and RSS memory usage over time" data-lightbox-title="Run Dashboard — Memory Usage Over Time (Heap + RSS)">
-                <div class="hero-preview-bar">
-                    <span>Classic Run Dashboard · Heap + RSS replay</span>
-                    <a href="#" id="demo-link">Inspect live demo →</a>
-                </div>
-            </div>
+            <figure class="hero-preview">
+                <img src="/media/run-memory-replay.gif" alt="Run Dashboard replaying Heap and RSS memory usage over time" data-lightbox-title="Run Dashboard — Heap and RSS replay">
+                <figcaption>
+                    <span>Heap + RSS replay from a recorded Gradle build</span>
+                    <a href="#" id="demo-link">Open interactive demo</a>
+                </figcaption>
+            </figure>
         </section>
 
         <section class="home-section" id="views">
-            <div class="section-head">
-                <div>
-                    <div class="section-kicker">Views &amp; capabilities</div>
-                    <h2 class="section-heading">Every mode and view in the current UI</h2>
-                </div>
-                <div class="filter-tabs" role="group" aria-label="Filter views">
-                    <button type="button" class="filter-tab" data-view-filter="all" aria-pressed="true">All</button>
-                    <button type="button" class="filter-tab" data-view-filter="dashboard" aria-pressed="false">Dashboard</button>
-                    <button type="button" class="filter-tab" data-view-filter="offline" aria-pressed="false">Offline tools</button>
-                    <button type="button" class="filter-tab" data-view-filter="predictions" aria-pressed="false">Predictions</button>
-                </div>
-            </div>
-            <p class="section-copy">Click any GIF or screenshot to inspect full size. All views work from the same collector output; Replay and Compare run entirely in the browser without Remote Mode.</p>
+            <h2 class="section-heading">Views</h2>
+            <p class="section-copy">Replay and Compare run locally in the browser from exported JSON; Remote Mode is not required. Click any screenshot or GIF to enlarge.</p>
 
             <div class="gallery-grid" id="analysis-tools">
-                <article class="gallery-card" data-view-category="dashboard">
+                <article class="gallery-card">
                     <div class="gallery-media">
-                        <img src="/media/run-metrics-overview.png" loading="lazy" alt="GC time, JIT compilation, class loading, and process VM flags in the Run Dashboard" data-lightbox-title="Run Dashboard — GC, JIT, Classes &amp; VM Flags">
+                        <img src="/media/run-metrics-overview.png" loading="lazy" alt="GC time chart and Process Information cards with expanded JVM flags" data-lightbox-title="GC Time, JIT, Classes, and VM Flags">
                     </div>
                     <div class="gallery-body">
-                        <div class="gallery-title-row">
-                            <h3>Run Dashboard · GC, JIT, Classes &amp; VM Flags</h3>
-                            <span class="media-tag">Remote / Demo</span>
+                        <div class="gallery-head">
+                            <h3>GC, JIT, Classes &amp; VM Flags</h3>
+                            <a class="gallery-link" href="/runs/demo.html">Open Demo</a>
                         </div>
-                        <p>Inspect per-process garbage collection time, JIT compiled methods, loaded classes, and captured JVM flags (GC algorithm, heap bounds, metaspace) alongside peak memory.</p>
-                        <div class="gallery-footer">
-                            <a href="/runs/demo.html">Open Demo →</a>
-                            <span class="media-tag">PNG</span>
-                        </div>
+                        <p>Per-process GC time, compiled methods, loaded classes, and captured JVM flags (GC algorithm, heap limits, metaspace).</p>
                     </div>
                 </article>
 
-                <article class="gallery-card" data-view-category="dashboard">
+                <article class="gallery-card">
                     <div class="gallery-media">
-                        <img src="/media/studio-and-story.png" loading="lazy" alt="Chart Studio dual-axis overlay and Build Story detected phases" data-lightbox-title="Chart Studio &amp; Build Story">
+                        <img src="/media/studio-and-story.png" loading="lazy" alt="Chart Studio dual-axis overlay and Build Story phase timeline" data-lightbox-title="Chart Studio and Build Story">
                     </div>
                     <div class="gallery-body">
-                        <div class="gallery-title-row">
+                        <div class="gallery-head">
                             <h3>Chart Studio &amp; Build Story</h3>
-                            <span class="media-tag">Run Dashboard</span>
+                            <a class="gallery-link" href="/runs/demo.html">Open Demo</a>
                         </div>
-                        <p>Overlay two metrics on dual axes (such as Memory and GC) in Chart Studio, or switch to Build Story for auto-detected build phases and peak pressure callouts.</p>
-                        <div class="gallery-footer">
-                            <a href="/runs/demo.html">Try in Demo →</a>
-                            <span class="media-tag">PNG</span>
-                        </div>
+                        <p>Overlay two metrics on dual axes (Memory × GC) or step through detected build phases in the same run view.</p>
                     </div>
                 </article>
 
-                <article class="gallery-card" data-view-category="offline">
+                <article class="gallery-card">
                     <div class="gallery-media">
-                        <img src="/media/replay-offline.gif" loading="lazy" alt="Replay JSON Run page loading demo data and scrubbing the timeline" data-lightbox-title="Replay — Offline JSON Timeline">
+                        <img src="/media/replay-offline.gif" loading="lazy" alt="Replay JSON Run page loading demo data and scrubbing the timeline" data-lightbox-title="Replay — Offline JSON">
                     </div>
                     <div class="gallery-body">
-                        <div class="gallery-title-row">
-                            <h3>Replay · Offline JSON</h3>
-                            <span class="media-tag">No backend</span>
+                        <div class="gallery-head">
+                            <h3>Replay</h3>
+                            <a class="gallery-link" href="#" id="analysis-replay-link">Open Replay</a>
                         </div>
-                        <p>Drop a single exported <code>build_process_watcher.json</code> (or load the built-in demo) to scrub memory, GC, JIT, and class-loading timelines offline at 5x–50x speed.</p>
-                        <div class="gallery-footer">
-                            <a href="#" id="analysis-replay-link">Open Replay →</a>
-                            <span class="media-tag">GIF</span>
-                        </div>
+                        <p>Drop any <code>build_process_watcher.json</code> artifact (or load the built-in demo) to scrub memory, GC, JIT, and class timelines at 5x–50x speed.</p>
                     </div>
                 </article>
 
-                <article class="gallery-card" data-view-category="offline">
+                <article class="gallery-card">
                     <div class="gallery-media">
-                        <img src="/media/compare-runs.gif" loading="lazy" alt="Compare JSON Runs showing delta KPI strip, shared Y-axis side-by-side charts, and split view" data-lightbox-title="Compare — Two Builds Side by Side">
+                        <img src="/media/compare-runs.gif" loading="lazy" alt="Compare JSON Runs showing delta KPI strip, Side-by-Side charts, and Split View" data-lightbox-title="Compare — Two Runs">
                     </div>
                     <div class="gallery-body">
-                        <div class="gallery-title-row">
-                            <h3>Compare · Two Builds Side by Side</h3>
-                            <span class="media-tag">No backend</span>
+                        <div class="gallery-head">
+                            <h3>Compare</h3>
+                            <a class="gallery-link" href="#" id="analysis-compare-link">Open Compare</a>
                         </div>
-                        <p>Upload two JSON runs to inspect top delta KPIs, shared-scale Side-by-Side or Split timelines, and per-process GC/JVM flag diffs without enabling Remote Mode.</p>
-                        <div class="gallery-footer">
-                            <a href="#" id="analysis-compare-link">Open Compare →</a>
-                            <span class="media-tag">GIF</span>
-                        </div>
+                        <p>Diff two exported JSON runs with top delta KPIs, shared-scale Side-by-Side or Split timelines, and GC/VM flag comparison.</p>
                     </div>
                 </article>
+            </div>
 
-                <article class="gallery-card" data-view-category="offline">
-                    <div class="gallery-media">
-                        <img src="/media/ci-summary.png" loading="lazy" alt="Local Mode GitHub Actions job summary showing checkpoints, per-process statistics, and artifact list" data-lightbox-title="Local Mode — GitHub Actions Job Summary">
-                    </div>
-                    <div class="gallery-body">
-                        <div class="gallery-title-row">
-                            <h3>Local Mode · GitHub Actions Summary</h3>
-                            <span class="media-tag">Artifacts only</span>
-                        </div>
-                        <p>Default mode writes a Mermaid checkpoint flow and per-process table to the job summary plus <code>JSON</code>, <code>CSV</code>, and <code>SVG</code> artifacts directly in the workflow.</p>
-                        <div class="gallery-footer">
-                            <a href="#quick-start">Local Mode YAML →</a>
-                            <span class="media-tag">PNG</span>
-                        </div>
-                    </div>
-                </article>
-
-                <article class="gallery-card" data-view-category="predictions">
-                    <div class="gallery-media">
-                        <img src="/media/predictions-memory.gif" loading="lazy" alt="Experimental memory prediction chart showing +10s, +30s, and +60s Heap and RSS forecasts" data-lightbox-title="Predictions (Experimental) — Memory +10/+30/+60s">
-                    </div>
-                    <div class="gallery-body">
-                        <div class="gallery-title-row">
-                            <h3>Memory Predictions (+10 / +30 / +60s)</h3>
-                            <span class="badge-exp">Experimental</span>
-                        </div>
-                        <p>Opt-in timeline forecasts overlaid on actual Heap and RSS per process, with Latest, Last 3, and All issuance replay controls. Disabled by default.</p>
-                        <div class="gallery-footer">
-                            <a href="#prediction">Choose a prediction mode →</a>
-                            <span class="media-tag">GIF</span>
-                        </div>
-                    </div>
-                </article>
-
-                <article class="gallery-card" data-view-category="predictions">
-                    <div class="gallery-media">
-                        <img src="/media/predictions-classes.png" loading="lazy" alt="Experimental class-loading activity panel showing +60s predicted delta versus observed classes loaded" data-lightbox-title="Predictions (Experimental) — Class Loading +60s">
-                    </div>
-                    <div class="gallery-body">
-                        <div class="gallery-title-row">
-                            <h3>Class-Loading Predictions (+60s)</h3>
-                            <span class="badge-exp">Experimental</span>
-                        </div>
-                        <p>Opt-in <code>prediction_target: class_loading</code> forecasts additional classes loaded over 60 seconds for Gradle and Kotlin daemons alongside observed deltas.</p>
-                        <div class="gallery-footer">
-                            <a href="https://github.com/cdsap/build-process-watcher/blob/main/docs/class-loading-prediction.md">Class-loading guide →</a>
-                            <span class="media-tag">PNG</span>
-                        </div>
-                    </div>
-                </article>
+            <div class="summary-row">
+                <img src="/media/ci-summary.png" loading="lazy" alt="Local Mode GitHub Actions job summary with checkpoints, per-process stats table, and artifact list" data-lightbox-title="Local Mode — GitHub Actions Job Summary">
+                <div>
+                    <h3>Local Mode: GitHub Actions summary &amp; artifacts</h3>
+                    <p>With no backend enabled, the action writes a Mermaid checkpoint flow and per-process stats table directly to the job summary, and saves <code>build_process_watcher.json</code>, <code>CSV</code>, and <code>SVG</code> charts as workflow artifacts.</p>
+                    <a href="#quick-start">Local Mode snippet</a>
+                </div>
             </div>
         </section>
 
         <section class="home-section" id="quick-start">
-            <div class="section-kicker">Quick start</div>
-            <h2 class="section-heading">Add to GitHub Actions</h2>
-            <p class="section-copy">Unreleased development ref: snippets below pin <a href="https://github.com/cdsap/build-process-watcher/commit/88f0d0b85857dd71009cf827564fb33d75769214"><code>88f0d0b</code></a> for planned <strong>v0.8.0 (unreleased)</strong> inputs. Published <code>v0.7.0</code> does not support <code>prediction_mode</code> or <code>prediction_throttle_s</code>. See <a href="https://github.com/cdsap/build-process-watcher/blob/main/RELEASE_NOTES.md#unreleased">release notes</a>.</p>
+            <h2 class="section-heading">Quick start</h2>
+            <p class="section-copy">Unreleased development ref: snippets pin <a href="https://github.com/cdsap/build-process-watcher/commit/88f0d0b85857dd71009cf827564fb33d75769214"><code>88f0d0b</code></a> for planned v0.8.0 (unreleased) inputs. Published <code>v0.7.0</code> does not accept <code>prediction_mode</code> or <code>prediction_throttle_s</code> (<a href="https://github.com/cdsap/build-process-watcher/blob/main/RELEASE_NOTES.md#unreleased">release notes</a>).</p>
 
             <div class="snippet-grid">
                 <article class="snippet-card">
@@ -763,7 +668,7 @@
                         <h3>Local Mode · artifacts only</h3>
                         <button type="button" class="copy-btn" data-copy-snippet>Copy</button>
                     </div>
-                    <p>Writes JSON, CSV, SVG charts, and the Actions summary as workflow artifacts. Nothing is sent to the hosted dashboard.</p>
+                    <p>Logs, JSON, CSV, SVG charts, and job summary in workflow artifacts. Nothing leaves GitHub Actions.</p>
                     <pre tabindex="0" aria-label="Local Mode workflow snippet"><code>- name: Build Process Watcher
   uses: cdsap/build-process-watcher@88f0d0b85857dd71009cf827564fb33d75769214
 
@@ -776,7 +681,7 @@
                         <h3>Remote Mode · live dashboard</h3>
                         <button type="button" class="copy-btn" data-copy-snippet>Copy</button>
                     </div>
-                    <p>Streams samples live, prints a dashboard URL, and retains the hosted report for 24 hours.</p>
+                    <p>Streams samples live, prints a run URL, and retains the hosted report for 24 hours.</p>
                     <pre tabindex="0" aria-label="Remote Mode workflow snippet"><code>- name: Build Process Watcher
   uses: cdsap/build-process-watcher@88f0d0b85857dd71009cf827564fb33d75769214
   with:
@@ -791,7 +696,7 @@
                         <h3>BigQuery export · optional</h3>
                         <button type="button" class="copy-btn" data-copy-snippet>Copy</button>
                     </div>
-                    <p>Independent export choice requiring Remote Mode and a backend configured with <code>BIGQUERY_EXPORT_DATASET</code>.</p>
+                    <p>Requires Remote Mode and a backend configured with <code>BIGQUERY_EXPORT_DATASET</code>.</p>
                     <pre tabindex="0" aria-label="BigQuery export workflow snippet"><code>- name: Build Process Watcher
   uses: cdsap/build-process-watcher@88f0d0b85857dd71009cf827564fb33d75769214
   with:
@@ -804,10 +709,10 @@
 
                 <article class="snippet-card">
                     <div class="snippet-head">
-                        <h3>Timeline prediction · <span class="badge-exp">Experimental</span></h3>
+                        <h3>Timeline prediction <span class="exp-note">(Experimental)</span></h3>
                         <button type="button" class="copy-btn" data-copy-snippet>Copy</button>
                     </div>
-                    <p>Opt-in per-process forecasts. Add <code>prediction_target: 'class_loading'</code> for +60s class-loading activity.</p>
+                    <p>Opt-in forecasts. <a href="#prediction" style="color: var(--bpw-teal); text-decoration: none; font-weight: 600;">Choose a prediction mode</a> or add <code>prediction_target: 'class_loading'</code>.</p>
                     <pre tabindex="0" aria-label="Prediction workflow snippet"><code>- name: Build Process Watcher
   uses: cdsap/build-process-watcher@88f0d0b85857dd71009cf827564fb33d75769214
   with:
@@ -821,11 +726,38 @@
         </section>
 
         <section class="home-section" id="prediction">
-            <div class="section-kicker">Experimental prediction</div>
             <h2 class="section-heading">Timeline prediction modes</h2>
-            <p class="section-copy">Prediction is disabled by default. Active modes automatically enable Remote Mode. Prediction does not enable <code>export_to_bigquery</code>; enable BigQuery export separately when needed. A selected mode reports a request, not provider availability or successful inference.</p>
+            <p class="section-copy">Experimental and disabled by default. Active modes automatically enable Remote Mode. Prediction does not enable <code>export_to_bigquery</code>; enable BigQuery export separately when needed. A selected mode reports a request, not provider availability or successful inference.</p>
             <p class="section-copy"><strong>TabPFN is disabled by default; available only when its VM/provider is available.</strong> Selecting the input does not start the VM or guarantee forecasts.</p>
-            <div class="callout"><strong>Advisory only:</strong> prediction is an opt-in advisory signal for triage, not a guaranteed OOM, timeout, or build-failure outcome. Do not use it as a production decision or reliability guarantee.</div>
+            <div class="callout">Prediction is an opt-in advisory signal for triage, not a guaranteed OOM, timeout, or build-failure outcome. Do not use it as a production decision or reliability guarantee.</div>
+
+            <div class="gallery-grid">
+                <article class="gallery-card">
+                    <div class="gallery-media">
+                        <img src="/media/predictions-memory.gif" loading="lazy" alt="Experimental memory prediction chart showing +10s, +30s, and +60s Heap and RSS forecasts" data-lightbox-title="Memory Predictions (+10 / +30 / +60s)">
+                    </div>
+                    <div class="gallery-body">
+                        <div class="gallery-head">
+                            <h3>Memory forecasts (+10 / +30 / +60s)</h3>
+                            <span class="exp-note">Experimental</span>
+                        </div>
+                        <p>Per-process Heap and RSS forecast overlays with Latest, Last 3, and All issuance replay controls.</p>
+                    </div>
+                </article>
+
+                <article class="gallery-card">
+                    <div class="gallery-media">
+                        <img src="/media/predictions-classes.png" loading="lazy" alt="Experimental class-loading activity panel showing +60s predicted delta versus observed classes loaded" data-lightbox-title="Class-Loading Predictions (+60s)">
+                    </div>
+                    <div class="gallery-body">
+                        <div class="gallery-head">
+                            <h3>Class-loading forecasts (+60s)</h3>
+                            <a class="gallery-link" href="https://github.com/cdsap/build-process-watcher/blob/main/docs/class-loading-prediction.md">Contract</a>
+                        </div>
+                        <p>Set <code>prediction_target: class_loading</code> with <code>predict</code>, <code>forecast</code>, or <code>tabpfn</code> for +60s class-count deltas.</p>
+                    </div>
+                </article>
+            </div>
 
             <div class="table-card" tabindex="0" role="region" aria-label="Prediction modes">
                 <table class="input-table">
@@ -847,17 +779,16 @@
             </div>
 
             <div class="inline-links">
-                <a href="https://github.com/cdsap/build-process-watcher/blob/main/docs/prediction.md">Prediction guide →</a>
-                <a href="https://github.com/cdsap/build-process-watcher/blob/main/docs/prediction.md#cadence">Cadence details →</a>
-                <a href="https://github.com/cdsap/build-process-watcher/blob/main/docs/class-loading-prediction.md">Class-loading target →</a>
-                <a href="https://github.com/cdsap/build-process-watcher/blob/main/RELEASE_NOTES.md#migration">Migration notes →</a>
+                <a href="https://github.com/cdsap/build-process-watcher/blob/main/docs/prediction.md">Prediction guide</a>
+                <a href="https://github.com/cdsap/build-process-watcher/blob/main/docs/prediction.md#cadence">Cadence details</a>
+                <a href="https://github.com/cdsap/build-process-watcher/blob/main/docs/class-loading-prediction.md">Class-loading target</a>
+                <a href="https://github.com/cdsap/build-process-watcher/blob/main/RELEASE_NOTES.md#migration">Migration notes</a>
             </div>
         </section>
 
         <section class="home-section" id="inputs">
-            <div class="section-kicker">Reference</div>
-            <h2 class="section-heading">Action inputs</h2>
-            <p class="section-copy">Complete root action inputs from <code>action.yaml</code>. See the <a href="https://github.com/cdsap/build-process-watcher#inputs">README inputs reference</a> for environment variables and backend configuration.</p>
+            <h2 class="section-heading">Inputs</h2>
+            <p class="section-copy">Root action inputs from <code>action.yaml</code>. See the <a href="https://github.com/cdsap/build-process-watcher#inputs">README inputs reference</a> for backend environment variables.</p>
 
             <div class="table-card" tabindex="0" role="region" aria-label="Action inputs">
                 <table class="input-table">
@@ -888,7 +819,7 @@
     </main>
 
     <footer class="home-footer">
-        <span>Build Process Watcher · Hosted reports are retained for 24 hours.</span>
+        <span>Build Process Watcher. Hosted reports expire after 24 hours.</span>
         <div class="home-footer-links">
             <a href="/runs/demo.html">Demo</a>
             <a href="/replay.html">Replay</a>
@@ -918,20 +849,6 @@
             setHref('#nav-replay-link, #replay-link, #analysis-replay-link', '/replay.html');
             setHref('#nav-compare-link, #compare-link, #analysis-compare-link', '/compare.html');
 
-            // Gallery filter tabs
-            const filterButtons = document.querySelectorAll('[data-view-filter]');
-            const cards = document.querySelectorAll('[data-view-category]');
-            filterButtons.forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const target = btn.getAttribute('data-view-filter');
-                    filterButtons.forEach(b => b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'));
-                    cards.forEach(card => {
-                        card.hidden = target !== 'all' && card.getAttribute('data-view-category') !== target;
-                    });
-                });
-            });
-
-            // Copy YAML snippet buttons
             document.querySelectorAll('[data-copy-snippet]').forEach(btn => {
                 btn.addEventListener('click', async () => {
                     const code = btn.closest('.snippet-card')?.querySelector('pre code')?.textContent || '';
@@ -945,7 +862,6 @@
                 });
             });
 
-            // Click-to-zoom lightbox
             const lightbox = document.getElementById('media-lightbox');
             const lightboxImg = document.getElementById('media-lightbox-img');
             const lightboxTitle = document.getElementById('media-lightbox-title');
@@ -959,9 +875,13 @@
                         lightbox.showModal();
                     });
                 });
-                lightboxClose?.addEventListener('click', () => lightbox.close());
+                const closeLightbox = () => {
+                    lightbox.close();
+                    lightboxImg.removeAttribute('src');
+                };
+                lightboxClose?.addEventListener('click', closeLightbox);
                 lightbox.addEventListener('click', (e) => {
-                    if (e.target === lightbox) lightbox.close();
+                    if (e.target === lightbox) closeLightbox();
                 });
             }
         });
