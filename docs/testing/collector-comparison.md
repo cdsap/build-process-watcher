@@ -47,7 +47,7 @@ The helper fetches the exact source SHA and writes `build-info.json` alongside `
 
 Daemonitor owns JVM/OS collection. BPW translates the existing process scope into its current fourteen-column log and the existing `/ingest` requests. Effective numeric/boolean VM flags are fetched from the incarnation-scoped metadata endpoint and written into the existing `process_info` sidecar. Omitted string/path flags remain omitted according to Daemonitor's privacy policy.
 
-BPW writes requests to a local outbox before uploading. Successful acknowledgements advance a durable byte cursor. Authentication includes the existing run export/prediction settings; one rejected token is refreshed. Upload failures leave pending requests for retry. Delivery is at least once: an ambiguous network failure after server acceptance can lead to a duplicate retry; this does not introduce a new server-side idempotency contract.
+BPW writes requests to a local outbox before uploading. Successful acknowledgements advance a durable byte cursor. Freshness diagnostics use one request and a distinct sample ID per process observation, as required by the backend. The delivery cursor records the latest upload error until acknowledgement succeeds. Authentication includes the existing run export/prediction settings; one rejected token is refreshed. Upload failures leave pending requests for retry. Delivery is at least once: an ambiguous network failure after server acceptance can lead to a duplicate retry; this does not introduce a new server-side idempotency contract.
 
 At the Action post-step, BPW requests collector shutdown, drains pending data, and only then uses its existing authenticated finish endpoint. That endpoint stores completion in Firestore and schedules the optional BigQuery export. If delivery remains incomplete or the collector failed, the Daemonitor post-step fails and does not explicitly finish the run. The backend's existing stale-run auto-finish policy still applies; this is not a guarantee of eventual delivery after a runner disappears. Raw capture/outbox artifacts make a partial run inspectable.
 
@@ -57,7 +57,7 @@ The shell path retains its existing behavior. Selecting Daemonitor never silentl
 
 - Daemonitor's used/committed heap includes survivor spaces. The shell currently uses Eden plus Old generation. An observed difference is not automatically a collector error.
 - The legacy numeric-heap ingest contract cannot represent RSS-only samples while a JVM probe is pending/unavailable. Daemonitor records those samples in its raw capture and counts them in `done.json`, but omits them from legacy reports/uploads rather than inventing zero heap. Very short builds or missing-tool environments can therefore have few or no report samples.
-- Raw captures retain the native family measurement timestamps; a five-second BPW interval does not mean JVM probes refresh every five seconds. Current native defaults are ten seconds for heap/GC and twenty seconds for advanced JVM counters.
+- Raw captures retain the native family measurement timestamps; a five-second BPW interval does not mean JVM probes refresh every five seconds. Native cadence is ten seconds for heap/GC and twenty seconds for advanced JVM counters. BPW supplies a bounded five-second JVM-family probe budget instead of the native 750 ms default, allowing sequential JDK commands time to complete during a busy build. Probe failures remain visible in raw diagnostics; missing GC is still represented as zero by the legacy backend parser.
 - PID reuse is rejected rather than merging two lifetimes into the current BPW export identity.
 - Own-process RSS is used, not subtree totals. Wrapper/Bazel/toolchain expansion is outside this comparison.
 
@@ -73,6 +73,6 @@ npm test -- --runInBand
 node scripts/verify-collector-comparison.mjs /path/to/daemonitor-bin d47b3901277ae0f3d858286c1e884ec35aa0d4ae
 ```
 
-The verification uses real native binaries and a HotSpot fixture, exercises shell and Daemonitor variants, token refresh, metadata delivery, local reports, and finish-after-drain ordering. It also verifies that a simulated upload outage retains the outbox and prevents explicit run completion. It does not contact Firestore or BigQuery. Host process inspection and loopback/socket access are required.
+The verification uses real native binaries and simultaneous Gradle/Kotlin HotSpot fixtures with freshness diagnostics enabled, exercises shell and Daemonitor variants, token refresh, metadata delivery, local reports, and finish-after-drain ordering. It also verifies that a simulated upload outage retains the outbox and prevents explicit run completion. It does not contact Firestore or BigQuery. Host process inspection and loopback/socket access are required.
 
 The workflow is supplied for Linux validation; a local macOS pass does not establish that a hosted workflow has run. No workflow dispatch, release, or cloud deployment is part of the local implementation.

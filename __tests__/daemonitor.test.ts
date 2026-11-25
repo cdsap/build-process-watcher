@@ -1,4 +1,4 @@
-import { resolveCollector, encodeSnapshot, vmFlags, BackendTransport, flushOutbox, DaemonitorConfig } from '../src/lib/daemonitor';
+import { resolveCollector, encodeSnapshot, metricRequests, vmFlags, BackendTransport, flushOutbox, DaemonitorConfig } from '../src/lib/daemonitor';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -54,10 +54,12 @@ describe('Daemonitor delivery', () => {
     expect(await flushOutbox(config, 1000, transport)).toBe(false);
     const acknowledged = JSON.parse(fs.readFileSync(path.join(directory, 'progress.json'), 'utf8')).offset;
     expect(acknowledged).toBe(Buffer.byteLength(JSON.stringify(payloads[0]) + '\n'));
+    expect(JSON.parse(fs.readFileSync(path.join(directory, 'progress.json'), 'utf8')).last_error).toBe('offline');
     send.mockResolvedValue(undefined);
     expect(await flushOutbox(config, 1000, transport)).toBe(true);
     expect(send.mock.calls.map(c => c[0])).toEqual([payloads[0], payloads[1], payloads[1]]);
     expect(JSON.parse(fs.readFileSync(path.join(directory, 'progress.json'), 'utf8')).offset).toBe(fs.statSync(spool).size);
+    expect(JSON.parse(fs.readFileSync(path.join(directory, 'progress.json'), 'utf8')).last_error).toBeUndefined();
   });
   it('never acknowledges a partial final spool line', async () => {
     fs.writeFileSync(path.join(directory, 'outbox.jsonl'), '{"run_id":');
@@ -96,5 +98,25 @@ describe('Daemonitor BPW mapping', () => {
       SecretPath: { type: 'ccstr', value: '/private/path' },
     } })).toEqual(['-XX:+UseG1GC', '-XX:-UseZGC', '-XX:MaxHeapSize=18446744073709551615']);
     expect(vmFlags({ availability: 'unavailable', flags: {} })).toEqual([]);
+  });
+});
+
+describe('Daemonitor freshness ingestion', () => {
+  it('sends each JVM sample with its own freshness record, including later snapshots', () => {
+    const first = encodeSnapshot({ processes: [sample(), sample({ pid: 43, type: 'KOTLIN_DAEMON' })] }, 1000, new Map());
+    const requests = metricRequests('multi-jvm', first.lines, { startedAtMs: 1000, collectedAtMs: 6100, sequence: 12 });
+    expect(requests).toHaveLength(2);
+    expect(requests.map(r => r.data)).toEqual(first.lines);
+    expect(requests.map(r => r.freshness)).toEqual([
+      { sample_id: '1000-13', sequence: 13, collected_at_unix_ms: 6100 },
+      { sample_id: '1000-14', sequence: 14, collected_at_unix_ms: 6100 },
+    ]);
+    const next = metricRequests('multi-jvm', [first.lines[0]], { startedAtMs: 1000, collectedAtMs: 11100, sequence: 12 + requests.length });
+    expect(next[0].freshness?.sequence).toBe(15);
+    expect(next[0].freshness?.sample_id).toBe('1000-15');
+  });
+  it('retains batching without freshness and emits nothing for empty snapshots', () => {
+    expect(metricRequests('run', ['one', 'two'])).toEqual([{ run_id: 'run', data: 'one\ntwo' }]);
+    expect(metricRequests('run', [], { startedAtMs: 1000, collectedAtMs: 6100, sequence: 0 })).toEqual([]);
   });
 });

@@ -61,6 +61,24 @@ export function encodeSnapshot(snapshot: NativeSnapshot, startedAtMs: number, se
     return { lines, incomplete };
 }
 
+export interface MetricRequest {
+    run_id: string;
+    data: string;
+    freshness?: { sample_id: string; sequence: number; collected_at_unix_ms: number };
+}
+export function metricRequests(runId: string, lines: string[], freshness?: {
+    startedAtMs: number; collectedAtMs: number; sequence: number;
+}): MetricRequest[] {
+    if (!lines.length) return [];
+    if (!freshness) return [{ run_id: runId, data: lines.join('\n') }];
+    // The backend accepts freshness metadata for exactly one sample per request.
+    return lines.map((data, index) => {
+        const sequence = freshness.sequence + index + 1;
+        return { run_id: runId, data, freshness: { sample_id: `${freshness.startedAtMs}-${sequence}`,
+            sequence, collected_at_unix_ms: freshness.collectedAtMs } };
+    });
+}
+
 export interface FlagMetadata { availability: string; flags: Record<string, { type: string; value: string }>; [key: string]: unknown }
 export function vmFlags(metadata: FlagMetadata): string[] {
     if (metadata.availability !== 'available') return [];
@@ -150,13 +168,21 @@ export async function flushOutbox(config: DaemonitorConfig, timeoutMs = 15000, t
     if (!config.backendUrl) return true;
     const progress = path.join(config.stateDir, 'progress.json');
     const file = path.join(config.stateDir, 'outbox.jsonl');
-    let offset = fs.existsSync(progress) ? read<{ offset: number }>(progress).offset : 0;
+    const previous = fs.existsSync(progress) ? read<{ offset: number; last_error?: string }>(progress) : { offset: 0 };
+    let offset = previous.offset;
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
         const item = outboxLine(file, offset);
         if (!item) return !fs.existsSync(file) || fs.statSync(file).size === offset;
         try { await transport.send(item.payload); }
-        catch { return false; }
+        catch (error) {
+            const message = error instanceof Error ? error.message : 'Metric upload failed';
+            if (previous.offset !== offset || previous.last_error !== message) {
+                console.error(`Daemonitor upload failed at outbox byte ${offset}: ${message}`);
+            }
+            write(progress, { offset, last_error: message });
+            return false;
+        }
         offset = item.next;
         write(progress, { offset });
     }
@@ -177,7 +203,7 @@ export async function startDaemonitor(config: Omit<DaemonitorConfig, 'stateDir'>
     const full = { ...config, logFile: path.resolve(config.logFile), stateDir };
     write(path.join(stateDir, 'config.json'), full);
     write(path.join(stateDir, 'collector.json'), { collector: 'daemonitor', sourceCommit: config.sourceCommit ?? null, binaryHashes,
-        heap: 'complete used/committed heap including survivor spaces', gc: 'young plus full seconds' });
+        heap: 'complete used/committed heap including survivor spaces', gc: 'young plus full seconds', jvmProbeBudget: '5s' });
     const log = fs.openSync(path.join(stateDir, 'monitor.log'), 'a', 0o600);
     const child = spawn(process.execPath, [entry, path.join(stateDir, 'config.json')], { detached: true, stdio: ['ignore', log, log] });
     fs.closeSync(log);
@@ -263,7 +289,7 @@ export async function runDaemonitor(config: DaemonitorConfig): Promise<void> {
     const startedAt = Date.now();
     try {
         coreProcess = spawn(path.join(config.binDir, 'daemonitor-cored'), ['-socket', socket, '-db', database,
-            '-interval', `${config.interval}s`, '-gradle-user-home', process.env.GRADLE_USER_HOME || path.join(os.homedir(), '.gradle')], { stdio: ['ignore', 'inherit', 'inherit'] });
+            '-interval', `${config.interval}s`, '-jvm-probe-budget', '5s', '-gradle-user-home', process.env.GRADLE_USER_HOME || path.join(os.homedir(), '.gradle')], { stdio: ['ignore', 'inherit', 'inherit'] });
         coreProcess.on('error', error => { failure = error.message; stopped = true; });
         let healthy = false;
         const deadline = Date.now() + 10000;
@@ -296,8 +322,10 @@ export async function runDaemonitor(config: DaemonitorConfig): Promise<void> {
                 samples += encoded.lines.length;
                 if (encoded.lines.length) {
                     fs.appendFileSync(config.logFile, encoded.lines.join('\n') + '\n');
-                    spool({ run_id: config.runId, data: encoded.lines.join('\n'),
-                        ...(config.freshnessDiagnostics ? { freshness: { sample_id: `${startedAt}-${++sequence}`, sequence, collected_at_unix_ms: Date.now() } } : {}) });
+                    const requests = metricRequests(config.runId, encoded.lines, config.freshnessDiagnostics
+                        ? { startedAtMs: startedAt, collectedAtMs: Date.now(), sequence } : undefined);
+                    for (const request of requests) spool(request);
+                    sequence += requests.length;
                 }
                 for (const p of snapshot.processes ?? []) {
                     const identity = `${p.pid}:${p.start_time_ms}`;

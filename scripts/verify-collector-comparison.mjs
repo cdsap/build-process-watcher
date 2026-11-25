@@ -48,11 +48,25 @@ const server = http.createServer(async (request, response) => {
       assert.equal(request.headers.authorization, `Bearer ${payload.run_id}-${run.auth}`);
       assert.equal(run.finished, false, 'An upload arrived after finish');
       if (payload.process_info) run.metadata++;
-      for (const line of payload.data.split('\n').filter(Boolean)) {
+      const lines = payload.data.split('\n').filter(Boolean);
+      if (payload.freshness) {
+        if (lines.length !== 1) { response.writeHead(400); response.end('Invalid freshness metadata'); return; }
+        const f = payload.freshness;
+        assert.match(f.sample_id, /^[0-9-]+$/);
+        assert.ok((run.collector === 'daemonitor' ? f.sequence > run.sequence : f.sequence >= run.sequence) && f.collected_at_unix_ms > 0);
+        assert.ok(!run.sampleIds.has(f.sample_id));
+        run.sequence = f.sequence;
+        run.sampleIds.add(f.sample_id);
+        run.freshnessSamples++;
+      }
+      for (const line of lines) {
         const fields = line.split('|').map(v => v.trim());
         assert.equal(fields.length, 14);
         assert.ok(fields.slice(3, 6).every(v => Number.isFinite(parseFloat(v))), 'Unknown heap sent to numeric parser');
         run.samples++;
+        run.pids.add(fields[1]);
+        if (fields[6] !== 'N/A') run.gcPids.add(fields[1]);
+        if (fields[11] !== 'N/A') run.classPids.add(fields[1]);
       }
       response.setHeader('Content-Type', 'application/json');
       response.end('{}'); return;
@@ -115,13 +129,13 @@ try {
     }));
     const env = { ...process.env, ...files, JAVA_HOME: javaHome, PATH: `${path.join(javaHome, 'bin')}${path.delimiter}${process.env.PATH}`, INPUT_COLLECTOR: collector,
       INPUT_DAEMONITOR_BIN_DIR: path.resolve(binDir), INPUT_DAEMONITOR_SOURCE_COMMIT: sourceCommit,
-      INPUT_RUN_ID: id, INPUT_INTERVAL: '1', INPUT_REMOTE_MONITORING: 'true', INPUT_EXPORT_TO_BIGQUERY: 'true',
+      INPUT_RUN_ID: id, INPUT_INTERVAL: '1', INPUT_FRESHNESS_DIAGNOSTICS: 'true', INPUT_REMOTE_MONITORING: 'true', INPUT_EXPORT_TO_BIGQUERY: 'true',
       INPUT_LOG_FILE: path.join(workspace, 'results.log'), INPUT_DEBUG: 'false', INPUT_DISABLE_SUMMARY_OUTPUT: 'true',
       BACKEND_URL: backend, FRONTEND_URL: backend, GITHUB_WORKSPACE: workspace, GITHUB_ACTION_PATH: action,
       RUNNER_TEMP: path.join(directory, 'runner'), GITHUB_ACTIONS: 'false' };
     delete env.ACTIONS_RUNTIME_TOKEN;
     delete env.GITHUB_TOKEN;
-    const run = { collector, outage, auth: 0, samples: 0, metadata: 0, export: false, finished: false, directory };
+    const run = { collector, outage, auth: 0, samples: 0, metadata: 0, export: false, finished: false, directory, sequence: 0, sampleIds: new Set(), freshnessSamples: 0, pids: new Set(), gcPids: new Set(), classPids: new Set() };
     runs.set(id, run);
     assert.equal(await node(path.join(action, 'dist/index_with_backend.js'), action, env, 'main.log'), 0);
     const postEnv = { ...env, ...fileEnvironment(files.GITHUB_ENV),
@@ -129,15 +143,18 @@ try {
     run.stateDir = postEnv.BPW_DAEMONITOR_STATE_DIR;
     const source = path.join(workspace, 'GradleDaemon.java');
     fs.writeFileSync(source, `public class GradleDaemon { public static void main(String[] args) throws Exception {
-      byte[][] retained = new byte[24][]; long end=System.currentTimeMillis()+30000; int i=0;
+      byte[][] retained = new byte[24][]; long end=System.currentTimeMillis()+90000; int i=0;
       while(System.currentTimeMillis()<end) { retained[(i++)%24]=new byte[1024*1024]; Thread.sleep(40); }
     } }`);
-    const compile = spawnSync('javac', [source], { encoding: 'utf8' });
+    const kotlinSource = path.join(workspace, 'KotlinCompileDaemon.java');
+    fs.writeFileSync(kotlinSource, 'public class KotlinCompileDaemon { public static void main(String[] args) throws Exception { GradleDaemon.main(args); } }');
+    const compile = spawnSync('javac', [source, kotlinSource], { encoding: 'utf8' });
     assert.equal(compile.status, 0, compile.stderr);
     const workload = spawn('java', ['-Xms64m', '-Xmx160m', '-cp', workspace, 'GradleDaemon'], { stdio: 'ignore' });
-    owned.push(workload);
+    const kotlinWorkload = spawn('java', ['-Xms64m', '-Xmx160m', '-cp', workspace, 'KotlinCompileDaemon'], { stdio: 'ignore' });
+    owned.push(workload, kotlinWorkload);
     try {
-      await delay(outage ? 6000 : 14000);
+      await delay(outage ? 6000 : 26000);
       const exit = await node(path.join(action, 'dist/cleanup.js'), action, postEnv, 'post.log');
       if (outage) {
         assert.equal(exit, 1, fs.readFileSync(path.join(action, 'post.log'), 'utf8'));
@@ -147,11 +164,19 @@ try {
       } else {
         assert.equal(exit, 0, fs.readFileSync(path.join(action, 'post.log'), 'utf8'));
         assert.ok(run.finished && run.export && run.samples > 0 && run.metadata > 0);
+        assert.equal(run.freshnessSamples, run.samples, 'Every stored sample must have freshness metadata');
+        for (const child of [workload, kotlinWorkload]) {
+          const pid = String(child.pid);
+          assert.ok(run.pids.has(pid), `Missing fixture JVM ${pid}`);
+          assert.ok(run.gcPids.has(pid), `Missing GC metrics for fixture JVM ${pid}`);
+          assert.ok(run.classPids.has(pid), `Missing class metrics for fixture JVM ${pid}`);
+        }
         if (collector === 'daemonitor') assert.ok(run.rejected && run.auth >= 3);
       }
       if (run.stateDir) {
         const status = JSON.parse(fs.readFileSync(path.join(run.stateDir, 'done.json'), 'utf8'));
         assert.ok(status.samples > 0);
+        if (!outage) assert.equal(run.samples, status.samples, 'All captured samples must reach ingestion');
         const { pid } = JSON.parse(fs.readFileSync(path.join(run.stateDir, 'worker.json'), 'utf8'));
         try { process.kill(-pid, 0); throw new Error('Collector process group leaked'); }
         catch (error) { if (error.code !== 'ESRCH') throw error; }
@@ -160,8 +185,8 @@ try {
       const report = JSON.parse(fs.readFileSync(path.join(workspace, `build_process_watcher-${id}.json`), 'utf8'));
       assert.ok(report.samples.length > 0);
       if (failure) throw failure;
-      console.log(JSON.stringify({ variant: id, samples: run.samples, metadata: run.metadata, finished: run.finished, exit }));
-    } finally { workload.kill('SIGTERM'); }
+      console.log(JSON.stringify({ variant: id, samples: run.samples, metadata: run.metadata, finished: run.finished, freshnessSamples: run.freshnessSamples, fixturePids: [workload.pid, kotlinWorkload.pid], exit }));
+    } finally { workload.kill('SIGTERM'); kotlinWorkload.kill('SIGTERM'); }
   }
   const bad = path.join(root, 'invalid-native');
   fs.mkdirSync(bad);
@@ -174,7 +199,7 @@ try {
   const startupExit = await node(path.join(root, 'daemonitor', 'action/dist/index_with_backend.js'), failDir,
     { ...process.env, INPUT_COLLECTOR: 'daemonitor', INPUT_DAEMONITOR_BIN_DIR: bad,
       INPUT_DAEMONITOR_SOURCE_COMMIT: '', INPUT_REMOTE_MONITORING: 'false', INPUT_EXPORT_TO_BIGQUERY: 'false',
-      INPUT_PREDICTIVE_RELIABILITY: 'false', INPUT_RUN_ID: 'startup-failure', INPUT_LOG_FILE: path.join(failDir, 'results.log'),
+      INPUT_PREDICTION_MODE: 'disabled', INPUT_FRESHNESS_DIAGNOSTICS: 'false', INPUT_RUN_ID: 'startup-failure', INPUT_LOG_FILE: path.join(failDir, 'results.log'),
       RUNNER_TEMP: failDir, BACKEND_URL: backend, GITHUB_WORKSPACE: failDir,
       GITHUB_ENV: path.join(failDir, 'env'), GITHUB_STATE: path.join(failDir, 'state'), GITHUB_OUTPUT: path.join(failDir, 'output') }, 'main.log');
   assert.equal(startupExit, 1);

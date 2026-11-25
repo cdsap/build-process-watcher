@@ -214945,6 +214945,7 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.BackendTransport = exports.DAEMONITOR_HEADER = void 0;
 exports.resolveCollector = resolveCollector;
 exports.encodeSnapshot = encodeSnapshot;
+exports.metricRequests = metricRequests;
 exports.vmFlags = vmFlags;
 exports.daemonitorArtifacts = daemonitorArtifacts;
 exports.nativeRequest = nativeRequest;
@@ -215017,6 +215018,18 @@ function encodeSnapshot(snapshot, startedAtMs, seen) {
             opt((_e = p.classes) === null || _e === void 0 ? void 0 : _e.loaded), opt((_f = p.classes) === null || _f === void 0 ? void 0 : _f.unloaded_total), opt((_g = p.classes) === null || _g === void 0 ? void 0 : _g.time_seconds)].join(' | '));
     }
     return { lines, incomplete };
+}
+function metricRequests(runId, lines, freshness) {
+    if (!lines.length)
+        return [];
+    if (!freshness)
+        return [{ run_id: runId, data: lines.join('\n') }];
+    // The backend accepts freshness metadata for exactly one sample per request.
+    return lines.map((data, index) => {
+        const sequence = freshness.sequence + index + 1;
+        return { run_id: runId, data, freshness: { sample_id: `${freshness.startedAtMs}-${sequence}`,
+                sequence, collected_at_unix_ms: freshness.collectedAtMs } };
+    });
 }
 function vmFlags(metadata) {
     if (metadata.availability !== 'available')
@@ -215130,7 +215143,8 @@ async function flushOutbox(config, timeoutMs = 15000, transport = new BackendTra
         return true;
     const progress = path.join(config.stateDir, 'progress.json');
     const file = path.join(config.stateDir, 'outbox.jsonl');
-    let offset = fs.existsSync(progress) ? read(progress).offset : 0;
+    const previous = fs.existsSync(progress) ? read(progress) : { offset: 0 };
+    let offset = previous.offset;
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
         const item = outboxLine(file, offset);
@@ -215139,7 +215153,12 @@ async function flushOutbox(config, timeoutMs = 15000, transport = new BackendTra
         try {
             await transport.send(item.payload);
         }
-        catch {
+        catch (error) {
+            const message = error instanceof Error ? error.message : 'Metric upload failed';
+            if (previous.offset !== offset || previous.last_error !== message) {
+                console.error(`Daemonitor upload failed at outbox byte ${offset}: ${message}`);
+            }
+            write(progress, { offset, last_error: message });
             return false;
         }
         offset = item.next;
@@ -215164,7 +215183,7 @@ async function startDaemonitor(config, entry) {
     const full = { ...config, logFile: path.resolve(config.logFile), stateDir };
     write(path.join(stateDir, 'config.json'), full);
     write(path.join(stateDir, 'collector.json'), { collector: 'daemonitor', sourceCommit: (_a = config.sourceCommit) !== null && _a !== void 0 ? _a : null, binaryHashes,
-        heap: 'complete used/committed heap including survivor spaces', gc: 'young plus full seconds' });
+        heap: 'complete used/committed heap including survivor spaces', gc: 'young plus full seconds', jvmProbeBudget: '5s' });
     const log = fs.openSync(path.join(stateDir, 'monitor.log'), 'a', 0o600);
     const child = (0, child_process_1.spawn)(process.execPath, [entry, path.join(stateDir, 'config.json')], { detached: true, stdio: ['ignore', log, log] });
     fs.closeSync(log);
@@ -215266,7 +215285,7 @@ async function runDaemonitor(config) {
     const startedAt = Date.now();
     try {
         coreProcess = (0, child_process_1.spawn)(path.join(config.binDir, 'daemonitor-cored'), ['-socket', socket, '-db', database,
-            '-interval', `${config.interval}s`, '-gradle-user-home', process.env.GRADLE_USER_HOME || path.join(os.homedir(), '.gradle')], { stdio: ['ignore', 'inherit', 'inherit'] });
+            '-interval', `${config.interval}s`, '-jvm-probe-budget', '5s', '-gradle-user-home', process.env.GRADLE_USER_HOME || path.join(os.homedir(), '.gradle')], { stdio: ['ignore', 'inherit', 'inherit'] });
         coreProcess.on('error', error => { failure = error.message; stopped = true; });
         let healthy = false;
         const deadline = Date.now() + 10000;
@@ -215308,8 +215327,11 @@ async function runDaemonitor(config) {
                 samples += encoded.lines.length;
                 if (encoded.lines.length) {
                     fs.appendFileSync(config.logFile, encoded.lines.join('\n') + '\n');
-                    spool({ run_id: config.runId, data: encoded.lines.join('\n'),
-                        ...(config.freshnessDiagnostics ? { freshness: { sample_id: `${startedAt}-${++sequence}`, sequence, collected_at_unix_ms: Date.now() } } : {}) });
+                    const requests = metricRequests(config.runId, encoded.lines, config.freshnessDiagnostics
+                        ? { startedAtMs: startedAt, collectedAtMs: Date.now(), sequence } : undefined);
+                    for (const request of requests)
+                        spool(request);
+                    sequence += requests.length;
                 }
                 for (const p of (_c = snapshot.processes) !== null && _c !== void 0 ? _c : []) {
                     const identity = `${p.pid}:${p.start_time_ms}`;
