@@ -215660,52 +215660,6 @@ flowchart LR
 
 /***/ }),
 
-/***/ 72830:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.parseProcessInfo = parseProcessInfo;
-/**
- * Parse process info (including vm_flags) from text.
- * Format: PID\tName\tVM_FLAGS_JSON per line.
- */
-function parseProcessInfo(content) {
-    const processInfo = {};
-    for (const line of content.split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed)
-            continue;
-        const tabIdx = trimmed.indexOf('\t');
-        if (tabIdx === -1)
-            continue;
-        const pid = trimmed.slice(0, tabIdx).trim();
-        const rest = trimmed.slice(tabIdx + 1);
-        const secondTabIdx = rest.indexOf('\t');
-        if (secondTabIdx === -1)
-            continue;
-        const name = rest.slice(0, secondTabIdx).trim();
-        const vmFlagsJson = rest.slice(secondTabIdx + 1).trim();
-        let vm_flags = [];
-        try {
-            vm_flags = JSON.parse(vmFlagsJson);
-            if (!Array.isArray(vm_flags))
-                vm_flags = [];
-        }
-        catch {
-            // ignore parse errors
-        }
-        if (pid && name) {
-            processInfo[pid] = { name, vm_flags };
-        }
-    }
-    return processInfo;
-}
-
-
-/***/ }),
-
 /***/ 60454:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -215745,17 +215699,14 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.parseProcessInfo = void 0;
 exports.parseTimestampSeconds = parseTimestampSeconds;
+exports.parseProcessInfo = parseProcessInfo;
 exports.loadProcessInfoFromFile = loadProcessInfoFromFile;
 exports.buildJsonReport = buildJsonReport;
 exports.generateJsonReport = generateJsonReport;
 exports.generateCsvReport = generateCsvReport;
 const fs = __importStar(__nccwpck_require__(79896));
 const log_samples_1 = __nccwpck_require__(36716);
-const process_info_1 = __nccwpck_require__(72830);
-var process_info_2 = __nccwpck_require__(72830);
-Object.defineProperty(exports, "parseProcessInfo", ({ enumerable: true, get: function () { return process_info_2.parseProcessInfo; } }));
 const SAMPLE_FIELDS = [
     'Timestamp', 'ElapsedTime', 'PID', 'Name', 'RSS', 'HeapUsed', 'HeapCap',
     'GCTime', 'GCTimeSeconds', 'JITCompiledMethods', 'JITFailedCompilations',
@@ -215776,6 +215727,41 @@ function parseTimestampSeconds(timestamp) {
     return Number.isFinite(numeric) ? numeric : 0;
 }
 /**
+ * Parse process info (including vm_flags) from text.
+ * Format: PID\tName\tVM_FLAGS_JSON per line.
+ */
+function parseProcessInfo(content) {
+    const processInfo = {};
+    for (const line of content.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed)
+            continue;
+        const tabIdx = trimmed.indexOf('\t');
+        if (tabIdx === -1)
+            continue;
+        const pid = trimmed.slice(0, tabIdx).trim();
+        const rest = trimmed.slice(tabIdx + 1);
+        const secondTabIdx = rest.indexOf('\t');
+        if (secondTabIdx === -1)
+            continue;
+        const name = rest.slice(0, secondTabIdx).trim();
+        const vmFlagsJson = rest.slice(secondTabIdx + 1).trim();
+        let vm_flags = [];
+        try {
+            vm_flags = JSON.parse(vmFlagsJson);
+            if (!Array.isArray(vm_flags))
+                vm_flags = [];
+        }
+        catch {
+            // ignore parse errors
+        }
+        if (pid && name) {
+            processInfo[pid] = { name, vm_flags };
+        }
+    }
+    return processInfo;
+}
+/**
  * Load process info (including vm_flags) from .process_info file.
  */
 function loadProcessInfoFromFile(logFile) {
@@ -215783,7 +215769,7 @@ function loadProcessInfoFromFile(logFile) {
     if (!fs.existsSync(processInfoPath))
         return {};
     try {
-        return (0, process_info_1.parseProcessInfo)(fs.readFileSync(processInfoPath, 'utf8'));
+        return parseProcessInfo(fs.readFileSync(processInfoPath, 'utf8'));
     }
     catch {
         // ignore read errors

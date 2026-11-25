@@ -6,9 +6,9 @@ import {
   buildJsonReport,
   generateJsonReport,
   parseTimestampSeconds,
+  parseProcessInfo,
 } from '../src/lib/report';
 import { parseLogSample, parseLogSamples } from '../src/lib/log_samples';
-import { parseProcessInfo } from '../src/lib/process_info';
 
 describe('log sample parser', () => {
   it.each([6, 7, 14])('accepts %s-column records', columnCount => {
@@ -101,6 +101,18 @@ describe('parseProcessInfo', () => {
   it('accepts JSON arrays without filtering their elements', () => {
     expect(parseProcessInfo('123\tName\t["-XX:flag",42,null,{"flag":true}]')).toEqual({
       '123': { name: 'Name', vm_flags: ['-XX:flag', 42, null, { flag: true }] },
+    });
+  });
+
+  it('keeps VM flags independent across records after invalid JSON', () => {
+    expect(parseProcessInfo(
+      '123\tFirst\t["-XX:flag"]\n' +
+        '456\tSecond\tinvalid-json\n' +
+        '789\tThird\t["-Xmx512m"]\n'
+    )).toEqual({
+      '123': { name: 'First', vm_flags: ['-XX:flag'] },
+      '456': { name: 'Second', vm_flags: [] },
+      '789': { name: 'Third', vm_flags: ['-Xmx512m'] },
     });
   });
 
