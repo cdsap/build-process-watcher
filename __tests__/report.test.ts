@@ -2,13 +2,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import {
-  parseProcessInfo,
   loadProcessInfoFromFile,
   buildJsonReport,
   generateJsonReport,
   parseTimestampSeconds,
 } from '../src/lib/report';
 import { parseLogSample, parseLogSamples } from '../src/lib/log_samples';
+import { parseProcessInfo } from '../src/lib/process_info';
 
 describe('log sample parser', () => {
   it.each([6, 7, 14])('accepts %s-column records', columnCount => {
