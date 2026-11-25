@@ -3,6 +3,16 @@ description: 'Monitor Java build processes with optional backend integration'
 author: 'cdsap'
 
 inputs:
+  collector:
+    description: 'Metric collector: shell (default) or daemonitor'
+    required: false
+    default: 'shell'
+  daemonitor_bin_dir:
+    description: 'Directory containing executable daemonitor-cli and daemonitor-cored (required for collector=daemonitor)'
+    required: false
+  daemonitor_source_commit:
+    description: 'Optional full source commit; verifies both binaries against build-info.json in daemonitor_bin_dir'
+    required: false
   remote_monitoring:
     description: 'Enable remote monitoring with cloud dashboard (set BACKEND_URL and FRONTEND_URL env vars for custom URLs)'
     required: false
@@ -47,6 +57,8 @@ inputs:
     default: 'false'
 
 outputs:
+  collector:
+    description: 'Selected metric collector'
   run_id:
     description: 'The unique run identifier for this monitoring session'
   backend_url:

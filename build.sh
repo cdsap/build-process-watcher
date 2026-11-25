@@ -19,3 +19,9 @@ npx ncc build src/cleanup.ts -o dist-tmp || { echo "❌ Failed to build src/clea
 mv dist-tmp/index.js dist/cleanup.js || { echo "❌ dist-tmp/index.js not found"; exit 1; }
 
 rm -rf dist-tmp
+
+# Detached Daemonitor collector process (selected only by collector=daemonitor).
+npx ncc build src/daemonitor.ts -o dist-daemonitor
+mv dist-daemonitor/index.js dist/daemonitor.js
+node -e 'const fs = require("fs"); const p = "dist/daemonitor.js"; fs.writeFileSync(p, fs.readFileSync(p, "utf8").split("\n").map(line => line.startsWith("/******/") ? line.trimEnd() : line).join("\n"));'
+rm -rf dist-daemonitor

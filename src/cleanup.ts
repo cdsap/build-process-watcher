@@ -1,3 +1,4 @@
+import { stopDaemonitor, daemonitorArtifacts } from './lib/daemonitor';
 import { exec, execSync } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
@@ -239,13 +240,32 @@ async function run() {
     const debugMode = process.env.DEBUG_MODE === 'true';
     const isTrapHandler = process.env.CLEANUP_FROM_TRAP === 'true';
     let resolvedLogFile: string | null = null;
+    let collectorUploadsComplete = true;
+    const collector = core.getState('collector') || process.env.BPW_COLLECTOR || 'shell';
+    const daemonitorState = core.getState('daemonitor_state_dir') || process.env.BPW_DAEMONITOR_STATE_DIR;
+    const collectorArtifacts: string[] = [];
     
     try {
         
         // Check debug mode from environment variable
         
-        // Kill the monitor process if it's still running
-        try {
+        // Daemonitor must drain its outbox before run completion triggers BigQuery export.
+        if (collector === 'daemonitor') {
+            if (!daemonitorState) throw new Error('Missing Daemonitor collector state');
+            const stopped = await stopDaemonitor(daemonitorState);
+            process.env.LOG_FILE = stopped.config.logFile;
+            process.env.RUN_ID = stopped.config.runId;
+            collectorUploadsComplete = stopped.complete && !stopped.error;
+            if (!collectorUploadsComplete) core.setFailed(`Daemonitor run will remain unfinished: ${stopped.error || 'pending uploads'}`);
+            const outputDir = path.dirname(stopped.config.logFile);
+            for (const file of daemonitorArtifacts(stopped.config)) {
+                if (!fs.existsSync(file)) continue;
+                const artifactRunId = stopped.config.runId.replace(/[^a-zA-Z0-9_.-]/g, '_');
+                const destination = path.join(outputDir, `daemonitor-${artifactRunId}-${path.basename(file)}`);
+                fs.copyFileSync(file, destination);
+                collectorArtifacts.push(destination);
+            }
+        } else try {
             const pid = fs.readFileSync('monitor.pid', 'utf8').trim();
             process.kill(parseInt(pid));
             if (debugMode) {
@@ -286,7 +306,7 @@ async function run() {
         }
         
         // Only mark as finished for remote monitoring runs
-        if (runId && process.env.ENABLE_BACKEND === 'true') {
+        if (runId && process.env.ENABLE_BACKEND === 'true' && collectorUploadsComplete) {
             console.log(`🏁 Marking run ${runId} as finished...`);
             try {
                 await markProcessAsFinished(runId);
@@ -294,6 +314,8 @@ async function run() {
                 console.error(`❌ Failed to mark run ${runId} as finished:`, error);
                 // Don't throw - we want cleanup to continue even if marking fails
             }
+        } else if (runId && !collectorUploadsComplete) {
+            core.warning(`Run ${runId} has incomplete collector delivery; inspect the Daemonitor outbox artifact`);
         } else if (runId) {
             console.log(`ℹ️  Remote monitoring disabled; skipping finish for run ${runId}`);
         } else {
@@ -510,6 +532,7 @@ async function run() {
         const workspaceOutputDir = process.env.GITHUB_WORKSPACE;
         if (workspaceOutputDir && path.resolve(outputDir) !== path.resolve(workspaceOutputDir)) {
             [
+                ...collectorArtifacts,
                 logFile,
                 logFile.replace(/\.log$/, '.process_info'),
                 path.join(outputDir, memorySvgFile),
@@ -542,9 +565,10 @@ async function run() {
                 const runAttempt = process.env.GITHUB_RUN_ATTEMPT || '1';
                 
                 // Use job name in artifact name (run attempt avoids duplicates on re-runs)
-                const artifactName = `build_process_watcher-${jobName}-${runAttempt}`;
+                const artifactName = `build_process_watcher-${jobName}-${runAttempt}${collector === 'daemonitor' ? '-daemonitor' : ''}`;
                 
                 const artifactCandidates = [
+                    ...collectorArtifacts,
                     logFile,
                     path.join(outputDir, memorySvgFile),
                     path.join(outputDir, gcSvgFile),
