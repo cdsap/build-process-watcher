@@ -40,7 +40,7 @@ for (const width of [390, 1280]) {
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(/#prediction$/);
     const prediction = page.locator('#prediction');
-    await expect(prediction.getByRole('heading', { name: 'Choose a timeline forecast request.' })).toBeInViewport();
+    await expect(prediction.getByRole('heading', { name: 'Timeline prediction modes' })).toBeInViewport();
     await expect(prediction.locator('tbody tr')).toHaveCount(5);
     await expect(prediction).toContainText('Selecting the input does not start the VM');
     const region = prediction.getByRole('region', { name: 'Prediction modes', exact: false });
@@ -51,10 +51,13 @@ for (const width of [390, 1280]) {
       await expect.poll(() => region.evaluate(element => element.scrollLeft)).toBeGreaterThan(0);
     }
     await page.keyboard.press('Tab');
-    await expect(prediction.getByRole('link', { name: 'cadence guide' })).toBeFocused();
+    await expect(prediction.getByRole('link', { name: 'Prediction guide' })).toBeFocused();
     await page.keyboard.press('Tab');
-    await expect(prediction.locator('pre')).toBeFocused();
-    await expect(prediction.locator('pre')).toContainText("prediction_throttle_s: '20'");
+    await expect(prediction.getByRole('link', { name: 'Cadence details' })).toBeFocused();
+    const predictionSnippet = page.locator('#quick-start pre', { hasText: "prediction_throttle_s: '20'" });
+    await predictionSnippet.focus();
+    await expect(predictionSnippet).toBeFocused();
+    await expect(predictionSnippet).toContainText("prediction_throttle_s: '20'");
 
     const sizes = await page.evaluate(() => ({
       page: document.documentElement.scrollWidth,

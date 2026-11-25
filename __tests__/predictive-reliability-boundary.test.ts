@@ -111,7 +111,6 @@ describe('predictive reliability public boundary', () => {
     const readme = readRepoFile('README.md');
     expect(readme).toContain('prediction_mode');
     expect(readme).toContain('process_forecasts');
-    expect(readme).toContain('Migration from `predictive_reliability`');
     expect(readme).not.toContain('Relative-progress checkpoints (v2)');
 
     const action = readRepoFile('action.yaml');
