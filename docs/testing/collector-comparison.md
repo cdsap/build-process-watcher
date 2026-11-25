@@ -86,3 +86,7 @@ Activity rates use counter deltas divided by acquisition-time deltas. Repeated c
 The fourteen-column log and CSV remain unchanged. An optional `.measurements.jsonl` sidecar preserves timing for the packed JSON report. Older JSON/CSV without acquisition metadata retains the legacy approximate rate calculation. Older backends accept the new request field but ignore it; accurate dashboard rates require the corresponding backend and frontend changes. The comparison workflow does not deploy either service.
 
 For controlled collector comparisons, use similar JVM probe cadences and compare averages over comparable windows and final counters. A coarse measurement interval cannot recover shorter activity peaks.
+
+## Frontend deployment boundary
+
+Changes whose only frontend file is `frontend/public/compare-shared.js` do not trigger automatic Firebase deployment on merge. Publish these chart updates through the existing manual **Deploy Frontend** workflow after approving the backend/frontend rollout. Normal frontend changes retain automatic deployment; a change that also includes another frontend file can still trigger it. Recheck the frontend file list before merging the collector PR.

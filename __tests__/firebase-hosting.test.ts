@@ -62,3 +62,28 @@ describe('Firebase Hosting routes', () => {
     });
   });
 });
+
+describe('frontend deployment boundary', () => {
+  const yaml = require('js-yaml');
+  const micromatch = require('micromatch');
+  const workflow = yaml.load(fs.readFileSync(path.join(__dirname, '../.github/workflows/deploy-frontend.yml'), 'utf8'));
+  const autoDeploys = (branch: string, files: string[]) => {
+    const push = workflow.on.push;
+    return !!push && micromatch.isMatch(branch, push.branches) && micromatch(files, push.paths).length > 0;
+  };
+
+  it('does not auto-deploy shared chart changes accompanied only by non-frontend files', () => {
+    expect(autoDeploys('main', ['frontend/public/compare-shared.js', 'backend/internal/models/models.go',
+      'src/lib/report.ts', '.github/workflows/deploy-frontend.yml'])).toBe(false);
+  });
+  it('keeps normal public frontend changes eligible for automatic deployment', () => {
+    expect(autoDeploys('main', ['frontend/public/index.html'])).toBe(true);
+    expect(autoDeploys('main', ['frontend/public/compare-shared.js', 'frontend/public/bpw-ui.css'])).toBe(true);
+  });
+  it('never auto-deploys a feature branch', () => {
+    expect(autoDeploys('feat/daemonitor-collector-comparison', ['frontend/public/index.html'])).toBe(false);
+  });
+  it('retains the explicit manual deployment entry point for main', () => {
+    expect(workflow.on.workflow_dispatch.inputs.branch.options).toContain('main');
+  });
+});

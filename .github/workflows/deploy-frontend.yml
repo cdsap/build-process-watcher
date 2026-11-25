@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - 'frontend/**'
+      # Shared chart code alone requires an explicit manual deployment.
+      - '!frontend/public/compare-shared.js'
   workflow_dispatch:
     inputs:
       branch:
