@@ -1,3 +1,4 @@
+import { MetricMeasurements } from './log_samples';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -9,6 +10,7 @@ import { createInterface } from 'readline';
 export const DAEMONITOR_HEADER = 'Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB | GC_Time_S | JIT_Compiled | JIT_Failed | JIT_Invalid | JIT_Time_S | Classes_Loaded | Classes_Unloaded | Class_Time_S';
 const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const numeric = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0;
+const metricTime = (value: unknown): value is number => numeric(value) && Number.isSafeInteger(value) && value > 0;
 const names: Record<string, string> = { GRADLE_DAEMON: 'GradleDaemon', KOTLIN_DAEMON: 'KotlinCompileDaemon',
     GRADLE_WORKER: 'GradleWorkerMain', TEST_WORKER: 'GradleWorkerMain', UNKNOWN_GRADLE_WORKER: 'GradleWorkerMain' };
 
@@ -23,6 +25,7 @@ export function resolveCollector(value: string, binDir: string): { kind: 'shell'
 }
 
 export interface NativeProcess {
+    jvm_sampled_at_ms?: { jit?: number; classes?: number } | null;
     pid: number; start_time_ms: number; sampled_at_ms: number; type: string;
     resident_bytes?: number | null; rss_memory_mb?: number | null;
     heap_available?: boolean; heap_used_mb?: number | null; heap_committed_mb?: number | null;
@@ -33,8 +36,9 @@ export interface NativeProcess {
 export interface NativeSnapshot { processes: NativeProcess[] | null; [key: string]: unknown }
 export function encodeSnapshot(snapshot: NativeSnapshot, startedAtMs: number, seen: Map<number, { start: number; at: number }>) {
     const lines: string[] = [];
+    const measurements: MetricMeasurements[] = [];
     let incomplete = 0;
-    if (snapshot.processes === null) return { lines, incomplete };
+    if (snapshot.processes === null) return { lines, incomplete, measurements };
     if (!Array.isArray(snapshot.processes)) throw new Error('Invalid Daemonitor snapshot');
     for (const p of snapshot.processes) {
         const name = names[p.type];
@@ -57,25 +61,33 @@ export function encodeSnapshot(snapshot: NativeSnapshot, startedAtMs: number, se
         lines.push([elapsed, p.pid, name, mem(p.heap_used_mb), mem(p.heap_committed_mb), mem(rss), gc,
             opt(p.jit?.compiled_count), opt(p.jit?.failed_count), opt(p.jit?.invalid_count), opt(p.jit?.compilation_time_seconds),
             opt(p.classes?.loaded), opt(p.classes?.unloaded_total), opt(p.classes?.time_seconds)].join(' | '));
+        const times = p.jvm_sampled_at_ms;
+        measurements.push({ process_start_time_ms: p.start_time_ms,
+            ...(metricTime(times?.jit) ? { jit_sampled_at_ms: times.jit } : {}),
+            ...(metricTime(times?.classes) ? { classes_sampled_at_ms: times.classes } : {}) });
     }
-    return { lines, incomplete };
+    return { lines, incomplete, measurements };
 }
 
 export interface MetricRequest {
     run_id: string;
     data: string;
+    metric_measurements?: MetricMeasurements;
     freshness?: { sample_id: string; sequence: number; collected_at_unix_ms: number };
 }
 export function metricRequests(runId: string, lines: string[], freshness?: {
     startedAtMs: number; collectedAtMs: number; sequence: number;
-}): MetricRequest[] {
+}, measurements?: MetricMeasurements[]): MetricRequest[] {
     if (!lines.length) return [];
-    if (!freshness) return [{ run_id: runId, data: lines.join('\n') }];
+    if (measurements && measurements.length !== lines.length) throw new Error('Metric measurement count must match sample count');
+    if (!freshness && !measurements) return [{ run_id: runId, data: lines.join('\n') }];
     // The backend accepts freshness metadata for exactly one sample per request.
     return lines.map((data, index) => {
-        const sequence = freshness.sequence + index + 1;
-        return { run_id: runId, data, freshness: { sample_id: `${freshness.startedAtMs}-${sequence}`,
-            sequence, collected_at_unix_ms: freshness.collectedAtMs } };
+        const sequence = (freshness?.sequence ?? 0) + index + 1;
+        return { run_id: runId, data,
+            ...(measurements ? { metric_measurements: measurements[index] } : {}),
+            ...(freshness ? { freshness: { sample_id: `${freshness.startedAtMs}-${sequence}`,
+                sequence, collected_at_unix_ms: freshness.collectedAtMs } } : {}) };
     });
 }
 
@@ -286,6 +298,7 @@ export async function runDaemonitor(config: DaemonitorConfig): Promise<void> {
     fs.mkdirSync(path.dirname(config.logFile), { recursive: true });
     fs.writeFileSync(config.logFile, `Session started: ${new Date().toISOString()}\n${DAEMONITOR_HEADER}\n`);
     fs.writeFileSync(config.logFile.replace(/\.log$/, '') + '.process_info', '');
+    fs.writeFileSync(config.logFile + '.measurements.jsonl', '');
     const startedAt = Date.now();
     try {
         coreProcess = spawn(path.join(config.binDir, 'daemonitor-cored'), ['-socket', socket, '-db', database,
@@ -323,8 +336,11 @@ export async function runDaemonitor(config: DaemonitorConfig): Promise<void> {
                 if (encoded.lines.length) {
                     fs.appendFileSync(config.logFile, encoded.lines.join('\n') + '\n');
                     const requests = metricRequests(config.runId, encoded.lines, config.freshnessDiagnostics
-                        ? { startedAtMs: startedAt, collectedAtMs: Date.now(), sequence } : undefined);
-                    for (const request of requests) spool(request);
+                        ? { startedAtMs: startedAt, collectedAtMs: Date.now(), sequence } : undefined, encoded.measurements);
+                    for (const request of requests) {
+                        fs.appendFileSync(config.logFile + '.measurements.jsonl', JSON.stringify({ data: request.data, metric_measurements: request.metric_measurements }) + '\n');
+                        spool(request);
+                    }
                     sequence += requests.length;
                 }
                 for (const p of snapshot.processes ?? []) {

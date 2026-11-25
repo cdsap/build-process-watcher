@@ -107,6 +107,7 @@ const readline_1 = __nccwpck_require__(785);
 exports.DAEMONITOR_HEADER = 'Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB | GC_Time_S | JIT_Compiled | JIT_Failed | JIT_Invalid | JIT_Time_S | Classes_Loaded | Classes_Unloaded | Class_Time_S';
 const pause = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const numeric = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0;
+const metricTime = (value) => numeric(value) && Number.isSafeInteger(value) && value > 0;
 const names = { GRADLE_DAEMON: 'GradleDaemon', KOTLIN_DAEMON: 'KotlinCompileDaemon',
     GRADLE_WORKER: 'GradleWorkerMain', TEST_WORKER: 'GradleWorkerMain', UNKNOWN_GRADLE_WORKER: 'GradleWorkerMain' };
 function resolveCollector(value, binDir) {
@@ -126,9 +127,10 @@ function resolveCollector(value, binDir) {
 function encodeSnapshot(snapshot, startedAtMs, seen) {
     var _a, _b, _c, _d, _e, _f, _g;
     const lines = [];
+    const measurements = [];
     let incomplete = 0;
     if (snapshot.processes === null)
-        return { lines, incomplete };
+        return { lines, incomplete, measurements };
     if (!Array.isArray(snapshot.processes))
         throw new Error('Invalid Daemonitor snapshot');
     for (const p of snapshot.processes) {
@@ -160,19 +162,28 @@ function encodeSnapshot(snapshot, startedAtMs, seen) {
         lines.push([elapsed, p.pid, name, mem(p.heap_used_mb), mem(p.heap_committed_mb), mem(rss), gc,
             opt((_a = p.jit) === null || _a === void 0 ? void 0 : _a.compiled_count), opt((_b = p.jit) === null || _b === void 0 ? void 0 : _b.failed_count), opt((_c = p.jit) === null || _c === void 0 ? void 0 : _c.invalid_count), opt((_d = p.jit) === null || _d === void 0 ? void 0 : _d.compilation_time_seconds),
             opt((_e = p.classes) === null || _e === void 0 ? void 0 : _e.loaded), opt((_f = p.classes) === null || _f === void 0 ? void 0 : _f.unloaded_total), opt((_g = p.classes) === null || _g === void 0 ? void 0 : _g.time_seconds)].join(' | '));
+        const times = p.jvm_sampled_at_ms;
+        measurements.push({ process_start_time_ms: p.start_time_ms,
+            ...(metricTime(times === null || times === void 0 ? void 0 : times.jit) ? { jit_sampled_at_ms: times.jit } : {}),
+            ...(metricTime(times === null || times === void 0 ? void 0 : times.classes) ? { classes_sampled_at_ms: times.classes } : {}) });
     }
-    return { lines, incomplete };
+    return { lines, incomplete, measurements };
 }
-function metricRequests(runId, lines, freshness) {
+function metricRequests(runId, lines, freshness, measurements) {
     if (!lines.length)
         return [];
-    if (!freshness)
+    if (measurements && measurements.length !== lines.length)
+        throw new Error('Metric measurement count must match sample count');
+    if (!freshness && !measurements)
         return [{ run_id: runId, data: lines.join('\n') }];
     // The backend accepts freshness metadata for exactly one sample per request.
     return lines.map((data, index) => {
-        const sequence = freshness.sequence + index + 1;
-        return { run_id: runId, data, freshness: { sample_id: `${freshness.startedAtMs}-${sequence}`,
-                sequence, collected_at_unix_ms: freshness.collectedAtMs } };
+        var _a;
+        const sequence = ((_a = freshness === null || freshness === void 0 ? void 0 : freshness.sequence) !== null && _a !== void 0 ? _a : 0) + index + 1;
+        return { run_id: runId, data,
+            ...(measurements ? { metric_measurements: measurements[index] } : {}),
+            ...(freshness ? { freshness: { sample_id: `${freshness.startedAtMs}-${sequence}`,
+                    sequence, collected_at_unix_ms: freshness.collectedAtMs } } : {}) };
     });
 }
 function vmFlags(metadata) {
@@ -426,6 +437,7 @@ async function runDaemonitor(config) {
     fs.mkdirSync(path.dirname(config.logFile), { recursive: true });
     fs.writeFileSync(config.logFile, `Session started: ${new Date().toISOString()}\n${exports.DAEMONITOR_HEADER}\n`);
     fs.writeFileSync(config.logFile.replace(/\.log$/, '') + '.process_info', '');
+    fs.writeFileSync(config.logFile + '.measurements.jsonl', '');
     const startedAt = Date.now();
     try {
         coreProcess = (0, child_process_1.spawn)(path.join(config.binDir, 'daemonitor-cored'), ['-socket', socket, '-db', database,
@@ -472,9 +484,11 @@ async function runDaemonitor(config) {
                 if (encoded.lines.length) {
                     fs.appendFileSync(config.logFile, encoded.lines.join('\n') + '\n');
                     const requests = metricRequests(config.runId, encoded.lines, config.freshnessDiagnostics
-                        ? { startedAtMs: startedAt, collectedAtMs: Date.now(), sequence } : undefined);
-                    for (const request of requests)
+                        ? { startedAtMs: startedAt, collectedAtMs: Date.now(), sequence } : undefined, encoded.measurements);
+                    for (const request of requests) {
+                        fs.appendFileSync(config.logFile + '.measurements.jsonl', JSON.stringify({ data: request.data, metric_measurements: request.metric_measurements }) + '\n');
                         spool(request);
+                    }
                     sequence += requests.length;
                 }
                 for (const p of (_c = snapshot.processes) !== null && _c !== void 0 ? _c : []) {

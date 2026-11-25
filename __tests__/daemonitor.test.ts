@@ -71,7 +71,7 @@ describe('Daemonitor delivery', () => {
 });
 
 describe('Daemonitor BPW mapping', () => {
-  it('preserves the legacy units, own RSS, loaded gauge, and young plus full GC', () => {
+  it('preserves the legacy units, own RSS, loaded counter, and young plus full GC', () => {
     const result = encodeSnapshot({ processes: [sample()] }, 1000, new Map());
     expect(result.lines).toEqual([
       '00:00:05 | 42 | GradleDaemon | 25.0MB | 80.0MB | 101.5MB | 0.375s | 20 | 0 | 1 | 0.015 | 200 | 20 | 0.03',
@@ -119,4 +119,31 @@ describe('Daemonitor freshness ingestion', () => {
     expect(metricRequests('run', ['one', 'two'])).toEqual([{ run_id: 'run', data: 'one\ntwo' }]);
     expect(metricRequests('run', [], { startedAtMs: 1000, collectedAtMs: 6100, sequence: 0 })).toEqual([]);
   });
+});
+
+
+describe('Daemonitor metric acquisition times', () => {
+  it('keeps per-family capture times attached to each encoded JVM row', () => {
+    const result = encodeSnapshot({ processes: [sample({ jvm_sampled_at_ms: { jit: 5100, classes: 5200 } }),
+      sample({ pid: 43, jvm_sampled_at_ms: { jit: 4100, classes: 4200 } })] }, 1000, new Map());
+    expect((result as any).measurements).toEqual([
+      { process_start_time_ms: 1000, jit_sampled_at_ms: 5100, classes_sampled_at_ms: 5200 },
+      { process_start_time_ms: 1000, jit_sampled_at_ms: 4100, classes_sampled_at_ms: 4200 },
+    ]);
+  });
+});
+
+
+it('sends timed samples individually even without freshness and guards row alignment', () => {
+  const times = [{ jit_sampled_at_ms: 1000 }, { jit_sampled_at_ms: 2000 }];
+  expect(metricRequests('timed', ['one', 'two'], undefined, times)).toEqual([
+    { run_id: 'timed', data: 'one', metric_measurements: times[0] },
+    { run_id: 'timed', data: 'two', metric_measurements: times[1] },
+  ]);
+  expect(() => metricRequests('timed', ['one'], undefined, times)).toThrow(/count/);
+});
+
+it('leaves acquisition times unknown instead of using snapshot times', () => {
+  const encoded = encodeSnapshot({ processes: [sample()] }, 1000, new Map());
+  expect(encoded.measurements).toEqual([{ process_start_time_ms: 1000 }]);
 });

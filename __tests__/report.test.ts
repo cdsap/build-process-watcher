@@ -364,3 +364,33 @@ describe('buildJsonReport', () => {
     ]]);
   });
 });
+
+
+describe('metric measurement report compatibility', () => {
+  it('preserves timing records for matching log rows through packed JSON export', () => {
+    const line = '00:00:05 | 42 | GradleDaemon | 10MB | 100MB | 50MB | 0s | 20 | 0 | 0 | 1 | 100 | 0 | 1';
+    const log = 'Session started\nheader\n' + line + '\n';
+    const times = { process_start_time_ms: 1000, jit_sampled_at_ms: 5100, classes_sampled_at_ms: 5200 };
+    const report = buildJsonReport(log, {}, true, [{ data: line, metric_measurements: times }]);
+    const column = report.sample_fields.indexOf('MetricMeasurements' as any);
+    expect(column).toBeGreaterThan(-1);
+    expect(report.samples[0][column]).toEqual(times);
+    const unknown = buildJsonReport(log, {}, true, []);
+    expect(unknown.samples[0][column]).toEqual({});
+    expect(buildJsonReport(log, {}, true).sample_fields).not.toContain('MetricMeasurements');
+  });
+});
+
+it('keeps reports usable when a metric sidecar ends with an incomplete record', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'bpw-timing-report-'));
+  const log = path.join(directory, 'metrics.log');
+  const output = path.join(directory, 'report.json');
+  try {
+    fs.writeFileSync(log, 'Session\nheader\n00:00:01 | 42 | P | 1MB | 2MB | 3MB\n');
+    fs.writeFileSync(log + '.measurements.jsonl', '{"data":');
+    generateJsonReport(log, output, false);
+    const report = JSON.parse(fs.readFileSync(output, 'utf8'));
+    expect(report.samples).toHaveLength(1);
+    expect(report.samples[0][report.sample_fields.indexOf('MetricMeasurements')]).toEqual({});
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});

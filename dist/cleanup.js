@@ -214205,12 +214205,14 @@ function cleanupWorkspaceLeftovers(logFile, debugMode) {
     if (logFile && defaultLogFile) {
         removeIfExists(logFile, debugMode);
         removeIfExists(logFile.replace(/\.log$/, '.process_info'), debugMode);
+        removeIfExists(logFile + '.measurements.jsonl', debugMode);
     }
     if (workspaceDir && runId && defaultLogFile) {
         const outputSuffix = `-${runId}`;
         [
             'build_process_watcher.log',
             'build_process_watcher.process_info',
+            'build_process_watcher.log.measurements.jsonl',
             `memory_usage${outputSuffix}.svg`,
             `gc_time${outputSuffix}.svg`,
             `jit_compilation${outputSuffix}.svg`,
@@ -214514,6 +214516,7 @@ async function run() {
                 ...collectorArtifacts,
                 logFile,
                 logFile.replace(/\.log$/, '.process_info'),
+                logFile + '.measurements.jsonl',
                 path.join(outputDir, memorySvgFile),
                 path.join(outputDir, gcSvgFile),
                 path.join(outputDir, jitSvgFile),
@@ -214542,7 +214545,7 @@ async function run() {
                 // Use job name in artifact name (run attempt avoids duplicates on re-runs)
                 const artifactName = `build_process_watcher-${jobName}-${runAttempt}${collector === 'daemonitor' ? '-daemonitor' : ''}`;
                 const artifactCandidates = [
-                    ...collectorArtifacts,
+                    logFile + '.measurements.jsonl', ...collectorArtifacts,
                     logFile,
                     path.join(outputDir, memorySvgFile),
                     path.join(outputDir, gcSvgFile),
@@ -214963,6 +214966,7 @@ const readline_1 = __nccwpck_require__(23785);
 exports.DAEMONITOR_HEADER = 'Elapsed_Time | PID | Name | Heap_Used_MB | Heap_Capacity_MB | RSS_MB | GC_Time_S | JIT_Compiled | JIT_Failed | JIT_Invalid | JIT_Time_S | Classes_Loaded | Classes_Unloaded | Class_Time_S';
 const pause = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const numeric = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0;
+const metricTime = (value) => numeric(value) && Number.isSafeInteger(value) && value > 0;
 const names = { GRADLE_DAEMON: 'GradleDaemon', KOTLIN_DAEMON: 'KotlinCompileDaemon',
     GRADLE_WORKER: 'GradleWorkerMain', TEST_WORKER: 'GradleWorkerMain', UNKNOWN_GRADLE_WORKER: 'GradleWorkerMain' };
 function resolveCollector(value, binDir) {
@@ -214982,9 +214986,10 @@ function resolveCollector(value, binDir) {
 function encodeSnapshot(snapshot, startedAtMs, seen) {
     var _a, _b, _c, _d, _e, _f, _g;
     const lines = [];
+    const measurements = [];
     let incomplete = 0;
     if (snapshot.processes === null)
-        return { lines, incomplete };
+        return { lines, incomplete, measurements };
     if (!Array.isArray(snapshot.processes))
         throw new Error('Invalid Daemonitor snapshot');
     for (const p of snapshot.processes) {
@@ -215016,19 +215021,28 @@ function encodeSnapshot(snapshot, startedAtMs, seen) {
         lines.push([elapsed, p.pid, name, mem(p.heap_used_mb), mem(p.heap_committed_mb), mem(rss), gc,
             opt((_a = p.jit) === null || _a === void 0 ? void 0 : _a.compiled_count), opt((_b = p.jit) === null || _b === void 0 ? void 0 : _b.failed_count), opt((_c = p.jit) === null || _c === void 0 ? void 0 : _c.invalid_count), opt((_d = p.jit) === null || _d === void 0 ? void 0 : _d.compilation_time_seconds),
             opt((_e = p.classes) === null || _e === void 0 ? void 0 : _e.loaded), opt((_f = p.classes) === null || _f === void 0 ? void 0 : _f.unloaded_total), opt((_g = p.classes) === null || _g === void 0 ? void 0 : _g.time_seconds)].join(' | '));
+        const times = p.jvm_sampled_at_ms;
+        measurements.push({ process_start_time_ms: p.start_time_ms,
+            ...(metricTime(times === null || times === void 0 ? void 0 : times.jit) ? { jit_sampled_at_ms: times.jit } : {}),
+            ...(metricTime(times === null || times === void 0 ? void 0 : times.classes) ? { classes_sampled_at_ms: times.classes } : {}) });
     }
-    return { lines, incomplete };
+    return { lines, incomplete, measurements };
 }
-function metricRequests(runId, lines, freshness) {
+function metricRequests(runId, lines, freshness, measurements) {
     if (!lines.length)
         return [];
-    if (!freshness)
+    if (measurements && measurements.length !== lines.length)
+        throw new Error('Metric measurement count must match sample count');
+    if (!freshness && !measurements)
         return [{ run_id: runId, data: lines.join('\n') }];
     // The backend accepts freshness metadata for exactly one sample per request.
     return lines.map((data, index) => {
-        const sequence = freshness.sequence + index + 1;
-        return { run_id: runId, data, freshness: { sample_id: `${freshness.startedAtMs}-${sequence}`,
-                sequence, collected_at_unix_ms: freshness.collectedAtMs } };
+        var _a;
+        const sequence = ((_a = freshness === null || freshness === void 0 ? void 0 : freshness.sequence) !== null && _a !== void 0 ? _a : 0) + index + 1;
+        return { run_id: runId, data,
+            ...(measurements ? { metric_measurements: measurements[index] } : {}),
+            ...(freshness ? { freshness: { sample_id: `${freshness.startedAtMs}-${sequence}`,
+                    sequence, collected_at_unix_ms: freshness.collectedAtMs } } : {}) };
     });
 }
 function vmFlags(metadata) {
@@ -215282,6 +215296,7 @@ async function runDaemonitor(config) {
     fs.mkdirSync(path.dirname(config.logFile), { recursive: true });
     fs.writeFileSync(config.logFile, `Session started: ${new Date().toISOString()}\n${exports.DAEMONITOR_HEADER}\n`);
     fs.writeFileSync(config.logFile.replace(/\.log$/, '') + '.process_info', '');
+    fs.writeFileSync(config.logFile + '.measurements.jsonl', '');
     const startedAt = Date.now();
     try {
         coreProcess = (0, child_process_1.spawn)(path.join(config.binDir, 'daemonitor-cored'), ['-socket', socket, '-db', database,
@@ -215328,9 +215343,11 @@ async function runDaemonitor(config) {
                 if (encoded.lines.length) {
                     fs.appendFileSync(config.logFile, encoded.lines.join('\n') + '\n');
                     const requests = metricRequests(config.runId, encoded.lines, config.freshnessDiagnostics
-                        ? { startedAtMs: startedAt, collectedAtMs: Date.now(), sequence } : undefined);
-                    for (const request of requests)
+                        ? { startedAtMs: startedAt, collectedAtMs: Date.now(), sequence } : undefined, encoded.measurements);
+                    for (const request of requests) {
+                        fs.appendFileSync(config.logFile + '.measurements.jsonl', JSON.stringify({ data: request.data, metric_measurements: request.metric_measurements }) + '\n');
                         spool(request);
+                    }
                     sequence += requests.length;
                 }
                 for (const p of (_c = snapshot.processes) !== null && _c !== void 0 ? _c : []) {
@@ -215776,14 +215793,25 @@ function loadProcessInfoFromFile(logFile) {
 /**
  * Build JSON report payload, merging supplied process metadata when available.
  */
-function buildJsonReport(logText, processInfo, hasGcData) {
+function buildJsonReport(logText, processInfo, hasGcData, metricRecords) {
+    var _a;
     const samples = [];
     const mergedProcessInfo = {};
+    const byLine = new Map();
+    const key = (line) => line.split('|').map(cell => cell.trim()).join('|');
+    for (const record of metricRecords !== null && metricRecords !== void 0 ? metricRecords : []) {
+        const values = (_a = byLine.get(key(record.data))) !== null && _a !== void 0 ? _a : [];
+        values.push(record.metric_measurements);
+        byLine.set(key(record.data), values);
+    }
     (0, log_samples_1.parseLogSamples)(logText).forEach(row => {
-        var _a;
+        var _a, _b, _c;
         const elapsedSeconds = parseTimestampSeconds(row.timestamp);
         const gcSecondsValue = hasGcData ? row.gcTimeSeconds : null;
+        const line = [row.timestamp, row.pid, row.name, row.raw.heapUsedMb, row.raw.heapCapMb, row.raw.rssMb,
+            ...(row.columnCount >= 7 ? [row.raw.gcTime] : []), ...row.raw.optionalMetrics].join('|');
         samples.push({
+            ...(metricRecords ? { MetricMeasurements: (_b = (_a = byLine.get(key(line))) === null || _a === void 0 ? void 0 : _a.shift()) !== null && _b !== void 0 ? _b : {} } : {}),
             Timestamp: Math.max(0, elapsedSeconds * 1000),
             ElapsedTime: Math.max(0, elapsedSeconds),
             PID: row.pid,
@@ -215805,13 +215833,14 @@ function buildJsonReport(logText, processInfo, hasGcData) {
             const fromFile = processInfo[row.pid];
             mergedProcessInfo[row.pid] = {
                 name: row.name,
-                vm_flags: (_a = fromFile === null || fromFile === void 0 ? void 0 : fromFile.vm_flags) !== null && _a !== void 0 ? _a : []
+                vm_flags: (_c = fromFile === null || fromFile === void 0 ? void 0 : fromFile.vm_flags) !== null && _c !== void 0 ? _c : []
             };
         }
     });
+    const fields = metricRecords ? [...SAMPLE_FIELDS, 'MetricMeasurements'] : SAMPLE_FIELDS;
     return {
-        sample_fields: SAMPLE_FIELDS,
-        samples: samples.map(sample => SAMPLE_FIELDS.map(field => sample[field])),
+        sample_fields: fields,
+        samples: samples.map(sample => fields.map(field => sample[field])),
         process_info: mergedProcessInfo,
         finished: true
     };
@@ -215821,7 +215850,21 @@ function buildJsonReport(logText, processInfo, hasGcData) {
  */
 function generateJsonReport(logFile, outputFile, hasGcData) {
     const processInfo = loadProcessInfoFromFile(logFile);
-    const payload = buildJsonReport(fs.readFileSync(logFile, 'utf8'), processInfo, hasGcData);
+    const timingsFile = logFile + '.measurements.jsonl';
+    const records = fs.existsSync(timingsFile) ? [] : undefined;
+    if (records) {
+        for (const line of fs.readFileSync(timingsFile, 'utf8').split('\n').filter(Boolean)) {
+            try {
+                const record = JSON.parse(line);
+                if (typeof record.data === 'string' && record.metric_measurements && typeof record.metric_measurements === 'object')
+                    records.push(record);
+            }
+            catch {
+                console.warn('Ignoring an incomplete metric measurement record');
+            }
+        }
+    }
+    const payload = buildJsonReport(fs.readFileSync(logFile, 'utf8'), processInfo, hasGcData, records);
     fs.writeFileSync(outputFile, JSON.stringify(payload, null, 2));
 }
 function generateCsvReport(logFile, outputFile, hasGcData) {

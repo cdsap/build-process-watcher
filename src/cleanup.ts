@@ -211,6 +211,7 @@ function cleanupWorkspaceLeftovers(logFile: string | null, debugMode: boolean): 
     if (logFile && defaultLogFile) {
         removeIfExists(logFile, debugMode);
         removeIfExists(logFile.replace(/\.log$/, '.process_info'), debugMode);
+        removeIfExists(logFile + '.measurements.jsonl', debugMode);
     }
 
     if (workspaceDir && runId && defaultLogFile) {
@@ -218,6 +219,7 @@ function cleanupWorkspaceLeftovers(logFile: string | null, debugMode: boolean): 
         [
             'build_process_watcher.log',
             'build_process_watcher.process_info',
+            'build_process_watcher.log.measurements.jsonl',
             `memory_usage${outputSuffix}.svg`,
             `gc_time${outputSuffix}.svg`,
             `jit_compilation${outputSuffix}.svg`,
@@ -535,6 +537,7 @@ async function run() {
                 ...collectorArtifacts,
                 logFile,
                 logFile.replace(/\.log$/, '.process_info'),
+                logFile + '.measurements.jsonl',
                 path.join(outputDir, memorySvgFile),
                 path.join(outputDir, gcSvgFile),
                 path.join(outputDir, jitSvgFile),
@@ -568,7 +571,7 @@ async function run() {
                 const artifactName = `build_process_watcher-${jobName}-${runAttempt}${collector === 'daemonitor' ? '-daemonitor' : ''}`;
                 
                 const artifactCandidates = [
-                    ...collectorArtifacts,
+                    logFile + '.measurements.jsonl',                    ...collectorArtifacts,
                     logFile,
                     path.join(outputDir, memorySvgFile),
                     path.join(outputDir, gcSvgFile),

@@ -59,6 +59,14 @@ const server = http.createServer(async (request, response) => {
         run.sampleIds.add(f.sample_id);
         run.freshnessSamples++;
       }
+      if (lines.length) {
+        assert.equal(lines.length, 1, 'Timed metadata must belong to one process sample');
+        const times = payload.metric_measurements;
+        assert.ok(times && typeof times === 'object', 'Metric acquisition times missing from ingestion');
+        for (const key of ['jit_sampled_at_ms', 'classes_sampled_at_ms']) {
+          if (times[key]) assert.ok(Number.isSafeInteger(times[key]) && times[key] > 0);
+        }
+      }
       for (const line of lines) {
         const fields = line.split('|').map(v => v.trim());
         assert.equal(fields.length, 14);
@@ -67,6 +75,8 @@ const server = http.createServer(async (request, response) => {
         run.pids.add(fields[1]);
         if (fields[6] !== 'N/A') run.gcPids.add(fields[1]);
         if (fields[11] !== 'N/A') run.classPids.add(fields[1]);
+        if (fields[7] !== 'N/A') assert.ok(payload.metric_measurements.jit_sampled_at_ms > 0);
+        if (fields[11] !== 'N/A') assert.ok(payload.metric_measurements.classes_sampled_at_ms > 0);
       }
       response.setHeader('Content-Type', 'application/json');
       response.end('{}'); return;
@@ -184,6 +194,9 @@ try {
       }
       const report = JSON.parse(fs.readFileSync(path.join(workspace, `build_process_watcher-${id}.json`), 'utf8'));
       assert.ok(report.samples.length > 0);
+      const timingColumn = report.sample_fields.indexOf('MetricMeasurements');
+      assert.ok(timingColumn >= 0, 'Packed report lost measurement metadata');
+      assert.ok(report.samples.every(row => row[timingColumn] && typeof row[timingColumn] === 'object'));
       if (failure) throw failure;
       console.log(JSON.stringify({ variant: id, samples: run.samples, metadata: run.metadata, finished: run.finished, freshnessSamples: run.freshnessSamples, fixturePids: [workload.pid, kotlinWorkload.pid], exit }));
     } finally { workload.kill('SIGTERM'); kotlinWorkload.kill('SIGTERM'); }

@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { parseLogSamples } from './log_samples';
+import { parseLogSamples, MetricMeasurements, MetricRecord } from './log_samples';
 import { parseProcessInfo } from './process_info';
 
 export { parseProcessInfo } from './process_info';
@@ -45,9 +45,11 @@ export function loadProcessInfoFromFile(logFile: string): Record<string, { name:
 export function buildJsonReport(
     logText: string,
     processInfo: Record<string, { name: string; vm_flags: string[] }>,
-    hasGcData: boolean
+    hasGcData: boolean,
+    metricRecords?: MetricRecord[]
 ) {
     const samples: Array<{
+        MetricMeasurements?: MetricMeasurements;
         Timestamp: number;
         ElapsedTime: number;
         PID: string;
@@ -67,11 +69,21 @@ export function buildJsonReport(
     }> = [];
     const mergedProcessInfo: Record<string, { name: string; vm_flags: string[] }> = {};
 
+    const byLine = new Map<string, MetricMeasurements[]>();
+    const key = (line: string) => line.split('|').map(cell => cell.trim()).join('|');
+    for (const record of metricRecords ?? []) {
+        const values = byLine.get(key(record.data)) ?? [];
+        values.push(record.metric_measurements);
+        byLine.set(key(record.data), values);
+    }
     parseLogSamples(logText).forEach(row => {
         const elapsedSeconds = parseTimestampSeconds(row.timestamp);
         const gcSecondsValue = hasGcData ? row.gcTimeSeconds : null;
 
+        const line = [row.timestamp, row.pid, row.name, row.raw.heapUsedMb, row.raw.heapCapMb, row.raw.rssMb,
+            ...(row.columnCount >= 7 ? [row.raw.gcTime] : []), ...row.raw.optionalMetrics].join('|');
         samples.push({
+            ...(metricRecords ? { MetricMeasurements: byLine.get(key(line))?.shift() ?? {} } : {}),
             Timestamp: Math.max(0, elapsedSeconds * 1000),
             ElapsedTime: Math.max(0, elapsedSeconds),
             PID: row.pid,
@@ -99,9 +111,10 @@ export function buildJsonReport(
         }
     });
 
+    const fields = metricRecords ? [...SAMPLE_FIELDS, 'MetricMeasurements' as const] : SAMPLE_FIELDS;
     return {
-        sample_fields: SAMPLE_FIELDS,
-        samples: samples.map(sample => SAMPLE_FIELDS.map(field => sample[field])),
+        sample_fields: fields,
+        samples: samples.map(sample => fields.map(field => sample[field])),
         process_info: mergedProcessInfo,
         finished: true
     };
@@ -112,7 +125,17 @@ export function buildJsonReport(
  */
 export function generateJsonReport(logFile: string, outputFile: string, hasGcData: boolean): void {
     const processInfo = loadProcessInfoFromFile(logFile);
-    const payload = buildJsonReport(fs.readFileSync(logFile, 'utf8'), processInfo, hasGcData);
+    const timingsFile = logFile + '.measurements.jsonl';
+    const records: MetricRecord[] | undefined = fs.existsSync(timingsFile) ? [] : undefined;
+    if (records) {
+        for (const line of fs.readFileSync(timingsFile, 'utf8').split('\n').filter(Boolean)) {
+            try {
+                const record = JSON.parse(line) as MetricRecord;
+                if (typeof record.data === 'string' && record.metric_measurements && typeof record.metric_measurements === 'object') records.push(record);
+            } catch { console.warn('Ignoring an incomplete metric measurement record'); }
+        }
+    }
+    const payload = buildJsonReport(fs.readFileSync(logFile, 'utf8'), processInfo, hasGcData, records);
     fs.writeFileSync(outputFile, JSON.stringify(payload, null, 2));
 }
 

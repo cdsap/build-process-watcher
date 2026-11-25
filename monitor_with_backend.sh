@@ -476,6 +476,7 @@ send_to_backend() {
     local sample_id="${15:-}"
     local sample_sequence="${16:-}"
     local collected_at_unix_ms="${17:-}"
+    local metric_measurements="${18:-}"
     
     log_script "send_to_backend called: timestamp=$timestamp, pid=$pid, name=$name, heap_used=$heap_used, heap_cap=$heap_cap, rss=$rss, gc_time=$gc_time"
     
@@ -489,6 +490,10 @@ send_to_backend() {
     log_script "send_to_backend: data_line='$data_line'"
     
     # Prepare JSON payload in the format our backend expects
+    local metric_json=""
+    if [ -n "$metric_measurements" ]; then
+        metric_json=", \"metric_measurements\": $metric_measurements"
+    fi
     local freshness_fragment
     freshness_fragment=$(freshness_json_fragment "$sample_id" "$sample_sequence" "$collected_at_unix_ms")
     local freshness_json=""
@@ -498,7 +503,7 @@ send_to_backend() {
     local json_payload=$(cat <<EOF
 {
     "run_id": "$RUN_ID",
-    "data": "$data_line"$freshness_json
+    "data": "$data_line"$freshness_json$metric_json
 }
 EOF
 )
@@ -814,8 +819,15 @@ while true; do
         fi
         {
           GC_LINE=$(jstat -gc "$PID" 2>/dev/null | tail -n 1)
-          JIT_VALUES=$(jstat_named_values -compiler "$PID" Compiled Failed Invalid Time)
-          CLASS_VALUES=$(jstat_named_values -class "$PID" Loaded Unloaded Time)
+          JIT_SAMPLED_AT_MS=0
+          CLASSES_SAMPLED_AT_MS=0
+          if JIT_VALUES=$(jstat_named_values -compiler "$PID" Compiled Failed Invalid Time); then
+            JIT_SAMPLED_AT_MS=$(epoch_millis)
+          fi
+          if CLASS_VALUES=$(jstat_named_values -class "$PID" Loaded Unloaded Time); then
+            CLASSES_SAMPLED_AT_MS=$(epoch_millis)
+          fi
+          METRIC_MEASUREMENTS="{\"jit_sampled_at_ms\":$JIT_SAMPLED_AT_MS,\"classes_sampled_at_ms\":$CLASSES_SAMPLED_AT_MS}"
           IFS='|' read -r JIT_COMPILED JIT_FAILED JIT_INVALID JIT_TIME_S <<< "$JIT_VALUES"
           IFS='|' read -r CLASSES_LOADED CLASSES_UNLOADED CLASS_TIME_S <<< "$CLASS_VALUES"
           RSS_KB=$(ps -o rss= -p "$PID" 2>/dev/null | tr -d ' ')
@@ -823,10 +835,11 @@ while true; do
           RSS_MB=$(awk "BEGIN { printf \"%.1f\", $RSS_KB / 1024 }")
 
           if [[ -z "$GC_LINE" ]]; then
-            echo "$TIMESTAMP | $PID | $NAME | N/A | N/A | ${RSS_MB}MB | N/A | $JIT_COMPILED | $JIT_FAILED | $JIT_INVALID | $JIT_TIME_S | $CLASSES_LOADED | $CLASSES_UNLOADED | $CLASS_TIME_S" >> "$LOG_FILE"
+            SAMPLE_LINE="$TIMESTAMP | $PID | $NAME | N/A | N/A | ${RSS_MB}MB | N/A | $JIT_COMPILED | $JIT_FAILED | $JIT_INVALID | $JIT_TIME_S | $CLASSES_LOADED | $CLASSES_UNLOADED | $CLASS_TIME_S"
+            echo "$SAMPLE_LINE" >> "$LOG_FILE"
             # Store process data for batch sending
             COLLECTED_AT_UNIX_MS=$(epoch_millis)
-            process_data+=("$TIMESTAMP|$PID|$NAME|0|0|${RSS_MB}MB|N/A|$JIT_COMPILED|$JIT_FAILED|$JIT_INVALID|$JIT_TIME_S|$CLASSES_LOADED|$CLASSES_UNLOADED|$CLASS_TIME_S|${ITERATION}-${PID}|$ITERATION|$COLLECTED_AT_UNIX_MS")
+            process_data+=("$TIMESTAMP|$PID|$NAME|0|0|${RSS_MB}MB|N/A|$JIT_COMPILED|$JIT_FAILED|$JIT_INVALID|$JIT_TIME_S|$CLASSES_LOADED|$CLASSES_UNLOADED|$CLASS_TIME_S|${ITERATION}-${PID}|$ITERATION|$COLLECTED_AT_UNIX_MS|$METRIC_MEASUREMENTS")
           else
             EC=$(echo "$GC_LINE" | awk '{print $5}')
             EU=$(echo "$GC_LINE" | awk '{print $6}')
@@ -849,16 +862,18 @@ while true; do
             else
               GC_TIME_S="N/A"
             fi
-            echo "$TIMESTAMP | $PID | $NAME | ${HEAP_USED_MB}MB | ${HEAP_CAP_MB}MB | ${RSS_MB}MB | ${GC_TIME_S}s | $JIT_COMPILED | $JIT_FAILED | $JIT_INVALID | $JIT_TIME_S | $CLASSES_LOADED | $CLASSES_UNLOADED | $CLASS_TIME_S" >> "$LOG_FILE"
+            SAMPLE_LINE="$TIMESTAMP | $PID | $NAME | ${HEAP_USED_MB}MB | ${HEAP_CAP_MB}MB | ${RSS_MB}MB | ${GC_TIME_S}s | $JIT_COMPILED | $JIT_FAILED | $JIT_INVALID | $JIT_TIME_S | $CLASSES_LOADED | $CLASSES_UNLOADED | $CLASS_TIME_S"
+            echo "$SAMPLE_LINE" >> "$LOG_FILE"
             # Store process data for batch sending
             COLLECTED_AT_UNIX_MS=$(epoch_millis)
-            process_data+=("$TIMESTAMP|$PID|$NAME|${HEAP_USED_MB}MB|${HEAP_CAP_MB}MB|${RSS_MB}MB|${GC_TIME_S}s|$JIT_COMPILED|$JIT_FAILED|$JIT_INVALID|$JIT_TIME_S|$CLASSES_LOADED|$CLASSES_UNLOADED|$CLASS_TIME_S|${ITERATION}-${PID}|$ITERATION|$COLLECTED_AT_UNIX_MS")
+            process_data+=("$TIMESTAMP|$PID|$NAME|${HEAP_USED_MB}MB|${HEAP_CAP_MB}MB|${RSS_MB}MB|${GC_TIME_S}s|$JIT_COMPILED|$JIT_FAILED|$JIT_INVALID|$JIT_TIME_S|$CLASSES_LOADED|$CLASSES_UNLOADED|$CLASS_TIME_S|${ITERATION}-${PID}|$ITERATION|$COLLECTED_AT_UNIX_MS|$METRIC_MEASUREMENTS")
           fi
         } || { 
           log_script "ERROR: Failed to process memory data for PID $PID ($NAME) at $TIMESTAMP"
           echo "[monitor.sh] Skipped process $PID ($NAME) at $TIMESTAMP due to error" >&2
           continue
         }
+        printf '{"data":"%s","metric_measurements":%s}\n' "$SAMPLE_LINE" "$METRIC_MEASUREMENTS" >> "$LOG_FILE.measurements.jsonl"
         log_script "Successfully processed memory data for PID $PID ($NAME)"
       else
         log_script "No match: NAME '$NAME' != PATTERN '$PATTERN'"
@@ -883,9 +898,9 @@ while true; do
     for data_line in "${process_data[@]}"; do
       sends_attempted=$((sends_attempted + 1))
       log_script "Sending data line: '$data_line'"
-      IFS='|' read -r ts pid name heap_used heap_cap rss gc_time jit_compiled jit_failed jit_invalid jit_time classes_loaded classes_unloaded class_time sample_id sample_sequence collected_at_unix_ms <<< "$data_line"
+      IFS='|' read -r ts pid name heap_used heap_cap rss gc_time jit_compiled jit_failed jit_invalid jit_time classes_loaded classes_unloaded class_time sample_id sample_sequence collected_at_unix_ms metric_measurements <<< "$data_line"
       log_script "Calling send_to_backend with GC data for PID $pid"
-      if send_to_backend "$ts" "$pid" "$name" "$heap_used" "$heap_cap" "$rss" "$gc_time" "$jit_compiled" "$jit_failed" "$jit_invalid" "$jit_time" "$classes_loaded" "$classes_unloaded" "$class_time" "$sample_id" "$sample_sequence" "$collected_at_unix_ms"; then
+      if send_to_backend "$ts" "$pid" "$name" "$heap_used" "$heap_cap" "$rss" "$gc_time" "$jit_compiled" "$jit_failed" "$jit_invalid" "$jit_time" "$classes_loaded" "$classes_unloaded" "$class_time" "$sample_id" "$sample_sequence" "$collected_at_unix_ms" "$metric_measurements"; then
         sends_succeeded=$((sends_succeeded + 1))
         log_script "send_to_backend succeeded for PID $pid"
       else

@@ -76,3 +76,13 @@ node scripts/verify-collector-comparison.mjs /path/to/daemonitor-bin d47b3901277
 The verification uses real native binaries and simultaneous Gradle/Kotlin HotSpot fixtures with freshness diagnostics enabled, exercises shell and Daemonitor variants, token refresh, metadata delivery, local reports, and finish-after-drain ordering. It also verifies that a simulated upload outage retains the outbox and prevents explicit run completion. It does not contact Firestore or BigQuery. Host process inspection and loopback/socket access are required.
 
 The workflow is supplied for Linux validation; a local macOS pass does not establish that a hosted workflow has run. No workflow dispatch, release, or cloud deployment is part of the local implementation.
+
+## JIT and class activity timing
+
+New collector samples carry optional `metric_measurements` on ingestion and `MetricMeasurements` in stored/exported JSON. This records `jit_sampled_at_ms`, `classes_sampled_at_ms`, and the process start time when available. Daemonitor supplies its acquisition timestamps; shell records completion of each successful `jstat` call. These times are separate from snapshot and upload timing.
+
+Activity rates use counter deltas divided by acquisition-time deltas. Repeated cached acquisitions create no new activity point. A fresh unchanged counter produces zero; unavailable measurements, counter resets and JVM lifetime changes break the rate baseline. Cumulative counters continue to display across cached observations. HotSpot's `jstat -class` `Loaded` is already cumulative; BPW does not add `Unloaded` to it.
+
+The fourteen-column log and CSV remain unchanged. An optional `.measurements.jsonl` sidecar preserves timing for the packed JSON report. Older JSON/CSV without acquisition metadata retains the legacy approximate rate calculation. Older backends accept the new request field but ignore it; accurate dashboard rates require the corresponding backend and frontend changes. The comparison workflow does not deploy either service.
+
+For controlled collector comparisons, use similar JVM probe cadences and compare averages over comparable windows and final counters. A coarse measurement interval cannot recover shorter activity peaks.
