@@ -289,6 +289,12 @@
             background: #fff;
         }
 
+        .summary-media {
+            display: grid;
+            gap: 0.75rem;
+            min-width: 0;
+        }
+
         .summary-row img {
             display: block;
             width: 100%;
@@ -649,11 +655,16 @@
             </div>
 
             <div class="summary-row">
-                <img src="/media/ci-summary.png" loading="lazy" alt="Local Mode GitHub Actions job summary with checkpoints, per-process stats table, and artifact list" data-lightbox-title="Local Mode — GitHub Actions Job Summary">
+                <div class="summary-media">
+                    <img src="/media/ci-artifacts.png" loading="lazy" alt="GitHub Actions artifacts from the Gradle 9.9 experiment, including build_process_watcher-build-1 and build_process_watcher-build-1-daemonitor" data-lightbox-title="GitHub Actions artifacts — Gradle 9.9 experiment">
+                    <img src="/media/ci-checkpoints.svg" loading="lazy" alt="Checkpoint flow diagram from the Gradle 9.9 Daemonitor build, showing aggregate and per-process RSS, heap, GC, JIT compilation, and class loading across six timestamps" data-lightbox-title="GitHub Actions summary checkpoint flow — Gradle 9.9 experiment">
+                </div>
                 <div>
                     <h3>Local Mode: GitHub Actions summary &amp; artifacts</h3>
                     <p>With no backend enabled, the action writes a Mermaid checkpoint flow and per-process stats table directly to the job summary, and saves <code>build_process_watcher.json</code>, <code>CSV</code>, and <code>SVG</code> charts as workflow artifacts.</p>
-                    <a href="#quick-start">Local Mode snippet</a>
+                    <a href="#quick-start">Local Mode snippet</a> &middot;
+                    <a href="https://github.com/cdsap/experiment-gradle-9.9.1/actions/runs/45704739771#artifacts">View pictured run</a>
+                    <br><a href="/media/ci-checkpoints.svg" download>Download checkpoint SVG</a>
                 </div>
             </div>
         </section>
