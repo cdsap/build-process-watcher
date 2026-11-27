@@ -13,7 +13,7 @@ Once these workflow changes are available on the repository's default branch, ru
 
 The workflow resolves the workload ref once and passes that immutable SHA to both jobs. Both use Ubuntu, the same JDK, command, and five-second observation interval. Runner hardware, dependency downloads, and cache state can still vary; repeated runs with controlled cache conditions are needed for performance conclusions.
 
-The Daemonitor job builds commit `d47b3901277ae0f3d858286c1e884ec35aa0d4ae` from source, using Go 1.26.2. It does not publish or require a release. Changing that pin is an explicit workflow edit. An older published native CLI may not implement the timestamp, persistence, flag, and scheduling fixes required by this integration.
+The Daemonitor job installs `cdsap/tap/daemonitor-cli` with Homebrew and requires version **1.3.3**. The formula installs both `daemonitor-cli` and `daemonitor-cored` and verifies the release archive's checksum. The workflow fails if Homebrew installs a different version; changing the expected version is an explicit workflow edit. No Daemonitor source checkout or Go toolchain is needed.
 
 Each run ID ends in `shell` or `daemonitor`. Artifacts are named `build_process_watcher-compare-<attempt>` for shell and `build_process_watcher-compare-<attempt>-daemonitor` for Daemonitor. JSON report filenames also include the distinct run ID. Compare those exported JSON files using BPW's existing compare/import flow.
 
@@ -21,19 +21,21 @@ With remote monitoring enabled, both variants use the same BPW backend. Configur
 
 ## Use the new collector in another workflow
 
-Set up Node 24, Go, and your JDK, then build the native executables before starting BPW:
+Set up Node 24 and your JDK, then install the native executables before starting BPW. Homebrew is preinstalled on GitHub-hosted Ubuntu runners; on other runners, install Homebrew first and put `brew` on `PATH`.
 
 ```yaml
-- name: Build pinned Daemonitor
-  env:
-    DAEMONITOR_COMMIT: d47b3901277ae0f3d858286c1e884ec35aa0d4ae
-  run: bash path/to/bpw/scripts/build-daemonitor.sh "$DAEMONITOR_COMMIT" "$RUNNER_TEMP/daemonitor-bin"
+- name: Install Daemonitor CLI
+  id: daemonitor
+  run: |
+    eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)" # GitHub-hosted Ubuntu
+    brew install cdsap/tap/daemonitor-cli
+    test "$(brew list --versions cdsap/tap/daemonitor-cli)" = "daemonitor-cli 1.3.3"
+    echo "bin_dir=$(brew --prefix cdsap/tap/daemonitor-cli)/bin" >> "$GITHUB_OUTPUT"
 
 - uses: ./path/to/bpw
   with:
     collector: daemonitor
-    daemonitor_bin_dir: ${{ runner.temp }}/daemonitor-bin
-    daemonitor_source_commit: d47b3901277ae0f3d858286c1e884ec35aa0d4ae
+    daemonitor_bin_dir: ${{ steps.daemonitor.outputs.bin_dir }}
     run_id: comparison-${{ github.run_id }}-${{ github.run_attempt }}-daemonitor
     remote_monitoring: 'true'
     export_to_bigquery: 'true'
@@ -41,7 +43,9 @@ Set up Node 24, Go, and your JDK, then build the native executables before start
 - run: ./gradlew assemble --no-daemon
 ```
 
-The helper fetches the exact source SHA and writes `build-info.json` alongside `daemonitor-cli` and `daemonitor-cored`. BPW verifies the recorded SHA and both binary hashes when `daemonitor_source_commit` is set. A version string alone does not identify a source build. The binaries must be executable on the runner; this BPW integration currently supports Linux and macOS, not Windows.
+Leave `daemonitor_source_commit` unset for Homebrew releases. BPW records the hashes of both installed binaries in the collector artifact. The binaries must be executable on the runner; this BPW integration currently supports Linux and macOS, not Windows.
+
+For unreleased development only, `scripts/build-daemonitor.sh <full-source-commit> <output-bin-dir>` remains available. Set `daemonitor_source_commit` only for those builds: BPW verifies the recorded SHA and both binary hashes against the helper's `build-info.json`.
 
 ## Data and completion
 
@@ -70,7 +74,7 @@ Build BPW, then run both Action main/post paths against a local test backend:
 ```bash
 npm run build
 npm test -- --runInBand
-node scripts/verify-collector-comparison.mjs /path/to/daemonitor-bin d47b3901277ae0f3d858286c1e884ec35aa0d4ae
+node scripts/verify-collector-comparison.mjs "$(brew --prefix cdsap/tap/daemonitor-cli)/bin"
 ```
 
 The verification uses real native binaries and simultaneous Gradle/Kotlin HotSpot fixtures with freshness diagnostics enabled, exercises shell and Daemonitor variants, token refresh, metadata delivery, local reports, and finish-after-drain ordering. It also verifies that a simulated upload outage retains the outbox and prevents explicit run completion. It does not contact Firestore or BigQuery. Host process inspection and loopback/socket access are required.

@@ -10,7 +10,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const [binDir, sourceCommit] = process.argv.slice(2);
-if (!binDir || !/^[a-f0-9]{40}$/.test(sourceCommit ?? '')) throw new Error('Usage: node scripts/verify-collector-comparison.mjs /native/bin <source-commit>');
+if (!binDir || (sourceCommit !== undefined && !/^[a-f0-9]{40}$/.test(sourceCommit))) throw new Error('Usage: node scripts/verify-collector-comparison.mjs /native/bin [source-commit]');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bpw-action-compare-'));
 const javaInfo = spawnSync('java', ['-XshowSettings:properties', '-version'], { cwd: repo, encoding: 'utf8' });
 const javaHome = process.env.JAVA_HOME || javaInfo.stderr.match(/\bjava.home\s*=\s*(.+)/)?.[1].trim();
@@ -138,7 +138,7 @@ try {
       const file = path.join(directory, name); fs.writeFileSync(file, ''); return [name, file];
     }));
     const env = { ...process.env, ...files, JAVA_HOME: javaHome, PATH: `${path.join(javaHome, 'bin')}${path.delimiter}${process.env.PATH}`, INPUT_COLLECTOR: collector,
-      INPUT_DAEMONITOR_BIN_DIR: path.resolve(binDir), INPUT_DAEMONITOR_SOURCE_COMMIT: sourceCommit,
+      INPUT_DAEMONITOR_BIN_DIR: path.resolve(binDir), INPUT_DAEMONITOR_SOURCE_COMMIT: sourceCommit ?? '',
       INPUT_RUN_ID: id, INPUT_INTERVAL: '1', INPUT_FRESHNESS_DIAGNOSTICS: 'true', INPUT_REMOTE_MONITORING: 'true', INPUT_EXPORT_TO_BIGQUERY: 'true',
       INPUT_LOG_FILE: path.join(workspace, 'results.log'), INPUT_DEBUG: 'false', INPUT_DISABLE_SUMMARY_OUTPUT: 'true',
       BACKEND_URL: backend, FRONTEND_URL: backend, GITHUB_WORKSPACE: workspace, GITHUB_ACTION_PATH: action,

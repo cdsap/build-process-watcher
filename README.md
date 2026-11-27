@@ -114,6 +114,6 @@ MIT
 
 ### Compare collectors on the same build
 
-The default shell collector is unchanged. Select `collector: daemonitor` to use a separately built native collector while BPW continues to own authentication, local reports, backend uploads, and run completion. No Daemonitor release is required: [build from a pinned source commit and run both variants](docs/testing/collector-comparison.md).
+The default shell collector is unchanged. Select `collector: daemonitor` to use the native CLI installed with `brew install cdsap/tap/daemonitor-cli` while BPW continues to own authentication, local reports, backend uploads, and run completion. The comparison workflow uses Daemonitor 1.3.3: [install the CLI and run both variants](docs/testing/collector-comparison.md).
 
 The manual **Compare BPW collectors** workflow resolves one workload commit and runs the same command in separate `shell` and `daemonitor` jobs. Each has its own run ID and artifacts. Remote monitoring and BigQuery export remain optional.
