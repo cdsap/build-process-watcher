@@ -70,6 +70,12 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return nil, err
 		}
+		if req.MetricMeasurements != nil {
+			if len(samples) != 1 || !validMetricMeasurements(req.MetricMeasurements) {
+				return nil, errInvalidMeasurements
+			}
+			samples[0].MetricMeasurements = req.MetricMeasurements
+		}
 		if req.Freshness != nil {
 			if len(samples) != 1 || !validFreshness(req.Freshness) {
 				return nil, errInvalidFreshness
@@ -86,6 +92,10 @@ func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
 		return samples, nil
 	})
 	if err != nil {
+		if errors.Is(err, errInvalidMeasurements) {
+			http.Error(w, "Invalid metric measurements", http.StatusBadRequest)
+			return
+		}
 		if errors.Is(err, errInvalidFreshness) {
 			http.Error(w, "Invalid freshness metadata", http.StatusBadRequest)
 			return
@@ -130,6 +140,23 @@ func validFreshness(value *models.IngestFreshness) bool {
 	}
 	for _, char := range value.SampleID {
 		if (char < '0' || char > '9') && char != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+var errInvalidMeasurements = fmt.Errorf("invalid metric measurements")
+
+func validMetricMeasurements(value *models.MetricMeasurements) bool {
+	const maxSafeInteger int64 = 9007199254740991
+	for _, t := range []int64{value.ProcessStartTimeMs, value.JITSampledAtMs, value.ClassesSampledAtMs} {
+		if t < 0 || t > maxSafeInteger {
+			return false
+		}
+	}
+	for _, t := range []int64{value.JITSampledAtMs, value.ClassesSampledAtMs} {
+		if t > 0 && value.ProcessStartTimeMs > t {
 			return false
 		}
 	}

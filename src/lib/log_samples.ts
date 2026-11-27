@@ -1,3 +1,14 @@
+export interface MetricMeasurements {
+    process_start_time_ms?: number;
+    jit_sampled_at_ms?: number;
+    classes_sampled_at_ms?: number;
+}
+
+export interface MetricRecord {
+    data: string;
+    metric_measurements: MetricMeasurements;
+}
+
 export type LogSampleColumnCount = 6 | 7 | 14;
 
 export interface LogSample {

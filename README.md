@@ -60,6 +60,9 @@ Monitor Java/Kotlin build processes (`GradleDaemon`, `GradleWorkerMain`, `Kotlin
 
 | Input | Description | Default |
 | --- | --- | --- |
+| `collector` | `shell` or experimental `daemonitor` collector | `shell` | No |
+| `daemonitor_bin_dir` | Directory containing both native Daemonitor executables | — | With `collector: daemonitor` |
+| `daemonitor_source_commit` | Verify a full source commit and binary hashes using `build-info.json` | — | No |
 | `remote_monitoring` | Enable live cloud dashboard (24-hour retention). Set `BACKEND_URL` / `FRONTEND_URL` env vars for custom hosts. | `false` |
 | `run_id` | Custom run identifier. | Auto-generated |
 | `log_file` | Local log filename. | `build_process_watcher.log` |
@@ -108,3 +111,9 @@ act -W .github/workflows/test-action-local.yml -j local-mode
 ## License
 
 MIT
+
+### Compare collectors on the same build
+
+The default shell collector is unchanged. Select `collector: daemonitor` to use the native CLI installed with `brew install cdsap/tap/daemonitor-cli` while BPW continues to own authentication, local reports, backend uploads, and run completion. The comparison workflow uses Daemonitor 1.3.3: [install the CLI and run both variants](docs/testing/collector-comparison.md).
+
+The manual **Compare BPW collectors** workflow resolves one workload commit and runs the same command in separate `shell` and `daemonitor` jobs. Each has its own run ID and artifacts. Remote monitoring and BigQuery export remain optional.

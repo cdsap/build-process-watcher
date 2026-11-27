@@ -1,3 +1,4 @@
+import { resolveCollector, startDaemonitor } from './lib/daemonitor';
 import * as core from '@actions/core';
 import * as exec from '@actions/exec';
 import * as fs from 'fs';
@@ -21,6 +22,7 @@ import {
 
 async function run() {
   try {
+    const collector = resolveCollector(core.getInput('collector'), core.getInput('daemonitor_bin_dir'));
     const requestedBackendUrl = process.env.BACKEND_URL || '';
     const requestedFrontendUrl = process.env.FRONTEND_URL || '';
     const remoteMonitoringRequested = core.getInput('remote_monitoring') === 'true';
@@ -150,6 +152,23 @@ async function run() {
     core.setOutput('prediction_target', predictionTarget);
     core.setOutput('prediction_throttle_s', String(predictionThrottleS));
     core.setOutput('freshness_diagnostics', freshnessDiagnostics.toString());
+
+    core.setOutput('collector', collector.kind);
+    core.saveState('collector', collector.kind);
+    core.exportVariable('BPW_COLLECTOR', collector.kind);
+
+    if (collector.kind === 'daemonitor') {
+      const stateDir = await startDaemonitor({
+        binDir: collector.binDir, logFile: logFilePath, runId, interval: Number(interval),
+        backendUrl: useBackend ? backendUrl : '', exportToBigquery, predictionMode, predictionTarget, predictionThrottleS, freshnessDiagnostics,
+        sourceCommit: core.getInput('daemonitor_source_commit') || undefined,
+      }, path.join(__dirname, 'daemonitor.js'));
+      core.saveState('daemonitor_state_dir', stateDir);
+      core.exportVariable('BPW_DAEMONITOR_STATE_DIR', stateDir);
+      core.info(`Daemonitor collection started for ${runId}`);
+      if (enableBackend && frontendUrl) core.info(`Dashboard: ${frontendUrl}`);
+      return;
+    }
 
     // Always show the dashboard URL when remote monitoring is enabled (regardless of debug mode)
     if (enableBackend && frontendUrl) {

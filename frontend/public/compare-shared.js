@@ -270,23 +270,35 @@
         });
     }
 
-    function buildCounterSeries(samples, timestamps, processName, pid, valueSelector) {
-        const observations = samples
-            .filter(sample => sample.Name === processName && sample.PID === pid)
+    function buildCounterSeries(samples, timestamps, processName, pid, valueSelector, measurementKey) {
+        const processSamples = samples.filter(sample => sample.Name === processName && sample.PID === pid)
+            .sort((a, b) => a.Timestamp - b.Timestamp);
+        const timingOf = sample => sample.MetricMeasurements ?? sample.metric_measurements;
+        const measured = !!measurementKey && processSamples.some(sample => timingOf(sample) && typeof timingOf(sample) === 'object');
+        const observations = processSamples
             .map(sample => ({ timestamp: sample.Timestamp, value: valueSelector(sample) }))
             .filter(point => isValidMetric(point.value))
             .map(point => ({ ...point, value: Number(point.value) }))
             .sort((a, b) => a.timestamp - b.timestamp);
         const rateObservations = [];
         let previous = null;
-        observations.forEach(point => {
-            if (previous) {
-                const elapsedSeconds = (point.timestamp - previous.timestamp) / 1000;
-                if (elapsedSeconds > 0 && point.value >= previous.value) {
-                    rateObservations.push({
-                        timestamp: point.timestamp,
-                        value: (point.value - previous.value) / elapsedSeconds
-                    });
+        const ratePoints = measured ? processSamples.map(sample => {
+            const value = valueSelector(sample);
+            return { timestamp: sample.Timestamp, value: isValidMetric(value) ? Number(value) : null,
+                measuredAt: timingOf(sample)?.[measurementKey],
+                start: timingOf(sample)?.process_start_time_ms || null };
+        }) : observations.map(point => ({ ...point, measuredAt: point.timestamp, start: null }));
+        ratePoints.forEach(point => {
+            if (!isValidMetric(point.value) || (measured && (!Number.isSafeInteger(point.measuredAt) || point.measuredAt <= 0))) {
+                previous = null;
+                return;
+            }
+            if (previous && point.start === previous.start) {
+                const elapsedSeconds = (point.measuredAt - previous.measuredAt) / 1000;
+                if (elapsedSeconds <= 0) return; // Cached or out-of-order acquisition.
+                if (point.value >= previous.value) {
+                    rateObservations.push({ timestamp: point.timestamp,
+                        value: (point.value - previous.value) / elapsedSeconds });
                 }
             }
             previous = point;
@@ -309,11 +321,14 @@
                 return displayValue;
             }),
             rate: timestamps.map(timestamp => {
+                let fresh = false;
                 while (rateIndex < rateObservations.length && rateObservations[rateIndex].timestamp <= timestamp) {
+                    fresh = true;
                     lastRate = rateObservations[rateIndex].value;
                     lastRateTimestamp = rateObservations[rateIndex].timestamp;
                     rateIndex += 1;
                 }
+                if (measured) return fresh ? lastRate : null;
                 if (lastRateTimestamp === timestamp || (maxGap > 0 && lastRateTimestamp > 0 && (timestamp - lastRateTimestamp) <= maxGap)) {
                     return lastRate;
                 }
@@ -341,9 +356,9 @@
                 if (!s.RSS || s.RSS <= 0) return null;
                 return s.HeapUsed / s.RSS;
             });
-            const jitTime = buildCounterSeries(samples, timestamps, processName, pid, s => isValidMetric(s.JITCompilationTimeMs) ? s.JITCompilationTimeMs / 1000 : null);
-            const jitActivity = buildCounterSeries(samples, timestamps, processName, pid, s => s.JITCompiledMethods);
-            const classes = buildCounterSeries(samples, timestamps, processName, pid, s => s.ClassesLoaded);
+            const jitTime = buildCounterSeries(samples, timestamps, processName, pid, s => isValidMetric(s.JITCompilationTimeMs) ? s.JITCompilationTimeMs / 1000 : null, 'jit_sampled_at_ms');
+            const jitActivity = buildCounterSeries(samples, timestamps, processName, pid, s => s.JITCompiledMethods, 'jit_sampled_at_ms');
+            const classes = buildCounterSeries(samples, timestamps, processName, pid, s => s.ClassesLoaded, 'classes_sampled_at_ms');
 
             series[processKey] = {
                 processName,

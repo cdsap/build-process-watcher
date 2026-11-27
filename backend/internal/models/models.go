@@ -7,23 +7,32 @@ import (
 
 // Sample represents a single monitoring sample
 type Sample struct {
-	Timestamp                  int64            `firestore:"timestamp"`
-	ElapsedTime                int              `firestore:"elapsed_time"`
-	PID                        string           `firestore:"pid"`
-	Name                       string           `firestore:"name"`
-	HeapUsed                   int              `firestore:"heap_used"`
-	HeapCap                    int              `firestore:"heap_cap"`
-	RSS                        int              `firestore:"rss"`
-	GCTime                     int              `firestore:"gc_time,omitempty"` // GC time in milliseconds, optional
-	JITCompiledMethods         *int             `firestore:"jit_compiled_methods,omitempty"`
-	JITFailedCompilations      *int             `firestore:"jit_failed_compilations,omitempty"`
-	JITInvalidatedCompilations *int             `firestore:"jit_invalidated_compilations,omitempty"`
-	JITCompilationTimeMs       *int             `firestore:"jit_compilation_time_ms,omitempty"`
-	ClassesLoaded              *int             `firestore:"classes_loaded,omitempty"`
-	ClassesUnloaded            *int             `firestore:"classes_unloaded,omitempty"`
-	ClassLoadTimeMs            *int             `firestore:"class_load_time_ms,omitempty"`
-	RunID                      string           `firestore:"run_id"`
-	Freshness                  *FreshnessTiming `json:"Freshness,omitempty" firestore:"freshness,omitempty"`
+	MetricMeasurements         *MetricMeasurements `json:"MetricMeasurements,omitempty" firestore:"metric_measurements,omitempty"`
+	Timestamp                  int64               `firestore:"timestamp"`
+	ElapsedTime                int                 `firestore:"elapsed_time"`
+	PID                        string              `firestore:"pid"`
+	Name                       string              `firestore:"name"`
+	HeapUsed                   int                 `firestore:"heap_used"`
+	HeapCap                    int                 `firestore:"heap_cap"`
+	RSS                        int                 `firestore:"rss"`
+	GCTime                     int                 `firestore:"gc_time,omitempty"` // GC time in milliseconds, optional
+	JITCompiledMethods         *int                `firestore:"jit_compiled_methods,omitempty"`
+	JITFailedCompilations      *int                `firestore:"jit_failed_compilations,omitempty"`
+	JITInvalidatedCompilations *int                `firestore:"jit_invalidated_compilations,omitempty"`
+	JITCompilationTimeMs       *int                `firestore:"jit_compilation_time_ms,omitempty"`
+	ClassesLoaded              *int                `firestore:"classes_loaded,omitempty"`
+	ClassesUnloaded            *int                `firestore:"classes_unloaded,omitempty"`
+	ClassLoadTimeMs            *int                `firestore:"class_load_time_ms,omitempty"`
+	RunID                      string              `firestore:"run_id"`
+	Freshness                  *FreshnessTiming    `json:"Freshness,omitempty" firestore:"freshness,omitempty"`
+}
+
+// MetricMeasurements records source acquisition times, independent of snapshot/upload time.
+// A present object with omitted family times means acquisition time is unknown.
+type MetricMeasurements struct {
+	ProcessStartTimeMs int64 `json:"process_start_time_ms,omitempty" firestore:"process_start_time_ms,omitempty"`
+	JITSampledAtMs     int64 `json:"jit_sampled_at_ms,omitempty" firestore:"jit_sampled_at_ms,omitempty"`
+	ClassesSampledAtMs int64 `json:"classes_sampled_at_ms,omitempty" firestore:"classes_sampled_at_ms,omitempty"`
 }
 
 // FreshnessTiming is opt-in diagnostic metadata for one live sample. Wall-clock
@@ -186,10 +195,11 @@ type TokenData struct {
 
 // IngestRequest is the request body for data ingestion
 type IngestRequest struct {
-	RunID       string           `json:"run_id"`
-	Data        string           `json:"data"`
-	ProcessInfo *ProcessInfo     `json:"process_info,omitempty"` // Optional: VM flags for a new process
-	Freshness   *IngestFreshness `json:"freshness,omitempty"`
+	MetricMeasurements *MetricMeasurements `json:"metric_measurements,omitempty"`
+	RunID              string              `json:"run_id"`
+	Data               string              `json:"data"`
+	ProcessInfo        *ProcessInfo        `json:"process_info,omitempty"` // Optional: VM flags for a new process
+	Freshness          *IngestFreshness    `json:"freshness,omitempty"`
 }
 
 // IngestFreshness is supplied only when the action's live timing spike is enabled.

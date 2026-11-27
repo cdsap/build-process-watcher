@@ -890,3 +890,59 @@ func TestTokenRenewalAndFinishPreserveClassLoadingTarget(t *testing.T) {
 		})
 	}
 }
+
+func TestIngestPreservesMetricMeasurements(t *testing.T) {
+	store := newFakeStorage()
+	h := newTestHandlers(store, nil)
+	const runID = "run-metric-times"
+	token, _, err := testAuthn.GenerateToken(runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := `{"run_id":"run-metric-times","data":"00:00:01 | 42 | GradleDaemon | 100MB | 200MB | 300MB","metric_measurements":{"process_start_time_ms":1000,"jit_sampled_at_ms":2000,"classes_sampled_at_ms":2100}}`
+	req := httptest.NewRequest(http.MethodPost, "/ingest", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	response := httptest.NewRecorder()
+	h.Ingest(response, req)
+	if response.Code != http.StatusOK || len(store.StoredSamples) != 1 {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	encoded, err := json.Marshal(store.StoredSamples[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sample map[string]interface{}
+	if err := json.Unmarshal(encoded, &sample); err != nil {
+		t.Fatal(err)
+	}
+	times, ok := sample["MetricMeasurements"].(map[string]interface{})
+	if !ok || times["jit_sampled_at_ms"] != float64(2000) || times["classes_sampled_at_ms"] != float64(2100) {
+		t.Fatalf("lost measurement times: %s", encoded)
+	}
+}
+
+func TestIngestRejectsInvalidMetricMeasurements(t *testing.T) {
+	for _, tc := range []struct{ name, measurements, data string }{
+		{"negative", `{"jit_sampled_at_ms":-1}`, "00:00:01 | 42 | P | 1MB | 2MB | 3MB"},
+		{"unsafe_integer", `{"jit_sampled_at_ms":9007199254740992}`, "00:00:01 | 42 | P | 1MB | 2MB | 3MB"},
+		{"before_start", `{"process_start_time_ms":2000,"jit_sampled_at_ms":1000}`, "00:00:01 | 42 | P | 1MB | 2MB | 3MB"},
+		{"batch", `{}`, "00:00:01 | 42 | P | 1MB | 2MB | 3MB\n00:00:02 | 42 | P | 2MB | 3MB | 4MB"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newFakeStorage()
+			h := newTestHandlers(store, nil)
+			token, _, err := testAuthn.GenerateToken("times-invalid")
+			if err != nil {
+				t.Fatal(err)
+			}
+			encoded, _ := json.Marshal(map[string]interface{}{"run_id": "times-invalid", "data": tc.data, "metric_measurements": json.RawMessage(tc.measurements)})
+			req := httptest.NewRequest(http.MethodPost, "/ingest", strings.NewReader(string(encoded)))
+			req.Header.Set("Authorization", "Bearer "+token)
+			response := httptest.NewRecorder()
+			h.Ingest(response, req)
+			if response.Code != http.StatusBadRequest || len(store.StoredSamples) != 0 {
+				t.Fatalf("status=%d stored=%d body=%s", response.Code, len(store.StoredSamples), response.Body.String())
+			}
+		})
+	}
+}

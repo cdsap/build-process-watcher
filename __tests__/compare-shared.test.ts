@@ -133,6 +133,47 @@ describe('JIT and class loading series', () => {
     expect(Array.from(result.rate)).toEqual([null, null, null, 4]);
   });
 
+  it('uses fresh metric times instead of cached poll times for activity rates', () => {
+    const shared = loadShared();
+    const timestamps = [0, 5000, 10000, 15000, 20000, 25000, 30000];
+    const samples = timestamps.map((Timestamp, i) => ({
+      Timestamp, Name: 'P', PID: '1', JITCompiledMethods: i < 5 ? 10 : 210, ClassesLoaded: i < 5 ? 100 : 500,
+      ClassesUnloaded: i < 5 ? 20 : 120,
+      MetricMeasurements: { process_start_time_ms: 1, jit_sampled_at_ms: i < 5 ? 1000 : i === 5 ? 21000 : 26000,
+        classes_sampled_at_ms: i < 5 ? 2000 : i === 5 ? 22000 : 27000 },
+    }));
+    const data = shared.buildReplayData(samples, timestamps);
+    expect(Array.from(data.series['P|1'].jitRate)).toEqual([null, null, null, null, null, 10, 0]);
+    expect(Array.from(data.series['P|1'].classRate)).toEqual([null, null, null, null, null, 20, 0]);
+    expect(Array.from(data.series['P|1'].classesLoaded)).toEqual([100, 100, 100, 100, 100, 500, 500]);
+    const roundtrip = shared.normalizeReportData(shared.compactReportData({ samples }));
+    expect(roundtrip.samples[5].MetricMeasurements).toEqual(samples[5].MetricMeasurements);
+  });
+
+  it('does not derive timed rates across missing measurements, resets or JVM lifetimes', () => {
+    const shared = loadShared();
+    const values = [10, 20, null, 40, 50, 5, 9, 100, 105];
+    const starts = [1, 1, 1, 1, 1, 1, 1, 2, 2];
+    const timestamps = values.map((_, i) => i * 1000);
+    const samples = values.map((value, i) => ({ Timestamp: timestamps[i], Name: 'P', PID: '1', JITCompiledMethods: value,
+      MetricMeasurements: { process_start_time_ms: starts[i], jit_sampled_at_ms: i + 1000 } }));
+    const data = shared.buildReplayData(samples, timestamps);
+    expect(Array.from(data.series['P|1'].jitRate)).toEqual([null, 10000, null, null, 10000, null, 4000, null, 5000]);
+    const unknown = shared.buildReplayData([{ Timestamp: 0, Name: 'P', PID: '1', JITCompiledMethods: 1, MetricMeasurements: {} },
+      { Timestamp: 1000, Name: 'P', PID: '1', JITCompiledMethods: 100, MetricMeasurements: {} }], [0, 1000]);
+    expect(Array.from(unknown.series['P|1'].jitRate)).toEqual([null, null]);
+  });
+
+  it('ignores older metric acquisitions and normalizes numeric counter strings', () => {
+    const shared = loadShared();
+    const samples = [
+      { Timestamp: 0, Name: 'P', PID: '1', JITCompiledMethods: '50', MetricMeasurements: { jit_sampled_at_ms: 1000 } },
+      { Timestamp: 1000, Name: 'P', PID: '1', JITCompiledMethods: '60', MetricMeasurements: { jit_sampled_at_ms: 900 } },
+      { Timestamp: 2000, Name: 'P', PID: '1', JITCompiledMethods: '210', MetricMeasurements: { jit_sampled_at_ms: 21000 } },
+    ];
+    expect(Array.from(shared.buildReplayData(samples, [0, 1000, 2000]).series['P|1'].jitRate)).toEqual([null, null, 8]);
+  });
+
   it('builds dual-axis overlay traces for two metrics', () => {
     const timestamps = [0, 1000, 2000];
     const samples = [

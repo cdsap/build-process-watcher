@@ -112,8 +112,8 @@ func TestCheckpointAndForecastFieldsPreserveSiblingArrays(t *testing.T) {
 	doc := map[string]interface{}{
 		"prediction_checkpoints": existingCheckpoints,
 		"process_forecasts":      existingForecasts,
-		"samples": []models.Sample{{PID: "1", RSS: 10}},
-		"finished": false,
+		"samples":                []models.Sample{{PID: "1", RSS: 10}},
+		"finished":               false,
 	}
 	applyMerge := func(fields map[string]interface{}) {
 		for key, value := range fields {
@@ -223,5 +223,14 @@ func TestIsRunStale(t *testing.T) {
 				t.Fatalf("isRunStale = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSampleStoreFieldsPreservesMetricMeasurements(t *testing.T) {
+	times := &models.MetricMeasurements{ProcessStartTimeMs: 1000, JITSampledAtMs: 2000, ClassesSampledAtMs: 2100}
+	fields := sampleStoreFields("times", nil, []models.Sample{{PID: "42", MetricMeasurements: times}}, time.Now())
+	samples := fields["samples"].([]models.Sample)
+	if len(samples) != 1 || samples[0].MetricMeasurements != times {
+		t.Fatalf("measurement metadata lost: %#v", samples)
 	}
 }

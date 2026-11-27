@@ -13,10 +13,14 @@
     "declaration": true
   },
   "include": [
-    "*.ts"
-, "src/index.ts", "src/cleanup.ts"  ],
+    "*.ts",
+    "src/index.ts",
+    "src/index_with_backend.ts",
+    "src/cleanup.ts",
+    "src/daemonitor.ts"
+  ],
   "exclude": [
     "node_modules",
     "dist"
   ]
-} 
+}
