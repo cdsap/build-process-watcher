@@ -11,11 +11,20 @@ const sample = (extra = {}) => ({ pid: 42, start_time_ms: 1000, sampled_at_ms: 6
   classes: { loaded: 200, loaded_total: 220, unloaded_total: 20, time_seconds: .03 }, ...extra });
 
 describe('collector selection', () => {
-  it('retains the shell default and rejects typos or missing native binaries', () => {
-    expect(resolveCollector('', '')).toEqual({ kind: 'shell' });
+  it('defaults supported runners to Daemonitor without requiring preinstalled binaries', () => {
+    expect(resolveCollector('', '', 'linux', 'x64')).toEqual({ kind: 'daemonitor' });
+    expect(resolveCollector('', '', 'darwin', 'arm64')).toEqual({ kind: 'daemonitor' });
+    expect(resolveCollector('', '', 'darwin', 'x64')).toEqual({ kind: 'daemonitor' });
+    expect(resolveCollector('daemonitor', '', 'linux', 'x64')).toEqual({ kind: 'daemonitor' });
+  });
+  it('preserves the shell collector on runners without Homebrew native support', () => {
+    expect(resolveCollector('', '', 'win32', 'x64')).toEqual({ kind: 'shell' });
+    expect(resolveCollector('', '', 'linux', 'arm64')).toEqual({ kind: 'shell' });
+    expect(() => resolveCollector('daemonitor', '', 'win32', 'x64')).toThrow(/Linux and macOS/);
+  });
+  it('keeps explicit shell selection and rejects typos or invalid binary overrides', () => {
     expect(resolveCollector('shell', '/does/not/exist')).toEqual({ kind: 'shell' });
     expect(() => resolveCollector('deamonitor', '')).toThrow(/collector/);
-    expect(() => resolveCollector('daemonitor', '')).toThrow(/daemonitor_bin_dir/);
     expect(() => resolveCollector('daemonitor', '/does/not/exist')).toThrow();
   });
 });

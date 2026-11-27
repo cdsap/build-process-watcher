@@ -1,4 +1,5 @@
 import { resolveCollector, startDaemonitor } from './lib/daemonitor';
+import { installDaemonitor } from './lib/daemonitor_install';
 import * as core from '@actions/core';
 import * as exec from '@actions/exec';
 import * as fs from 'fs';
@@ -158,10 +159,13 @@ async function run() {
     core.exportVariable('BPW_COLLECTOR', collector.kind);
 
     if (collector.kind === 'daemonitor') {
+      const sourceCommit = core.getInput('daemonitor_source_commit') || undefined;
+      if (sourceCommit && !collector.binDir) throw new Error('daemonitor_source_commit requires daemonitor_bin_dir from a source build');
+      const binDir = collector.binDir || await installDaemonitor();
       const stateDir = await startDaemonitor({
-        binDir: collector.binDir, logFile: logFilePath, runId, interval: Number(interval),
+        binDir, logFile: logFilePath, runId, interval: Number(interval),
         backendUrl: useBackend ? backendUrl : '', exportToBigquery, predictionMode, predictionTarget, predictionThrottleS, freshnessDiagnostics,
-        sourceCommit: core.getInput('daemonitor_source_commit') || undefined,
+        sourceCommit,
       }, path.join(__dirname, 'daemonitor.js'));
       core.saveState('daemonitor_state_dir', stateDir);
       core.exportVariable('BPW_DAEMONITOR_STATE_DIR', stateDir);

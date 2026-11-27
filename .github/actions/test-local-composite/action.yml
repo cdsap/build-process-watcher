@@ -7,6 +7,7 @@ runs:
       uses: ./
       with:
         remote_monitoring: 'false'
+        collector: shell
         debug: 'true'
         interval: '2'
 

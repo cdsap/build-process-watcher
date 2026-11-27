@@ -14,11 +14,17 @@ const metricTime = (value: unknown): value is number => numeric(value) && Number
 const names: Record<string, string> = { GRADLE_DAEMON: 'GradleDaemon', KOTLIN_DAEMON: 'KotlinCompileDaemon',
     GRADLE_WORKER: 'GradleWorkerMain', TEST_WORKER: 'GradleWorkerMain', UNKNOWN_GRADLE_WORKER: 'GradleWorkerMain' };
 
-export function resolveCollector(value: string, binDir: string): { kind: 'shell' } | { kind: 'daemonitor'; binDir: string } {
-    if (!value || value === 'shell') return { kind: 'shell' };
+export function resolveCollector(value: string, binDir: string, platform: NodeJS.Platform = process.platform,
+    arch: string = process.arch): { kind: 'shell' } | { kind: 'daemonitor'; binDir?: string } {
+    if (!value) {
+        const nativeSupported = (platform === 'linux' && arch === 'x64') ||
+            (platform === 'darwin' && ['arm64', 'x64'].includes(arch));
+        value = nativeSupported ? 'daemonitor' : 'shell';
+    }
+    if (value === 'shell') return { kind: 'shell' };
     if (value !== 'daemonitor') throw new Error('collector must be shell or daemonitor');
-    if (!binDir) throw new Error('daemonitor_bin_dir is required for collector=daemonitor');
-    if (process.platform === 'win32') throw new Error('The Daemonitor BPW collector currently supports Linux and macOS');
+    if (platform !== 'linux' && platform !== 'darwin') throw new Error('The Daemonitor BPW collector currently supports Linux and macOS');
+    if (!binDir) return { kind: 'daemonitor' };
     const absolute = path.resolve(binDir);
     for (const file of ['daemonitor-cli', 'daemonitor-cored']) fs.accessSync(path.join(absolute, file), fs.constants.X_OK);
     return { kind: 'daemonitor', binDir: absolute };

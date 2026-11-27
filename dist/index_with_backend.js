@@ -25810,6 +25810,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 const daemonitor_1 = __nccwpck_require__(936);
+const daemonitor_install_1 = __nccwpck_require__(8400);
 const core = __importStar(__nccwpck_require__(5048));
 const exec = __importStar(__nccwpck_require__(6560));
 const fs = __importStar(__nccwpck_require__(9896));
@@ -25934,10 +25935,14 @@ async function run() {
         core.saveState('collector', collector.kind);
         core.exportVariable('BPW_COLLECTOR', collector.kind);
         if (collector.kind === 'daemonitor') {
+            const sourceCommit = core.getInput('daemonitor_source_commit') || undefined;
+            if (sourceCommit && !collector.binDir)
+                throw new Error('daemonitor_source_commit requires daemonitor_bin_dir from a source build');
+            const binDir = collector.binDir || await (0, daemonitor_install_1.installDaemonitor)();
             const stateDir = await (0, daemonitor_1.startDaemonitor)({
-                binDir: collector.binDir, logFile: logFilePath, runId, interval: Number(interval),
+                binDir, logFile: logFilePath, runId, interval: Number(interval),
                 backendUrl: useBackend ? backendUrl : '', exportToBigquery, predictionMode, predictionTarget, predictionThrottleS, freshnessDiagnostics,
-                sourceCommit: core.getInput('daemonitor_source_commit') || undefined,
+                sourceCommit,
             }, path.join(__dirname, 'daemonitor.js'));
             core.saveState('daemonitor_state_dir', stateDir);
             core.exportVariable('BPW_DAEMONITOR_STATE_DIR', stateDir);
@@ -26110,15 +26115,20 @@ const numeric = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0;
 const metricTime = (value) => numeric(value) && Number.isSafeInteger(value) && value > 0;
 const names = { GRADLE_DAEMON: 'GradleDaemon', KOTLIN_DAEMON: 'KotlinCompileDaemon',
     GRADLE_WORKER: 'GradleWorkerMain', TEST_WORKER: 'GradleWorkerMain', UNKNOWN_GRADLE_WORKER: 'GradleWorkerMain' };
-function resolveCollector(value, binDir) {
-    if (!value || value === 'shell')
+function resolveCollector(value, binDir, platform = process.platform, arch = process.arch) {
+    if (!value) {
+        const nativeSupported = (platform === 'linux' && arch === 'x64') ||
+            (platform === 'darwin' && ['arm64', 'x64'].includes(arch));
+        value = nativeSupported ? 'daemonitor' : 'shell';
+    }
+    if (value === 'shell')
         return { kind: 'shell' };
     if (value !== 'daemonitor')
         throw new Error('collector must be shell or daemonitor');
-    if (!binDir)
-        throw new Error('daemonitor_bin_dir is required for collector=daemonitor');
-    if (process.platform === 'win32')
+    if (platform !== 'linux' && platform !== 'darwin')
         throw new Error('The Daemonitor BPW collector currently supports Linux and macOS');
+    if (!binDir)
+        return { kind: 'daemonitor' };
     const absolute = path.resolve(binDir);
     for (const file of ['daemonitor-cli', 'daemonitor-cored'])
         fs.accessSync(path.join(absolute, file), fs.constants.X_OK);
@@ -26536,6 +26546,82 @@ async function runDaemonitor(config) {
         write(path.join(config.stateDir, 'done.json'), { collector: 'daemonitor', samples, incomplete, uploaded, error: failure, finishedAt: Date.now() });
         console.log(JSON.stringify({ samples, incomplete, uploaded, error: failure }));
     }
+}
+
+
+/***/ }),
+
+/***/ 8400:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.installDaemonitor = installDaemonitor;
+const fs = __importStar(__nccwpck_require__(9896));
+const path = __importStar(__nccwpck_require__(6928));
+const core = __importStar(__nccwpck_require__(5048));
+const exec_1 = __nccwpck_require__(6560);
+async function installDaemonitor() {
+    // Homebrew is preinstalled on GitHub-hosted runners but Ubuntu omits it from PATH.
+    const brew = [...(process.env.PATH || '').split(path.delimiter).filter(Boolean).map(dir => path.join(dir, 'brew')),
+        '/home/linuxbrew/.linuxbrew/bin/brew', '/opt/homebrew/bin/brew', '/usr/local/bin/brew']
+        .find(file => fs.existsSync(file)) || 'brew';
+    core.info('Installing Daemonitor CLI with Homebrew');
+    try {
+        await (0, exec_1.getExecOutput)(brew, ['install', 'cdsap/tap/daemonitor-cli']);
+    }
+    catch (error) {
+        throw new Error(`Daemonitor installation failed. Homebrew must be available on the runner, or set daemonitor_bin_dir. ${error instanceof Error ? error.message : error}`);
+    }
+    const prefix = await (0, exec_1.getExecOutput)(brew, ['--prefix', 'cdsap/tap/daemonitor-cli'], { silent: true });
+    if (!prefix.stdout.trim())
+        throw new Error('Homebrew returned an empty Daemonitor installation prefix');
+    const binDir = path.join(prefix.stdout.trim(), 'bin');
+    for (const name of ['daemonitor-cli', 'daemonitor-cored']) {
+        fs.accessSync(path.join(binDir, name), fs.constants.X_OK);
+    }
+    const output = await (0, exec_1.getExecOutput)(path.join(binDir, 'daemonitor-cli'), ['--version'], { silent: true });
+    const version = output.stdout.trim();
+    const match = /^1\.(\d+)\.(\d+)$/.exec(version);
+    if (!match || Number(match[1]) < 3 || (Number(match[1]) === 3 && Number(match[2]) < 3)) {
+        throw new Error('Daemonitor CLI 1.3.3 or later within 1.x is required. Update the Homebrew tap and upgrade daemonitor-cli.');
+    }
+    core.info(`Using Daemonitor CLI ${version} from ${binDir}`);
+    return binDir;
 }
 
 
