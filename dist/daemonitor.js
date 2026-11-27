@@ -110,15 +110,20 @@ const numeric = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0;
 const metricTime = (value) => numeric(value) && Number.isSafeInteger(value) && value > 0;
 const names = { GRADLE_DAEMON: 'GradleDaemon', KOTLIN_DAEMON: 'KotlinCompileDaemon',
     GRADLE_WORKER: 'GradleWorkerMain', TEST_WORKER: 'GradleWorkerMain', UNKNOWN_GRADLE_WORKER: 'GradleWorkerMain' };
-function resolveCollector(value, binDir) {
-    if (!value || value === 'shell')
+function resolveCollector(value, binDir, platform = process.platform, arch = process.arch) {
+    if (!value) {
+        const nativeSupported = (platform === 'linux' && arch === 'x64') ||
+            (platform === 'darwin' && ['arm64', 'x64'].includes(arch));
+        value = nativeSupported ? 'daemonitor' : 'shell';
+    }
+    if (value === 'shell')
         return { kind: 'shell' };
     if (value !== 'daemonitor')
         throw new Error('collector must be shell or daemonitor');
-    if (!binDir)
-        throw new Error('daemonitor_bin_dir is required for collector=daemonitor');
-    if (process.platform === 'win32')
+    if (platform !== 'linux' && platform !== 'darwin')
         throw new Error('The Daemonitor BPW collector currently supports Linux and macOS');
+    if (!binDir)
+        return { kind: 'daemonitor' };
     const absolute = path.resolve(binDir);
     for (const file of ['daemonitor-cli', 'daemonitor-cored'])
         fs.accessSync(path.join(absolute, file), fs.constants.X_OK);

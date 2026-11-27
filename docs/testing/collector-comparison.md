@@ -1,6 +1,6 @@
 # Compare shell and Daemonitor collectors
 
-BPW supports `collector: shell` (the existing default) and `collector: daemonitor` (experimental). Run them in separate jobs against the same workload commit. Running both monitors over one build is useful for collection debugging, but cannot measure each collector's build overhead independently.
+BPW defaults to Daemonitor on Linux x64 and macOS, installing the CLI and core through Homebrew inside the Action. Set `collector: shell` to use the legacy collector for comparison. Windows and other runner architectures default to shell because automatic native installation is not supported there. Run the collectors in separate jobs against the same workload commit. Running both monitors over one build is useful for collection debugging, but cannot measure each collector's build overhead independently.
 
 ## Manual comparison workflow
 
@@ -13,7 +13,7 @@ Once these workflow changes are available on the repository's default branch, ru
 
 The workflow resolves the workload ref once and passes that immutable SHA to both jobs. Both use Ubuntu, the same JDK, command, and five-second observation interval. Runner hardware, dependency downloads, and cache state can still vary; repeated runs with controlled cache conditions are needed for performance conclusions.
 
-The Daemonitor job installs `cdsap/tap/daemonitor-cli` with Homebrew and requires version **1.3.3**. The formula installs both `daemonitor-cli` and `daemonitor-cored` and verifies the release archive's checksum. The workflow fails if Homebrew installs a different version; changing the expected version is an explicit workflow edit. No Daemonitor source checkout or Go toolchain is needed.
+The Action installs `cdsap/tap/daemonitor-cli` with Homebrew and requires version **1.3.3 or later within 1.x**. The formula installs both `daemonitor-cli` and `daemonitor-cored` and verifies the release archive's checksum. BPW verifies both executables exist and checks the CLI version before starting collection. Installation or startup failure fails the Action; it does not silently select shell. No Daemonitor source checkout, Go toolchain, or workflow installation step is needed.
 
 Each run ID ends in `shell` or `daemonitor`. Artifacts are named `build_process_watcher-compare-<attempt>` for shell and `build_process_watcher-compare-<attempt>-daemonitor` for Daemonitor. JSON report filenames also include the distinct run ID. Compare those exported JSON files using BPW's existing compare/import flow.
 
@@ -21,21 +21,11 @@ With remote monitoring enabled, both variants use the same BPW backend. Configur
 
 ## Use the new collector in another workflow
 
-Set up Node 24 and your JDK, then install the native executables before starting BPW. Homebrew is preinstalled on GitHub-hosted Ubuntu runners; on other runners, install Homebrew first and put `brew` on `PATH`.
+Set up your JDK, then start BPW. Homebrew is preinstalled on GitHub-hosted Ubuntu and macOS runners, and the Action locates it automatically. Self-hosted runners need Homebrew or an explicit `daemonitor_bin_dir` override.
 
 ```yaml
-- name: Install Daemonitor CLI
-  id: daemonitor
-  run: |
-    eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)" # GitHub-hosted Ubuntu
-    brew install cdsap/tap/daemonitor-cli
-    test "$(brew list --versions cdsap/tap/daemonitor-cli)" = "daemonitor-cli 1.3.3"
-    echo "bin_dir=$(brew --prefix cdsap/tap/daemonitor-cli)/bin" >> "$GITHUB_OUTPUT"
-
 - uses: ./path/to/bpw
   with:
-    collector: daemonitor
-    daemonitor_bin_dir: ${{ steps.daemonitor.outputs.bin_dir }}
     run_id: comparison-${{ github.run_id }}-${{ github.run_attempt }}-daemonitor
     remote_monitoring: 'true'
     export_to_bigquery: 'true'
@@ -43,7 +33,7 @@ Set up Node 24 and your JDK, then install the native executables before starting
 - run: ./gradlew assemble --no-daemon
 ```
 
-Leave `daemonitor_source_commit` unset for Homebrew releases. BPW records the hashes of both installed binaries in the collector artifact. The binaries must be executable on the runner; this BPW integration currently supports Linux and macOS, not Windows.
+Set `collector: daemonitor` explicitly when desired; it is optional on runners with automatic native support. Set `daemonitor_bin_dir` only to bypass installation with a preinstalled matching CLI/core pair. Leave `daemonitor_source_commit` unset for Homebrew releases. BPW records the hashes of both binaries in the collector artifact. Native collection supports Linux and macOS; Windows retains the shell path.
 
 For unreleased development only, `scripts/build-daemonitor.sh <full-source-commit> <output-bin-dir>` remains available. Set `daemonitor_source_commit` only for those builds: BPW verifies the recorded SHA and both binary hashes against the helper's `build-info.json`.
 
@@ -55,7 +45,7 @@ BPW writes requests to a local outbox before uploading. Successful acknowledgeme
 
 At the Action post-step, BPW requests collector shutdown, drains pending data, and only then uses its existing authenticated finish endpoint. That endpoint stores completion in Firestore and schedules the optional BigQuery export. If delivery remains incomplete or the collector failed, the Daemonitor post-step fails and does not explicitly finish the run. The backend's existing stale-run auto-finish policy still applies; this is not a guarantee of eventual delivery after a runner disappears. Raw capture/outbox artifacts make a partial run inspectable.
 
-The shell path retains its existing behavior. Selecting Daemonitor never silently falls back to shell, so a failed variant cannot masquerade as the control.
+Explicit shell selection retains its existing behavior. Selecting Daemonitor never silently falls back to shell, so a failed variant cannot masquerade as the control.
 
 ## Metric compatibility limits
 
@@ -74,10 +64,10 @@ Build BPW, then run both Action main/post paths against a local test backend:
 ```bash
 npm run build
 npm test -- --runInBand
-node scripts/verify-collector-comparison.mjs "$(brew --prefix cdsap/tap/daemonitor-cli)/bin"
+node scripts/verify-collector-comparison.mjs
 ```
 
-The verification uses real native binaries and simultaneous Gradle/Kotlin HotSpot fixtures with freshness diagnostics enabled, exercises shell and Daemonitor variants, token refresh, metadata delivery, local reports, and finish-after-drain ordering. It also verifies that a simulated upload outage retains the outbox and prevents explicit run completion. It does not contact Firestore or BigQuery. Host process inspection and loopback/socket access are required.
+The verification exercises automatic installation and default native selection, real native binaries and simultaneous Gradle/Kotlin HotSpot fixtures with freshness diagnostics enabled, the explicit shell collector, token refresh, metadata delivery, local reports, and finish-after-drain ordering. It also verifies that a simulated upload outage retains the outbox and prevents explicit run completion. It does not contact Firestore or BigQuery. Host process inspection and loopback/socket access are required. Pass a native binary directory as the first argument to bypass Homebrew installation; an optional second argument verifies a development source commit.
 
 The workflow is supplied for Linux validation; a local macOS pass does not establish that a hosted workflow has run. No workflow dispatch, release, or cloud deployment is part of the local implementation.
 

@@ -139,6 +139,7 @@ jobs:
       env:
         BACKEND_URL: 'https://test-backend.example.com'
       with:
+        collector: shell
         remote_monitoring: 'true'
         run_id: 'test-run-${{ github.run_id }}'
         log_file: '${{ github.workspace }}/test_remote.log'

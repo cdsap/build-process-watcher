@@ -4,11 +4,10 @@ author: 'cdsap'
 
 inputs:
   collector:
-    description: 'Metric collector: shell (default) or daemonitor'
+    description: 'Metric collector: daemonitor (default on Linux x64 and macOS) or shell (default on other runners)'
     required: false
-    default: 'shell'
   daemonitor_bin_dir:
-    description: 'Directory containing executable daemonitor-cli and daemonitor-cored (required for collector=daemonitor)'
+    description: 'Optional preinstalled daemonitor-cli and daemonitor-cored directory; otherwise the Action installs them with Homebrew'
     required: false
   daemonitor_source_commit:
     description: 'Optional full source commit; verifies both binaries against build-info.json in daemonitor_bin_dir'

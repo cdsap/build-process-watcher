@@ -54,8 +54,6 @@ jobs:
       fail-fast: false
       matrix:
         collector: [shell, daemonitor]
-    env:
-      DAEMONITOR_VERSION: '1.3.3'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -79,21 +77,6 @@ jobs:
         run: |
           npm ci
           npm run build
-      - name: Install Daemonitor CLI from Homebrew
-        id: daemonitor
-        if: matrix.collector == 'daemonitor'
-        run: |
-          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-          brew install cdsap/tap/daemonitor-cli
-          installed=$(brew list --versions cdsap/tap/daemonitor-cli)
-          if [[ "$installed" != "daemonitor-cli $DAEMONITOR_VERSION" ]]; then
-            echo "Expected Daemonitor $DAEMONITOR_VERSION, installed: $installed" >&2
-            exit 1
-          fi
-          bin_dir="$(brew --prefix cdsap/tap/daemonitor-cli)/bin"
-          test -x "$bin_dir/daemonitor-cli"
-          test -x "$bin_dir/daemonitor-cored"
-          echo "bin_dir=$bin_dir" >> "$GITHUB_OUTPUT"
       - name: Start collector
         uses: ./bpw
         env:
@@ -101,7 +84,6 @@ jobs:
           FRONTEND_URL: ${{ vars.BPW_FRONTEND_URL }}
         with:
           collector: ${{ matrix.collector }}
-          daemonitor_bin_dir: ${{ steps.daemonitor.outputs.bin_dir }}
           run_id: comparison-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.collector }}
           interval: '5'
           remote_monitoring: ${{ inputs.remote_monitoring }}
